@@ -61,15 +61,47 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew install cmake
+          brew install cmake nasm pkg-config lame
           mkdir -p vendor/bin
 
-          # Homebrew supplies a reproducible build-time FFmpeg. Replace these
-          # two files with an audited LGPL-compatible/static build before
-          # publishing a public release; the resolver itself is agnostic.
-          brew install ffmpeg
-          cp "$(brew --prefix ffmpeg)/bin/ffmpeg" vendor/bin/ffmpeg
-          cp "$(brew --prefix ffmpeg)/bin/ffprobe" vendor/bin/ffprobe
+          # Build FFmpeg from the pinned upstream source with GPL and
+          # non-free components disabled. LAME is LGPL and is bundled beside
+          # the executables with an @loader_path dependency.
+          ffmpeg_version='8.1.1'
+          curl -fsSL "https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz" -o "$RUNNER_TEMP/ffmpeg.tar.xz"
+          tar -xf "$RUNNER_TEMP/ffmpeg.tar.xz" -C "$RUNNER_TEMP"
+          ffmpeg_source="$RUNNER_TEMP/ffmpeg-${ffmpeg_version}"
+          ffmpeg_prefix="$RUNNER_TEMP/ffmpeg-prefix"
+          pushd "$ffmpeg_source"
+          ./configure \
+            --prefix="$ffmpeg_prefix" \
+            --disable-gpl \
+            --disable-nonfree \
+            --disable-debug \
+            --disable-doc \
+            --disable-shared \
+            --enable-static \
+            --enable-libmp3lame
+          make -j2
+          make install
+          popd
+          cp "$ffmpeg_prefix/bin/ffmpeg" vendor/bin/ffmpeg
+          cp "$ffmpeg_prefix/bin/ffprobe" vendor/bin/ffprobe
+          lame_lib="$(find "$(brew --prefix lame)/lib" -maxdepth 1 -type f -name 'libmp3lame*.dylib' | head -n 1)"
+          test -n "$lame_lib"
+          lame_name="$(basename "$lame_lib")"
+          cp "$lame_lib" "vendor/bin/$lame_name"
+          for executable in vendor/bin/ffmpeg vendor/bin/ffprobe; do
+            install_name_tool -add_rpath '@loader_path' "$executable"
+            while IFS= read -r dependency; do
+              install_name_tool -change "$dependency" "@loader_path/$lame_name" "$executable"
+            done < <(otool -L "$executable" | awk '/libmp3lame/ {print $1}')
+          done
+          printf '%s\n' \
+            "FFmpeg ${ffmpeg_version}, built from https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz" \
+            'License: LGPL-2.1-or-later; configure flags disable GPL and non-free components.' \
+            'LAME: LGPL, bundled as a dynamic dependency beside the executables.' \
+            > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_source="$RUNNER_TEMP/whisper.cpp"
           git init "$whisper_source"
@@ -96,15 +128,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          choco install ffmpeg cmake --no-progress
           mkdir -p vendor/bin
-          ffmpeg_path="$(cygpath -u "$(where.exe ffmpeg | head -n 1)")"
-          ffmpeg_dir="$(dirname "$ffmpeg_path")"
-          cp "$ffmpeg_dir/ffmpeg.exe" vendor/bin/ffmpeg.exe
-          cp "$ffmpeg_dir/ffprobe.exe" vendor/bin/ffprobe.exe
-          # Chocolatey builds may use side-by-side DLLs; keep them beside the
-          # executables so the packaged app does not depend on PATH.
-          find "$ffmpeg_dir" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
+          ffmpeg_archive='ffmpeg-n8.1-latest-win64-lgpl-8.1.zip'
+          curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${ffmpeg_archive}" -o "$RUNNER_TEMP/${ffmpeg_archive}"
+          expected_sha="$(curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256 | awk -v asset="$ffmpeg_archive" '$2 == asset {print $1}')"
+          test -n "$expected_sha"
+          actual_sha="$(sha256sum "$RUNNER_TEMP/${ffmpeg_archive}" | awk '{print $1}')"
+          test "$expected_sha" = "$actual_sha"
+          unzip -q "$RUNNER_TEMP/${ffmpeg_archive}" -d "$RUNNER_TEMP/ffmpeg-unpacked"
+          ffmpeg_path="$(find "$RUNNER_TEMP/ffmpeg-unpacked" -type f -iname ffmpeg.exe | head -n 1)"
+          ffprobe_path="$(find "$RUNNER_TEMP/ffmpeg-unpacked" -type f -iname ffprobe.exe | head -n 1)"
+          test -n "$ffmpeg_path"
+          test -n "$ffprobe_path"
+          cp "$ffmpeg_path" vendor/bin/ffmpeg.exe
+          cp "$ffprobe_path" vendor/bin/ffprobe.exe
+          find "$(dirname "$ffmpeg_path")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
+          printf '%s\r\n' \
+            "FFmpeg ${ffmpeg_archive}, verified against BtbN checksums.sha256." \
+            'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
+            > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_source="$RUNNER_TEMP/whisper.cpp"
           git init "$whisper_source"
@@ -147,6 +189,7 @@ jobs:
             vendor/bin/ffprobe.exe -version >/dev/null
             vendor/bin/whisper-cli.exe --version >/dev/null
           fi
+          npm run audit:runtime
 
       - name: Build renderer and core bundles
         run: npm run build

@@ -19,6 +19,7 @@ const {
 } = require("./project-path.cjs");
 const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
+const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
 const {
   assertDuetMixRouting,
@@ -1356,6 +1357,25 @@ async function audioMetadata(folder, relativePath) {
   };
 }
 
+async function transcribeAudioBuffer(payload) {
+  const { bytes, extension } = decodeLiveAudioPayload(payload);
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "booth-live-asr-"));
+  const inputPath = path.join(temporaryRoot, `window${extension}`);
+  try {
+    await fs.writeFile(inputPath, bytes, { mode: 0o600 });
+    return await transcribeAudio({
+      audioPath: inputPath,
+      userDataPath: app.getPath("userData"),
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      language: payload.language || "en",
+      requireBundled: app.isPackaged,
+    });
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 async function measureAudioFile(folder, relativePath, options = {}) {
   const decoded = await decodeAudioPcm(folder, relativePath);
   const masterCore = loadCoreModule("master");
@@ -1937,6 +1957,7 @@ async function probeAudio(audioPath) {
       envVar: "FFPROBE_PATH",
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
+      requireBundled: !isDevelopment,
     }), [
       "-v", "error", "-select_streams", "a:0",
       "-show_entries", "stream=channels,sample_rate,duration,bit_rate,codec_name:format=duration,bit_rate,format_name",
@@ -1955,6 +1976,7 @@ async function probeAudio(audioPath) {
           envVar: "FFPROBE_PATH",
           resourcesPath: process.resourcesPath,
           appPath: app.getAppPath(),
+          requireBundled: !isDevelopment,
         }), [
           "-v", "error", "-select_streams", "a:0", "-show_entries", "packet=size",
           "-read_intervals", "%+30", "-of", "json", audioPath,
@@ -1993,6 +2015,7 @@ function runFfmpeg(args, options = {}) {
     envVar: "FFMPEG_PATH",
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
+    requireBundled: !isDevelopment,
   }), args, { ...options, timeoutMs: options.timeoutMs ?? FFMPEG_TIMEOUT_MS });
 }
 
@@ -2267,7 +2290,14 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
     language: payload.language || "en",
+    requireBundled: app.isPackaged,
   });
+});
+ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
+  if (!payload?.audioBase64 || !payload?.mimeType) {
+    throw new Error("Invalid listen-only transcription request");
+  }
+  return transcribeAudioBuffer(payload);
 });
 ipcMain.handle("proof:model-status", () => modelStatus(app.getPath("userData")));
 ipcMain.handle("proof:download-model", async (event) => {

@@ -1,7 +1,10 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { resolveRuntimeBinary } = require("./runtime.cjs");
+const {
+  auditFfmpegBuild,
+  resolveRuntimeBinary,
+} = require("./runtime.cjs");
 
 describe("runtime binary resolution", () => {
   it("prefers a bundled resource over the system command", () => {
@@ -49,5 +52,43 @@ describe("runtime binary resolution", () => {
       env: {},
     })).toBe(bundled);
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("rejects a GPL or non-free FFmpeg build before release packaging", () => {
+    expect(() => auditFfmpegBuild({
+      ffmpegVersion: [
+        "ffmpeg version 8.0",
+        "configuration: --enable-gpl --enable-nonfree --enable-libx264",
+      ].join("\n"),
+      ffprobeVersion: "ffprobe version 8.0",
+      notices: "FFmpeg: LGPL-2.1-or-later",
+    })).toThrow(/GPL|non-free/i);
+  });
+
+  it("accepts only an explicitly noticed LGPL-compatible FFmpeg pair", () => {
+    const audit = auditFfmpegBuild({
+      ffmpegVersion: [
+        "ffmpeg version 8.0",
+        "configuration: --disable-gpl --disable-nonfree --enable-shared",
+      ].join("\n"),
+      ffprobeVersion: "ffprobe version 8.0",
+      notices: [
+        "FFmpeg build: pinned source revision abc123",
+        "License: LGPL-2.1-or-later",
+        "Source: https://ffmpeg.org",
+      ].join("\n"),
+    });
+    expect(audit).toMatchObject({ license: "LGPL-2.1-or-later", gplEnabled: false, nonfreeEnabled: false });
+  });
+
+  it("can require a bundled runtime instead of silently using PATH", () => {
+    expect(() => resolveRuntimeBinary({
+      name: "ffmpeg",
+      resourcesPath: "/tmp/booth-missing-resources",
+      appPath: "/tmp/booth-missing-app",
+      platform: "darwin",
+      env: {},
+      requireBundled: true,
+    })).toThrow(/bundled ffmpeg/i);
   });
 });

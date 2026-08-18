@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
+import { resamplePcmToMono } from "../core/audio/resample";
 import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "../core/proof/align";
 import {
   addGlossaryEntry,
@@ -25,8 +26,12 @@ import { recordingElapsedSeconds } from "../core/recorder/timing";
 import {
   buildPromptLines,
   clampFontSize,
+  createLiveFlagsState,
+  dismissLiveFlag,
+  recordLiveFlag,
   type PromptTheme,
 } from "../core/teleprompter/model";
+import { matchLiveWindow, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -1429,6 +1434,7 @@ function ProjectHome({
 
       {teleprompterOpen && selectedChapter ? (
         <Teleprompter
+          chapterId={selectedChapter.id}
           title={selectedChapter.title}
           spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
           glossary={project.glossary ?? []}
@@ -1500,6 +1506,7 @@ function ProjectHome({
 }
 
 function Teleprompter({
+  chapterId,
   title,
   spans,
   glossary,
@@ -1510,6 +1517,7 @@ function Teleprompter({
   onPlayGlossary,
   onClose,
 }: {
+  chapterId: string;
   title: string;
   spans: ScriptSpan[];
   glossary: import("../core/project/types").GlossaryEntry[];
@@ -1522,8 +1530,253 @@ function Teleprompter({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
-  const [liveFlags] = useState(false);
+  const expectedWords = useMemo<LiveExpectedWord[]>(() => {
+    let index = 0;
+    return lines.flatMap((line) => {
+      const words = line.text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
+      return words.map((text) => ({ index: index++, lineIndex: line.index, text }));
+    });
+  }, [lines]);
+  const [liveState, setLiveState] = useState(createLiveFlagsState);
+  const [liveStatus, setLiveStatus] = useState<"off" | "starting" | "listening" | "processing" | "error">("off");
+  const [liveFlag, setLiveFlag] = useState<LiveMismatch | null>(null);
+  const [liveCursor, setLiveCursor] = useState(0);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
+  const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
+  const liveStateRef = useRef(liveState);
+  const liveEnabledRef = useRef(false);
+  const liveStreamRef = useRef<MediaStream | null>(null);
+  const liveContextRef = useRef<AudioContext | null>(null);
+  const liveSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const liveProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const liveGainRef = useRef<GainNode | null>(null);
+  const liveSamplesRef = useRef<Float32Array[]>([]);
+  const liveSampleCountRef = useRef(0);
+  const liveSampleRateRef = useRef(48_000);
+  const liveCapturedSecondsRef = useRef(0);
+  const liveBufferStartSecondsRef = useRef(0);
+  const liveRequestRef = useRef(false);
+  const liveMatchStateRef = useRef<LiveMatchState>({ cursor: 0, lastHeardEnd: 0 });
+  const liveDismissedRef = useRef<string[]>([]);
+  const liveStartingRef = useRef(false);
+
+  useEffect(() => {
+    liveStateRef.current = liveState;
+  }, [liveState]);
+
+  useEffect(() => {
+    if (!liveState.enabled) {
+      return;
+    }
+    const lineIndex = expectedWords[liveCursor]?.lineIndex;
+    if (lineIndex === undefined) {
+      return;
+    }
+    lineRefs.current.get(lineIndex)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [expectedWords, liveCursor, liveState.enabled]);
+
+  function stopLiveCapture() {
+    liveEnabledRef.current = false;
+    liveProcessorRef.current?.disconnect();
+    liveSourceRef.current?.disconnect();
+    liveGainRef.current?.disconnect();
+    liveProcessorRef.current = null;
+    liveSourceRef.current = null;
+    liveGainRef.current = null;
+    liveStreamRef.current?.getTracks().forEach((track) => track.stop());
+    liveStreamRef.current = null;
+    void liveContextRef.current?.close();
+    liveContextRef.current = null;
+    liveSamplesRef.current = [];
+    liveSampleCountRef.current = 0;
+    liveCapturedSecondsRef.current = 0;
+    liveBufferStartSecondsRef.current = 0;
+    liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
+    setLiveStatus("off");
+  }
+
+  useEffect(() => () => stopLiveCapture(), []);
+
+  async function transcribeLiveWindow(samples: Float32Array, sampleRate: number, startSeconds: number) {
+    const bridge = window.boothDesk;
+    if (!bridge?.transcribeBuffer || !liveEnabledRef.current || samples.length < Math.floor(sampleRate)) {
+      return;
+    }
+    liveRequestRef.current = true;
+    setLiveStatus("processing");
+    try {
+      const mono = resamplePcmToMono(samples, sampleRate, 16_000);
+      const wav = encodeWavPcm16(mono, 16_000, 1);
+      const transcription = await bridge.transcribeBuffer({
+        audioBase64: bytesToBase64(wav),
+        mimeType: "audio/wav",
+        language: "en",
+      });
+      if (!liveEnabledRef.current) {
+        return;
+      }
+      const result = matchLiveWindow({
+        chapterId,
+        expected: expectedWords,
+        transcript: transcription.words.map((word) => ({
+          ...word,
+          start: word.start + startSeconds,
+          end: word.end + startSeconds,
+        })),
+        state: liveMatchStateRef.current,
+        flagsEnabled: liveStateRef.current.enabled,
+        confidenceThreshold: 0.9,
+        dismissedIds: liveDismissedRef.current,
+      });
+      liveMatchStateRef.current = result.state;
+      setLiveCursor(result.state.cursor);
+      if (result.flag) {
+        setLiveFlag(result.flag);
+      }
+      setLiveStatus("listening");
+      setLiveError(null);
+    } catch (reason) {
+      if (liveEnabledRef.current) {
+        setLiveError(messageFor(reason, "Live flags could not transcribe this microphone window."));
+        setLiveStatus("error");
+        stopLiveCapture();
+      }
+    } finally {
+      liveRequestRef.current = false;
+      if (liveEnabledRef.current && liveSampleCountRef.current >= liveSampleRateRef.current * 3) {
+        flushLiveWindow();
+      }
+    }
+  }
+
+  function flushLiveWindow() {
+    if (liveRequestRef.current || liveSampleCountRef.current < liveSampleRateRef.current) {
+      return;
+    }
+    const samples = new Float32Array(liveSampleCountRef.current);
+    let offset = 0;
+    for (const chunk of liveSamplesRef.current) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
+    }
+    const sampleRate = liveSampleRateRef.current;
+    const startSeconds = liveBufferStartSecondsRef.current;
+    const overlapSamples = Math.min(samples.length, Math.round(sampleRate * 0.8));
+    const overlap = samples.slice(samples.length - overlapSamples);
+    liveSamplesRef.current = overlap.length > 0 ? [overlap] : [];
+    liveSampleCountRef.current = overlap.length;
+    liveBufferStartSecondsRef.current = Math.max(0, liveCapturedSecondsRef.current - overlap.length / sampleRate);
+    void transcribeLiveWindow(samples, sampleRate, startSeconds);
+  }
+
+  async function startLiveCapture() {
+    if (liveStartingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
+      return;
+    }
+    if (!window.boothDesk?.transcribeBuffer) {
+      setLiveError("Live flags are available in the desktop build only.");
+      setLiveStatus("error");
+      return;
+    }
+    liveStartingRef.current = true;
+    setLiveError(null);
+    setLiveStatus("starting");
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This desktop build does not expose a microphone input.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const context = new AudioContext();
+      const source = context.createMediaStreamSource(stream);
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      const gain = context.createGain();
+      gain.gain.value = 0;
+      liveEnabledRef.current = true;
+      liveStreamRef.current = stream;
+      liveContextRef.current = context;
+      liveSourceRef.current = source;
+      liveProcessorRef.current = processor;
+      liveGainRef.current = gain;
+      liveSampleRateRef.current = context.sampleRate;
+      liveSamplesRef.current = [];
+      liveSampleCountRef.current = 0;
+      liveCapturedSecondsRef.current = 0;
+      liveBufferStartSecondsRef.current = 0;
+      liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
+      liveDismissedRef.current = [];
+      processor.onaudioprocess = (event) => {
+        if (!liveEnabledRef.current) {
+          return;
+        }
+        const input = event.inputBuffer.getChannelData(0);
+        const copy = new Float32Array(input);
+        liveSamplesRef.current.push(copy);
+        liveSampleCountRef.current += copy.length;
+        liveCapturedSecondsRef.current += copy.length / liveSampleRateRef.current;
+        if (liveSampleCountRef.current >= liveSampleRateRef.current * 3) {
+          flushLiveWindow();
+        }
+      };
+      source.connect(processor);
+      processor.connect(gain);
+      gain.connect(context.destination);
+      await context.resume();
+      const nextState = { ...createLiveFlagsState(), enabled: true };
+      liveStateRef.current = nextState;
+      setLiveState(nextState);
+      setLiveStatus("listening");
+    } catch (reason) {
+      stopLiveCapture();
+      setLiveError(messageFor(reason, "Microphone permission or live flags failed."));
+      setLiveStatus("error");
+    } finally {
+      liveStartingRef.current = false;
+    }
+  }
+
+  function setLiveEnabled(enabled: boolean) {
+    if (enabled) {
+      void startLiveCapture();
+      return;
+    }
+    stopLiveCapture();
+    const nextState = { ...liveStateRef.current, enabled: false };
+    liveStateRef.current = nextState;
+    setLiveState(nextState);
+    setLiveFlag(null);
+  }
+
+  function decideLiveFlag(isTrueMismatch: boolean) {
+    const current = liveFlag;
+    if (!current) {
+      return;
+    }
+    const nextState = isTrueMismatch
+      ? recordLiveFlag(liveStateRef.current, { id: current.id, isTrueMismatch: true })
+      : dismissLiveFlag(liveStateRef.current, current.id);
+    liveDismissedRef.current = nextState.dismissedIds;
+    liveStateRef.current = nextState;
+    setLiveState(nextState);
+    setLiveFlag(null);
+    if (nextState.dimmed) {
+      stopLiveCapture();
+      const dimmedState = { ...nextState, enabled: false };
+      liveStateRef.current = dimmedState;
+      setLiveState(dimmedState);
+      setLiveError("Flags paused — too many false alarms. Undo to try again.");
+    }
+  }
+
+  function undoLiveDim() {
+    const nextState = { ...createLiveFlagsState(), enabled: true };
+    liveStateRef.current = nextState;
+    setLiveState(nextState);
+    setLiveError(null);
+    void startLiveCapture();
+  }
 
   function activateGlossary(entry: GlossaryEntry) {
     setGlossaryHint(
@@ -1566,20 +1819,32 @@ function Teleprompter({
               <option value="cream">Cream</option>
             </select>
           </label>
-          <label className="teleprompter-checkbox" title="Listen-only ASR flags are not enabled in this build"><input type="checkbox" checked={liveFlags} disabled /> Live flags (experimental)</label>
+          <label className="teleprompter-checkbox" title="Listen-only ASR stays on this computer and is never saved as a recording"><input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} /> Live flags (experimental)</label>
           <button type="button" onClick={onClose}>Close</button>
         </div>
       </header>
       <div className="teleprompter-honesty">
-        {liveFlags
-          ? "Live flags are experimental and high-precision only; manual scrolling remains in control."
-          : "Flags are off in this build so they do not cry wolf. Space/PageDown scrolls; listen to the take for acting, clicks, and room tone."}
+        {liveState.dimmed
+          ? "Flags paused — too many false alarms."
+          : liveState.enabled
+            ? `Listen-only ASR is ${liveStatus === "processing" ? "checking a local window" : "active"}; nothing is saved. Manual scrolling remains in control.`
+            : "Flags are off so they do not cry wolf. Turn them on when you trust the script; audio stays local and is not recorded."}
+        {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Undo auto-dim</button> : null}
+        {liveStatus === "error" && liveError ? <strong className="teleprompter-glossary-hint" role="alert">{liveError}</strong> : null}
         {glossaryHint ? <strong className="teleprompter-glossary-hint" role="status">{glossaryHint}</strong> : null}
       </div>
+      {liveFlag ? (
+        <div className="teleprompter-live-flag" role="alert">
+          <strong>Possible live mismatch</strong>
+          <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
+          <button type="button" onClick={() => decideLiveFlag(true)}>Keep flag</button>
+          <button type="button" onClick={() => decideLiveFlag(false)}>False alarm</button>
+        </div>
+      ) : null}
       <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
         <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
           {lines.map((line) => (
-            <p key={line.index} className="teleprompter-line">
+            <p key={line.index} ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }} className={`teleprompter-line${expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`} aria-current={expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}>
               {line.segments.map((segment, index) => {
                 const glossaryEntry = segment.glossary_id
                   ? glossary.find((entry) => entry.id === segment.glossary_id)
@@ -2237,7 +2502,7 @@ function SettingsPanel({
             <option value="default">Default · balanced</option>
             <option value="aggressive">Aggressive · merge nearby alerts</option>
           </select>
-          <small>Batch proof recall and live precision stay separate; live flags are disabled in this build.</small>
+          <small>Batch proof recall and live precision stay separate. Live flags are optional, local-only, and high-precision.</small>
         </label>
         <label>
           Pause threshold (seconds)
@@ -2269,8 +2534,8 @@ function SettingsPanel({
         </div>
         <div className="settings-readonly">
           <span>Live flags</span>
-          <strong>Off · listen-only ASR not enabled</strong>
-          <small>The auto-dim state model is tested, but this build will not request a microphone for flags.</small>
+          <strong>Off by default · enable in Teleprompter</strong>
+          <small>When enabled, a rolling microphone window is transcribed locally and discarded; it is never saved as a recording.</small>
         </div>
       </div>
       <div className="settings-actions">

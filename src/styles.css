@@ -1342,6 +1342,33 @@ footer {
   color: inherit;
 }
 
+.teleprompter-live-flag {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 9px clamp(20px, 5vw, 72px);
+  color: #fff4e9;
+  background: #7e3f2b;
+  font-size: 11px;
+}
+
+.teleprompter-live-flag strong {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.teleprompter-live-flag button {
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 244, 233, 0.65);
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .teleprompter-sepia .teleprompter-honesty,
 .teleprompter-cream .teleprompter-honesty {
   color: #725c4e;
@@ -1366,6 +1393,13 @@ footer {
   min-height: 1.55em;
   margin: 0 0 0.65em;
   white-space: pre-wrap;
+}
+
+.teleprompter-line-live {
+  padding: 0 0.18em;
+  border-radius: 4px;
+  background: rgba(236, 190, 88, 0.2);
+  box-shadow: 0 0 0 2px rgba(236, 190, 88, 0.14);
 }
 
 .prompt-glossary-word {

@@ -10,6 +10,7 @@ function resolveRuntimeBinary({
   cwd = process.cwd(),
   platform = process.platform,
   env = process.env,
+  requireBundled = false,
 }) {
   const extension = platform === "win32" ? ".exe" : "";
   const candidates = [
@@ -32,10 +33,41 @@ function resolveRuntimeBinary({
     }
   }
 
-  // Let the operating system resolve a system installation when no bundled
-  // binary is present. This keeps source builds useful and fails clearly when
-  // a release was packaged without its runtime assets.
+  if (requireBundled) {
+    throw new Error(`The packaged Booth Desk build is missing its bundled ${name} runtime.`);
+  }
+
+  // Let the operating system resolve a system installation for source builds.
   return name;
 }
 
-module.exports = { resolveRuntimeBinary };
+function auditFfmpegBuild({ ffmpegVersion, ffprobeVersion, notices }) {
+  const ffmpegText = String(ffmpegVersion ?? "");
+  const ffprobeText = String(ffprobeVersion ?? "");
+  const noticeText = String(notices ?? "");
+  if (!/^ffmpeg\s+version\s+/imu.test(ffmpegText)) {
+    throw new Error("The staged FFmpeg executable did not report a valid version.");
+  }
+  if (!/^ffprobe\s+version\s+/imu.test(ffprobeText)) {
+    throw new Error("The staged FFprobe executable did not report a valid version.");
+  }
+  const configuration = ffmpegText.match(/^configuration:\s*(.*)$/imu)?.[1] ?? "";
+  const gplEnabled = /(?:^|\s)--enable-gpl(?:\s|$)/u.test(configuration);
+  const nonfreeEnabled = /(?:^|\s)--enable-nonfree(?:\s|$)/u.test(configuration);
+  if (gplEnabled || nonfreeEnabled) {
+    throw new Error("The staged FFmpeg build enables GPL or non-free components; an LGPL-only release runtime is required.");
+  }
+  if (!/LGPL-2\.1(?:-or-later|\+)?/iu.test(noticeText)) {
+    throw new Error("The staged FFmpeg runtime is missing an explicit LGPL-2.1-or-later notice.");
+  }
+  return {
+    license: "LGPL-2.1-or-later",
+    gplEnabled,
+    nonfreeEnabled,
+    configuration,
+    ffmpegVersion: ffmpegText.split(/\r?\n/u)[0].trim(),
+    ffprobeVersion: ffprobeText.split(/\r?\n/u)[0].trim(),
+  };
+}
+
+module.exports = { auditFfmpegBuild, resolveRuntimeBinary };

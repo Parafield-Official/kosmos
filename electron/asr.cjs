@@ -14,8 +14,8 @@ const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
  * model under resources/, while contributors can point the same code at a
  * locally built binary with WHISPER_CLI_PATH and WHISPER_MODEL_PATH.
  */
-async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en" }) {
-  const cliPath = findWhisperCli({ resourcesPath, appPath });
+async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en", requireBundled = false }) {
+  const cliPath = findWhisperCli({ resourcesPath, appPath, requireBundled });
   if (!cliPath) {
     throw new Error(
       "Local Whisper is not installed yet. Add whisper-cli to the Booth Desk bundle, or set WHISPER_CLI_PATH for a development build.",
@@ -42,6 +42,7 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
       envVar: "FFMPEG_PATH",
       resourcesPath,
       appPath,
+      requireBundled,
     });
     await run(ffmpegPath, buildPcmConversionArgs(audioPath, convertedPath), {
       timeoutMs: FFMPEG_CONVERSION_TIMEOUT_MS,
@@ -65,7 +66,7 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
   }
 }
 
-function findWhisperCli({ resourcesPath, appPath }) {
+function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
   const extension = process.platform === "win32" ? ".exe" : "";
   const candidates = [
     process.env.WHISPER_CLI_PATH,
@@ -86,6 +87,10 @@ function findWhisperCli({ resourcesPath, appPath }) {
     } catch {
       // Try the next candidate.
     }
+  }
+
+  if (requireBundled) {
+    return null;
   }
 
   const lookup = process.platform === "win32" ? "where" : "which";

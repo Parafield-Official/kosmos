@@ -32,6 +32,7 @@ interface BoothDeskBridge {
   audioMetadata: (payload: { folder: string; relativePath: string }) => Promise<AudioMetadata>;
   measureAudio: (payload: { folder: string; relativePath: string; requireRoomTone?: boolean }) => Promise<import("./core/acx/measure").AcxReport>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
+  transcribeBuffer: (payload: { audioBase64: string; mimeType: string; language?: string }) => Promise<TranscriptionResult>;
   modelStatus: () => Promise<ModelStatus>;
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
