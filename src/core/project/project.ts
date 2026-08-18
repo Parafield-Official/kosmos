@@ -55,6 +55,7 @@ export function createEmptyProject(
     chapters: [],
     glossary: [],
     chapter_notes: [],
+    punch_recordings: [],
     created_at: now,
     updated_at: now,
   };

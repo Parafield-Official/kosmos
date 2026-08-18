@@ -84,6 +84,7 @@ async function createProjectFolder() {
     chapters: [],
     glossary: [],
     chapter_notes: [],
+    punch_recordings: [],
     created_at: now,
     updated_at: now,
   };
@@ -116,6 +117,7 @@ async function readProjectFolder(folder) {
     ...project,
     glossary: Array.isArray(project.glossary) ? project.glossary : [],
     chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
+    punch_recordings: Array.isArray(project.punch_recordings) ? project.punch_recordings : [],
   };
   return { folder, project: normalized };
 }
@@ -486,7 +488,12 @@ async function readChapterDocument(folder, chapter) {
 
 async function writeChapterDocument(folder, relativePath, value) {
   const destination = projectAssetPath(folder, relativePath);
+  await writeJsonAtomic(destination, value);
+}
+
+async function writeJsonAtomic(destination, value) {
   const temporary = `${destination}.tmp-${process.pid}`;
+  await fs.mkdir(path.dirname(destination), { recursive: true });
   await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await fs.rename(temporary, destination);
 }
@@ -580,6 +587,127 @@ async function readChapterText(folder, project, chapterId) {
   const value = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.text_path), "utf8"));
   const text = Array.isArray(value.spans) ? value.spans.map((span) => span.text).join("") : "";
   return { chapterId, text, spans: value.spans ?? [] };
+}
+
+async function saveAlignment(folder, project, chapterId, pickups, transcript) {
+  await assertProjectFolder(folder);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error("Chapter not found");
+  }
+  if (!Array.isArray(pickups)) {
+    throw new Error("Alignment pickups must be an array");
+  }
+  const relativePath = chapter.pickups_path || `alignment/${String(chapter.index).padStart(2, "0")}.json`;
+  const value = {
+    schema: 1,
+    chapter_id: chapterId,
+    updated_at: new Date().toISOString(),
+    transcript: Array.isArray(transcript) ? transcript : [],
+    pickups,
+  };
+  await writeJsonAtomic(projectAssetPath(folder, relativePath), value);
+  const now = new Date().toISOString();
+  const nextProject = {
+    ...project,
+    chapters: project.chapters.map((candidate) => candidate.id === chapterId
+      ? { ...candidate, pickups_path: relativePath, updated_at: now }
+      : candidate),
+    updated_at: now,
+  };
+  return saveProjectFolder(folder, nextProject);
+}
+
+async function readAlignment(folder, project, chapterId) {
+  await assertProjectFolder(folder);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter?.pickups_path) {
+    return null;
+  }
+  try {
+    return JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.pickups_path), "utf8"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function exportMarkerFiles(folder, project, chapterId, pickups) {
+  await assertProjectFolder(folder);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error("Chapter not found");
+  }
+  const markersCore = loadCoreModule("markers");
+  const outputFolder = path.join(folder, "export", "markers");
+  await fs.mkdir(outputFolder, { recursive: true });
+  const baseName = `${String(chapter.index).padStart(2, "0")}_${slugFileName(chapter.title)}`;
+  const files = markersCore.markerFileSet(baseName, Array.isArray(pickups) ? pickups : []);
+  for (const file of files) {
+    await fs.writeFile(path.join(outputFolder, file.fileName), file.contents, "utf8");
+  }
+  return {
+    folder: outputFolder,
+    files: files.map((file) => file.fileName),
+  };
+}
+
+async function saveRecordingWav(folder, project, payload) {
+  await assertProjectFolder(folder);
+  const kind = payload?.kind;
+  if (kind !== "chapter" && kind !== "punch" && kind !== "room") {
+    throw new Error("Recording kind must be chapter, punch, or room");
+  }
+  if (typeof payload?.wavBase64 !== "string" || payload.wavBase64.length < 44) {
+    throw new Error("Recording did not contain a WAV file");
+  }
+  const bytes = Buffer.from(payload.wavBase64, "base64");
+  if (bytes.subarray(0, 4).toString("ascii") !== "RIFF" || bytes.subarray(8, 12).toString("ascii") !== "WAVE") {
+    throw new Error("Recorder output is not a RIFF/WAVE file");
+  }
+  const chapter = payload.chapterId
+    ? (project.chapters ?? []).find((candidate) => candidate.id === payload.chapterId)
+    : null;
+  if (kind !== "room" && !chapter) {
+    throw new Error("Choose a chapter before saving this recording");
+  }
+  const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  let relativePath;
+  if (kind === "room") {
+    relativePath = `audio/room_test_${stamp}.wav`;
+  } else if (kind === "punch") {
+    const pickup = typeof payload.pickupId === "string" ? payload.pickupId : "manual";
+    relativePath = `audio/pickups/${chapter.id}-${slugFileName(pickup)}-${stamp}.wav`;
+  } else {
+    relativePath = `audio/${String(chapter.index).padStart(2, "0")}_recorded_${stamp}.wav`;
+  }
+  const destination = projectAssetPath(folder, relativePath);
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  await fs.writeFile(destination, bytes);
+  const now = new Date().toISOString();
+  let nextProject = { ...project, updated_at: now };
+  if (kind === "room") {
+    nextProject.room_test_path = relativePath;
+  } else if (kind === "chapter") {
+    nextProject.chapters = project.chapters.map((candidate) => candidate.id === chapter.id
+      ? { ...candidate, audio_path: relativePath, updated_at: now }
+      : candidate);
+  } else {
+    nextProject.punch_recordings = [
+      ...(project.punch_recordings ?? []),
+      {
+        id: `punch-${stamp}-${(project.punch_recordings?.length ?? 0) + 1}`,
+        chapter_id: chapter.id,
+        ...(payload.pickupId ? { pickup_id: payload.pickupId } : {}),
+        path: relativePath,
+        created_at: now,
+      },
+    ];
+  }
+  const saved = await saveProjectFolder(folder, nextProject);
+  return { ...saved, path: relativePath, kind };
 }
 
 async function readAudioFile(folder, relativePath) {
@@ -736,6 +864,117 @@ async function shareProjectZip(folder, project, lightPack) {
     outputPath: result.filePath,
     relativePaths,
   });
+}
+
+async function shareSeatPack(folder, project, seat) {
+  await assertProjectFolder(folder);
+  if (project.mode !== "duet") {
+    throw new Error("Switch the project to duet mode before exporting a seat pack.");
+  }
+  if (seat !== "N1" && seat !== "N2") {
+    throw new Error("Seat pack must be N1 or N2");
+  }
+  const result = await dialog.showSaveDialog({
+    title: `Save ${seat} seat pack`,
+    defaultPath: path.join(path.dirname(folder), `${slugFileName(project.name)}-${seat}-seat-pack.zip`),
+    filters: [{ name: "ZIP archive", extensions: ["zip"] }],
+  });
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  const duetCore = loadCoreModule("duet-seats");
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "booth-seat-pack-"));
+  const staging = path.join(temporaryRoot, `${slugFileName(project.name)}-${seat}.booth`);
+  try {
+    await ensureProjectLayout(staging);
+    const includedChapters = [];
+    for (const chapter of [...(project.chapters ?? [])].sort((a, b) => a.index - b.index)) {
+      const document = await readChapterDocument(folder, chapter);
+      const spans = duetCore.filterSpansForSeat(document.spans, seat);
+      if (spans.length === 0) {
+        continue;
+      }
+      await writeChapterDocument(staging, chapter.text_path, { ...document, spans });
+      const subset = {
+        ...chapter,
+        audio_path: undefined,
+        overdub_audio_path: undefined,
+        duet_mix_path: undefined,
+      };
+      if (chapter.bed_audio_path) {
+        await copyProjectAsset(folder, staging, chapter.bed_audio_path);
+      }
+      if (chapter.pickups_path) {
+        try {
+          const alignment = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.pickups_path), "utf8"));
+          const pickups = (alignment.pickups ?? []).filter((pickup) =>
+            pickup.seat === seat || (seat === "N1" && pickup.seat === "narration"),
+          );
+          await writeJsonAtomic(projectAssetPath(staging, chapter.pickups_path), { ...alignment, pickups });
+        } catch (error) {
+          if (!error || error.code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+      includedChapters.push(subset);
+    }
+    if (includedChapters.length === 0) {
+      throw new Error(`No script spans are assigned to ${seat}.`);
+    }
+
+    const glossary = [];
+    for (const entry of project.glossary ?? []) {
+      if (entry.clip_path) {
+        await copyProjectAsset(folder, staging, entry.clip_path);
+      }
+      glossary.push(entry);
+    }
+    const subsetProject = {
+      ...project,
+      chapters: includedChapters,
+      people: (project.people ?? []).filter((person) => person.role === "author" || person.seat === seat),
+      glossary,
+      chapter_notes: (project.chapter_notes ?? []).filter((note) =>
+        includedChapters.some((chapter) => chapter.id === note.chapter_id),
+      ),
+      punch_recordings: [],
+      updated_at: new Date().toISOString(),
+    };
+    await fs.writeFile(path.join(staging, "project.json"), `${JSON.stringify(subsetProject, null, 2)}\n`, "utf8");
+    await copyProjectAsset(folder, staging, "acx_spec.json", true);
+    await fs.writeFile(
+      path.join(staging, "SEAT_PACK_README.txt"),
+      [
+        `Booth Desk ${seat} seat pack`,
+        "",
+        "Duet means each character keeps the same narrator inside every POV.",
+        "This subset contains only your assigned lines (plus narration for N1), author notes, glossary clips, and any bed audio.",
+        "Return recorded audio through the shared full .booth project; this ZIP is not a cloud invitation.",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    const files = await collectProjectFiles(staging);
+    return await zipProjectFolder({ folder: staging, outputPath: result.filePath, relativePaths: files });
+  } finally {
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
+async function copyProjectAsset(sourceFolder, destinationFolder, relativePath, optional = false) {
+  try {
+    const source = projectAssetPath(sourceFolder, relativePath);
+    const destination = projectAssetPath(destinationFolder, relativePath);
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await fs.copyFile(source, destination);
+  } catch (error) {
+    if (optional && error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 }
 
 async function collectProjectFiles(folder, current = "") {
@@ -1014,6 +1253,30 @@ ipcMain.handle("project:chapter-text", (_event, payload) => {
   }
   return readChapterText(payload.folder, payload.project, payload.chapterId);
 });
+ipcMain.handle("project:save-alignment", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid alignment save request");
+  }
+  return saveAlignment(payload.folder, payload.project, payload.chapterId, payload.pickups, payload.transcript);
+});
+ipcMain.handle("project:read-alignment", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid alignment read request");
+  }
+  return readAlignment(payload.folder, payload.project, payload.chapterId);
+});
+ipcMain.handle("project:export-markers", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid marker export request");
+  }
+  return exportMarkerFiles(payload.folder, payload.project, payload.chapterId, payload.pickups);
+});
+ipcMain.handle("recording:save-wav", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid recording save request");
+  }
+  return saveRecordingWav(payload.folder, payload.project, payload);
+});
 ipcMain.handle("audio:read", (_event, payload) => {
   if (!payload?.folder || !payload?.relativePath) {
     throw new Error("Invalid audio read request");
@@ -1057,6 +1320,12 @@ ipcMain.handle("project:share-zip", (_event, payload) => {
     throw new Error("Invalid collaborator pack request");
   }
   return shareProjectZip(payload.folder, payload.project, payload.lightPack);
+});
+ipcMain.handle("project:share-seat-pack", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.seat) {
+    throw new Error("Invalid seat pack request");
+  }
+  return shareSeatPack(payload.folder, payload.project, payload.seat);
 });
 ipcMain.handle("identity:get", (_event, payload) => {
   if (!payload?.projectId) {

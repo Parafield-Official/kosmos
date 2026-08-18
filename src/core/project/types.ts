@@ -34,6 +34,9 @@ export interface ChapterFile {
   title: string;
   text_path: string;
   audio_path?: string;
+  bed_audio_path?: string;
+  overdub_audio_path?: string;
+  duet_mix_path?: string;
   pickups_path?: string;
   notes_path?: string;
   word_count?: number;
@@ -61,6 +64,14 @@ export interface ChapterNote {
   created_at: string;
 }
 
+export interface PunchRecording {
+  id: string;
+  chapter_id: string;
+  pickup_id?: string;
+  path: string;
+  created_at: string;
+}
+
 export interface ProjectFile {
   schema: typeof PROJECT_SCHEMA;
   id: string;
@@ -75,6 +86,8 @@ export interface ProjectFile {
   chapters: ChapterFile[];
   glossary?: GlossaryEntry[];
   chapter_notes?: ChapterNote[];
+  punch_recordings?: PunchRecording[];
+  room_test_path?: string;
   created_at: string;
   updated_at: string;
 }

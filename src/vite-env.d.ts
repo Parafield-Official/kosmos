@@ -17,6 +17,10 @@ interface BoothDeskBridge {
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
   attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
+  saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
+  readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
+  exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
+  saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room"; chapterId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
   readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
@@ -25,6 +29,7 @@ interface BoothDeskBridge {
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
   exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
   shareZip: (payload: ProjectEnvelope & { lightPack: boolean }) => Promise<ShareZipResult | null>;
+  shareSeatPack: (payload: ProjectEnvelope & { seat: "N1" | "N2" }) => Promise<ShareZipResult | null>;
   getIdentity: (projectId: string) => Promise<LocalIdentity | null>;
   setIdentity: (identity: LocalIdentity) => Promise<LocalIdentity>;
 }
@@ -63,6 +68,24 @@ interface ChapterText {
   chapterId: string;
   text: string;
   spans: import("./core/project/types").ScriptSpan[];
+}
+
+interface AlignmentFile {
+  schema: 1;
+  chapter_id: string;
+  updated_at: string;
+  transcript: import("./core/proof/align").TranscriptWord[];
+  pickups: import("./core/project/types").Pickup[];
+}
+
+interface MarkerExportResult {
+  folder: string;
+  files: string[];
+}
+
+interface RecordingSaveResult extends ProjectEnvelope {
+  path: string;
+  kind: "chapter" | "punch" | "room";
 }
 
 interface DecodedAudio {

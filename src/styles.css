@@ -653,6 +653,12 @@ footer {
   gap: 16px;
 }
 
+.result-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 .chapter-desk-heading h3,
 .result-heading h4 {
   margin: 0;
@@ -887,6 +893,39 @@ footer {
   font-weight: 800;
 }
 
+.pickup-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.pickup-actions button:last-child {
+  border-color: #b9977f;
+  color: #7b442b;
+}
+
+.pickup-seat-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #887b70;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pickup-seat-filter select {
+  padding: 5px 7px;
+  border: 1px solid #cbbcaf;
+  border-radius: 6px;
+  color: #5f4c3d;
+  background: #fffdf9;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .pickup-list time {
   color: #8d8074;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1088,6 +1127,224 @@ footer {
   border-top: 1px solid #4c4239;
 }
 
+.teleprompter-overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  color: #f4ece3;
+  background: #121110;
+}
+
+.teleprompter-sepia {
+  color: #3d2d22;
+  background: #cbb49a;
+}
+
+.teleprompter-cream {
+  color: #29231e;
+  background: #eee8de;
+}
+
+.teleprompter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px clamp(20px, 5vw, 72px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.teleprompter-toolbar h2,
+.teleprompter-toolbar p {
+  margin: 0;
+}
+
+.teleprompter-toolbar h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 500;
+}
+
+.teleprompter-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.teleprompter-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #b8aaa0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.teleprompter-sepia .teleprompter-controls label,
+.teleprompter-cream .teleprompter-controls label {
+  color: #665347;
+}
+
+.teleprompter-controls select {
+  padding: 6px 8px;
+  border: 1px solid #65564a;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.teleprompter-controls button {
+  padding: 8px 12px;
+  border: 1px solid #957461;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.teleprompter-checkbox {
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.teleprompter-honesty {
+  padding: 10px clamp(20px, 5vw, 72px);
+  color: #a99c90;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.teleprompter-sepia .teleprompter-honesty,
+.teleprompter-cream .teleprompter-honesty {
+  color: #725c4e;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.teleprompter-scroll {
+  overflow-y: auto;
+  outline: none;
+  scroll-behavior: smooth;
+}
+
+.teleprompter-page {
+  width: min(980px, 100% - 40px);
+  margin: 0 auto;
+  padding: 10vh 0 40vh;
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1.55;
+}
+
+.teleprompter-line {
+  min-height: 1.55em;
+  margin: 0 0 0.65em;
+  white-space: pre-wrap;
+}
+
+.prompt-glossary-word {
+  border-bottom: 2px dotted currentColor;
+  cursor: help;
+}
+
+.recorder-panel {
+  margin-top: 18px;
+  padding-top: 17px;
+  border-top: 1px solid #d8cec2;
+}
+
+.recorder-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recorder-heading h4 {
+  margin: 0;
+  color: #443a32;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.recorder-heading time {
+  color: #766a60;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.level-track {
+  height: 7px;
+  margin-top: 11px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ded5ca;
+}
+
+.level-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #699d70, #d4a43f 78%, #a8463d 96%);
+  transition: width 80ms linear;
+}
+
+.recorder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.recorder-actions button {
+  padding: 7px 9px;
+  border: 1px solid #cbbcaf;
+  border-radius: 7px;
+  color: #674b3a;
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.recorder-actions button:first-child {
+  border-color: #5d7f61;
+  color: #315c3b;
+}
+
+.recorder-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.recorder-honesty,
+.recorder-error {
+  margin: 8px 0 0;
+  color: #8b7e71;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.recorder-error {
+  color: #8b3b31;
+}
+
+.room-check-button {
+  margin-top: 12px;
+}
+
 
 .book-home-heading h2 {
   margin: 0;
@@ -1234,6 +1491,15 @@ footer {
 
   .chapter-review-card {
     grid-column: auto;
+  }
+
+  .teleprompter-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .teleprompter-controls {
+    justify-content: flex-start;
   }
 
   .welcome-copy h2 {

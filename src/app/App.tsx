@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { measurePcm, type AcxReport } from "../core/acx/measure";
+import { encodeWavPcm16 } from "../core/audio/wav";
 import { alignTranscript, type TranscriptWord } from "../core/proof/align";
 import {
   addGlossaryEntry,
@@ -12,12 +13,18 @@ import {
   canApproveChapters,
   setChapterAuthorStatus,
 } from "../core/project/collaboration";
+import {
+  buildPromptLines,
+  clampFontSize,
+  type PromptTheme,
+} from "../core/teleprompter/model";
 import type {
   AuthorStatus,
   ChapterFile,
   GlossaryEntry,
   Pickup,
   ProjectFile,
+  ScriptSpan,
 } from "../core/project/types";
 
 interface ProjectEnvelope {
@@ -189,6 +196,14 @@ function ProjectHome({
   const [splitOffset, setSplitOffset] = useState(0);
   const [splitTitle, setSplitTitle] = useState("");
   const [chapterSeat, setChapterSeat] = useState<"narration" | "N1" | "N2">("narration");
+  const [chapterSpans, setChapterSpans] = useState<ScriptSpan[]>([]);
+  const [teleprompterOpen, setTeleprompterOpen] = useState(false);
+  const [promptFontSize, setPromptFontSize] = useState(48);
+  const [promptTheme, setPromptTheme] = useState<PromptTheme>("dark");
+  const [roomTestOpen, setRoomTestOpen] = useState(false);
+  const [roomReport, setRoomReport] = useState<AcxReport | null>(null);
+  const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
+  const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedChapter = useMemo(
@@ -208,6 +223,7 @@ function ProjectHome({
     setTranscriptText("");
     setNotice(null);
     setChapterText("");
+    setChapterSpans([]);
 
     if (!selectedChapter) {
       return;
@@ -217,8 +233,18 @@ function ProjectHome({
       return;
     }
 
-    void window.boothDesk.readChapterText({ ...envelope, chapterId: selectedChapter.id })
-      .then((result) => setChapterText(result.text))
+    void Promise.all([
+      window.boothDesk.readChapterText({ ...envelope, chapterId: selectedChapter.id }),
+      window.boothDesk.readAlignment({ ...envelope, chapterId: selectedChapter.id }),
+    ])
+      .then(([result, alignment]) => {
+        setChapterText(result.text);
+        setChapterSpans(result.spans);
+        if (alignment && alignment.chapter_id === selectedChapter.id) {
+          setProof({ pickups: alignment.pickups, transcript: alignment.transcript });
+          setTranscriptText(alignment.transcript.map((word) => word.text).join(" "));
+        }
+      })
       .catch((reason: unknown) => setNotice(messageFor(reason, "Could not read the chapter text.")));
   }, [selectedChapter?.id, folder]);
 
@@ -354,6 +380,7 @@ function ProjectHome({
         onChange({ folder, project: addChapter(project, chapter) });
         setSelectedChapterId(chapter.id);
         setChapterText(pastedText);
+        setChapterSpans([{ text: pastedText, seat: "narration", style: [] }]);
       }
       setPastedText("");
       setComposerOpen(false);
@@ -416,6 +443,25 @@ function ProjectHome({
     });
   }
 
+  async function runRoomCheck() {
+    if (!project.room_test_path || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Record a room test before measuring it.");
+      return;
+    }
+    await runAction("room-meter", async () => {
+      const decoded = await window.boothDesk?.decodeAudio({ folder, relativePath: project.room_test_path as string });
+      if (!decoded) {
+        return;
+      }
+      setRoomReport(measurePcm({
+        samples: float32FromBase64(decoded.pcmBase64),
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+        format: decoded.format,
+      }));
+    });
+  }
+
   async function runProof(chapter: ChapterFile) {
     if (!chapter.audio_path) {
       setNotice("Attach the chapter audio before proofing.");
@@ -455,6 +501,15 @@ function ProjectHome({
         durationSeconds: duration || 1,
       });
       setProof({ pickups: result.pickups, transcript });
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const saved = await window.boothDesk.saveAlignment({
+          ...envelope,
+          chapterId: chapter.id,
+          pickups: result.pickups,
+          transcript,
+        });
+        onChange(saved);
+      }
       setNotice(
         result.pickups.length === 0
           ? "No word mismatches found in this transcript. Listen once for acting and noise."
@@ -486,6 +541,59 @@ function ProjectHome({
       if (result) {
         setExportResult(result);
         setNotice(`ACX pack written to ${result.folder}. Review REPORT.txt and listen once.`);
+      }
+    });
+  }
+
+  async function exportMarkers() {
+    if (!selectedChapter || !proof) {
+      setNotice("Run Proof chapter first so there are pickups to export.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Marker export is available in the desktop app.");
+      return;
+    }
+    await runAction("markers", async () => {
+      const result = await window.boothDesk?.exportMarkers({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        pickups: proof.pickups,
+      });
+      if (result) {
+        setNotice(`Audacity and Reaper markers written to ${result.folder}.`);
+      }
+    });
+  }
+
+  async function saveRecordedWav(
+    wavBase64: string,
+    kind: "chapter" | "punch" | "room" = "chapter",
+    pickupId?: string,
+  ) {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      throw new Error("Recording save is available in the desktop app.");
+    }
+    if (kind !== "room" && !selectedChapter) {
+      throw new Error("Choose a chapter before recording.");
+    }
+    await runAction(`recording-${kind}`, async () => {
+      const result = await window.boothDesk?.saveRecordingWav({
+        ...envelope,
+        kind,
+        chapterId: selectedChapter?.id,
+        pickupId,
+        wavBase64,
+      });
+      if (result) {
+        onChange(result);
+        setNotice(
+          kind === "punch"
+            ? `Punch clip saved to ${result.path}. The original chapter audio is unchanged.`
+            : kind === "room"
+              ? `Room test saved to ${result.path}.`
+              : `Chapter WAV saved and attached at ${result.path}.`,
+        );
       }
     });
   }
@@ -544,6 +652,28 @@ function ProjectHome({
           `${lightPack ? "Light " : "Full "}collaborator pack written: ${result.outputPath} `
           + `(${result.fileCount} files).`,
         );
+      }
+    });
+  }
+
+  async function changeProjectMode(mode: "solo" | "duet") {
+    await runAction("mode", async () => {
+      await persistProject({ ...project, mode, updated_at: new Date().toISOString() });
+      setNotice(mode === "duet"
+        ? "Duet mode is on: N1 and N2 keep their voices inside every POV."
+        : "Solo mode is on: all spans default to narration.");
+    });
+  }
+
+  async function shareSeatPack(seat: "N1" | "N2") {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Seat-pack export is available in the desktop app.");
+      return;
+    }
+    await runAction(`seat-pack-${seat}`, async () => {
+      const result = await window.boothDesk?.shareSeatPack({ ...envelope, seat });
+      if (result) {
+        setNotice(`${seat} seat pack written to ${result.outputPath} (${result.fileCount} files).`);
       }
     });
   }
@@ -778,6 +908,9 @@ function ProjectHome({
             >
               {busyAction === "share" ? "Preparing ZIP…" : "Share project ZIP"}
             </button>
+            <button className="compact-button" type="button" onClick={() => setRoomTestOpen(true)}>
+              Room test
+            </button>
           </div>
         </div>
 
@@ -795,6 +928,28 @@ function ProjectHome({
             </button>
           ))}
         </nav>
+
+        {roomTestOpen ? (
+          <section className="phase-panel room-test-panel" aria-labelledby="room-test-title">
+            <header className="panel-heading">
+              <div>
+                <p className="card-kicker">Before recording a book</p>
+                <h3 id="room-test-title">Room test</h3>
+              </div>
+              <button className="table-action" type="button" onClick={() => setRoomTestOpen(false)}>Close</button>
+            </header>
+            <p className="panel-honesty">Record 10–20 seconds of intended silence. If the predicted floor fails after the RMS boost, treat the room; no plugin can save a bathroom.</p>
+            <RecorderPanel
+              label="Room tone recorder"
+              disabled={!window.boothDesk || busyAction !== null}
+              onSave={(wav) => saveRecordedWav(wav, "room")}
+            />
+            <button className="compact-button room-check-button" type="button" disabled={!project.room_test_path || busyAction !== null} onClick={() => void runRoomCheck()}>
+              {busyAction === "room-meter" ? "Measuring…" : "Measure room floor"}
+            </button>
+            {roomReport ? <AcxMeter report={roomReport} /> : null}
+          </section>
+        ) : null}
 
         {activePanel === "glossary" ? (
           <GlossaryPanel
@@ -831,6 +986,8 @@ function ProjectHome({
             onSaveNote={() => void saveNote()}
             onStatus={(status) => void changeAuthorStatus(status)}
             onSelectChapter={setSelectedChapterId}
+            onMode={(mode) => void changeProjectMode(mode)}
+            onSeatPack={(seat) => void shareSeatPack(seat)}
           />
         ) : project.chapters.length === 0 ? (
           <div className="empty-chapters">
@@ -876,6 +1033,12 @@ function ProjectHome({
                 onMeasure={() => void runAcxCheck(selectedChapter)}
                 onPlayPickup={playPickup}
                 onManage={() => setChapterManagerOpen(true)}
+                onExportMarkers={() => void exportMarkers()}
+                onOpenTeleprompter={() => setTeleprompterOpen(true)}
+                onSaveRecording={(wavBase64) => saveRecordedWav(wavBase64, "chapter")}
+                onPunchPickup={setPunchPickup}
+                pickupSeatFilter={pickupSeatFilter}
+                onPickupSeatFilter={setPickupSeatFilter}
               />
             ) : null}
           </div>
@@ -922,9 +1085,345 @@ function ProjectHome({
         />
       ) : null}
 
+      {teleprompterOpen && selectedChapter ? (
+        <Teleprompter
+          title={selectedChapter.title}
+          spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
+          glossary={project.glossary ?? []}
+          fontSize={promptFontSize}
+          theme={promptTheme}
+          onFontSize={setPromptFontSize}
+          onTheme={setPromptTheme}
+          onClose={() => setTeleprompterOpen(false)}
+        />
+      ) : null}
+
+      {punchPickup ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="punch-title">
+            <p className="phase-label">One-line punch clip</p>
+            <h2 id="punch-title">{punchPickup.expected || "Pickup"}</h2>
+            <p className="manager-help">Record the replacement line. Booth Desk saves a separate WAV; the original chapter take remains untouched.</p>
+            <RecorderPanel
+              label={`Punch at ${formatTime(punchPickup.t_start)}`}
+              disabled={!window.boothDesk || busyAction !== null}
+              onSave={async (wav) => {
+                await saveRecordedWav(wav, "punch", punchPickup.id);
+                setPunchPickup(null);
+              }}
+            />
+            <div className="actions"><button className="secondary-button" type="button" onClick={() => setPunchPickup(null)}>Cancel</button></div>
+          </section>
+        </div>
+      ) : null}
+
       <footer>Project data is stored in this folder · schema {project.schema}</footer>
     </main>
   );
+}
+
+function Teleprompter({
+  title,
+  spans,
+  glossary,
+  fontSize,
+  theme,
+  onFontSize,
+  onTheme,
+  onClose,
+}: {
+  title: string;
+  spans: ScriptSpan[];
+  glossary: import("../core/project/types").GlossaryEntry[];
+  fontSize: number;
+  theme: PromptTheme;
+  onFontSize: (value: number) => void;
+  onTheme: (value: PromptTheme) => void;
+  onClose: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const lines = useMemo(() => buildPromptLines(spans), [spans]);
+  const [liveFlags, setLiveFlags] = useState(false);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      } else if (event.key === " " || event.key === "PageDown") {
+        event.preventDefault();
+        scrollRef.current?.scrollBy({ top: Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
+      } else if (event.key === "PageUp") {
+        event.preventDefault();
+        scrollRef.current?.scrollBy({ top: -Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className={`teleprompter-overlay teleprompter-${theme}`}>
+      <header className="teleprompter-toolbar">
+        <div>
+          <p className="card-kicker">Manual scroll · human voice</p>
+          <h2>{title}</h2>
+        </div>
+        <div className="teleprompter-controls">
+          <label>Size <input type="range" min="20" max="96" step="1" value={fontSize} onChange={(event) => onFontSize(clampFontSize(Number(event.target.value)))} /></label>
+          <label>Theme
+            <select value={theme} onChange={(event) => onTheme(event.target.value as PromptTheme)}>
+              <option value="dark">Dark</option>
+              <option value="sepia">Sepia</option>
+              <option value="cream">Cream</option>
+            </select>
+          </label>
+          <label className="teleprompter-checkbox"><input type="checkbox" checked={liveFlags} onChange={(event) => setLiveFlags(event.target.checked)} /> Live flags</label>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </header>
+      <div className="teleprompter-honesty">
+        {liveFlags
+          ? "Live flags are experimental and high-precision only; manual scrolling remains in control."
+          : "Live flags are off. Space/PageDown scrolls; listen to the take for acting, clicks, and room tone."}
+      </div>
+      <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
+        <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
+          {lines.map((line) => (
+            <p key={line.index} className="teleprompter-line">
+              {line.segments.map((segment, index) => (
+                <span
+                  key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
+                  className={segment.glossary_id ? "prompt-glossary-word" : undefined}
+                  title={segment.glossary_id ? glossary.find((entry) => entry.id === segment.glossary_id)?.respell ?? "Glossary candidate" : undefined}
+                  style={{
+                    fontWeight: segment.style.includes("bold") ? 700 : undefined,
+                    fontStyle: segment.style.includes("italic") ? "italic" : undefined,
+                    textDecoration: segment.style.includes("underline") ? "underline" : undefined,
+                    background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+                    color: segment.seat === "N1" ? "#d88a64" : segment.seat === "N2" ? "#82a9d7" : undefined,
+                  }}
+                >{segment.text}</span>
+              ))}
+            </p>
+          ))}
+        </article>
+      </div>
+    </div>
+  );
+}
+
+function RecorderPanel({
+  label,
+  disabled,
+  onSave,
+}: {
+  label: string;
+  disabled: boolean;
+  onSave: (wavBase64: string) => Promise<void>;
+}) {
+  const [status, setStatus] = useState<"idle" | "recording" | "paused" | "processing" | "error">("idle");
+  const [seconds, setSeconds] = useState(0);
+  const [level, setLevel] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const startedAtRef = useRef(0);
+  const pausedAtRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  const levelTimerRef = useRef<number | null>(null);
+  const monitorContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+    }
+    if (levelTimerRef.current !== null) {
+      window.clearInterval(levelTimerRef.current);
+    }
+    recorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    void monitorContextRef.current?.close();
+  }, []);
+
+  async function start() {
+    if (disabled || status === "recording" || status === "processing") {
+      return;
+    }
+    setError(null);
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("This desktop build does not expose a microphone input.");
+      }
+      if (typeof MediaRecorder === "undefined") {
+        throw new Error("This desktop build does not expose a local recorder.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
+        .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        void finishRecording(mimeType || "audio/webm");
+      };
+      recorder.start(250);
+      startedAtRef.current = performance.now();
+      pausedAtRef.current = 0;
+      setSeconds(0);
+      setStatus("recording");
+      timerRef.current = window.setInterval(() => {
+        setSeconds((performance.now() - startedAtRef.current - pausedAtRef.current) / 1000);
+      }, 100);
+      const monitorContext = new AudioContext();
+      monitorContextRef.current = monitorContext;
+      const source = monitorContext.createMediaStreamSource(stream);
+      const analyser = monitorContext.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const values = new Uint8Array(analyser.fftSize);
+      levelTimerRef.current = window.setInterval(() => {
+        analyser.getByteTimeDomainData(values);
+        let peak = 0;
+        for (const value of values) {
+          peak = Math.max(peak, Math.abs(value - 128) / 128);
+        }
+        setLevel(Math.min(1, peak));
+      }, 80);
+    } catch (reason) {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      setStatus("error");
+      setError(messageFor(reason, "Microphone permission or recording failed."));
+    }
+  }
+
+  function pause() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "recording") {
+      return;
+    }
+    recorder.pause();
+    pausedAtRef.current = performance.now();
+    setStatus("paused");
+  }
+
+  function resume() {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state !== "paused") {
+      return;
+    }
+    pausedAtRef.current = performance.now() - pausedAtRef.current;
+    recorder.resume();
+    setStatus("recording");
+  }
+
+  function stop() {
+    const recorder = recorderRef.current;
+    if (!recorder || (recorder.state !== "recording" && recorder.state !== "paused")) {
+      return;
+    }
+    recorder.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (levelTimerRef.current !== null) {
+      window.clearInterval(levelTimerRef.current);
+      levelTimerRef.current = null;
+    }
+    setStatus("processing");
+  }
+
+  async function finishRecording(mimeType: string) {
+    try {
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const arrayBuffer = await blob.arrayBuffer();
+      const context = new AudioContext();
+      const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
+      const mono = resampleAudioBufferToMono(decoded, 44_100);
+      await context.close();
+      await onSave(bytesToBase64(encodeWavPcm16(mono, 44_100, 1)));
+      setStatus("idle");
+      setLevel(0);
+    } catch (reason) {
+      setStatus("error");
+      setError(messageFor(reason, "Could not convert the take to a WAV."));
+    } finally {
+      recorderRef.current = null;
+      streamRef.current = null;
+      chunksRef.current = [];
+      void monitorContextRef.current?.close();
+      monitorContextRef.current = null;
+    }
+  }
+
+  return (
+    <section className="recorder-panel" aria-label={label}>
+      <div className="recorder-heading">
+        <div>
+          <p className="card-kicker">DIY only · local microphone</p>
+          <h4>{label}</h4>
+        </div>
+        <time>{formatTime(seconds)}</time>
+      </div>
+      <div className="level-track" aria-label={`recording level ${Math.round(level * 100)} percent`}>
+        <span style={{ width: `${Math.round(level * 100)}%` }} />
+      </div>
+      <div className="recorder-actions">
+        <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing"} onClick={() => void start()}>
+          Record
+        </button>
+        <button type="button" disabled={status !== "recording"} onClick={pause}>Pause</button>
+        <button type="button" disabled={status !== "paused"} onClick={resume}>Resume</button>
+        <button type="button" disabled={status !== "recording" && status !== "paused"} onClick={stop}>
+          {status === "processing" ? "Converting…" : "Stop & save WAV"}
+        </button>
+      </div>
+      <p className="recorder-honesty">
+        No mic access is requested until Record. Booth Desk writes a 44.1 kHz mono WAV and leaves DAW multitrack work to Reaper.
+      </p>
+      {error ? <p className="recorder-error">{error}</p> : null}
+    </section>
+  );
+}
+
+function resampleAudioBufferToMono(buffer: AudioBuffer, targetRate: number): Float32Array {
+  if (buffer.length === 0 || buffer.numberOfChannels === 0) {
+    return new Float32Array(1);
+  }
+  const outputLength = Math.max(1, Math.round(buffer.duration * targetRate));
+  const output = new Float32Array(outputLength);
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, index) => buffer.getChannelData(index));
+  const scale = buffer.sampleRate / targetRate;
+  for (let index = 0; index < outputLength; index += 1) {
+    const sourcePosition = index * scale;
+    const left = Math.min(buffer.length - 1, Math.floor(sourcePosition));
+    const right = Math.min(buffer.length - 1, left + 1);
+    const fraction = sourcePosition - left;
+    let value = 0;
+    for (const channel of channels) {
+      value += (channel[left] * (1 - fraction) + channel[right] * fraction) / channels.length;
+    }
+    output[index] = value;
+  }
+  return output;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(bytes.length, offset + chunkSize)));
+  }
+  return btoa(binary);
 }
 
 function ChapterManager({
@@ -1152,6 +1651,8 @@ function CollaborationPanel({
   onSaveNote,
   onStatus,
   onSelectChapter,
+  onMode,
+  onSeatPack,
 }: {
   project: ProjectFile;
   identity: LocalIdentity | null;
@@ -1173,6 +1674,8 @@ function CollaborationPanel({
   onSaveNote: () => void;
   onStatus: (status: AuthorStatus) => void;
   onSelectChapter: (id: string) => void;
+  onMode: (mode: "solo" | "duet") => void;
+  onSeatPack: (seat: "N1" | "N2") => void;
 }) {
   const selected = project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null;
   const authorCanApprove = Boolean(identity && canApproveChapters(project, identity.personName));
@@ -1227,6 +1730,13 @@ function CollaborationPanel({
 
         <div className="collaboration-card">
           <h4>Share the project</h4>
+          <label>
+            Voice mode
+            <select value={project.mode} onChange={(event) => onMode(event.target.value as "solo" | "duet")}>
+              <option value="solo">Solo narration</option>
+              <option value="duet">Duet · characters keep their narrator</option>
+            </select>
+          </label>
           <label className="checkbox-label">
             <input type="checkbox" checked={lightPack} onChange={(event) => onLightPack(event.target.checked)} />
             Light pack: omit generated exports and unreferenced raw takes
@@ -1235,6 +1745,12 @@ function CollaborationPanel({
           <button type="button" disabled={busyAction !== null} onClick={onShare}>
             {busyAction === "share" ? "Preparing ZIP…" : "Zip project for collaborator"}
           </button>
+          {project.mode === "duet" ? (
+            <div className="status-actions">
+              <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N1")}>Export N1 seat pack</button>
+              <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N2")}>Export N2 seat pack</button>
+            </div>
+          ) : null}
         </div>
 
         <div className="collaboration-card chapter-review-card">
@@ -1351,6 +1867,12 @@ function ChapterDesk({
   onMeasure,
   onPlayPickup,
   onManage,
+  onExportMarkers,
+  onOpenTeleprompter,
+  onSaveRecording,
+  onPunchPickup,
+  pickupSeatFilter,
+  onPickupSeatFilter,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -1368,6 +1890,12 @@ function ChapterDesk({
   onMeasure: () => void;
   onPlayPickup: (pickup: Pickup) => void;
   onManage: () => void;
+  onExportMarkers: () => void;
+  onOpenTeleprompter: () => void;
+  onSaveRecording: (wavBase64: string) => Promise<void>;
+  onPunchPickup: (pickup: Pickup) => void;
+  pickupSeatFilter: "all" | "narration" | "N1" | "N2";
+  onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
 }) {
   return (
     <article className="chapter-desk">
@@ -1418,6 +1946,14 @@ function ChapterDesk({
 
       <div className="desk-actions">
         <button
+          className="secondary-button"
+          type="button"
+          disabled={chapterText.trim().length === 0}
+          onClick={onOpenTeleprompter}
+        >
+          Open teleprompter
+        </button>
+        <button
           className="primary-button"
           type="button"
           disabled={!chapter.audio_path || busyAction !== null}
@@ -1435,13 +1971,20 @@ function ChapterDesk({
         </button>
       </div>
 
-      {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} /> : null}
+      <RecorderPanel
+        label="DIY chapter recorder"
+        disabled={!window.boothDesk || busyAction !== null}
+        onSave={onSaveRecording}
+      />
+
+      {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
       {acxReport ? <AcxMeter report={acxReport} /> : null}
     </article>
   );
 }
 
-function PickupList({ pickups, onPlay }: { pickups: Pickup[]; onPlay: (pickup: Pickup) => void }) {
+function PickupList({ pickups, onPlay, onExportMarkers, onPunch, seatFilter, onSeatFilter }: { pickups: Pickup[]; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+  const visiblePickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   return (
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
@@ -1449,15 +1992,29 @@ function PickupList({ pickups, onPlay }: { pickups: Pickup[]; onPlay: (pickup: P
           <p className="card-kicker">Word mismatches only</p>
           <h4 id="pickup-title">Pickups</h4>
         </div>
-        <span className="result-count">{pickups.length} open</span>
+        <div className="result-heading-actions">
+          <label className="pickup-seat-filter">Seat
+            <select value={seatFilter} onChange={(event) => onSeatFilter(event.target.value as "all" | "narration" | "N1" | "N2")}>
+              <option value="all">All</option>
+              <option value="narration">Narration</option>
+              <option value="N1">N1</option>
+              <option value="N2">N2</option>
+            </select>
+          </label>
+          <span className="result-count">{visiblePickups.length} open</span>
+          <button className="table-action" type="button" onClick={onExportMarkers}>Export markers</button>
+        </div>
       </div>
-      {pickups.length === 0 ? (
+      {visiblePickups.length === 0 ? (
         <p className="result-empty">No text mismatches found. Listen once for acting and noise.</p>
       ) : (
         <ul className="pickup-list">
-          {pickups.map((pickup) => (
+          {visiblePickups.map((pickup) => (
             <li key={pickup.id}>
-              <button type="button" onClick={() => onPlay(pickup)}>Play</button>
+              <span className="pickup-actions">
+                <button type="button" onClick={() => onPlay(pickup)}>Play</button>
+                <button type="button" onClick={() => onPunch(pickup)}>Punch</button>
+              </span>
               <time>{formatTime(pickup.t_start)}</time>
               <div>
                 <span className="expected">{pickup.expected || "—"}</span>

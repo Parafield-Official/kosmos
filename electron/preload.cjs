@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld("boothDesk", {
   attachAudio: (payload) => ipcRenderer.invoke("project:attach-audio", payload),
   attachGlossaryClip: (payload) => ipcRenderer.invoke("glossary:attach-clip", payload),
   readChapterText: (payload) => ipcRenderer.invoke("project:chapter-text", payload),
+  saveAlignment: (payload) => ipcRenderer.invoke("project:save-alignment", payload),
+  readAlignment: (payload) => ipcRenderer.invoke("project:read-alignment", payload),
+  exportMarkers: (payload) => ipcRenderer.invoke("project:export-markers", payload),
+  saveRecordingWav: (payload) => ipcRenderer.invoke("recording:save-wav", payload),
   readAudio: (payload) => ipcRenderer.invoke("audio:read", payload),
   decodeAudio: (payload) => ipcRenderer.invoke("audio:decode", payload),
   transcribe: (payload) => ipcRenderer.invoke("proof:transcribe", payload),
@@ -35,6 +39,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   },
   exportAcx: (payload) => ipcRenderer.invoke("acx:export", payload),
   shareZip: (payload) => ipcRenderer.invoke("project:share-zip", payload),
+  shareSeatPack: (payload) => ipcRenderer.invoke("project:share-seat-pack", payload),
   getIdentity: (projectId) => ipcRenderer.invoke("identity:get", { projectId }),
   setIdentity: (identity) => ipcRenderer.invoke("identity:set", identity),
 });
