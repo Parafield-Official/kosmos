@@ -24,11 +24,17 @@ import { assignPickupSeats, assignSpanSeat } from "../core/duet/seats";
 import { buildDuetTimeline } from "../core/duet/timeline";
 import { recordingElapsedSeconds } from "../core/recorder/timing";
 import {
+  bookDashboardStats,
   buildPromptLines,
   clampFontSize,
   createLiveFlagsState,
   dismissLiveFlag,
+  filterPromptChapters,
   recordLiveFlag,
+  promptChapterStatus,
+  readingProgress,
+  relevantPromptGlossary,
+  remainingReadTimeLabel,
   type PromptTheme,
 } from "../core/teleprompter/model";
 import { matchLiveWindow, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
@@ -39,6 +45,7 @@ import type {
   GlossaryEntry,
   Pickup,
   ProjectFile,
+  ProjectPerson,
   ProjectSettings,
   ScriptSpan,
 } from "../core/project/types";
@@ -1228,7 +1235,10 @@ function ProjectHome({
               type="button"
               className={activePanel === tab.id ? "studio-nav-item active" : "studio-nav-item"}
               disabled={busyAction !== null}
-              onClick={() => setActivePanel(tab.id)}
+              onClick={() => {
+                setTeleprompterOpen(false);
+                setActivePanel(tab.id);
+              }}
             >
               <NavIcon name={tab.id} />
               <span>
@@ -1251,7 +1261,10 @@ function ProjectHome({
             type="button"
             className={activePanel === "settings" ? "studio-nav-item active" : "studio-nav-item"}
             disabled={busyAction !== null}
-            onClick={() => setActivePanel("settings")}
+            onClick={() => {
+              setTeleprompterOpen(false);
+              setActivePanel("settings");
+            }}
           >
             <NavIcon name="settings" />
             <span><strong>Settings</strong><em>Booth</em></span>
@@ -1309,6 +1322,14 @@ function ProjectHome({
               onExample={() => void loadExample()}
               onManage={() => setChapterManagerOpen(true)}
               onAssignSpanSeat={(index, seat) => void applySpanSeat(index, seat)}
+              onOpenReview={(id) => {
+                setSelectedChapterId(id);
+                setActivePanel("review");
+              }}
+              onOpenTeleprompter={(id) => {
+                setSelectedChapterId(id);
+                setTeleprompterOpen(true);
+              }}
               onFollowStep={() => {
                 if (project.chapters.length === 0) {
                   setComposerOpen(true);
@@ -1484,14 +1505,20 @@ function ProjectHome({
 
       {teleprompterOpen && selectedChapter ? (
         <Teleprompter
-          key={selectedChapter.id}
+          projectName={project.name}
+          chapter={selectedChapter}
           chapterId={selectedChapter.id}
           title={selectedChapter.title}
           chapters={project.chapters}
+          people={project.people}
           estimatedMinutes={selectedChapter.estimated_duration_minutes}
           notes={(project.chapter_notes ?? []).filter((note) => note.chapter_id === selectedChapter.id)}
           spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
           glossary={project.glossary ?? []}
+          proof={proof}
+          acxReport={acxReport}
+          audioUrl={audioUrl}
+          busyAction={busyAction}
           fontSize={promptFontSize}
           theme={promptTheme}
           onFontSize={setPromptFontSize}
@@ -1499,6 +1526,18 @@ function ProjectHome({
           onPlayGlossary={(entry) => void playGlossaryClip(entry)}
           onSelectChapter={(id) => {
             setSelectedChapterId(id);
+          }}
+          onAttach={(id) => {
+            const chapter = project.chapters.find((item) => item.id === id);
+            if (chapter) void attachAudio(chapter);
+          }}
+          onProof={(id) => {
+            const chapter = project.chapters.find((item) => item.id === id);
+            if (chapter) void runProof(chapter);
+          }}
+          onCheckAudio={(id) => {
+            const chapter = project.chapters.find((item) => item.id === id);
+            if (chapter) void runAcxCheck(chapter);
           }}
           onReview={() => {
             setTeleprompterOpen(false);
@@ -1575,35 +1614,55 @@ function ProjectHome({
 }
 
 function Teleprompter({
+  projectName,
+  chapter,
   chapterId,
   title,
   chapters,
+  people,
   estimatedMinutes,
   notes,
   spans,
   glossary,
+  proof,
+  acxReport,
+  audioUrl,
+  busyAction,
   fontSize,
   theme,
   onFontSize,
   onTheme,
   onPlayGlossary,
   onSelectChapter,
+  onAttach,
+  onProof,
+  onCheckAudio,
   onReview,
   onClose,
 }: {
+  projectName: string;
+  chapter: ChapterFile;
   chapterId: string;
   title: string;
   chapters: ChapterFile[];
+  people: ProjectPerson[];
   estimatedMinutes?: number;
   notes: ChapterNote[];
   spans: ScriptSpan[];
   glossary: GlossaryEntry[];
+  proof: ProofResult | null;
+  acxReport: AcxReport | null;
+  audioUrl: string | null;
+  busyAction: string | null;
   fontSize: number;
   theme: PromptTheme;
   onFontSize: (value: number) => void;
   onTheme: (value: PromptTheme) => void;
   onPlayGlossary: (entry: GlossaryEntry) => void;
   onSelectChapter: (id: string) => void;
+  onAttach: (chapterId: string) => void;
+  onProof: (chapterId: string) => void;
+  onCheckAudio: (chapterId: string) => void;
   onReview: () => void;
   onClose: () => void;
 }) {
@@ -1624,19 +1683,47 @@ function Teleprompter({
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
   const [highlightLine, setHighlightLine] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [materialsTab, setMaterialsTab] = useState<"words" | "notes">("words");
+  const [materialsTab, setMaterialsTab] = useState<"chapter" | "manuscript" | "voices" | "words" | "notes">("chapter");
+  const [chapterFilter, setChapterFilter] = useState("");
+  const [chaptersOpen, setChaptersOpen] = useState(true);
+  const [materialsOpen, setMaterialsOpen] = useState(true);
+  const [mode, setMode] = useState<"narrate" | "proof">("narrate");
+  const [readingFont, setReadingFont] = useState<"serif" | "sans" | "hyperlegible">("serif");
+  const [lineSpacing, setLineSpacing] = useState(1.55);
+  const [progress, setProgress] = useState(0);
   const wordCount = useMemo(
     () => (spans.map((span) => span.text).join(" ").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length,
     [spans],
   );
-  const remainingLabel = useMemo(() => {
-    const minutes = estimatedMinutes && estimatedMinutes > 0 ? estimatedMinutes : wordCount / 155;
-    if (!minutes || minutes < 1) {
-      return "Under a minute";
-    }
-    return `${Math.max(1, Math.round(minutes))}m left`;
-  }, [estimatedMinutes, wordCount]);
+  const totalMinutes = estimatedMinutes && estimatedMinutes > 0 ? estimatedMinutes : wordCount / 155;
+  const remainingLabel = useMemo(
+    () => remainingReadTimeLabel(totalMinutes, progress),
+    [progress, totalMinutes],
+  );
+  const filteredChapters = useMemo(
+    () => filterPromptChapters(chapters, chapterFilter),
+    [chapters, chapterFilter],
+  );
+  const orderedChapters = useMemo(() => filterPromptChapters(chapters, ""), [chapters]);
+  const currentChapterPosition = orderedChapters.findIndex((item) => item.id === chapterId);
+  const previousChapter = currentChapterPosition > 0 ? orderedChapters[currentChapterPosition - 1] : null;
+  const nextChapter = currentChapterPosition >= 0 && currentChapterPosition < orderedChapters.length - 1
+    ? orderedChapters[currentChapterPosition + 1]
+    : null;
+  const chapterGlossary = useMemo(() => relevantPromptGlossary(spans, glossary), [glossary, spans]);
+  const chapterExcerpt = useMemo(() => {
+    const clean = spans.map((span) => span.text).join(" ").replace(/\s+/g, " ").trim();
+    return clean.length > 260 ? `${clean.slice(0, 257).trimEnd()}…` : clean;
+  }, [spans]);
+  const voiceCounts = useMemo(() => spans.reduce<Record<string, number>>((counts, span) => {
+    const key = span.seat === "narration" ? "Narration" : span.seat === "N1" ? "Narrator 1" : "Narrator 2";
+    counts[key] = (counts[key] ?? 0) + (span.text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length;
+    return counts;
+  }, {}), [spans]);
+  const currentChapterStatus = promptChapterStatus(chapter);
+  const savedPositionKey = `booth-desk:teleprompter-position:${chapterId}`;
   const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
+  const positionRestoreRef = useRef(false);
   const liveStateRef = useRef(liveState);
   const liveEnabledRef = useRef(false);
   const liveStreamRef = useRef<MediaStream | null>(null);
@@ -1657,6 +1744,42 @@ function Teleprompter({
   useEffect(() => {
     liveStateRef.current = liveState;
   }, [liveState]);
+
+  useEffect(() => {
+    let saved = 0;
+    try {
+      const candidate = Number(window.localStorage.getItem(savedPositionKey));
+      saved = Number.isFinite(candidate) ? Math.min(1, Math.max(0, candidate)) : 0;
+    } catch {
+      saved = 0;
+    }
+    setProgress(saved);
+    positionRestoreRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      if (container) {
+        const maximum = Math.max(0, container.scrollHeight - container.clientHeight);
+        container.scrollTop = maximum * saved;
+      }
+      positionRestoreRef.current = false;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [lines.length, savedPositionKey]);
+
+  function trackReadingProgress() {
+    const container = scrollRef.current;
+    if (!container || positionRestoreRef.current) {
+      return;
+    }
+    const next = readingProgress(container.scrollTop, container.scrollHeight, container.clientHeight);
+    setProgress(next);
+    try {
+      window.localStorage.setItem(savedPositionKey, String(next));
+    } catch {
+      // Reading position is a convenience; the teleprompter remains usable
+      // when local storage is unavailable.
+    }
+  }
 
   useEffect(() => {
     if (!liveState.enabled) {
@@ -1690,6 +1813,14 @@ function Teleprompter({
   }
 
   useEffect(() => () => stopLiveCapture(), []);
+
+  useEffect(() => {
+    stopLiveCapture();
+    setLiveFlag(null);
+    setLiveCursor(0);
+    setLiveError(null);
+    setGlossaryHint(null);
+  }, [chapterId]);
 
   async function transcribeLiveWindow(samples: Float32Array, sampleRate: number, startSeconds: number) {
     const bridge = window.boothDesk;
@@ -1897,165 +2028,249 @@ function Teleprompter({
   }, [onClose]);
 
   return (
-    <div className={`booth-stage teleprompter-${theme}`}>
-      <aside className="booth-chapters" aria-label="Chapters">
-        <p className="booth-chapters-kicker">Chapters</p>
-        <ul>
-          {chapters.map((chapter) => (
-            <li key={chapter.id}>
-              <button
-                type="button"
-                className={chapter.id === chapterId ? "active" : ""}
-                onClick={() => onSelectChapter(chapter.id)}
-              >
-                <strong>{chapter.title}</strong>
-                <em>{String(chapter.index).padStart(2, "0")}</em>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
+      {chaptersOpen ? (
+        <aside className="booth-chapters" aria-label="Book chapters">
+          <header className="booth-rail-heading">
+            <div>
+              <p>Booth Desk</p>
+              <strong>{projectName}</strong>
+            </div>
+            <button type="button" aria-label="Hide chapters" onClick={() => setChaptersOpen(false)}>←</button>
+          </header>
+          <label className="booth-chapter-search">
+            <span>Find a chapter</span>
+            <input value={chapterFilter} onChange={(event) => setChapterFilter(event.target.value)} placeholder="Search chapters" />
+          </label>
+          <p className="booth-chapters-kicker">{filteredChapters.length} of {chapters.length} chapters</p>
+          <ul>
+            {filteredChapters.map((item) => {
+              const status = promptChapterStatus(item);
+              return (
+                <li key={item.id} className={item.id === chapterId ? "active" : ""}>
+                  <button
+                    type="button"
+                    className="booth-chapter-select"
+                    aria-current={item.id === chapterId ? "page" : undefined}
+                    onClick={() => onSelectChapter(item.id)}
+                  >
+                    <em>{String(item.index).padStart(2, "0")}</em>
+                    <strong>{item.title}</strong>
+                    <span className={`booth-chapter-state ${status.tone}`}>{status.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="booth-proof-shortcut"
+                    aria-label={`Open proofing for ${item.title}`}
+                    title="Open proofing"
+                    onClick={() => {
+                      setMode("proof");
+                      onSelectChapter(item.id);
+                    }}
+                  >
+                    Check
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </aside>
+      ) : null}
 
       <div className="booth-stage-main">
         <header className="booth-stage-top">
-          <div>
-            <p className="phase-label">The page</p>
-            <h2>{title}</h2>
+          <div className="booth-breadcrumbs">
+            {!chaptersOpen ? <button type="button" className="booth-icon-button" onClick={() => setChaptersOpen(true)}>Chapters</button> : null}
+            <button type="button" disabled={!previousChapter} aria-label="Previous chapter" onClick={() => previousChapter && onSelectChapter(previousChapter.id)}>‹</button>
+            <div>
+              <span>{projectName}</span>
+              <h2>{title}</h2>
+            </div>
+            <button type="button" disabled={!nextChapter} aria-label="Next chapter" onClick={() => nextChapter && onSelectChapter(nextChapter.id)}>›</button>
           </div>
-          <div className="booth-mode-switch" role="tablist" aria-label="Booth mode">
-            <button type="button" className="active" role="tab" aria-selected="true">Read</button>
-            <button type="button" role="tab" aria-selected="false" onClick={onReview}>Review</button>
+          <div className="booth-top-actions">
+            <div className="booth-mode-switch" role="tablist" aria-label="Teleprompter mode">
+              <button type="button" className={mode === "narrate" ? "active" : ""} role="tab" aria-selected={mode === "narrate"} onClick={() => setMode("narrate")}>Narrate</button>
+              <button type="button" className={mode === "proof" ? "active" : ""} role="tab" aria-selected={mode === "proof"} onClick={() => setMode("proof")}>Proofing</button>
+            </div>
+            <button type="button" className={materialsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={materialsOpen} onClick={() => setMaterialsOpen((open) => !open)}>Materials</button>
+            <button type="button" className="booth-icon-button" onClick={onClose}>Leave</button>
           </div>
         </header>
 
-        <p className="booth-honesty">
-          {liveState.dimmed
-            ? "Word checks paused after a few false alarms."
-            : liveState.enabled
-              ? `${liveStatus === "processing" ? "Checking your words…" : "Checking your words as you read."} Space and PageDown still scroll the page.`
-              : "Start reading to flag words that may not match the page. This does not record your take."}
-          {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
-          {liveStatus === "error" && liveError ? <strong role="alert">{liveError}</strong> : null}
-          {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
-        </p>
+        {mode === "narrate" ? (
+          <>
+            <p className="booth-honesty">
+              {liveState.dimmed
+                ? "Word checks paused after a few false alarms."
+                : liveState.enabled
+                  ? `${liveStatus === "processing" ? "Checking your words…" : "Following your voice and checking each line."} Space and PageDown still move the page.`
+                  : "Start voice follow when you are ready. It listens for your place and possible word changes, but it does not save a recording."}
+              {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
+              {liveStatus === "error" && liveError ? <strong role="alert">{liveError}</strong> : null}
+              {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
+            </p>
 
-        {liveFlag ? (
-          <div className="teleprompter-live-flag" role="alert">
-            <strong>Check this line</strong>
-            <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
-            <button type="button" onClick={() => decideLiveFlag(true)}>Mark as issue</button>
-            <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
-          </div>
-        ) : null}
+            {liveFlag ? (
+              <div className="teleprompter-live-flag" role="alert">
+                <strong>Check this line</strong>
+                <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
+                <button type="button" onClick={() => decideLiveFlag(true)}>Keep for review</button>
+                <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
+              </div>
+            ) : null}
 
-        <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
-          <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
-            {lines.map((line) => (
-              <p
-                key={line.index}
-                ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
-                className={`teleprompter-line${highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
-                aria-current={highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
+            <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0} onScroll={trackReadingProgress}>
+              <article
+                className={`teleprompter-page reading-font-${readingFont}`}
+                style={{ fontSize: `${clampFontSize(fontSize)}px`, lineHeight: lineSpacing }}
               >
-                {line.segments.map((segment, index) => {
-                  const glossaryEntry = segment.glossary_id
-                    ? glossary.find((entry) => entry.id === segment.glossary_id)
-                    : undefined;
-                  return (
-                    <span
-                      key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
-                      className={glossaryEntry ? "prompt-glossary-word" : undefined}
-                      title={glossaryEntry?.respell ?? (glossaryEntry ? "Pronunciation" : undefined)}
-                      role={glossaryEntry ? "button" : undefined}
-                      tabIndex={glossaryEntry ? 0 : undefined}
-                      onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
-                      onKeyDown={glossaryEntry ? (event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          activateGlossary(glossaryEntry);
-                        }
-                      } : undefined}
-                      style={{
-                        fontWeight: segment.style.includes("bold") ? 700 : undefined,
-                        fontStyle: segment.style.includes("italic") ? "italic" : undefined,
-                        textDecoration: segment.style.includes("underline") ? "underline" : undefined,
-                        background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
-                        color: segment.seat === "N1"
-                          ? "#d88a64"
-                          : segment.seat === "N2"
-                            ? "#82a9d7"
-                            : segment.dialogue
-                              ? "#b0834f"
-                              : undefined,
-                      }}
-                    >{segment.text}</span>
-                  );
-                })}
-              </p>
-            ))}
-          </article>
-        </div>
+                {lines.map((line) => (
+                  <p
+                    key={line.index}
+                    ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
+                    className={`teleprompter-line${highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
+                    aria-current={highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
+                  >
+                    {line.segments.map((segment, index) => {
+                      const glossaryEntry = segment.glossary_id
+                        ? glossary.find((entry) => entry.id === segment.glossary_id)
+                        : undefined;
+                      return (
+                        <span
+                          key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
+                          className={glossaryEntry ? "prompt-glossary-word" : undefined}
+                          title={glossaryEntry?.respell ?? (glossaryEntry ? "Pronunciation" : undefined)}
+                          role={glossaryEntry ? "button" : undefined}
+                          tabIndex={glossaryEntry ? 0 : undefined}
+                          onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
+                          onKeyDown={glossaryEntry ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              activateGlossary(glossaryEntry);
+                            }
+                          } : undefined}
+                          style={{
+                            fontWeight: segment.style.includes("bold") ? 700 : undefined,
+                            fontStyle: segment.style.includes("italic") ? "italic" : undefined,
+                            textDecoration: segment.style.includes("underline") ? "underline" : undefined,
+                            background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+                            color: segment.seat === "N1"
+                              ? "#d88a64"
+                              : segment.seat === "N2"
+                                ? "#82a9d7"
+                                : segment.dialogue
+                                  ? "#b0834f"
+                                  : undefined,
+                          }}
+                        >{segment.text}</span>
+                      );
+                    })}
+                  </p>
+                ))}
+                <section className="booth-end-card">
+                  <strong>Finished this chapter?</strong>
+                  <span>Attach the take and check it against the manuscript while the read is still fresh.</span>
+                  <button type="button" className="primary-button" onClick={() => setMode("proof")}>Open proofing</button>
+                </section>
+              </article>
+            </div>
+          </>
+        ) : (
+          <section className="booth-proof-panel" aria-label={`Proofing ${title}`}>
+            <header>
+              <div>
+                <p className="card-kicker">Proofing</p>
+                <h3>{title}</h3>
+                <p>Check the saved take against this chapter, then open the full pickup desk when you need exact edits.</p>
+              </div>
+              <span className={`booth-chapter-state large ${currentChapterStatus.tone}`}>{currentChapterStatus.label}</span>
+            </header>
+            {chapter.audio_path ? (
+              <>
+                {audioUrl ? <audio controls src={audioUrl} preload="metadata" /> : <p className="booth-empty">Loading the attached recording…</p>}
+                <div className="booth-proof-stats">
+                  <article><strong>{proof?.pickups.filter((pickup) => pickup.status === "open").length ?? chapter.open_pickups ?? 0}</strong><span>Open pickups</span></article>
+                  <article><strong>{proof?.pickups.filter((pickup) => pickup.kind !== "pause" && pickup.status === "open").length ?? "—"}</strong><span>Word changes</span></article>
+                  <article><strong>{proof?.pickups.filter((pickup) => pickup.kind === "pause" && pickup.status === "open").length ?? "—"}</strong><span>Long pauses</span></article>
+                  <article><strong>{acxReport ? checkStatusLabel(acxReport.traffic_light) : chapter.acx_traffic_light ? checkStatusLabel(chapter.acx_traffic_light) : "Not checked"}</strong><span>Audio check</span></article>
+                </div>
+                <div className="booth-proof-actions">
+                  <button type="button" className="primary-button" disabled={busyAction !== null} onClick={() => onProof(chapterId)}>{busyAction?.startsWith("proof-") ? "Checking…" : "Check this chapter"}</button>
+                  <button type="button" className="secondary-button" disabled={busyAction !== null} onClick={() => onCheckAudio(chapterId)}>{busyAction?.startsWith("meter-") ? "Measuring…" : "Check audio levels"}</button>
+                  <button type="button" className="secondary-button" onClick={onReview}>Open full review</button>
+                </div>
+              </>
+            ) : (
+              <div className="booth-proof-empty">
+                <span aria-hidden="true">♪</span>
+                <h4>No recording attached yet</h4>
+                <p>Add the chapter take, then Booth Desk can find word changes, pauses, and audio issues.</p>
+                <button type="button" className="primary-button" disabled={busyAction !== null} onClick={() => onAttach(chapterId)}>Attach recording</button>
+              </div>
+            )}
+          </section>
+        )}
 
         <footer className="booth-dock">
-          <button className="secondary-button" type="button" onClick={onClose}>Leave</button>
-          <button
-            className="primary-button"
-            type="button"
-            disabled={liveState.dimmed || liveStatus === "starting"}
-            onClick={() => setLiveEnabled(!liveState.enabled)}
-          >
-            {liveState.enabled ? "Stop checking" : "Start reading"}
-          </button>
-          <span className="booth-remaining">{remainingLabel}</span>
-          <div className="booth-font">
+          {mode === "narrate" ? (
+            <button
+              className="primary-button booth-start-button"
+              type="button"
+              disabled={liveState.dimmed || liveStatus === "starting"}
+              onClick={() => setLiveEnabled(!liveState.enabled)}
+            >
+              {liveState.enabled ? "Stop voice follow" : "Start voice follow"}
+            </button>
+          ) : (
+            <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>
+          )}
+          <div className="booth-progress-wrap">
+            <span>{mode === "narrate" ? remainingLabel : currentChapterStatus.label}</span>
+            <div className="booth-progress" role="progressbar" aria-label="Chapter reading progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+              <i style={{ width: `${Math.round(progress * 100)}%` }} />
+            </div>
+          </div>
+          <div className="booth-font" aria-label="Font size">
             <button type="button" aria-label="Smaller type" onClick={() => onFontSize(clampFontSize(fontSize - 4))}>−</button>
             <span>{clampFontSize(fontSize)} pt</span>
             <button type="button" aria-label="Larger type" onClick={() => onFontSize(clampFontSize(fontSize + 4))}>+</button>
           </div>
+          <button type="button" className={highlightLine ? "booth-icon-button active" : "booth-icon-button"} aria-pressed={highlightLine} onClick={() => setHighlightLine((value) => !value)}>Focus line</button>
           <div className="booth-settings-wrap">
-            <button
-              type="button"
-              className={settingsOpen ? "booth-icon-button active" : "booth-icon-button"}
-              aria-expanded={settingsOpen}
-              aria-label="Reading settings"
-              onClick={() => setSettingsOpen((open) => !open)}
-            >
-              Settings
-            </button>
+            <button type="button" className={settingsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>Reading settings</button>
             {settingsOpen ? (
               <div className="booth-settings" role="dialog" aria-label="Reading settings">
+                <p className="card-kicker">Reading font</p>
+                <div className="booth-choice-grid" role="radiogroup" aria-label="Reading font">
+                  {(["serif", "sans", "hyperlegible"] as const).map((value) => (
+                    <button key={value} type="button" role="radio" aria-checked={readingFont === value} className={readingFont === value ? "active" : ""} onClick={() => setReadingFont(value)}>
+                      {value === "serif" ? "Book serif" : value === "sans" ? "Clean sans" : "Hyperlegible"}
+                    </button>
+                  ))}
+                </div>
                 <p className="card-kicker">Theme</p>
-                <div className="booth-theme-grid">
+                <div className="booth-theme-grid" role="radiogroup" aria-label="Reading theme">
                   {(["cream", "sepia", "dark"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={theme === value ? `theme-${value} active` : `theme-${value}`}
-                      onClick={() => onTheme(value)}
-                    >
+                    <button key={value} type="button" role="radio" aria-checked={theme === value} className={theme === value ? `theme-${value} active` : `theme-${value}`} onClick={() => onTheme(value)}>
                       {value === "cream" ? "Cream" : value === "sepia" ? "Sepia" : "Dark"}
                     </button>
                   ))}
                 </div>
+                <p className="card-kicker">Line spacing</p>
+                <div className="booth-choice-grid" role="radiogroup" aria-label="Line spacing">
+                  {[1.35, 1.55, 1.8].map((value) => (
+                    <button key={value} type="button" role="radio" aria-checked={lineSpacing === value} className={lineSpacing === value ? "active" : ""} onClick={() => setLineSpacing(value)}>{value === 1.35 ? "Tight" : value === 1.55 ? "Comfortable" : "Open"}</button>
+                  ))}
+                </div>
                 <label className="booth-toggle">
-                  <span>
-                    <strong>Highlight the current line</strong>
-                    <em>Tint the line word checks are on.</em>
-                  </span>
+                  <span><strong>Highlight the current line</strong><em>Keep your eye on the line voice follow is checking.</em></span>
                   <input type="checkbox" checked={highlightLine} onChange={(event) => setHighlightLine(event.target.checked)} />
                 </label>
                 <label className="booth-toggle">
-                  <span>
-                    <strong>Flag missed words</strong>
-                    <em>Listen-only. Nothing is saved as a take.</em>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={liveState.enabled}
-                    disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"}
-                    onChange={(event) => setLiveEnabled(event.target.checked)}
-                  />
+                  <span><strong>Flag possible word changes</strong><em>Listen-only. The microphone audio is not saved as a take.</em></span>
+                  <input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
                 </label>
               </div>
             ) : null}
@@ -2063,42 +2278,66 @@ function Teleprompter({
         </footer>
       </div>
 
-      <aside className="booth-materials" aria-label="Materials">
-        <div className="booth-materials-tabs">
-          <button type="button" className={materialsTab === "words" ? "active" : ""} onClick={() => setMaterialsTab("words")}>Words</button>
-          <button type="button" className={materialsTab === "notes" ? "active" : ""} onClick={() => setMaterialsTab("notes")}>Notes</button>
-        </div>
-        {materialsTab === "words" ? (
-          glossary.length === 0 ? (
-            <p className="booth-empty">No pronunciation entries yet. Add them in Words.</p>
-          ) : (
-            <ul className="booth-word-list">
-              {glossary.map((entry) => (
-                <li key={entry.id}>
-                  <div>
-                    <strong>{entry.spelling}</strong>
-                    {entry.respell ? <span>{entry.respell}</span> : null}
-                  </div>
-                  <button type="button" disabled={!entry.clip_path} onClick={() => activateGlossary(entry)}>
-                    {entry.clip_path ? "Play" : "No clip"}
-                  </button>
+      {materialsOpen ? (
+        <aside className="booth-materials" aria-label="Materials">
+          <header className="booth-materials-heading">
+            <div><p>Materials</p><strong>{title}</strong></div>
+            <button type="button" aria-label="Close materials" onClick={() => setMaterialsOpen(false)}>×</button>
+          </header>
+          <div className="booth-materials-tabs" role="tablist" aria-label="Chapter materials">
+            {(["chapter", "manuscript", "voices", "words", "notes"] as const).map((tab) => (
+              <button key={tab} type="button" role="tab" aria-selected={materialsTab === tab} className={materialsTab === tab ? "active" : ""} onClick={() => setMaterialsTab(tab)}>
+                {tab === "chapter" ? "Chapter" : tab === "manuscript" ? "Manuscript" : tab === "voices" ? "Voices" : tab === "words" ? "Words" : "Notes"}
+              </button>
+            ))}
+          </div>
+          {materialsTab === "chapter" ? (
+            <div className="booth-material-card">
+              <p className="card-kicker">At a glance</p>
+              <div className="booth-material-stats">
+                <span><strong>{wordCount.toLocaleString()}</strong> words</span>
+                <span><strong>{Math.max(1, Math.round(totalMinutes))}</strong> min</span>
+                <span><strong>{notes.length}</strong> notes</span>
+              </div>
+              <p>{chapterExcerpt || "This chapter has no manuscript text yet."}</p>
+            </div>
+          ) : materialsTab === "manuscript" ? (
+            <div className="booth-material-manuscript">
+              {spans.length === 0 ? <p className="booth-empty">No manuscript text is available for this chapter yet.</p> : spans.map((span, index) => <p key={`${span.text}-${index}`}>{span.text}</p>)}
+            </div>
+          ) : materialsTab === "voices" ? (
+            <ul className="booth-voice-list">
+              {people.length > 0 ? people.map((person) => (
+                <li key={`${person.name}-${person.role}-${person.seat ?? ""}`}>
+                  <span aria-hidden="true">{person.name.slice(0, 1).toUpperCase()}</span>
+                  <div><strong>{person.name}</strong><p>{person.role === "author" ? "Author" : person.seat === "N1" ? "Narrator 1" : person.seat === "N2" ? "Narrator 2" : "Narrator"}</p></div>
                 </li>
+              )) : Object.entries(voiceCounts).map(([voice, count]) => (
+                <li key={voice}><span aria-hidden="true">{voice.slice(-1)}</span><div><strong>{voice}</strong><p>{count.toLocaleString()} words in this chapter</p></div></li>
               ))}
             </ul>
-          )
-        ) : notes.length === 0 ? (
-          <p className="booth-empty">No author notes on this chapter.</p>
-        ) : (
-          <ul className="booth-note-list">
-            {notes.map((note) => (
-              <li key={note.id}>
-                <strong>{note.author}</strong>
-                <p>{note.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
+          ) : materialsTab === "words" ? (
+            chapterGlossary.length === 0 ? (
+              <p className="booth-empty">No pronunciation entries are linked to this chapter yet.</p>
+            ) : (
+              <ul className="booth-word-list">
+                {chapterGlossary.map((entry) => (
+                  <li key={entry.id}>
+                    <div><strong>{entry.spelling}</strong>{entry.respell ? <span>{entry.respell}</span> : null}</div>
+                    <button type="button" disabled={!entry.clip_path && !entry.respell} onClick={() => activateGlossary(entry)}>{entry.clip_path ? "Play" : "Show"}</button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : notes.length === 0 ? (
+            <p className="booth-empty">No author notes on this chapter.</p>
+          ) : (
+            <ul className="booth-note-list">
+              {notes.map((note) => <li key={note.id}><div><strong>{note.author}</strong><p>{note.body}</p></div></li>)}
+            </ul>
+          )}
+        </aside>
+      ) : null}
     </div>
   );
 }
@@ -3005,6 +3244,8 @@ function BookPage({
   onExample,
   onManage,
   onAssignSpanSeat,
+  onOpenReview,
+  onOpenTeleprompter,
   onFollowStep,
 }: {
   project: ProjectFile;
@@ -3021,28 +3262,47 @@ function BookPage({
   onExample: () => void;
   onManage: () => void;
   onAssignSpanSeat: (index: number, seat: "narration" | "N1" | "N2") => void;
+  onOpenReview: (id: string) => void;
+  onOpenTeleprompter: (id: string) => void;
   onFollowStep: () => void;
 }) {
+  const [dashboardTab, setDashboardTab] = useState<"prep" | "proofing">("prep");
+  const [chapterQuery, setChapterQuery] = useState("");
+  const stats = useMemo(() => bookDashboardStats(project.chapters), [project.chapters]);
+  const visibleChapters = useMemo(
+    () => filterPromptChapters(project.chapters, chapterQuery),
+    [chapterQuery, project.chapters],
+  );
+  const selectedWords = useMemo(
+    () => relevantPromptGlossary(spans, project.glossary ?? []),
+    [project.glossary, spans],
+  );
+  const estimatedHours = stats.estimatedMinutes / 60;
   return (
     <div className="book-page">
-      <article className="next-step-card">
-        <div>
-          <p className="card-kicker">Next</p>
-          <h3>{nextStep.label}</h3>
-          <p>{nextStep.detail}</p>
+      <section className="book-dashboard-hero" aria-label="Book overview">
+        <div className="book-dashboard-title">
+          <p className="card-kicker">Uploaded book</p>
+          <h3>{project.name}</h3>
+          <p>{project.author ? `By ${project.author}` : "Ready for author and narrator details"}</p>
         </div>
-        <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onFollowStep}>
-          Continue
-        </button>
-      </article>
+        <dl className="book-dashboard-stats">
+          <div><dt>Chapters</dt><dd>{stats.chapterCount}</dd></div>
+          <div><dt>Words</dt><dd>{stats.wordCount.toLocaleString()}</dd></div>
+          <div><dt>Read time</dt><dd>{estimatedHours >= 1 ? `${estimatedHours.toFixed(1)} hr` : `${Math.max(1, Math.round(stats.estimatedMinutes))} min`}</dd></div>
+          <div><dt>Recorded</dt><dd>{stats.recordedCount}/{stats.chapterCount}</dd></div>
+        </dl>
+        <div className="book-dashboard-next">
+          <div><span>Next step</span><strong>{nextStep.label}</strong><p>{nextStep.detail}</p></div>
+          <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onFollowStep}>Continue the book</button>
+        </div>
+      </section>
 
-      <div className="page-toolbar">
+      <div className="page-toolbar book-dashboard-toolbar">
         <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onPaste}>Paste chapter</button>
-        <button className="primary-button compact-button" type="button" disabled={busyAction !== null} onClick={onImport}>Import manuscript</button>
+        <button className="primary-button compact-button" type="button" disabled={busyAction !== null} onClick={onImport}>Update manuscript</button>
         {project.chapters.length === 0 ? (
-          <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onExample}>
-            {busyAction === "example" ? "Loading example…" : "Try an example chapter"}
-          </button>
+          <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onExample}>{busyAction === "example" ? "Loading example…" : "Try an example chapter"}</button>
         ) : null}
       </div>
 
@@ -3053,33 +3313,113 @@ function BookPage({
           <p>Paste the page or import a manuscript. Recording waits until the words are here.</p>
         </div>
       ) : (
-        <div className="book-split">
-          <ChapterTable
-            chapters={project.chapters}
-            selectedId={selectedChapterId}
-            busyAction={busyAction}
-            onSelect={onSelect}
-            onAttach={onAttach}
-          />
-          {selectedChapter ? (
-            <article className="surface-card chapter-side">
-              <header className="chapter-desk-heading">
-                <div>
-                  <p className="card-kicker">Selected</p>
-                  <h3>{selectedChapter.title}</h3>
+        <>
+          <div className="book-dashboard-tabs" role="tablist" aria-label="Book dashboard view">
+            <button type="button" role="tab" aria-selected={dashboardTab === "prep"} className={dashboardTab === "prep" ? "active" : ""} onClick={() => setDashboardTab("prep")}>Book prep</button>
+            <button type="button" role="tab" aria-selected={dashboardTab === "proofing"} className={dashboardTab === "proofing" ? "active" : ""} onClick={() => setDashboardTab("proofing")}>
+              Proofing {stats.openPickups > 0 ? <span>{stats.openPickups}</span> : null}
+            </button>
+          </div>
+
+          <div className="book-dashboard-layout">
+            <aside className="book-dashboard-chapters" aria-label="Book chapters">
+              <label>
+                <span>Find a chapter</span>
+                <input value={chapterQuery} onChange={(event) => setChapterQuery(event.target.value)} placeholder="Search chapters" />
+              </label>
+              <p>{visibleChapters.length} of {project.chapters.length} chapters</p>
+              <ul>
+                {visibleChapters.map((item) => {
+                  const status = promptChapterStatus(item);
+                  return (
+                    <li key={item.id} className={item.id === selectedChapterId ? "active" : ""}>
+                      <button type="button" className="book-chapter-select" onClick={() => onSelect(item.id)}>
+                        <span>{String(item.index).padStart(2, "0")}</span>
+                        <strong>{item.title}</strong>
+                        <em className={status.tone}>{status.label}</em>
+                      </button>
+                      <div>
+                        <button type="button" disabled={busyAction !== null} onClick={() => onOpenTeleprompter(item.id)}>Read</button>
+                        <button type="button" disabled={busyAction !== null} onClick={() => onOpenReview(item.id)}>Check</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </aside>
+
+            {dashboardTab === "prep" ? (
+              <main className="book-dashboard-content">
+                <section className="book-dashboard-overview">
+                  <p className="card-kicker">Overview</p>
+                  <h3>Prepare once, then stay in the story.</h3>
+                  <p>
+                    This book has {stats.chapterCount} chapter{stats.chapterCount === 1 ? "" : "s"} and {stats.wordCount.toLocaleString()} words.
+                    {stats.recordedCount > 0 ? ` ${stats.recordedCount} chapter${stats.recordedCount === 1 ? " has" : "s have"} a recording attached.` : " Start with the first chapter, check names before the take, and keep proofing beside the page."}
+                  </p>
+                </section>
+
+                {selectedChapter ? (
+                  <section className="book-dashboard-selected">
+                    <header>
+                      <div><p className="card-kicker">Selected chapter</p><h3>{selectedChapter.title}</h3></div>
+                      <div>
+                        <button type="button" className="table-action" onClick={() => onOpenTeleprompter(selectedChapter.id)}>Open teleprompter</button>
+                        <button type="button" className="table-action" disabled={busyAction !== null} onClick={onManage}>Edit chapter</button>
+                      </div>
+                    </header>
+                    <p className="book-dashboard-excerpt">{chapterText || "Loading manuscript…"}</p>
+                    <SpanSeatEditor spans={spans} projectMode={project.mode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
+                  </section>
+                ) : null}
+
+                <div className="book-dashboard-reference-grid">
+                  <section>
+                    <header><div><p className="card-kicker">Words & phrases</p><h3>Pronunciation</h3></div><span>{(project.glossary ?? []).length}</span></header>
+                    {(project.glossary ?? []).length === 0 ? <p>No pronunciation entries yet.</p> : (
+                      <ul>
+                        {(selectedWords.length > 0 ? selectedWords : project.glossary ?? []).slice(0, 6).map((entry) => (
+                          <li key={entry.id}><strong>{entry.spelling}</strong><span>{entry.respell || `${entry.frequency} mention${entry.frequency === 1 ? "" : "s"}`}</span></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                  <section>
+                    <header><div><p className="card-kicker">People</p><h3>Author & voices</h3></div><span>{project.people.length}</span></header>
+                    {project.people.length === 0 ? <p>Add the author and narrator in People.</p> : (
+                      <ul>
+                        {project.people.slice(0, 6).map((person) => (
+                          <li key={`${person.name}-${person.role}-${person.seat ?? ""}`}><strong>{person.name}</strong><span>{person.role === "author" ? "Author" : person.seat === "N1" ? "Narrator 1" : person.seat === "N2" ? "Narrator 2" : "Narrator"}</span></li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
                 </div>
-                <div className="chapter-heading-tools">
-                  <span className={selectedChapter.audio_path ? "status-pill attached" : "status-pill"}>
-                    {selectedChapter.audio_path ? "Take attached" : "No take"}
-                  </span>
-                  <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Edit chapter</button>
-                </div>
-              </header>
-              <p className="manuscript-body">{chapterText || "Loading manuscript…"}</p>
-              <SpanSeatEditor spans={spans} projectMode={project.mode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
-            </article>
-          ) : null}
-        </div>
+              </main>
+            ) : (
+              <main className="book-dashboard-content proofing-dashboard">
+                <section className="proofing-dashboard-summary">
+                  <article><strong>{stats.openPickups}</strong><span>Pickups left</span></article>
+                  <article><strong>{stats.proofedCount}/{stats.chapterCount}</strong><span>Chapters proofed</span></article>
+                  <article><strong>{stats.recordedCount}/{stats.chapterCount}</strong><span>Recordings attached</span></article>
+                </section>
+                <p className="proofing-dashboard-help">Attach each chapter’s take, check it against the manuscript, and keep every pickup tied to the chapter where it belongs.</p>
+                <ul className="proofing-dashboard-list">
+                  {visibleChapters.map((item) => {
+                    const status = promptChapterStatus(item);
+                    return (
+                      <li key={item.id}>
+                        <div><span>{String(item.index).padStart(2, "0")}</span><strong>{item.title}</strong></div>
+                        <em className={status.tone}>{status.label}</em>
+                        <button type="button" disabled={busyAction !== null} onClick={() => item.audio_path ? onOpenReview(item.id) : onAttach(item)}>{item.audio_path ? "Open proofing" : "Attach recording"}</button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </main>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

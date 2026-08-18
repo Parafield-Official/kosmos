@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  bookDashboardStats,
   buildPromptLines,
   clampFontSize,
   createLiveFlagsState,
-  recordLiveFlag,
   dismissLiveFlag,
+  filterPromptChapters,
+  promptChapterStatus,
+  readingProgress,
+  recordLiveFlag,
+  relevantPromptGlossary,
+  remainingReadTimeLabel,
   type PromptSegment,
 } from "./model";
+import type { ChapterFile, GlossaryEntry } from "../project/types";
 
 describe("teleprompter model", () => {
   it("keeps styles, seats, glossary links, and manual line breaks", () => {
@@ -77,4 +84,75 @@ describe("teleprompter model", () => {
     expect(state.falseAlarmCount).toBe(3);
     expect(state.dimmed).toBe(true);
   });
+
+  it("summarizes an uploaded book for the dashboard", () => {
+    const chapters: ChapterFile[] = [
+      chapter({ id: "two", index: 2, word_count: 1_550, estimated_duration_minutes: 10, audio_path: "audio/02.wav", open_pickups: 2 }),
+      chapter({ id: "one", index: 1, word_count: 775, audio_path: "audio/01.wav", open_pickups: 0, acx_traffic_light: "green" }),
+      chapter({ id: "three", index: 3, word_count: 775 }),
+    ];
+
+    expect(bookDashboardStats(chapters)).toEqual({
+      chapterCount: 3,
+      wordCount: 3_100,
+      estimatedMinutes: 20,
+      recordedCount: 2,
+      proofedCount: 1,
+      openPickups: 2,
+    });
+  });
+
+  it("filters chapters by title or padded chapter number and keeps book order", () => {
+    const chapters = [
+      chapter({ id: "three", index: 3, title: "Come Away" }),
+      chapter({ id: "one", index: 1, title: "Tutorial" }),
+      chapter({ id: "two", index: 2, title: "The Shadow" }),
+    ];
+
+    expect(filterPromptChapters(chapters, "shadow").map((item) => item.id)).toEqual(["two"]);
+    expect(filterPromptChapters(chapters, "02").map((item) => item.id)).toEqual(["two"]);
+    expect(filterPromptChapters(chapters, "").map((item) => item.id)).toEqual(["one", "two", "three"]);
+  });
+
+  it("gives chapters plain-language recording and proofing states", () => {
+    expect(promptChapterStatus(chapter({}))).toEqual({ label: "Needs recording", tone: "idle" });
+    expect(promptChapterStatus(chapter({ audio_path: "audio/01.wav" }))).toEqual({ label: "Recorded", tone: "recorded" });
+    expect(promptChapterStatus(chapter({ audio_path: "audio/01.wav", open_pickups: 2 }))).toEqual({ label: "2 pickups", tone: "review" });
+    expect(promptChapterStatus(chapter({ audio_path: "audio/01.wav", open_pickups: 0 }))).toEqual({ label: "Proofed", tone: "ready" });
+  });
+
+  it("keeps materials scoped to words used by the current chapter", () => {
+    const glossary: GlossaryEntry[] = [
+      { id: "elena", spelling: "Elena", respell: "eh-LAY-nah", frequency: 2, source: "auto" },
+      { id: "kael", spelling: "Kael", frequency: 1, source: "user" },
+      { id: "unused", spelling: "Elsewhere", frequency: 4, source: "auto" },
+    ];
+    const spans: PromptSegment[] = [
+      { text: "Elena crossed the bridge. ", seat: "N1", style: [], glossary_id: "elena" },
+      { text: "Kael followed.", seat: "N2", style: [] },
+    ];
+
+    expect(relevantPromptGlossary(spans, glossary).map((entry) => entry.id)).toEqual(["elena", "kael"]);
+  });
+
+  it("turns scroll position into bounded progress and honest time remaining", () => {
+    expect(readingProgress(300, 1_000, 400)).toBe(0.5);
+    expect(readingProgress(-50, 1_000, 400)).toBe(0);
+    expect(readingProgress(2_000, 1_000, 400)).toBe(1);
+    expect(readingProgress(50, 500, 500)).toBe(1);
+    expect(remainingReadTimeLabel(12, 0.25)).toBe("9m left");
+    expect(remainingReadTimeLabel(1, 0.7)).toBe("Under a minute");
+    expect(remainingReadTimeLabel(12, 1)).toBe("Chapter complete");
+  });
 });
+
+function chapter(overrides: Partial<ChapterFile>): ChapterFile {
+  return {
+    id: "chapter",
+    index: 1,
+    title: "Chapter",
+    text_path: "manuscript/chapters/01.json",
+    author_status: "draft",
+    ...overrides,
+  };
+}
