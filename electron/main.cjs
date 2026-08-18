@@ -86,7 +86,7 @@ function createWindow() {
     minWidth: 880,
     minHeight: 620,
     title: "Booth Desk",
-    backgroundColor: "#171614",
+    backgroundColor: "#f3eee6",
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

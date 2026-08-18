@@ -35,6 +35,7 @@ import { matchLiveWindow, type LiveExpectedWord, type LiveMismatch, type LiveMat
 import type {
   AuthorStatus,
   ChapterFile,
+  ChapterNote,
   GlossaryEntry,
   Pickup,
   ProjectFile,
@@ -52,7 +53,16 @@ interface ProofResult {
   transcript: TranscriptWord[];
 }
 
-type ProjectPanel = "chapters" | "glossary" | "collaboration" | "settings";
+type StudioTab = "book" | "record" | "review" | "finish" | "words" | "people" | "settings";
+
+const STUDIO_TABS: Array<{ id: Exclude<StudioTab, "settings">; label: string; hint: string }> = [
+  { id: "book", label: "Book", hint: "Chapters" },
+  { id: "record", label: "Record", hint: "Booth" },
+  { id: "review", label: "Review", hint: "Pickups" },
+  { id: "finish", label: "Finish", hint: "ACX" },
+  { id: "words", label: "Words", hint: "Pronounce" },
+  { id: "people", label: "People", hint: "Roles" },
+];
 
 export function App() {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
@@ -128,16 +138,22 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <AppHeader eyebrow="Audiobook workspace" title="Booth Desk" />
+    <main className="welcome-shell">
+      <header className="welcome-brand">
+        <div className="brand-mark" aria-hidden="true">BD</div>
+        <div>
+          <p className="eyebrow">Local audiobook booth</p>
+          <h1>Booth Desk</h1>
+        </div>
+      </header>
 
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
           <p className="phase-label">Start here</p>
           <h2 id="welcome-title">Make your next chapter sound right.</h2>
           <p className="lede">
-            Bring your manuscript, recordings, notes, and final audio together
-            in one simple book workspace.
+            A quiet desk for one book: manuscript, human recordings, pickups,
+            and the ACX check — all on this computer.
           </p>
 
           <div className="actions" aria-label="Project actions">
@@ -161,25 +177,25 @@ export function App() {
           {error ? <p className="error-note">{error}</p> : null}
         </div>
 
-        <aside className="desk-card" aria-label="Your audiobook workflow">
-          <p className="card-kicker">What you can do</p>
-          <h3>From manuscript to finished audio</h3>
+        <aside className="desk-card" aria-label="Booth workflow">
+          <p className="card-kicker">The path</p>
+          <h3>One chapter at a time</h3>
           <ol>
             <li>
               <span>01</span>
-              Add your manuscript and recordings.
+              Add the page. Record the take.
             </li>
             <li>
               <span>02</span>
-              Review words, pauses, and pickups.
+              Catch missed words and long pauses.
             </li>
             <li>
               <span>03</span>
-              Check the audio before you share it.
+              Check levels, then export the pack.
             </li>
           </ol>
           <p className="honesty-copy">
-            You stay in control of every read and every edit.
+            This app does not read the book for you.
           </p>
         </aside>
       </section>
@@ -219,7 +235,7 @@ function ProjectHome({
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
   const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
-  const [activePanel, setActivePanel] = useState<ProjectPanel>("chapters");
+  const [activePanel, setActivePanel] = useState<StudioTab>("book");
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const [identityName, setIdentityName] = useState("");
@@ -1185,168 +1201,158 @@ function ProjectHome({
     }
   }
 
-  return (
-    <main className="app-shell project-shell">
-      <AppHeader eyebrow="Your book" title={project.name}>
-        <button className="text-button" type="button" disabled={busyAction !== null} onClick={onClose}>
-          Close project
-        </button>
-      </AppHeader>
+  const page = studioPageCopy(activePanel);
+  const nextStep = nextBoothStep(project, selectedChapter, proof);
+  const reviewCount = project.chapters.reduce((sum, chapter) => {
+    if (proof && selectedChapter && chapter.id === selectedChapter.id) {
+      return sum + proof.pickups.filter((pickup) => pickup.status === "open").length;
+    }
+    return sum + (chapter.open_pickups ?? 0);
+  }, 0);
 
-      <section className="book-home" aria-labelledby="book-home-title">
-        <div className="book-home-heading">
+  return (
+    <div className="studio-shell">
+      <aside className="studio-nav" aria-label="Booth">
+        <div className="studio-brand">
+          <div className="brand-mark" aria-hidden="true">BD</div>
           <div>
-            <p className="phase-label">Book</p>
-            <h2 id="book-home-title">
-              {activePanel === "chapters" ? "Chapters" : activePanel === "glossary" ? "Glossary" : activePanel === "collaboration" ? "Collaboration" : "Settings"}
-            </h2>
-          </div>
-          <div className="heading-actions">
-            <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setComposerOpen(true)}>
-              Paste chapter
-            </button>
-            <button
-              className="primary-button compact-button"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => void importChapter()}
-            >
-              Import manuscript
-            </button>
-            <button
-              className="secondary-button compact-button"
-              type="button"
-              disabled={project.chapters.length === 0 || busyAction !== null}
-              onClick={() => void exportAcx()}
-            >
-              {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
-            </button>
-            <button
-              className="compact-button"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => void shareProject()}
-            >
-              {busyAction === "share" ? "Preparing…" : "Share book"}
-            </button>
-            <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setRoomTestOpen(true)}>
-              Room check
-            </button>
+            <p className="studio-brand-kicker">Booth Desk</p>
+            <strong>{project.name}</strong>
           </div>
         </div>
 
-        {notice ? <div className="inline-notice" role="status">{notice}</div> : null}
-
-        <nav className="workspace-tabs" aria-label="Project sections">
-          {(["chapters", "glossary", "collaboration", "settings"] as const).map((panel) => (
+        <nav className="studio-nav-list">
+          {STUDIO_TABS.map((tab) => (
             <button
-              key={panel}
-              className={activePanel === panel ? "active" : ""}
+              key={tab.id}
               type="button"
+              className={activePanel === tab.id ? "studio-nav-item active" : "studio-nav-item"}
               disabled={busyAction !== null}
-              onClick={() => setActivePanel(panel)}
+              onClick={() => setActivePanel(tab.id)}
             >
-              {panel === "chapters" ? "Chapters" : panel === "glossary" ? "Glossary" : panel === "collaboration" ? "Collaboration" : "Settings"}
+              <NavIcon name={tab.id} />
+              <span>
+                <strong>{tab.label}</strong>
+                <em>{tab.hint}</em>
+              </span>
+              {tab.id === "review" && reviewCount > 0 ? (
+                <span className="studio-nav-count">{reviewCount}</span>
+              ) : null}
             </button>
           ))}
         </nav>
 
-        {roomTestOpen ? (
-          <section className="phase-panel room-test-panel" aria-labelledby="room-test-title">
-            <header className="panel-heading">
-              <div>
-                <p className="card-kicker">Before you record</p>
-                <h3 id="room-test-title">Room check</h3>
-              </div>
-              <button className="table-action" type="button" onClick={() => setRoomTestOpen(false)}>Close</button>
-            </header>
-            <p className="panel-honesty">Record 10–20 seconds of silence to check the room before you begin.</p>
-            <RecorderPanel
-              label="Room tone recorder"
-              disabled={!window.boothDesk || busyAction !== null}
-              onSave={(wav) => saveRecordedWav(wav, "room")}
-            />
-            <button className="compact-button room-check-button" type="button" disabled={!project.room_test_path || busyAction !== null} onClick={() => void runRoomCheck()}>
-              {busyAction === "room-meter" ? "Measuring…" : "Measure room floor"}
-            </button>
-            {roomReport ? <RoomTestResult report={roomReport} /> : null}
-          </section>
-        ) : null}
+        <div className="studio-nav-foot">
+          <p className="studio-storage">
+            {project.chapters.length} chapter{project.chapters.length === 1 ? "" : "s"}
+            {project.mode === "duet" ? " · Two voices" : " · Solo"}
+          </p>
+          <button
+            type="button"
+            className={activePanel === "settings" ? "studio-nav-item active" : "studio-nav-item"}
+            disabled={busyAction !== null}
+            onClick={() => setActivePanel("settings")}
+          >
+            <NavIcon name="settings" />
+            <span><strong>Settings</strong><em>Booth</em></span>
+          </button>
+          <button className="studio-nav-item quiet" type="button" disabled={busyAction !== null} onClick={onClose}>
+            <span><strong>Close book</strong></span>
+          </button>
+        </div>
+      </aside>
 
-        {activePanel === "glossary" ? (
-          <GlossaryPanel
-            glossary={project.glossary ?? []}
-            spelling={glossarySpelling}
-            respell={glossaryRespell}
-            busyAction={busyAction}
-            onSpelling={setGlossarySpelling}
-            onRespell={setGlossaryRespell}
-            onAdd={() => void addGlossary()}
-            onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
-            onDelete={(id) => void removeGlossary(id)}
-            onAttachClip={(id) => void attachGlossaryClip(id)}
-            onPlayClip={(entry) => void playGlossaryClip(entry)}
-            onRecordClip={setGlossaryRecording}
-          />
-        ) : activePanel === "collaboration" ? (
-          <CollaborationPanel
-            project={project}
-            identity={identity}
-            identityLoaded={identityLoaded}
-            identityName={identityName}
-            identityRole={identityRole}
-            identitySeat={identitySeat}
-            lightPack={lightPack}
-            chapterNote={chapterNote}
-            selectedChapterId={selectedChapterId}
-            busyAction={busyAction}
-            onIdentityName={setIdentityName}
-            onIdentityRole={setIdentityRole}
-            onIdentitySeat={setIdentitySeat}
-            onLightPack={setLightPack}
-            onChapterNote={setChapterNote}
-            onSaveIdentity={() => void saveLocalIdentity()}
-            onShare={() => void shareProject()}
-            onSaveNote={() => void saveNote()}
-            onStatus={(status) => void changeAuthorStatus(status)}
-            onSelectChapter={setSelectedChapterId}
-            onMode={(mode) => void changeProjectMode(mode)}
-            onSeatPack={(seat) => void shareSeatPack(seat)}
-          />
-        ) : activePanel === "settings" ? (
-          <SettingsPanel
-            settings={projectSettings}
-            busyAction={busyAction}
-            onChange={(patch) => void persistSettings(patch)}
-          />
-        ) : project.chapters.length === 0 ? (
-          <div className="empty-chapters">
-            <div className="empty-icon" aria-hidden="true">+</div>
-            <h3>Drop a manuscript or paste chapter 1.</h3>
-            <p>
-              Start with one plain-text chapter. Voice seats are already in the
-              project model, even for solo narration.
-            </p>
-            <button
-              className="example-button"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => void loadExample()}
-            >
-              {busyAction === "example" ? "Loading example…" : "Try an example chapter"}
-            </button>
+      <div className="studio-main">
+        <header className="studio-topbar">
+          <div>
+            <p className="phase-label">{page.kicker}</p>
+            <h2 id="book-home-title">{page.title}</h2>
+            <p className="studio-lede">{page.lede}</p>
           </div>
-        ) : (
-          <div className="workspace-grid">
-            <ChapterTable
-              chapters={project.chapters}
-              selectedId={selectedChapterId}
+          <div className="studio-top-tools">
+            {project.chapters.length > 0 && (activePanel === "record" || activePanel === "review" || activePanel === "finish") ? (
+              <label className="chapter-switcher">
+                Chapter
+                <select
+                  value={selectedChapterId ?? ""}
+                  disabled={busyAction !== null}
+                  onChange={(event) => setSelectedChapterId(event.target.value)}
+                >
+                  {project.chapters.map((chapter) => (
+                    <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <span className="status-pill attached">
+              {identity ? `${identity.personName} · ${identity.role}` : "Role not set"}
+            </span>
+          </div>
+        </header>
+
+        {notice ? <div className="inline-notice" role="status">{notice}</div> : null}
+
+        <section className="studio-page" aria-labelledby="book-home-title">
+          {activePanel === "book" ? (
+            <BookPage
+              project={project}
+              selectedChapter={selectedChapter}
+              selectedChapterId={selectedChapterId}
+              chapterText={chapterText}
+              spans={chapterSpans}
+              nextStep={nextStep}
               busyAction={busyAction}
               onSelect={setSelectedChapterId}
               onAttach={(chapter) => void attachAudio(chapter)}
+              onPaste={() => setComposerOpen(true)}
+              onImport={() => void importChapter()}
+              onExample={() => void loadExample()}
+              onManage={() => setChapterManagerOpen(true)}
+              onAssignSpanSeat={(index, seat) => void applySpanSeat(index, seat)}
+              onFollowStep={() => {
+                if (project.chapters.length === 0) {
+                  setComposerOpen(true);
+                  return;
+                }
+                if (nextStep.chapterId) {
+                  setSelectedChapterId(nextStep.chapterId);
+                }
+                setActivePanel(nextStep.tab);
+              }}
             />
-            {selectedChapter ? (
-              <ChapterDesk
+          ) : null}
+
+          {activePanel === "record" ? (
+            selectedChapter ? (
+              <RecordPage
+                chapter={selectedChapter}
+                chapterText={chapterText}
+                busyAction={busyAction}
+                audioUrl={audioUrl}
+                audioRef={audioRef}
+                project={project}
+                roomReport={roomReport}
+                roomOpen={roomTestOpen}
+                onToggleRoom={() => setRoomTestOpen((open) => !open)}
+                onMeasureRoom={() => void runRoomCheck()}
+                onSaveRoom={(wav) => saveRecordedWav(wav, "room")}
+                onOpenTeleprompter={() => setTeleprompterOpen(true)}
+                onSaveRecording={(wavBase64) => saveRecordedWav(wavBase64, "chapter")}
+                onAttach={(chapter) => void attachAudio(chapter)}
+                projectMode={project.mode}
+                duetNarrationSeat={duetNarrationSeat}
+                onDuetNarrationSeat={setDuetNarrationSeat}
+                onAttachDuetTrack={(kind) => void attachDuetTrack(kind)}
+                onMixDuet={mixDuetChapter}
+              />
+            ) : (
+              <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
+            )
+          ) : null}
+
+          {activePanel === "review" ? (
+            selectedChapter ? (
+              <ReviewPage
                 chapter={selectedChapter}
                 chapterText={chapterText}
                 transcriptText={transcriptText}
@@ -1355,39 +1361,91 @@ function ProjectHome({
                 audioUrl={audioUrl}
                 audioRef={audioRef}
                 proof={proof}
-                acxReport={acxReport}
                 modelAvailable={modelAvailable}
                 modelProgress={modelProgress}
                 onDownloadModel={() => void downloadWhisperModel()}
                 onProof={() => void runProof(selectedChapter)}
-                onMeasure={() => void runAcxCheck(selectedChapter)}
                 onPlayPickup={playPickup}
-                onManage={() => setChapterManagerOpen(true)}
                 onExportMarkers={() => void exportMarkers()}
-                onOpenTeleprompter={() => setTeleprompterOpen(true)}
-                onSaveRecording={(wavBase64) => saveRecordedWav(wavBase64, "chapter")}
                 onPunchPickup={setPunchPickup}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 pickupSeatFilter={pickupSeatFilter}
                 onPickupSeatFilter={setPickupSeatFilter}
-                spans={chapterSpans}
-                onAssignSpanSeat={(index, seat) => void applySpanSeat(index, seat)}
-                projectMode={project.mode}
-                duetNarrationSeat={duetNarrationSeat}
-                onDuetNarrationSeat={setDuetNarrationSeat}
-                onAttachDuetTrack={(kind) => void attachDuetTrack(kind)}
-                onMixDuet={mixDuetChapter}
               />
-            ) : null}
-          </div>
-        )}
-      </section>
+            ) : (
+              <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
+            )
+          ) : null}
 
-      {exportResult ? (
-        <p className="export-summary">
-          Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} ready
-        </p>
-      ) : null}
+          {activePanel === "finish" ? (
+            selectedChapter ? (
+              <FinishPage
+                chapter={selectedChapter}
+                busyAction={busyAction}
+                acxReport={acxReport}
+                exportResult={exportResult}
+                onMeasure={() => void runAcxCheck(selectedChapter)}
+                onExport={() => void exportAcx()}
+                onShare={() => void shareProject()}
+              />
+            ) : (
+              <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
+            )
+          ) : null}
+
+          {activePanel === "words" ? (
+            <GlossaryPanel
+              glossary={project.glossary ?? []}
+              spelling={glossarySpelling}
+              respell={glossaryRespell}
+              busyAction={busyAction}
+              onSpelling={setGlossarySpelling}
+              onRespell={setGlossaryRespell}
+              onAdd={() => void addGlossary()}
+              onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
+              onDelete={(id) => void removeGlossary(id)}
+              onAttachClip={(id) => void attachGlossaryClip(id)}
+              onPlayClip={(entry) => void playGlossaryClip(entry)}
+              onRecordClip={setGlossaryRecording}
+            />
+          ) : null}
+
+          {activePanel === "people" ? (
+            <CollaborationPanel
+              project={project}
+              identity={identity}
+              identityLoaded={identityLoaded}
+              identityName={identityName}
+              identityRole={identityRole}
+              identitySeat={identitySeat}
+              lightPack={lightPack}
+              chapterNote={chapterNote}
+              selectedChapterId={selectedChapterId}
+              busyAction={busyAction}
+              onIdentityName={setIdentityName}
+              onIdentityRole={setIdentityRole}
+              onIdentitySeat={setIdentitySeat}
+              onLightPack={setLightPack}
+              onChapterNote={setChapterNote}
+              onSaveIdentity={() => void saveLocalIdentity()}
+              onShare={() => void shareProject()}
+              onSaveNote={() => void saveNote()}
+              onStatus={(status) => void changeAuthorStatus(status)}
+              onSelectChapter={setSelectedChapterId}
+              onMode={(mode) => void changeProjectMode(mode)}
+              onSeatPack={(seat) => void shareSeatPack(seat)}
+            />
+          ) : null}
+
+          {activePanel === "settings" ? (
+            <SettingsPanel
+              settings={projectSettings}
+              busyAction={busyAction}
+              onChange={(patch) => void persistSettings(patch)}
+            />
+          ) : null}
+        </section>
+      </div>
 
       {composerOpen ? (
         <ChapterComposer
@@ -1426,8 +1484,12 @@ function ProjectHome({
 
       {teleprompterOpen && selectedChapter ? (
         <Teleprompter
+          key={selectedChapter.id}
           chapterId={selectedChapter.id}
           title={selectedChapter.title}
+          chapters={project.chapters}
+          estimatedMinutes={selectedChapter.estimated_duration_minutes}
+          notes={(project.chapter_notes ?? []).filter((note) => note.chapter_id === selectedChapter.id)}
           spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
           glossary={project.glossary ?? []}
           fontSize={promptFontSize}
@@ -1435,6 +1497,22 @@ function ProjectHome({
           onFontSize={setPromptFontSize}
           onTheme={setPromptTheme}
           onPlayGlossary={(entry) => void playGlossaryClip(entry)}
+          onSelectChapter={(id) => {
+            setSelectedChapterId(id);
+          }}
+          onReview={() => {
+            setTeleprompterOpen(false);
+            setActivePanel("review");
+            if (
+              promptFontSize !== projectSettings.teleprompter_font_size
+              || promptTheme !== projectSettings.teleprompter_theme
+            ) {
+              void persistSettings({
+                teleprompter_font_size: promptFontSize,
+                teleprompter_theme: promptTheme,
+              });
+            }
+          }}
           onClose={() => {
             setTeleprompterOpen(false);
             if (
@@ -1492,13 +1570,16 @@ function ProjectHome({
         </div>
       ) : null}
 
-    </main>
+    </div>
   );
 }
 
 function Teleprompter({
   chapterId,
   title,
+  chapters,
+  estimatedMinutes,
+  notes,
   spans,
   glossary,
   fontSize,
@@ -1506,17 +1587,24 @@ function Teleprompter({
   onFontSize,
   onTheme,
   onPlayGlossary,
+  onSelectChapter,
+  onReview,
   onClose,
 }: {
   chapterId: string;
   title: string;
+  chapters: ChapterFile[];
+  estimatedMinutes?: number;
+  notes: ChapterNote[];
   spans: ScriptSpan[];
-  glossary: import("../core/project/types").GlossaryEntry[];
+  glossary: GlossaryEntry[];
   fontSize: number;
   theme: PromptTheme;
   onFontSize: (value: number) => void;
   onTheme: (value: PromptTheme) => void;
   onPlayGlossary: (entry: GlossaryEntry) => void;
+  onSelectChapter: (id: string) => void;
+  onReview: () => void;
   onClose: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -1534,6 +1622,20 @@ function Teleprompter({
   const [liveCursor, setLiveCursor] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
+  const [highlightLine, setHighlightLine] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [materialsTab, setMaterialsTab] = useState<"words" | "notes">("words");
+  const wordCount = useMemo(
+    () => (spans.map((span) => span.text).join(" ").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length,
+    [spans],
+  );
+  const remainingLabel = useMemo(() => {
+    const minutes = estimatedMinutes && estimatedMinutes > 0 ? estimatedMinutes : wordCount / 155;
+    if (!minutes || minutes < 1) {
+      return "Under a minute";
+    }
+    return `${Math.max(1, Math.round(minutes))}m left`;
+  }, [estimatedMinutes, wordCount]);
   const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
   const liveStateRef = useRef(liveState);
   const liveEnabledRef = useRef(false);
@@ -1795,86 +1897,208 @@ function Teleprompter({
   }, [onClose]);
 
   return (
-    <div className={`teleprompter-overlay teleprompter-${theme}`}>
-      <header className="teleprompter-toolbar">
-        <div>
-          <p className="card-kicker">Teleprompter</p>
-          <h2>{title}</h2>
-        </div>
-        <div className="teleprompter-controls">
-          <label>Size <input type="range" min="20" max="96" step="1" value={fontSize} onChange={(event) => onFontSize(clampFontSize(Number(event.target.value)))} /></label>
-          <label>Theme
-            <select value={theme} onChange={(event) => onTheme(event.target.value as PromptTheme)}>
-              <option value="dark">Dark</option>
-              <option value="sepia">Sepia</option>
-              <option value="cream">Cream</option>
-            </select>
-          </label>
-          <label className="teleprompter-checkbox" title="Get a gentle alert when the words you read may not match the page"><input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} /> Check my words</label>
-          <button type="button" onClick={onClose}>Close</button>
-        </div>
-      </header>
-      <div className="teleprompter-honesty">
-        {liveState.dimmed
-          ? "Word checks paused after a few false alarms."
-          : liveState.enabled
-            ? `${liveStatus === "processing" ? "Checking your words…" : "Checking your words as you read."} Manual scrolling stays in your hands.`
-            : "Turn on word checks if you would like a little help while reading."}
-        {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
-        {liveStatus === "error" && liveError ? <strong className="teleprompter-glossary-hint" role="alert">{liveError}</strong> : null}
-        {glossaryHint ? <strong className="teleprompter-glossary-hint" role="status">{glossaryHint}</strong> : null}
-      </div>
-      {liveFlag ? (
-        <div className="teleprompter-live-flag" role="alert">
-          <strong>Check this line</strong>
-          <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
-          <button type="button" onClick={() => decideLiveFlag(true)}>Mark as issue</button>
-          <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
-        </div>
-      ) : null}
-      <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
-        <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
-          {lines.map((line) => (
-            <p key={line.index} ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }} className={`teleprompter-line${expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`} aria-current={expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}>
-              {line.segments.map((segment, index) => {
-                const glossaryEntry = segment.glossary_id
-                  ? glossary.find((entry) => entry.id === segment.glossary_id)
-                  : undefined;
-                return (
-                  <span
-                    key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
-                    className={glossaryEntry ? "prompt-glossary-word" : undefined}
-                    title={glossaryEntry?.respell ?? (glossaryEntry ? "Glossary candidate" : undefined)}
-                    role={glossaryEntry ? "button" : undefined}
-                    tabIndex={glossaryEntry ? 0 : undefined}
-                    onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
-                    onKeyDown={glossaryEntry ? (event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        activateGlossary(glossaryEntry);
-                      }
-                    } : undefined}
-                    style={{
-                      fontWeight: segment.style.includes("bold") ? 700 : undefined,
-                      fontStyle: segment.style.includes("italic") ? "italic" : undefined,
-                      textDecoration: segment.style.includes("underline") ? "underline" : undefined,
-                      background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
-                      color: segment.seat === "N1"
-                        ? "#d88a64"
-                        : segment.seat === "N2"
-                          ? "#82a9d7"
-                          : segment.dialogue
-                            ? "#b0834f"
-                            : undefined,
-                    }}
-                  >{segment.text}</span>
-                );
-              })}
-            </p>
+    <div className={`booth-stage teleprompter-${theme}`}>
+      <aside className="booth-chapters" aria-label="Chapters">
+        <p className="booth-chapters-kicker">Chapters</p>
+        <ul>
+          {chapters.map((chapter) => (
+            <li key={chapter.id}>
+              <button
+                type="button"
+                className={chapter.id === chapterId ? "active" : ""}
+                onClick={() => onSelectChapter(chapter.id)}
+              >
+                <strong>{chapter.title}</strong>
+                <em>{String(chapter.index).padStart(2, "0")}</em>
+              </button>
+            </li>
           ))}
-        </article>
+        </ul>
+      </aside>
+
+      <div className="booth-stage-main">
+        <header className="booth-stage-top">
+          <div>
+            <p className="phase-label">The page</p>
+            <h2>{title}</h2>
+          </div>
+          <div className="booth-mode-switch" role="tablist" aria-label="Booth mode">
+            <button type="button" className="active" role="tab" aria-selected="true">Read</button>
+            <button type="button" role="tab" aria-selected="false" onClick={onReview}>Review</button>
+          </div>
+        </header>
+
+        <p className="booth-honesty">
+          {liveState.dimmed
+            ? "Word checks paused after a few false alarms."
+            : liveState.enabled
+              ? `${liveStatus === "processing" ? "Checking your words…" : "Checking your words as you read."} Space and PageDown still scroll the page.`
+              : "Start reading to flag words that may not match the page. This does not record your take."}
+          {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
+          {liveStatus === "error" && liveError ? <strong role="alert">{liveError}</strong> : null}
+          {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
+        </p>
+
+        {liveFlag ? (
+          <div className="teleprompter-live-flag" role="alert">
+            <strong>Check this line</strong>
+            <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
+            <button type="button" onClick={() => decideLiveFlag(true)}>Mark as issue</button>
+            <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
+          </div>
+        ) : null}
+
+        <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
+          <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
+            {lines.map((line) => (
+              <p
+                key={line.index}
+                ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
+                className={`teleprompter-line${highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
+                aria-current={highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
+              >
+                {line.segments.map((segment, index) => {
+                  const glossaryEntry = segment.glossary_id
+                    ? glossary.find((entry) => entry.id === segment.glossary_id)
+                    : undefined;
+                  return (
+                    <span
+                      key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
+                      className={glossaryEntry ? "prompt-glossary-word" : undefined}
+                      title={glossaryEntry?.respell ?? (glossaryEntry ? "Pronunciation" : undefined)}
+                      role={glossaryEntry ? "button" : undefined}
+                      tabIndex={glossaryEntry ? 0 : undefined}
+                      onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
+                      onKeyDown={glossaryEntry ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          activateGlossary(glossaryEntry);
+                        }
+                      } : undefined}
+                      style={{
+                        fontWeight: segment.style.includes("bold") ? 700 : undefined,
+                        fontStyle: segment.style.includes("italic") ? "italic" : undefined,
+                        textDecoration: segment.style.includes("underline") ? "underline" : undefined,
+                        background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+                        color: segment.seat === "N1"
+                          ? "#d88a64"
+                          : segment.seat === "N2"
+                            ? "#82a9d7"
+                            : segment.dialogue
+                              ? "#b0834f"
+                              : undefined,
+                      }}
+                    >{segment.text}</span>
+                  );
+                })}
+              </p>
+            ))}
+          </article>
+        </div>
+
+        <footer className="booth-dock">
+          <button className="secondary-button" type="button" onClick={onClose}>Leave</button>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={liveState.dimmed || liveStatus === "starting"}
+            onClick={() => setLiveEnabled(!liveState.enabled)}
+          >
+            {liveState.enabled ? "Stop checking" : "Start reading"}
+          </button>
+          <span className="booth-remaining">{remainingLabel}</span>
+          <div className="booth-font">
+            <button type="button" aria-label="Smaller type" onClick={() => onFontSize(clampFontSize(fontSize - 4))}>−</button>
+            <span>{clampFontSize(fontSize)} pt</span>
+            <button type="button" aria-label="Larger type" onClick={() => onFontSize(clampFontSize(fontSize + 4))}>+</button>
+          </div>
+          <div className="booth-settings-wrap">
+            <button
+              type="button"
+              className={settingsOpen ? "booth-icon-button active" : "booth-icon-button"}
+              aria-expanded={settingsOpen}
+              aria-label="Reading settings"
+              onClick={() => setSettingsOpen((open) => !open)}
+            >
+              Settings
+            </button>
+            {settingsOpen ? (
+              <div className="booth-settings" role="dialog" aria-label="Reading settings">
+                <p className="card-kicker">Theme</p>
+                <div className="booth-theme-grid">
+                  {(["cream", "sepia", "dark"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={theme === value ? `theme-${value} active` : `theme-${value}`}
+                      onClick={() => onTheme(value)}
+                    >
+                      {value === "cream" ? "Cream" : value === "sepia" ? "Sepia" : "Dark"}
+                    </button>
+                  ))}
+                </div>
+                <label className="booth-toggle">
+                  <span>
+                    <strong>Highlight the current line</strong>
+                    <em>Tint the line word checks are on.</em>
+                  </span>
+                  <input type="checkbox" checked={highlightLine} onChange={(event) => setHighlightLine(event.target.checked)} />
+                </label>
+                <label className="booth-toggle">
+                  <span>
+                    <strong>Flag missed words</strong>
+                    <em>Listen-only. Nothing is saved as a take.</em>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={liveState.enabled}
+                    disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"}
+                    onChange={(event) => setLiveEnabled(event.target.checked)}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
+        </footer>
       </div>
+
+      <aside className="booth-materials" aria-label="Materials">
+        <div className="booth-materials-tabs">
+          <button type="button" className={materialsTab === "words" ? "active" : ""} onClick={() => setMaterialsTab("words")}>Words</button>
+          <button type="button" className={materialsTab === "notes" ? "active" : ""} onClick={() => setMaterialsTab("notes")}>Notes</button>
+        </div>
+        {materialsTab === "words" ? (
+          glossary.length === 0 ? (
+            <p className="booth-empty">No pronunciation entries yet. Add them in Words.</p>
+          ) : (
+            <ul className="booth-word-list">
+              {glossary.map((entry) => (
+                <li key={entry.id}>
+                  <div>
+                    <strong>{entry.spelling}</strong>
+                    {entry.respell ? <span>{entry.respell}</span> : null}
+                  </div>
+                  <button type="button" disabled={!entry.clip_path} onClick={() => activateGlossary(entry)}>
+                    {entry.clip_path ? "Play" : "No clip"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : notes.length === 0 ? (
+          <p className="booth-empty">No author notes on this chapter.</p>
+        ) : (
+          <ul className="booth-note-list">
+            {notes.map((note) => (
+              <li key={note.id}>
+                <strong>{note.author}</strong>
+                <p>{note.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
     </div>
   );
 }
@@ -2766,7 +2990,221 @@ function ChapterTable({
   );
 }
 
-function ChapterDesk({
+function BookPage({
+  project,
+  selectedChapter,
+  selectedChapterId,
+  chapterText,
+  spans,
+  nextStep,
+  busyAction,
+  onSelect,
+  onAttach,
+  onPaste,
+  onImport,
+  onExample,
+  onManage,
+  onAssignSpanSeat,
+  onFollowStep,
+}: {
+  project: ProjectFile;
+  selectedChapter: ChapterFile | null;
+  selectedChapterId: string | null;
+  chapterText: string;
+  spans: ScriptSpan[];
+  nextStep: BoothStep;
+  busyAction: string | null;
+  onSelect: (id: string) => void;
+  onAttach: (chapter: ChapterFile) => void;
+  onPaste: () => void;
+  onImport: () => void;
+  onExample: () => void;
+  onManage: () => void;
+  onAssignSpanSeat: (index: number, seat: "narration" | "N1" | "N2") => void;
+  onFollowStep: () => void;
+}) {
+  return (
+    <div className="book-page">
+      <article className="next-step-card">
+        <div>
+          <p className="card-kicker">Next</p>
+          <h3>{nextStep.label}</h3>
+          <p>{nextStep.detail}</p>
+        </div>
+        <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onFollowStep}>
+          Continue
+        </button>
+      </article>
+
+      <div className="page-toolbar">
+        <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onPaste}>Paste chapter</button>
+        <button className="primary-button compact-button" type="button" disabled={busyAction !== null} onClick={onImport}>Import manuscript</button>
+        {project.chapters.length === 0 ? (
+          <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onExample}>
+            {busyAction === "example" ? "Loading example…" : "Try an example chapter"}
+          </button>
+        ) : null}
+      </div>
+
+      {project.chapters.length === 0 ? (
+        <div className="empty-chapters">
+          <div className="empty-icon" aria-hidden="true">+</div>
+          <h3>Add chapter 1</h3>
+          <p>Paste the page or import a manuscript. Recording waits until the words are here.</p>
+        </div>
+      ) : (
+        <div className="book-split">
+          <ChapterTable
+            chapters={project.chapters}
+            selectedId={selectedChapterId}
+            busyAction={busyAction}
+            onSelect={onSelect}
+            onAttach={onAttach}
+          />
+          {selectedChapter ? (
+            <article className="surface-card chapter-side">
+              <header className="chapter-desk-heading">
+                <div>
+                  <p className="card-kicker">Selected</p>
+                  <h3>{selectedChapter.title}</h3>
+                </div>
+                <div className="chapter-heading-tools">
+                  <span className={selectedChapter.audio_path ? "status-pill attached" : "status-pill"}>
+                    {selectedChapter.audio_path ? "Take attached" : "No take"}
+                  </span>
+                  <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Edit chapter</button>
+                </div>
+              </header>
+              <p className="manuscript-body">{chapterText || "Loading manuscript…"}</p>
+              <SpanSeatEditor spans={spans} projectMode={project.mode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
+            </article>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecordPage({
+  chapter,
+  chapterText,
+  busyAction,
+  audioUrl,
+  audioRef,
+  project,
+  roomReport,
+  roomOpen,
+  onToggleRoom,
+  onMeasureRoom,
+  onSaveRoom,
+  onOpenTeleprompter,
+  onSaveRecording,
+  onAttach,
+  projectMode,
+  duetNarrationSeat,
+  onDuetNarrationSeat,
+  onAttachDuetTrack,
+  onMixDuet,
+}: {
+  chapter: ChapterFile;
+  chapterText: string;
+  busyAction: string | null;
+  audioUrl: string | null;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+  project: ProjectFile;
+  roomReport: RoomTestReport | null;
+  roomOpen: boolean;
+  onToggleRoom: () => void;
+  onMeasureRoom: () => void;
+  onSaveRoom: (wav: string) => Promise<unknown>;
+  onOpenTeleprompter: () => void;
+  onSaveRecording: (wavBase64: string) => Promise<unknown>;
+  onAttach: (chapter: ChapterFile) => void;
+  projectMode: "solo" | "duet";
+  duetNarrationSeat: "N1" | "N2";
+  onDuetNarrationSeat: (value: "N1" | "N2") => void;
+  onAttachDuetTrack: (kind: "bed" | "overdub") => void;
+  onMixDuet: () => Promise<void>;
+}) {
+  return (
+    <div className="record-page">
+      <article className="surface-card">
+        <header className="chapter-desk-heading">
+          <div>
+            <p className="card-kicker">Now reading</p>
+            <h3>{chapter.title}</h3>
+          </div>
+          <div className="chapter-heading-tools">
+            <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
+              {chapter.audio_path ? "Take attached" : "No take yet"}
+            </span>
+            <button className="table-action" type="button" disabled={busyAction !== null} onClick={() => onAttach(chapter)}>
+              {chapter.audio_path ? "Replace take" : "Attach take"}
+            </button>
+          </div>
+        </header>
+        {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
+        <p className="manuscript-body tall">{chapterText || "Loading manuscript…"}</p>
+        <div className="desk-actions">
+          <button
+            className="primary-button"
+            type="button"
+            disabled={chapterText.trim().length === 0 || busyAction !== null}
+            onClick={onOpenTeleprompter}
+          >
+            Open the page
+          </button>
+        </div>
+        <RecorderPanel
+          label="Record this chapter"
+          disabled={!window.boothDesk || busyAction !== null}
+          onSave={onSaveRecording}
+        />
+      </article>
+
+      <aside className="record-side">
+        <article className="surface-card">
+          <header className="panel-heading">
+            <div>
+              <p className="card-kicker">Before you record</p>
+              <h3>Room check</h3>
+            </div>
+            <button className="table-action" type="button" onClick={onToggleRoom}>
+              {roomOpen ? "Hide" : project.room_test_path ? "Open" : "Start"}
+            </button>
+          </header>
+          <p className="panel-honesty">Record 10–20 seconds of silence. If the floor is loud, treat the room first.</p>
+          {roomOpen ? (
+            <>
+              <RecorderPanel
+                label="Room tone recorder"
+                disabled={!window.boothDesk || busyAction !== null}
+                onSave={onSaveRoom}
+              />
+              <button className="compact-button room-check-button" type="button" disabled={!project.room_test_path || busyAction !== null} onClick={onMeasureRoom}>
+                {busyAction === "room-meter" ? "Measuring…" : "Measure room floor"}
+              </button>
+            </>
+          ) : null}
+          {roomReport ? <RoomTestResult report={roomReport} /> : null}
+        </article>
+
+        {projectMode === "duet" ? (
+          <DuetTracksPanel
+            chapter={chapter}
+            busyAction={busyAction}
+            narrationSeat={duetNarrationSeat}
+            onNarrationSeat={onDuetNarrationSeat}
+            onAttach={onAttachDuetTrack}
+            onMix={onMixDuet}
+          />
+        ) : null}
+      </aside>
+    </div>
+  );
+}
+
+function ReviewPage({
   chapter,
   chapterText,
   transcriptText,
@@ -2775,28 +3213,16 @@ function ChapterDesk({
   audioUrl,
   audioRef,
   proof,
-  acxReport,
   modelAvailable,
   modelProgress,
   onDownloadModel,
   onProof,
-  onMeasure,
   onPlayPickup,
-  onManage,
   onExportMarkers,
-  onOpenTeleprompter,
-  onSaveRecording,
   onPunchPickup,
   onUpdatePickup,
   pickupSeatFilter,
   onPickupSeatFilter,
-  spans,
-  onAssignSpanSeat,
-  projectMode,
-  duetNarrationSeat,
-  onDuetNarrationSeat,
-  onAttachDuetTrack,
-  onMixDuet,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -2806,125 +3232,157 @@ function ChapterDesk({
   audioUrl: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   proof: ProofResult | null;
-  acxReport: AcxReport | null;
   modelAvailable: boolean | null;
   modelProgress: number;
   onDownloadModel: () => void;
   onProof: () => void;
-  onMeasure: () => void;
   onPlayPickup: (pickup: Pickup) => void;
-  onManage: () => void;
   onExportMarkers: () => void;
-  onOpenTeleprompter: () => void;
-  onSaveRecording: (wavBase64: string) => Promise<unknown>;
   onPunchPickup: (pickup: Pickup) => void;
   onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
-  spans: ScriptSpan[];
-  onAssignSpanSeat: (index: number, seat: "narration" | "N1" | "N2") => void;
-  projectMode: "solo" | "duet";
-  duetNarrationSeat: "N1" | "N2";
-  onDuetNarrationSeat: (value: "N1" | "N2") => void;
-  onAttachDuetTrack: (kind: "bed" | "overdub") => void;
-  onMixDuet: () => Promise<void>;
 }) {
   return (
-    <article className="chapter-desk">
-      <header className="chapter-desk-heading">
-        <div>
-          <p className="card-kicker">Chapter</p>
-          <h3>{chapter.title}</h3>
-        </div>
-        <div className="chapter-heading-tools">
-          <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
-            {chapter.audio_path ? "Audio attached" : "No audio"}
-          </span>
-          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Edit chapter</button>
-        </div>
-      </header>
-
-      {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
-
-      <details className="manuscript-preview">
-        <summary>Manuscript preview</summary>
-        <p>{chapterText || "Loading manuscript…"}</p>
-      </details>
-
-      <SpanSeatEditor spans={spans} projectMode={projectMode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
-
-      <div className="proof-input">
-        <label htmlFor="local-transcript">Transcript</label>
-        <textarea
-          id="local-transcript"
-          rows={4}
-          value={transcriptText}
-          disabled={busyAction !== null}
-          onChange={(event) => onTranscriptChange(event.target.value)}
-          placeholder="Paste the words that were read, or leave blank to transcribe…"
-        />
-        <p>
-          We compare this with the manuscript to find word changes and pauses.
-        </p>
-        {modelAvailable === false ? (
-          <div className="model-note">
-            <span>Speech model is not ready yet.</span>
-            <button type="button" onClick={onDownloadModel} disabled={busyAction !== null}>
-              {busyAction === "model"
-                ? `Downloading ${Math.round(modelProgress * 100)}%…`
-                : "Download speech model"}
-            </button>
+    <div className="review-page">
+      <article className="surface-card">
+        <header className="chapter-desk-heading">
+          <div>
+            <p className="card-kicker">Listen against the page</p>
+            <h3>{chapter.title}</h3>
           </div>
-        ) : null}
-      </div>
+          <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
+            {chapter.audio_path ? "Take ready" : "Need a take"}
+          </span>
+        </header>
+        {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
+        <details className="manuscript-preview">
+          <summary>Manuscript</summary>
+          <p>{chapterText || "Loading manuscript…"}</p>
+        </details>
+        <div className="proof-input">
+          <label htmlFor="local-transcript">Transcript</label>
+          <textarea
+            id="local-transcript"
+            rows={4}
+            value={transcriptText}
+            disabled={busyAction !== null}
+            onChange={(event) => onTranscriptChange(event.target.value)}
+            placeholder="Paste the words that were read, or leave blank to transcribe…"
+          />
+          <p>We compare this with the manuscript to find word changes and pauses.</p>
+          {modelAvailable === false ? (
+            <div className="model-note">
+              <span>Speech model is not ready yet.</span>
+              <button type="button" onClick={onDownloadModel} disabled={busyAction !== null}>
+                {busyAction === "model"
+                  ? `Downloading ${Math.round(modelProgress * 100)}%…`
+                  : "Download speech model"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <div className="desk-actions">
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!chapter.audio_path || busyAction !== null}
+            onClick={onProof}
+          >
+            {busyAction === `proof-${chapter.id}` ? "Checking…" : "Check chapter"}
+          </button>
+        </div>
+      </article>
 
-      <div className="desk-actions">
-        <button
-          className="secondary-button"
-          type="button"
-          disabled={chapterText.trim().length === 0 || busyAction !== null}
-          onClick={onOpenTeleprompter}
-        >
-          Open teleprompter
-        </button>
-        <button
-          className="primary-button"
-          type="button"
-          disabled={!chapter.audio_path || busyAction !== null}
-          onClick={onProof}
-        >
-          {busyAction === `proof-${chapter.id}` ? "Checking…" : "Check chapter"}
-        </button>
-        <button
-          className="secondary-button"
-          type="button"
-          disabled={!chapter.audio_path || busyAction !== null}
-          onClick={onMeasure}
-        >
-          {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
-        </button>
-      </div>
-
-      <RecorderPanel
-        label="Record this chapter"
-        disabled={!window.boothDesk || busyAction !== null}
-        onSave={onSaveRecording}
-      />
-
-      {projectMode === "duet" ? (
-        <DuetTracksPanel
-          chapter={chapter}
+      {proof ? (
+        <PickupList
+          pickups={proof.pickups}
           busyAction={busyAction}
-          narrationSeat={duetNarrationSeat}
-          onNarrationSeat={onDuetNarrationSeat}
-          onAttach={onAttachDuetTrack}
-          onMix={onMixDuet}
+          onPlay={onPlayPickup}
+          onExportMarkers={onExportMarkers}
+          onPunch={onPunchPickup}
+          onUpdate={onUpdatePickup}
+          seatFilter={pickupSeatFilter}
+          onSeatFilter={onPickupSeatFilter}
         />
-      ) : null}
+      ) : (
+        <div className="empty-chapters compact">
+          <h3>No review yet</h3>
+          <p>Check the chapter after you have a take. Pickups will land here.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {proof ? <PickupList pickups={proof.pickups} busyAction={busyAction} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} onUpdate={onUpdatePickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
-      {acxReport ? <AcxMeter report={acxReport} /> : null}
-    </article>
+function FinishPage({
+  chapter,
+  busyAction,
+  acxReport,
+  exportResult,
+  onMeasure,
+  onExport,
+  onShare,
+}: {
+  chapter: ChapterFile;
+  busyAction: string | null;
+  acxReport: AcxReport | null;
+  exportResult: AcxExportResult | null;
+  onMeasure: () => void;
+  onExport: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <div className="finish-page">
+      <article className="surface-card">
+        <header className="chapter-desk-heading">
+          <div>
+            <p className="card-kicker">This chapter</p>
+            <h3>{chapter.title}</h3>
+          </div>
+          <span className={chapter.acx_traffic_light ? `traffic-light ${chapter.acx_traffic_light}` : "status-pill"}>
+            {chapter.acx_traffic_light ? checkStatusLabel(chapter.acx_traffic_light) : "Not checked"}
+          </span>
+        </header>
+        <p className="panel-honesty">Measurable ACX specs only. Listen once for clicks, echo, and a wrong read.</p>
+        <div className="desk-actions">
+          <button className="primary-button" type="button" disabled={!chapter.audio_path || busyAction !== null} onClick={onMeasure}>
+            {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
+          </button>
+        </div>
+        {acxReport ? <AcxMeter report={acxReport} /> : null}
+      </article>
+
+      <article className="surface-card">
+        <p className="card-kicker">The pack</p>
+        <h3>Export and share</h3>
+        <p className="panel-honesty">Write the ACX folder, or make a copy for the other seat.</p>
+        <div className="desk-actions">
+          <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onExport}>
+            {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
+          </button>
+          <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShare}>
+            {busyAction === "share" ? "Preparing…" : "Create shareable copy"}
+          </button>
+        </div>
+        {exportResult ? (
+          <p className="export-summary inline">
+            Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} ready
+          </p>
+        ) : null}
+      </article>
+    </div>
+  );
+}
+
+function MissingChapter({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="empty-chapters">
+      <div className="empty-icon" aria-hidden="true">+</div>
+      <h3>Add a chapter first</h3>
+      <p>The booth, review, and export all start from a manuscript page.</p>
+      <button className="primary-button" type="button" onClick={onAdd}>Add chapter</button>
+    </div>
   );
 }
 
@@ -3252,6 +3710,112 @@ function AppHeader({
       {children}
     </header>
   );
+}
+
+interface BoothStep {
+  tab: StudioTab;
+  label: string;
+  detail: string;
+  chapterId?: string;
+}
+
+function studioPageCopy(tab: StudioTab): { kicker: string; title: string; lede: string } {
+  switch (tab) {
+    case "book":
+      return { kicker: "The manuscript", title: "Book", lede: "Chapters, status, and the next honest step." };
+    case "record":
+      return { kicker: "The booth", title: "Record", lede: "Prompter, microphone, and the room." };
+    case "review":
+      return { kicker: "The take", title: "Review", lede: "Words that drifted, pauses, and pickups." };
+    case "finish":
+      return { kicker: "The pack", title: "Finish", lede: "Levels, export, and a shareable copy." };
+    case "words":
+      return { kicker: "Names and spellings", title: "Words", lede: "So everyone says them the same way." };
+    case "people":
+      return { kicker: "The handoff", title: "People", lede: "Author, narrator, and who may approve." };
+    default:
+      return { kicker: "This computer", title: "Settings", lede: "How chapters are checked and how the prompter looks." };
+  }
+}
+
+function nextBoothStep(project: ProjectFile, chapter: ChapterFile | null, proof: ProofResult | null): BoothStep {
+  if (project.chapters.length === 0) {
+    return { tab: "book", label: "Add a chapter", detail: "Paste or import the manuscript before you record." };
+  }
+  const current = chapter ?? project.chapters[0];
+  if (!current.audio_path) {
+    return {
+      tab: "record",
+      chapterId: current.id,
+      label: `Record ${current.title}`,
+      detail: "Open the booth and capture this chapter.",
+    };
+  }
+  const openPickups = proof?.pickups.filter((pickup) => pickup.status === "open").length ?? current.open_pickups ?? 0;
+  if (openPickups > 0) {
+    return {
+      tab: "review",
+      chapterId: current.id,
+      label: `Review ${current.title}`,
+      detail: `${openPickups} open pickup${openPickups === 1 ? "" : "s"} still need a listen.`,
+    };
+  }
+  if (!current.acx_traffic_light) {
+    return {
+      tab: "finish",
+      chapterId: current.id,
+      label: "Check the audio",
+      detail: "Measure levels before you export.",
+    };
+  }
+  if (current.acx_traffic_light === "red") {
+    return {
+      tab: "finish",
+      chapterId: current.id,
+      label: "Fix the audio check",
+      detail: "This chapter still needs attention.",
+    };
+  }
+  const nextWithoutAudio = project.chapters.find((item) => !item.audio_path);
+  if (nextWithoutAudio) {
+    return {
+      tab: "record",
+      chapterId: nextWithoutAudio.id,
+      label: `Record ${nextWithoutAudio.title}`,
+      detail: `${current.title} has a take. The next chapter does not.`,
+    };
+  }
+  return { tab: "finish", label: "Export ACX pack", detail: "Chapters are recorded. Package the book." };
+}
+
+function NavIcon({ name }: { name: StudioTab }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.7,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  switch (name) {
+    case "book":
+      return <svg {...common}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>;
+    case "record":
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none" /></svg>;
+    case "review":
+      return <svg {...common}><path d="M4 6h16M4 12h10M4 18h13" /><path d="M16 15l2 2 4-4" /></svg>;
+    case "finish":
+      return <svg {...common}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></svg>;
+    case "words":
+      return <svg {...common}><path d="M4 7h7M4 12h16M4 17h10" /><path d="M15 7h5" /></svg>;
+    case "people":
+      return <svg {...common}><circle cx="9" cy="8" r="3" /><path d="M3 19a6 6 0 0 1 12 0" /><circle cx="17" cy="9" r="2.4" /><path d="M16 19a4.5 4.5 0 0 1 5-4" /></svg>;
+    default:
+      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>;
+  }
 }
 
 function authorStatusLabel(status: AuthorStatus): string {
