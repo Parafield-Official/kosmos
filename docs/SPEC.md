@@ -65,7 +65,7 @@ Open source + free is the point: unpublished manuscripts never leave the machine
 7. **Voice seats exist in v1 data model** even for solo books (`narration` only). Retrofitting seats later is a rewrite.
 8. **Live misread flags default OFF.** Cry-wolf kills the product.
 9. **ACX numbers live in one versioned file** (`acx_spec.json`). Do not hardcode magic numbers in ten places.
-10. **Collaboration is a shared project folder**, not a SaaS invite and not Voice123. Author + narrator (and N1 + N2) pass the `.booth` folder via zip / AirDrop / USB / Dropbox / Syncthing. Roles live in `project.json`. No server. No accounts.
+10. **Collaboration is a shared Kosmos project folder**, not a SaaS invite and not Voice123. Author + narrator (and N1 + N2) pass the folder via ZIP / AirDrop / USB / Dropbox / Syncthing. Roles live in `project.json`. No server. No accounts.
 
 ---
 
@@ -128,7 +128,7 @@ If a feature only helps a fourth imaginary user (podcaster, YouTuber, studio bil
 ### Journey E — author hired a narrator (collaboration)
 
 1. Author creates the project, imports the book, fills glossary + name clips, sets seats if duet.
-2. **File → Share project folder** (zip the `.booth` directory, or work in a shared Dropbox/Syncthing folder). Send it to the narrator. Not a cloud account we host.
+2. **File → Share project folder** (ZIP the Kosmos project folder, or work in a shared Dropbox/Syncthing folder). Send it to the narrator. Not a cloud account we host.
 3. Narrator opens the same folder. Role is `narrator` (or `N1` / `N2`). They see script, glossary clips, empty pickups.
 4. Narrator records (Reaper or in-app), runs Proof. Pickups appear.
 5. Author opens the updated folder. They play pickups, add notes (“village, not the cousin”), mark `approved` / `needs_pickup` / `ignore`.
@@ -400,7 +400,7 @@ What to build:
 
 Not a social network. Not ACX. Not “find me a narrator.”
 
-Two (or three) people work on **one `.booth` folder**.
+Two (or three) people work in **one Kosmos project folder**.
 
 **Roles** in `project.json`:
 
@@ -467,7 +467,7 @@ On first open of a project, pick **I am the author** / **I am the narrator** (re
 A project **is** a folder. This is the collaboration mechanism.
 
 ```
-MyBook.booth/
+MyBook/
   project.json
   acx_spec.json          # copy of spec version used (pin on export)
   manuscript/

@@ -134,7 +134,7 @@ function safeRelativePath(value) {
 
 function safeArchiveRoot(value) {
   const clean = value.replace(/[\\/:*?"<>|]/g, "-").trim();
-  return clean || "Kosmos Project.booth";
+  return clean || "Kosmos Project";
 }
 
 /** Wait for writable backpressure without leaving the losing listener behind. */

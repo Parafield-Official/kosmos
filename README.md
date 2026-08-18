@@ -73,8 +73,8 @@ DIY authors who need a simple record/stop/punch workflow.
 
 Prep, proof, teleprompter, ACX checking, mastering, and export are local. The
 app has no sign-in, telemetry, crash phone-home, cloud LLM, voice clone, or
-remote narrator marketplace. Shared work happens by passing the `.booth`
-project folder (or a zip) between people.
+remote narrator marketplace. Shared work happens by passing the Kosmos project
+folder (or a ZIP) between people.
 
 ## Build from source (contributors)
 

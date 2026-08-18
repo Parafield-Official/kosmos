@@ -1905,7 +1905,7 @@ async function shareSeatPack(folder, project, seat) {
         "",
         "Duet means each character keeps the same narrator inside every POV.",
         "This subset contains only your assigned lines (plus narration for N1), author notes, glossary clips, and any bed audio.",
-        "Return recorded audio through the shared full .booth project; this ZIP is not a cloud invitation.",
+        "Return recorded audio through the shared full Kosmos project folder; this ZIP is not a cloud invitation.",
         "",
       ].join("\n"),
       "utf8",
