@@ -47,7 +47,7 @@ export function markerFileSet(
         "Audacity: File → Import → Labels, then choose the *_audacity_labels.txt file.",
         "Reaper: import the tab-delimited *_reaper_markers.tsv file or copy its rows into the marker list.",
         "",
-        "Markers identify word mismatches only. Listen for acting, clicks, echo, and noise.",
+        "Markers identify word mismatches and configured long pauses only. Listen for acting, clicks, echo, and noise.",
         "",
       ].join("\n"),
     },

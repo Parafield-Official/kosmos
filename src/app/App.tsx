@@ -9,7 +9,9 @@ import {
   linkGlossarySpans,
   renameGlossaryEntry,
 } from "../core/glossary/candidates";
+import { fromPlainText } from "../core/manuscript/import";
 import { addChapter, createEmptyProject } from "../core/project/project";
+import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
 import {
   addChapterNote,
   canApproveChapters,
@@ -29,6 +31,7 @@ import type {
   GlossaryEntry,
   Pickup,
   ProjectFile,
+  ProjectSettings,
   ScriptSpan,
 } from "../core/project/types";
 
@@ -42,7 +45,7 @@ interface ProofResult {
   transcript: TranscriptWord[];
 }
 
-type ProjectPanel = "chapters" | "glossary" | "collaboration";
+type ProjectPanel = "chapters" | "glossary" | "collaboration" | "settings";
 
 export function App() {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
@@ -171,6 +174,10 @@ function ProjectHome({
   onChange: (next: ProjectEnvelope) => void;
 }) {
   const { project, folder } = envelope;
+  const projectSettings = useMemo(
+    () => normalizeProjectSettings(project.settings),
+    [project.settings],
+  );
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     project.chapters[0]?.id ?? null,
   );
@@ -203,8 +210,8 @@ function ProjectHome({
   const [chapterSeat, setChapterSeat] = useState<"narration" | "N1" | "N2">("narration");
   const [chapterSpans, setChapterSpans] = useState<ScriptSpan[]>([]);
   const [teleprompterOpen, setTeleprompterOpen] = useState(false);
-  const [promptFontSize, setPromptFontSize] = useState(48);
-  const [promptTheme, setPromptTheme] = useState<PromptTheme>("dark");
+  const [promptFontSize, setPromptFontSize] = useState(projectSettings.teleprompter_font_size);
+  const [promptTheme, setPromptTheme] = useState<PromptTheme>(projectSettings.teleprompter_theme);
   const [roomTestOpen, setRoomTestOpen] = useState(false);
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
@@ -223,6 +230,11 @@ function ProjectHome({
     glossaryAudioRef.current?.pause();
     glossaryAudioRef.current = null;
   }, []);
+
+  useEffect(() => {
+    setPromptFontSize(projectSettings.teleprompter_font_size);
+    setPromptTheme(projectSettings.teleprompter_theme);
+  }, [project.settings?.teleprompter_font_size, project.settings?.teleprompter_theme]);
 
   const selectedChapter = useMemo(
     () => project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null,
@@ -398,7 +410,7 @@ function ProjectHome({
         onChange({ folder, project: addChapter(project, chapter) });
         setSelectedChapterId(chapter.id);
         setChapterText(pastedText);
-        setChapterSpans([{ text: pastedText, seat: "narration", style: [] }]);
+        setChapterSpans(fromPlainText(pastedText, "txt").spans);
       }
       setPastedText("");
       setComposerOpen(false);
@@ -532,6 +544,7 @@ function ProjectHome({
         sampleRate: decoded.sampleRate,
         channels: decoded.channels,
         speechRmsDbfs,
+        targetRmsDbfs: projectSettings.acx_target_rms_dbfs,
       }));
     });
   }
@@ -573,6 +586,8 @@ function ProjectHome({
         manuscript: chapterText,
         transcript,
         durationSeconds: duration || 1,
+        mergeWindowSeconds: proofMergeWindowSeconds(projectSettings),
+        pauseThresholdSeconds: projectSettings.pause_threshold_seconds,
       });
       const freshPickups = project.mode === "duet"
         ? assignPickupSeats(
@@ -793,6 +808,20 @@ function ProjectHome({
       setNotice(mode === "duet"
         ? "Duet mode is on: N1 and N2 keep their voices inside every POV."
         : "Solo mode is on: all spans default to narration.");
+    });
+  }
+
+  async function persistSettings(patch: Partial<ProjectSettings>) {
+    await runAction("settings", async () => {
+      const settings = normalizeProjectSettings({ ...projectSettings, ...patch });
+      await persistProject({ ...project, settings, updated_at: new Date().toISOString() });
+      if (patch.teleprompter_font_size !== undefined) {
+        setPromptFontSize(settings.teleprompter_font_size);
+      }
+      if (patch.teleprompter_theme !== undefined) {
+        setPromptTheme(settings.teleprompter_theme);
+      }
+      setNotice("Project settings saved locally.");
     });
   }
 
@@ -1070,7 +1099,7 @@ function ProjectHome({
           <div>
             <p className="phase-label">Project folder</p>
             <h2 id="book-home-title">
-              {activePanel === "chapters" ? "Chapters" : activePanel === "glossary" ? "Glossary" : "Collaboration"}
+              {activePanel === "chapters" ? "Chapters" : activePanel === "glossary" ? "Glossary" : activePanel === "collaboration" ? "Collaboration" : "Settings"}
             </h2>
             <p className="folder-path">{folder}</p>
           </div>
@@ -1111,14 +1140,14 @@ function ProjectHome({
         {notice ? <div className="inline-notice" role="status">{notice}</div> : null}
 
         <nav className="workspace-tabs" aria-label="Project sections">
-          {(["chapters", "glossary", "collaboration"] as const).map((panel) => (
+          {(["chapters", "glossary", "collaboration", "settings"] as const).map((panel) => (
             <button
               key={panel}
               className={activePanel === panel ? "active" : ""}
               type="button"
               onClick={() => setActivePanel(panel)}
             >
-              {panel === "chapters" ? "Chapters" : panel === "glossary" ? "Glossary" : "Collaboration"}
+              {panel === "chapters" ? "Chapters" : panel === "glossary" ? "Glossary" : panel === "collaboration" ? "Collaboration" : "Settings"}
             </button>
           ))}
         </nav>
@@ -1184,6 +1213,12 @@ function ProjectHome({
             onSelectChapter={setSelectedChapterId}
             onMode={(mode) => void changeProjectMode(mode)}
             onSeatPack={(seat) => void shareSeatPack(seat)}
+          />
+        ) : activePanel === "settings" ? (
+          <SettingsPanel
+            settings={projectSettings}
+            busyAction={busyAction}
+            onChange={(patch) => void persistSettings(patch)}
           />
         ) : project.chapters.length === 0 ? (
           <div className="empty-chapters">
@@ -1455,7 +1490,13 @@ function Teleprompter({
                       fontStyle: segment.style.includes("italic") ? "italic" : undefined,
                       textDecoration: segment.style.includes("underline") ? "underline" : undefined,
                       background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
-                      color: segment.seat === "N1" ? "#d88a64" : segment.seat === "N2" ? "#82a9d7" : undefined,
+                      color: segment.seat === "N1"
+                        ? "#d88a64"
+                        : segment.seat === "N2"
+                          ? "#82a9d7"
+                          : segment.dialogue
+                            ? "#b0834f"
+                            : undefined,
                     }}
                   >{segment.text}</span>
                 );
@@ -1954,6 +1995,85 @@ function GlossaryRow({
   );
 }
 
+function SettingsPanel({
+  settings,
+  busyAction,
+  onChange,
+}: {
+  settings: ProjectSettings;
+  busyAction: string | null;
+  onChange: (patch: Partial<ProjectSettings>) => void;
+}) {
+  const [draft, setDraft] = useState(settings);
+  useEffect(() => setDraft(settings), [settings]);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
+  return (
+    <section className="phase-panel settings-panel" aria-labelledby="settings-title">
+      <header className="panel-heading">
+        <div>
+          <p className="card-kicker">Local project defaults</p>
+          <h3 id="settings-title">Settings that matter</h3>
+        </div>
+        <span className="status-pill attached">Saved in project.json</span>
+      </header>
+      <p className="panel-honesty">
+        These controls change local proofing and booth display behavior. ACX limits remain pinned to the versioned
+        <code> acx_spec.json</code> file.
+      </p>
+      <div className="settings-grid">
+        <label>
+          Proof sensitivity
+          <select value={draft.proof_sensitivity} onChange={(event) => setDraft({ ...draft, proof_sensitivity: event.target.value as ProjectSettings["proof_sensitivity"] })}>
+            <option value="conservative">Conservative · fewer merged alerts</option>
+            <option value="default">Default · balanced</option>
+            <option value="aggressive">Aggressive · merge nearby alerts</option>
+          </select>
+          <small>Batch proof recall and live precision stay separate; live flags are disabled in this build.</small>
+        </label>
+        <label>
+          Pause threshold (seconds)
+          <input type="number" min="2" max="12" step="0.5" value={draft.pause_threshold_seconds} onChange={(event) => setDraft({ ...draft, pause_threshold_seconds: Number(event.target.value) })} />
+          <small>Only a mid-sentence gap longer than this is listed as a pause pickup.</small>
+        </label>
+        <label>
+          ACX target RMS (dBFS)
+          <input type="number" min="-23" max="-18" step="0.5" value={draft.acx_target_rms_dbfs} onChange={(event) => setDraft({ ...draft, acx_target_rms_dbfs: Number(event.target.value) })} />
+          <small>Default −20 dBFS; the measured pass window remains −23 to −18.</small>
+        </label>
+        <label>
+          Teleprompter theme
+          <select value={draft.teleprompter_theme} onChange={(event) => setDraft({ ...draft, teleprompter_theme: event.target.value as ProjectSettings["teleprompter_theme"] })}>
+            <option value="dark">Dark booth</option>
+            <option value="sepia">Sepia</option>
+            <option value="cream">Cream</option>
+          </select>
+        </label>
+        <label>
+          Teleprompter font size · {draft.teleprompter_font_size}px
+          <input type="range" min="20" max="96" step="1" value={draft.teleprompter_font_size} onChange={(event) => setDraft({ ...draft, teleprompter_font_size: Number(event.target.value) })} />
+          <small>Manual Space/PageDown scrolling always remains available.</small>
+        </label>
+        <div className="settings-readonly">
+          <span>Export channels</span>
+          <strong>Mono (ACX default)</strong>
+          <small>Stereo export is intentionally not exposed until every file in a pack can stay stereo.</small>
+        </div>
+        <div className="settings-readonly">
+          <span>Live flags</span>
+          <strong>Off · listen-only ASR not enabled</strong>
+          <small>The auto-dim state model is tested, but this build will not request a microphone for flags.</small>
+        </div>
+      </div>
+      <div className="settings-actions">
+        <button className="primary-button" type="button" disabled={!dirty || busyAction !== null} onClick={() => onChange(draft)}>
+          {busyAction === "settings" ? "Saving…" : "Save settings"}
+        </button>
+        <button className="table-action" type="button" disabled={!dirty || busyAction !== null} onClick={() => setDraft(settings)}>Discard changes</button>
+      </div>
+    </section>
+  );
+}
+
 function CollaborationPanel({
   project,
   identity,
@@ -2359,7 +2479,10 @@ function SpanSeatEditor({
       <ol>
         {spans.map((span, index) => (
           <li key={`${index}-${span.text.slice(0, 12)}`}>
-            <span className="span-seat-text">{span.text || "(line break)"}</span>
+            <span className="span-seat-text">
+              {span.dialogue ? <em className="dialogue-badge">dialogue</em> : null}
+              {span.text || "(line break)"}
+            </span>
             <select
               aria-label={`Seat for span ${index + 1}`}
               value={span.seat}

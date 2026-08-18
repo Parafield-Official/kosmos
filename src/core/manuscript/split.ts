@@ -265,6 +265,7 @@ export function sliceScriptSpans(
     if (
       previous
       && previous.seat === span.seat
+      && previous.dialogue === span.dialogue
       && JSON.stringify(previous.style) === JSON.stringify(span.style)
       && previous.glossary_id === span.glossary_id
     ) {

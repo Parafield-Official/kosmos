@@ -92,6 +92,13 @@ async function createProjectFolder() {
     glossary: [],
     chapter_notes: [],
     punch_recordings: [],
+    settings: {
+      proof_sensitivity: "default",
+      pause_threshold_seconds: 4,
+      acx_target_rms_dbfs: -20,
+      teleprompter_theme: "dark",
+      teleprompter_font_size: 48,
+    },
     created_at: now,
     updated_at: now,
   };
@@ -151,6 +158,7 @@ async function readProjectFolder(folder) {
     glossary: Array.isArray(project.glossary) ? project.glossary : [],
     chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
     punch_recordings: Array.isArray(project.punch_recordings) ? project.punch_recordings : [],
+    settings: normalizeProjectSettings(project.settings),
   };
   return { folder, project: normalized };
 }
@@ -248,6 +256,7 @@ async function loadProofExample(folder, project) {
 }
 
 async function writeChapterText(folder, project, title, text) {
+  const manuscriptCore = loadCoreModule("manuscript");
   const index = nextChapterIndex(project);
   const chapterId = `ch${String(index).padStart(2, "0")}`;
   const fileName = `${String(index).padStart(2, "0")}.json`;
@@ -274,7 +283,7 @@ async function writeChapterText(folder, project, title, text) {
   };
   await fs.writeFile(
     path.join(folder, chapter.text_path),
-    `${JSON.stringify({ schema: 1, spans: [{ text, seat: "narration", style: [] }] }, null, 2)}\n`,
+    `${JSON.stringify({ schema: 1, spans: manuscriptCore.inferDialogueSpans([{ text, seat: "narration", style: [] }]) }, null, 2)}\n`,
     "utf8",
   );
   const saved = await saveProjectFolder(folder, nextProject);
@@ -325,9 +334,10 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
       section.content_start,
       section.content_end,
     );
-    const spans = glossaryCore.linkGlossarySpans(styledSpans.length > 0
+    const dialogueSpans = manuscriptCore.inferDialogueSpans(styledSpans.length > 0
       ? styledSpans
-      : [{ text: section.text, seat: "narration", style: [] }], glossary);
+      : [{ text: section.text, seat: "narration", style: [] }]);
+    const spans = glossaryCore.linkGlossarySpans(dialogueSpans, glossary);
     await fs.writeFile(
       path.join(folder, chapter.text_path),
       `${JSON.stringify({ schema: 1, spans }, null, 2)}\n`,
@@ -535,6 +545,7 @@ async function setChapterSpans(folder, project, chapterId, spans) {
       text: span.text,
       seat: span.seat,
       style: styles,
+      ...(typeof span.dialogue === "boolean" ? { dialogue: span.dialogue } : {}),
       ...(typeof span.glossary_id === "string" ? { glossary_id: span.glossary_id } : {}),
     };
   });
@@ -582,6 +593,25 @@ function durationWarning(minutes) {
   return minutes > 120
     ? "Estimated narration is over 120 minutes; ACX requires a chapter split."
     : undefined;
+}
+
+function normalizeProjectSettings(value) {
+  const candidate = value && typeof value === "object" ? value : {};
+  const numberOr = (raw, min, max, fallback) => {
+    const number = Number(raw);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+  };
+  return {
+    proof_sensitivity: candidate.proof_sensitivity === "conservative" || candidate.proof_sensitivity === "aggressive"
+      ? candidate.proof_sensitivity
+      : "default",
+    pause_threshold_seconds: numberOr(candidate.pause_threshold_seconds, 2, 12, 4),
+    acx_target_rms_dbfs: numberOr(candidate.acx_target_rms_dbfs, -23, -18, -20),
+    teleprompter_theme: candidate.teleprompter_theme === "sepia" || candidate.teleprompter_theme === "cream"
+      ? candidate.teleprompter_theme
+      : "dark",
+    teleprompter_font_size: Math.round(numberOr(candidate.teleprompter_font_size, 20, 96, 48)),
+  };
 }
 
 async function attachAudioFile(folder, project, chapterId) {
@@ -1094,6 +1124,7 @@ async function exportAcxPack(folder, project) {
   await assertProjectFolder(folder);
   const masterCore = loadCoreModule("master");
   const exportCore = loadCoreModule("export");
+  const settings = normalizeProjectSettings(project.settings);
   const outputFolder = path.join(folder, "export", "acx");
   await fs.rm(outputFolder, { recursive: true, force: true });
   await fs.mkdir(outputFolder, { recursive: true });
@@ -1124,6 +1155,8 @@ async function exportAcxPack(folder, project) {
         samples,
         sampleRate: decoded.sampleRate,
         channels: decoded.channels,
+      }, {
+        targetRmsDbfs: settings.acx_target_rms_dbfs,
       });
       const fileName = exportCore.chapterFileName(chapter);
       if (master.status !== "ok") {

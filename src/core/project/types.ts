@@ -9,6 +9,15 @@ export type AuthorStatus =
   | "ignore_this_flag";
 export type PickupKind = "skip" | "insert" | "sub" | "pause";
 export type PickupStatus = "open" | "done" | "ignored";
+export type ProofSensitivity = "conservative" | "default" | "aggressive";
+
+export interface ProjectSettings {
+  proof_sensitivity: ProofSensitivity;
+  pause_threshold_seconds: number;
+  acx_target_rms_dbfs: number;
+  teleprompter_theme: "dark" | "sepia" | "cream";
+  teleprompter_font_size: number;
+}
 
 export interface ProjectPerson {
   name: string;
@@ -25,6 +34,8 @@ export interface ScriptSpan {
   text: string;
   seat: Seat;
   style: Array<"bold" | "italic" | "underline" | "highlight">;
+  /** Deterministic quote heuristic; a user can still repaint the seat. */
+  dialogue?: boolean;
   glossary_id?: string;
 }
 
@@ -97,6 +108,7 @@ export interface ProjectFile {
   chapter_notes?: ChapterNote[];
   punch_recordings?: PunchRecording[];
   room_test_path?: string;
+  settings?: ProjectSettings;
   created_at: string;
   updated_at: string;
 }

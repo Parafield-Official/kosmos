@@ -1,7 +1,7 @@
 # Test data
 
-Short audio fixtures for proof and ACX tests live here. The first core tests
-use generated PCM so the test suite stays small and deterministic. Real WAV
-fixtures (including `proof_on_vs_in.wav` and the AudioBabble noise fixture) are
-added in the Phase 1 audio integration step.
-
+Short audio fixtures for proof and ACX tests stay deterministic and small.
+Most ACX edge cases (true peak, digital silence, AudioBabble −42 dBFS noise,
+and bathroom-noise refusal) are generated as PCM inside their unit tests. The
+installable proof example is under `public/examples/proof/` and deliberately
+contains the `on` → `in` substitution.

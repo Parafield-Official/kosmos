@@ -25,7 +25,9 @@ and room testing; plus duet seat painting, N1/N2 pickup filters, seat packs,
 bed/overdub mixing, and separate stems. The master runs gate → loudness →
 true-peak limit → room-tone padding and refuses a take whose noise cannot be
 fixed without damaging the voice. The shipped proof fixture can be loaded
-without a network connection.
+without a network connection. Project settings expose batch proof sensitivity,
+the long-pause threshold, ACX target RMS, and teleprompter display defaults;
+the versioned ACX pass limits themselves remain pinned in `acx_spec.json`.
 
 The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
 flags remain disabled in this pre-release until that path can meet the

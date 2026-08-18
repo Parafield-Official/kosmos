@@ -7,6 +7,7 @@ import {
   type Seat,
   type SeatDefinition,
 } from "./types";
+import { DEFAULT_PROJECT_SETTINGS } from "./settings";
 
 const DEFAULT_SEATS: Record<Seat, SeatDefinition> = {
   narration: { label: "Narration", color: "#888888" },
@@ -56,6 +57,7 @@ export function createEmptyProject(
     glossary: [],
     chapter_notes: [],
     punch_recordings: [],
+    settings: { ...DEFAULT_PROJECT_SETTINGS },
     created_at: now,
     updated_at: now,
   };
@@ -80,7 +82,7 @@ export function addChapter(
 
 export function updateProject(
   project: ProjectFile,
-  patch: Partial<Pick<ProjectFile, "name" | "mode" | "author" | "narrator_n1" | "narrator_n2" | "people" | "seats">>,
+  patch: Partial<Pick<ProjectFile, "name" | "mode" | "author" | "narrator_n1" | "narrator_n2" | "people" | "seats" | "settings">>,
   now = isoNow(),
 ): ProjectFile {
   return { ...project, ...patch, updated_at: now };

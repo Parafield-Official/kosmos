@@ -27,6 +27,6 @@ describe("project folder model", () => {
     expect(decoded.seats.N1.label).toBe("N1");
     expect(decoded.seats.N2.label).toBe("N2");
     expect(decoded.chapters[0].author_status).toBe("draft");
+    expect(decoded.settings?.pause_threshold_seconds).toBe(4);
   });
 });
-

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
-import { importManuscriptBytes } from "./import";
+import { fromPlainText, importManuscriptBytes } from "./import";
 
 describe("offline manuscript format import", () => {
   it("preserves DOCX run styles and paragraph breaks", () => {
@@ -35,5 +35,13 @@ describe("offline manuscript format import", () => {
   it("normalizes plain text and rejects unknown formats", () => {
     expect(importManuscriptBytes(strToU8("\ufeffA\r\nB"), ".txt").text).toBe("A\nB");
     expect(() => importManuscriptBytes(strToU8("x"), ".pages")).toThrow(/unsupported/i);
+  });
+
+  it("marks quoted dialogue without assigning a narrator seat", () => {
+    const imported = fromPlainText('Mara said, "Stay here." Then she said, ‘I couldn’t leave.’', "txt");
+    expect(imported.spans.some((span) => span.dialogue && span.text.includes("Stay here"))).toBe(true);
+    expect(imported.spans.some((span) => span.dialogue && span.text.includes("couldn’t"))).toBe(true);
+    expect(imported.spans.some((span) => !span.dialogue && span.text.includes("Then she said"))).toBe(true);
+    expect(imported.spans.filter((span) => span.dialogue).every((span) => span.seat === "narration")).toBe(true);
   });
 });

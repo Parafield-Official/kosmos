@@ -26,11 +26,95 @@ export function importManuscriptBytes(bytes: Uint8Array, extension: string): Imp
 
 export function fromPlainText(text: string, format: "txt" | "md" | "pdf" = "txt"): ImportedManuscript {
   const normalized = text.replace(/^\uFEFF/u, "").replace(/\r\n?/g, "\n");
+  const baseSpan: ScriptSpan = { text: normalized, seat: "narration", style: [] };
   return {
     format,
     text: normalized,
-    spans: [{ text: normalized, seat: "narration", style: [] }],
+    spans: inferDialogueSpans([baseSpan]),
   };
+}
+
+/** Split quoted dialogue into marked spans without guessing a narrator seat. */
+export function inferDialogueSpans(spans: ScriptSpan[]): ScriptSpan[] {
+  const output: ScriptSpan[] = [];
+  let inDialogue = false;
+  for (const span of spans) {
+    let cursor = 0;
+    let emittedInSpan = false;
+    const emit = (text: string, dialogue: boolean): void => {
+      if (text.length === 0) {
+        return;
+      }
+      appendDialoguePiece(output, span, text, dialogue, emittedInSpan);
+      emittedInSpan = true;
+    };
+    for (let index = 0; index < span.text.length; index += 1) {
+      const character = span.text[index];
+      if (!isQuoteMark(span.text, index)) {
+        continue;
+      }
+      emit(span.text.slice(cursor, index), inDialogue);
+      const closes: boolean = character === "”" || character === "’" || inDialogue;
+      if (closes) {
+        emit(character, inDialogue);
+        inDialogue = false;
+      } else {
+        inDialogue = true;
+        emit(character, true);
+      }
+      cursor = index + 1;
+    }
+    emit(span.text.slice(cursor), inDialogue);
+  }
+  return output;
+}
+
+function isQuoteMark(text: string, index: number): boolean {
+  const character = text[index];
+  if (character === '"' || character === "“" || character === "”" || character === "‘") {
+    return true;
+  }
+  if (character !== "’") {
+    return false;
+  }
+  const previous = text[index - 1] ?? "";
+  const next = text[index + 1] ?? "";
+  return !(isWordCharacter(previous) && isWordCharacter(next));
+}
+
+function isWordCharacter(character: string): boolean {
+  return /[\p{L}\p{N}]/u.test(character);
+}
+
+function appendDialoguePiece(
+  output: ScriptSpan[],
+  span: ScriptSpan,
+  text: string,
+  dialogue: boolean,
+  mergeWithPrevious: boolean,
+): void {
+  if (text.length === 0) {
+    return;
+  }
+  const previous = output.at(-1);
+  if (
+    mergeWithPrevious
+    && previous
+    && previous.seat === span.seat
+    && (previous.dialogue ?? false) === dialogue
+    && JSON.stringify(previous.style) === JSON.stringify(span.style)
+    && previous.glossary_id === span.glossary_id
+  ) {
+    previous.text += text;
+    return;
+  }
+  const { dialogue: _existingDialogue, ...baseSpan } = span;
+  output.push({
+    ...baseSpan,
+    text,
+    style: [...span.style],
+    ...(dialogue ? { dialogue: true } : {}),
+  });
 }
 
 function parseDocx(entries: Record<string, Uint8Array>): ImportedManuscript {
@@ -69,7 +153,7 @@ function parseDocx(entries: Record<string, Uint8Array>): ImportedManuscript {
   if (spans.length === 0) {
     throw new Error("DOCX contains no readable paragraphs");
   }
-  return { format: "docx", text: spans.map((span) => span.text).join(""), spans };
+  return { format: "docx", text: spans.map((span) => span.text).join(""), spans: inferDialogueSpans(spans) };
 }
 
 function parseEpub(entries: Record<string, Uint8Array>): ImportedManuscript {
@@ -87,7 +171,7 @@ function parseEpub(entries: Record<string, Uint8Array>): ImportedManuscript {
   return {
     format: "epub",
     text,
-    spans: [{ text, seat: "narration", style: [] }],
+    spans: inferDialogueSpans([{ text, seat: "narration", style: [] }]),
   };
 }
 
