@@ -42,7 +42,7 @@ describe("teleprompter model", () => {
 
   it("hides Markdown heading markers from existing teleprompter documents", () => {
     const lines = buildPromptLines([
-      { text: "# Chapter 1\n## Scene", seat: "narration", style: [] },
+      { text: "# Chapter 1\n  # Leaflets", seat: "narration", style: [] },
     ]);
 
     expect(lines.map((line) => line.text)).not.toEqual(expect.arrayContaining([
@@ -50,7 +50,7 @@ describe("teleprompter model", () => {
     ]));
     expect(lines.map((line) => line.text)).toEqual([
       expect.stringContaining("Chapter 1"),
-      expect.stringContaining("Scene"),
+      expect.stringContaining("Leaflets"),
     ]);
     expect(lines.flatMap((line) => line.segments).map((segment) => segment.text).join("")).not.toContain("#");
   });

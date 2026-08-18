@@ -13,7 +13,7 @@ import {
   renameGlossaryEntry,
 } from "../core/glossary/candidates";
 import { fromPlainText } from "../core/manuscript/import";
-import { parsePastedChapter } from "../core/manuscript/split";
+import { hideMarkdownHeadingMarkers, parsePastedChapter } from "../core/manuscript/split";
 import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
 import {
@@ -346,7 +346,7 @@ function ProjectHome({
         if (disposed) {
           return;
         }
-        setChapterText(result.text);
+        setChapterText(hideMarkdownHeadingMarkers(result.text));
         setChapterSpans(result.spans);
         if (alignment && alignment.chapter_id === selectedChapter.id) {
           setProof({ pickups: alignment.pickups, transcript: alignment.transcript });

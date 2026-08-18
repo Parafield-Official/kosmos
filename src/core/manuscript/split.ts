@@ -44,7 +44,7 @@ export interface PastedChapter {
 /** Replace Markdown heading markers with same-length spaces for clean display. */
 export function hideMarkdownHeadingMarkers(source: string): string {
   return source
-    .replace(/^(#{1,6})(?=[\t ]+)/gmu, (markers) => " ".repeat(markers.length))
+    .replace(/^([\t ]{0,3})(#{1,6})(?=[\t ]+)/gmu, (_match, indentation, markers) => `${indentation}${" ".repeat(markers.length)}`)
     .replace(/([\t ]+)(#{1,6})(?=[\t ]*$)/gmu, (_match, spacing, markers) => `${spacing}${" ".repeat(markers.length)}`);
 }
 
