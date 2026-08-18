@@ -1,0 +1,16 @@
+{
+  "version": "2026-acx",
+  "rms_dbfs": { "min": -23, "max": -18, "target": -20 },
+  "true_peak_dbfs_max": -3.0,
+  "true_peak_limiter_ceiling": -3.2,
+  "noise_floor_dbfs_max": -60,
+  "sample_rate": 44100,
+  "min_bitrate_cbr": 192,
+  "vbr_allowed": false,
+  "channels": "all_mono_or_all_stereo",
+  "max_file_seconds": 7200,
+  "room_tone_head_s": { "min": 0.5, "max": 5.0, "target": 1.5 },
+  "room_tone_tail_s": { "min": 0.5, "max": 5.0, "target": 1.5 },
+  "retail_sample_s": { "min": 60, "max": 300 }
+}
+

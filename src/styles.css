@@ -1,0 +1,293 @@
+:root {
+  color: #25211d;
+  background: #171614;
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(196, 92, 38, 0.2), transparent 34rem),
+    #171614;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 28px clamp(28px, 5vw, 72px) 24px;
+  color: #f2eee7;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 1240px;
+  margin: 0 auto 26px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 13px;
+  color: #fac5a6;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.topbar h1,
+.topbar p {
+  margin: 0;
+}
+
+.topbar h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.eyebrow {
+  margin-bottom: 2px !important;
+  color: #a9a198;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.local-badge {
+  margin-left: auto;
+  padding: 7px 11px;
+  border: 1px solid rgba(155, 207, 166, 0.26);
+  border-radius: 999px;
+  color: #b9ddc0;
+  background: rgba(101, 161, 114, 0.11);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.welcome-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  max-width: 1240px;
+  min-height: 565px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 28px;
+  background: #eee8de;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+}
+
+.welcome-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(44px, 7vw, 92px);
+  color: #27211c;
+}
+
+.phase-label {
+  margin: 0 0 18px;
+  color: #9d4b27;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.welcome-copy h2 {
+  max-width: 720px;
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(44px, 6vw, 78px);
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  line-height: 0.98;
+}
+
+.lede {
+  max-width: 610px;
+  margin: 26px 0 30px;
+  color: #655b53;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.privacy-note {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  max-width: 580px;
+  padding: 14px 16px;
+  border: 1px solid #d8d0c4;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.44);
+}
+
+.privacy-note p {
+  margin: 0;
+  color: #6c6259;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.privacy-note strong {
+  color: #342d27;
+}
+
+.privacy-icon {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: #315c3b;
+  background: #d5e3d6;
+  font-weight: 800;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.actions button {
+  min-width: 142px;
+  padding: 13px 20px;
+  border-radius: 11px;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.primary-button {
+  border: 1px solid #25201c;
+  color: #fffaf4;
+  background: #25201c;
+}
+
+.secondary-button {
+  border: 1px solid #bdb3a7;
+  color: #352f29;
+  background: transparent;
+}
+
+.actions button:hover {
+  transform: translateY(-1px);
+}
+
+.desk-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(40px, 5vw, 64px);
+  color: #f4ece3;
+  background:
+    linear-gradient(180deg, rgba(196, 92, 38, 0.22), transparent 46%),
+    #24201d;
+}
+
+.card-kicker {
+  margin: 0 0 12px;
+  color: #dfa27f;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.desk-card h3 {
+  margin: 0 0 30px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(28px, 3vw, 42px);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
+.desk-card ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.desk-card li {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 10px;
+  padding: 16px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #d3cac1;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.desk-card li span {
+  color: #c7774f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.honesty-copy {
+  margin: 26px 0 0;
+  color: #958b82;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+footer {
+  max-width: 1240px;
+  margin: 17px auto 0;
+  color: #827b74;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .welcome-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-copy h2 {
+    font-size: clamp(42px, 10vw, 66px);
+  }
+}
+
+@media (max-width: 560px) {
+  .app-shell {
+    padding: 18px;
+  }
+
+  .welcome-copy,
+  .desk-card {
+    padding: 34px 28px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+}
+
