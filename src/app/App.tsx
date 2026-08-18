@@ -1,4 +1,64 @@
+import { useEffect, useState } from "react";
+import { createEmptyProject } from "../core/project/project";
+import type { ProjectFile } from "../core/project/types";
+
+interface ProjectEnvelope {
+  folder: string;
+  project: ProjectFile;
+}
+
 export function App() {
+  const [project, setProject] = useState<ProjectEnvelope | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const bridge = window.boothDesk;
+    if (!bridge) {
+      return;
+    }
+
+    void bridge.reopenRecentProject().then((recent) => {
+      if (recent) {
+        setProject(recent);
+      }
+    });
+  }, []);
+
+  async function chooseProject(action: "new" | "open") {
+    setBusy(true);
+    setError(null);
+
+    try {
+      const bridge = window.boothDesk;
+      const result = bridge
+        ? await (action === "new" ? bridge.newProject() : bridge.openProject())
+        : {
+            folder: "(browser preview)",
+            project: createEmptyProject("Untitled project"),
+          };
+
+      if (result) {
+        setProject(result);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not open that project.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (project) {
+    return (
+      <ProjectHome
+        envelope={project}
+        busy={busy}
+        onClose={() => setProject(null)}
+        onSave={setProject}
+      />
+    );
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -33,13 +93,24 @@ export function App() {
           </div>
 
           <div className="actions" aria-label="Project actions">
-            <button className="primary-button" type="button">
-              New project
+            <button
+              className="primary-button"
+              type="button"
+              disabled={busy}
+              onClick={() => void chooseProject("new")}
+            >
+              {busy ? "Opening…" : "New project"}
             </button>
-            <button className="secondary-button" type="button">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={busy}
+              onClick={() => void chooseProject("open")}
+            >
               Open project
             </button>
           </div>
+          {error ? <p className="error-note">{error}</p> : null}
         </div>
 
         <aside className="desk-card" aria-label="What Booth Desk checks">
@@ -65,9 +136,107 @@ export function App() {
         </aside>
       </section>
 
-      <footer>
-        Free · MIT licensed · No account · No telemetry
-      </footer>
+      <footer>Free · MIT licensed · No account · No telemetry</footer>
+    </main>
+  );
+}
+
+function ProjectHome({
+  envelope,
+  busy,
+  onClose,
+  onSave,
+}: {
+  envelope: ProjectEnvelope;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (next: ProjectEnvelope) => void;
+}) {
+  const { project, folder } = envelope;
+
+  async function save() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      return;
+    }
+    const saved = await window.boothDesk.saveProject(envelope);
+    onSave(saved);
+  }
+
+  return (
+    <main className="app-shell project-shell">
+      <header className="topbar">
+        <div className="brand-mark" aria-hidden="true">
+          BD
+        </div>
+        <div>
+          <p className="eyebrow">Book home</p>
+          <h1>{project.name}</h1>
+        </div>
+        <span className="local-badge">Local only</span>
+        <button className="text-button" type="button" onClick={onClose}>
+          Close project
+        </button>
+      </header>
+
+      <section className="book-home" aria-labelledby="book-home-title">
+        <div className="book-home-heading">
+          <div>
+            <p className="phase-label">Project folder</p>
+            <h2 id="book-home-title">Chapters</h2>
+            <p className="folder-path">{folder}</p>
+          </div>
+          <button
+            className="compact-button"
+            type="button"
+            onClick={() => void save()}
+            disabled={busy}
+          >
+            Save project
+          </button>
+        </div>
+
+        {project.chapters.length === 0 ? (
+          <div className="empty-chapters">
+            <div className="empty-icon" aria-hidden="true">
+              +
+            </div>
+            <h3>Drop a manuscript or paste chapter 1.</h3>
+            <p>
+              The chapter table will show duration, proof pickups, author
+              status, ACX lights, and attached audio here.
+            </p>
+          </div>
+        ) : (
+          <div className="chapter-table-wrap">
+            <table className="chapter-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Title</th>
+                  <th>Audio</th>
+                  <th>Proof</th>
+                  <th>Author</th>
+                  <th>ACX</th>
+                </tr>
+              </thead>
+              <tbody>
+                {project.chapters.map((chapter) => (
+                  <tr key={chapter.id}>
+                    <td>{String(chapter.index).padStart(2, "0")}</td>
+                    <td>{chapter.title}</td>
+                    <td>{chapter.audio_path ? "Attached" : "—"}</td>
+                    <td>Not run</td>
+                    <td>{chapter.author_status}</td>
+                    <td>—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <footer>Project data is stored in this folder · schema {project.schema}</footer>
     </main>
   );
 }
