@@ -18,36 +18,53 @@ const MODEL_MARKER_SUFFIX = ".sha1";
 const MODEL_DOWNLOAD_TIMEOUT_MS = 30_000;
 const MAX_MODEL_BYTES = 1_000_000_000;
 const inFlightDownloads = new Map();
+const verifiedModelFiles = new Map();
 
 async function modelStatus(userDataPath, expectedSha1 = MODEL.sha1) {
   const modelPath = path.join(userDataPath, "models", MODEL.fileName);
   const markerPath = `${modelPath}${MODEL_MARKER_SUFFIX}`;
+  let marker = "";
+  try {
+    const markerStat = await fsp.lstat(markerPath);
+    if (!markerStat.isFile()) {
+      throw new Error("Whisper model checksum marker is not a regular file");
+    }
+    marker = (await fsp.readFile(markerPath, "utf8")).trim();
+  } catch {
+    // A legacy or interrupted cache is not trusted until it is downloaded
+    // and marked again.
+  }
+  const status = await modelStatusForFile(modelPath, expectedSha1);
+  return { ...status, available: marker === expectedSha1 && status.available };
+}
+
+/**
+ * Verify an immutable/bundled model path without requiring a sidecar marker.
+ * The packaged app uses this for the read-only model under Resources/models.
+ */
+async function modelStatusForFile(modelPath, expectedSha1 = MODEL.sha1) {
   try {
     const stat = await fsp.lstat(modelPath);
     if (!stat.isFile()) {
-      throw new Error("Whisper model cache is not a regular file");
+      throw new Error("Whisper model is not a regular file");
     }
-    let marker = "";
-    try {
-      const markerStat = await fsp.lstat(markerPath);
-      if (!markerStat.isFile()) {
-        throw new Error("Whisper model checksum marker is not a regular file");
-      }
-      marker = (await fsp.readFile(markerPath, "utf8")).trim();
-    } catch {
-      // A legacy or interrupted cache is not trusted until it is downloaded
-      // and marked again.
+    const cacheKey = `${path.resolve(modelPath)}:${stat.size}:${stat.mtimeMs}:${expectedSha1}`;
+    const cached = verifiedModelFiles.get(cacheKey);
+    if (cached) {
+      return cached;
     }
-    const digest = stat.size > 0 && marker === expectedSha1
-      ? await sha1(modelPath)
-      : "";
-    return {
+    const digest = stat.size > 0 ? await sha1(modelPath) : "";
+    const status = {
       id: MODEL.id,
       path: modelPath,
-      available: stat.size > 0 && marker === expectedSha1 && digest === expectedSha1,
+      available: stat.size > 0 && digest === expectedSha1,
       bytes: stat.size,
       expectedSha1,
     };
+    if (status.available) {
+      verifiedModelFiles.set(cacheKey, status);
+    }
+    return status;
   } catch {
     return {
       id: MODEL.id,
@@ -260,4 +277,4 @@ function sha1(filePath) {
   });
 }
 
-module.exports = { MODEL, modelStatus, downloadModel };
+module.exports = { MODEL, modelStatus, modelStatusForFile, downloadModel };

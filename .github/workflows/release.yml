@@ -213,6 +213,9 @@ jobs:
           fi
           npm run audit:runtime
 
+      - name: Prepare verified Whisper model
+        run: npm run prepare:model
+
       - name: Build renderer and core bundles
         run: npm run build
 

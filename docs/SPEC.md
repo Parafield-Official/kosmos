@@ -535,7 +535,7 @@ Never put secrets in the folder. The folder must be zip-safe and dropbox-safe.
 
 If Tauri is too painful in the first week, Electron is acceptable **only if** you still ship offline and do not add auto-update telemetry. Prefer Tauri.
 
-**Models:** download official **OpenAI Whisper ggml** on first proof (`ggml-small.en.bin` default). Progress UI + checksum. Cache in `~/Library/Application Support/BoothDesk/models` (Mac) or `%APPDATA%\BoothDesk\models` (Windows). Do not silently hit the network again.
+**Models:** bundle the official **OpenAI Whisper ggml** in the installer (`ggml-small.en.bin` default) after checksum verification during release packaging. Proof must work offline immediately after installation. The application-data model cache remains available only as a repair/update fallback.
 
 ### 8.1a Local Whisper + align — researched pick (2026)
 
@@ -708,7 +708,7 @@ Narrators will not `pip install`. The last free proofing suite died on that. **v
 
 - **Mac:** open `.dmg` → drag Booth Desk to Applications → launch. If Gatekeeper blocks: document “right-click → Open” (unsigned OSS). Code-sign + notarize if you have an Apple developer account; do not block ship on that.
 - **Windows:** run `.exe` → Next Next Finish. If SmartScreen: document “More info → Run anyway.” Sign if you have a cert; do not block ship.
-- First launch: privacy sentence. First **Proof**: download Whisper model with a progress bar and a “this stays on your computer” line. Works on both OSes (`~/Library/Application Support/BoothDesk/models` on Mac, `%APPDATA%\BoothDesk\models` on Windows).
+- First launch: privacy sentence. The installer already contains Whisper and the verified model, so the first **Proof** works offline with no setup on both OSes.
 
 **CI:** GitHub Actions builds both artifacts on tag. README top has two buttons: **Download for Mac** · **Download for Windows**.
 
@@ -794,9 +794,9 @@ Place fixtures under `/testdata` (short WAVs, a few seconds).
 | `project_roundtrip` | Save, quit, open, same pickups |
 | `master_audiobabble_neg42_noise` | Clean speech + −42 dBFS white noise: after master, floor ≤ −60 and no obvious voice-destroy (keep a before/after RMS-of-speech sanity bound) |
 | `collab_roles_roundtrip` | Author note + chapter approved survives zip → open as narrator |
-| `offline` | With network blocked (or stub), proof still runs if model is cached |
+| `offline` | With network blocked (or stub), proof runs from the installer-bundled model |
 
-Do not commit huge model files; document the checksum and download step.
+Do not commit huge model files; document the checksum and fetch them during release packaging so the installer still contains them.
 
 ---
 
@@ -840,7 +840,7 @@ A person can:
 2. Import a book or a chapter, attach audio, get pickups, play them.
 3. See honest ACX lights (true peak + noise floor + RMS).
 4. Export a named ACX folder that our meter says is green (on a clean recording).
-5. Do all of that **offline** after the first model download.
+5. Do all of that **offline immediately after installation** with the bundled model.
 6. Read in the README that we do not upload, do not clone, do not narrate.
 
 Teleprompter, glossary, duet, and in-app punch make it a **complete booth**. They are worthless if Phase 1 is flaky.

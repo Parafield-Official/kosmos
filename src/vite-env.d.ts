@@ -154,6 +154,7 @@ interface ModelStatus {
   available: boolean;
   bytes: number;
   expectedSha1: string;
+  bundled?: boolean;
 }
 
 interface ModelProgress {

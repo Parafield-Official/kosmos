@@ -2,7 +2,7 @@ const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
-const { MODEL, modelStatus } = require("./model.cjs");
+const { MODEL, modelStatus, modelStatusForFile } = require("./model.cjs");
 
 describe("local Whisper model cache", () => {
   it("reports a cached model without contacting the network", async () => {
@@ -51,6 +51,39 @@ describe("local Whisper model cache", () => {
       await fs.writeFile(modelPath, Buffer.from("tampered"));
 
       await expect(modelStatus(folder, fixtureSha1)).resolves.toMatchObject({ available: false });
+    } finally {
+      await fs.rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies a bundled model directly without requiring a cache marker", async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), "booth-model-test-"));
+    try {
+      const modelPath = path.join(folder, MODEL.fileName);
+      await fs.writeFile(modelPath, Buffer.from("fixture"));
+      const fixtureSha1 = crypto.createHash("sha1").update("fixture").digest("hex");
+
+      await expect(modelStatusForFile(modelPath, fixtureSha1)).resolves.toMatchObject({
+        available: true,
+        bytes: 7,
+        path: modelPath,
+        expectedSha1: fixtureSha1,
+      });
+    } finally {
+      await fs.rm(folder, { recursive: true, force: true });
+    }
+  });
+
+  it("does not trust a bundled model with the wrong checksum", async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), "booth-model-test-"));
+    try {
+      const modelPath = path.join(folder, MODEL.fileName);
+      await fs.writeFile(modelPath, Buffer.from("fixture"));
+
+      await expect(modelStatusForFile(modelPath, MODEL.sha1)).resolves.toMatchObject({
+        available: false,
+        bytes: 7,
+      });
     } finally {
       await fs.rm(folder, { recursive: true, force: true });
     }

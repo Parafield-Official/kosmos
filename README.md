@@ -33,11 +33,10 @@ The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
 flags remain disabled in this pre-release until that path can meet the
 high-precision/auto-dim requirement without crying wolf.
 
-This is a pre-release development build. Source builds can use a local
-`ffmpeg`/`ffprobe` and `whisper-cli`; the tag workflow has a platform-runtime
-staging path, but an actual public installer still requires an audited
-LGPL-compatible FFmpeg build (including any dynamic libraries and notices) in
-`vendor/bin` before publication.
+This is a pre-release development build. Release packaging stages the audited
+FFmpeg/ffprobe and whisper.cpp runtimes plus the checksum-verified `small.en`
+model inside the application. Source builds may still override those tools for
+development.
 
 ## Install (release builds)
 
@@ -47,11 +46,9 @@ LGPL-compatible FFmpeg build (including any dynamic libraries and notices) in
 3. Windows: run the installer. If SmartScreen appears for an unsigned build,
    choose More info → Run anyway.
 
-The first Proof run downloads the selected Whisper model once, with a progress
-bar and checksum verification. The model stays in Booth Desk's local
-application-data folder and is not uploaded. If a release is opened offline
-before its model has been cached, the bundled proof fixture and pasted local
-transcript path remain available; no cloud fallback is attempted.
+Whisper and the checksum-verified `small.en` model are already included in the
+installer. Proof works offline immediately after installation: there is no
+model download, account, Python setup, or cloud fallback.
 
 ## Journey A (first vertical slice)
 
@@ -107,6 +104,9 @@ npm run build
 npm run package:mac   # on macOS
 npm run package:win   # on Windows
 ```
+
+The packaging commands fetch and verify the pinned official Whisper model as a
+build asset before creating the installer. End users do not run that step.
 
 ## License
 

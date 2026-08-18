@@ -4,7 +4,7 @@ const os = require("node:os");
 const { spawnSync } = require("node:child_process");
 const { runCommand } = require("./process.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
-const { modelStatus } = require("./model.cjs");
+const { modelStatus, modelStatusForFile } = require("./model.cjs");
 
 const FFMPEG_CONVERSION_TIMEOUT_MS = 30 * 60 * 1000;
 const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
@@ -102,9 +102,6 @@ function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
 }
 
 async function findModel({ userDataPath, resourcesPath, appPath }) {
-  const verifiedCachePath = userDataPath
-    ? path.join(userDataPath, "models", "ggml-small.en.bin")
-    : null;
   const candidates = [
     process.env.WHISPER_MODEL_PATH,
     userDataPath && path.join(userDataPath, "models", "ggml-small.en.bin"),
@@ -114,16 +111,26 @@ async function findModel({ userDataPath, resourcesPath, appPath }) {
 
   for (const candidate of candidates) {
     try {
-      if (verifiedCachePath && path.resolve(candidate) === path.resolve(verifiedCachePath)) {
+      if (userDataPath && path.resolve(candidate) === path.resolve(path.join(userDataPath, "models", "ggml-small.en.bin"))) {
         const status = await modelStatus(userDataPath);
         if (!status.available) {
           continue;
         }
+      } else if (candidate === process.env.WHISPER_MODEL_PATH) {
+        // An explicitly selected path is still verified before it is handed
+        // to whisper.cpp; this prevents a stale or partial override from
+        // silently producing an invalid proof run.
+        const status = await modelStatusForFile(candidate);
+        if (!status.available) {
+          continue;
+        }
+      } else {
+        const status = await modelStatusForFile(candidate);
+        if (!status.available) {
+          continue;
+        }
       }
-      const stat = await fs.stat(candidate);
-      if (stat.isFile() && stat.size > 0) {
-        return candidate;
-      }
+      return candidate;
     } catch {
       // Try the next local cache location.
     }

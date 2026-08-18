@@ -5,7 +5,7 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
 const { transcribeAudio } = require("./asr.cjs");
-const { downloadModel, modelStatus } = require("./model.cjs");
+const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
@@ -2352,7 +2352,14 @@ ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
   }
   return transcribeAudioBuffer(payload);
 });
-ipcMain.handle("proof:model-status", () => modelStatus(app.getPath("userData")));
+ipcMain.handle("proof:model-status", async () => {
+  const cached = await modelStatus(app.getPath("userData"));
+  if (cached.available) {
+    return cached;
+  }
+  const bundled = await modelStatusForFile(path.join(process.resourcesPath, "models", MODEL.fileName));
+  return bundled.available ? { ...bundled, bundled: true } : cached;
+});
 ipcMain.handle("proof:download-model", async (event) => {
   return downloadModel(app.getPath("userData"), (progress) => {
     if (!event.sender.isDestroyed()) {

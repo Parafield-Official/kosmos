@@ -19,8 +19,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "audit:runtime": "node scripts/audit-runtime.cjs",
-    "package:mac": "npm run build && npm run audit:runtime && electron-builder --mac",
-    "package:win": "npm run build && npm run audit:runtime && electron-builder --win"
+    "prepare:model": "node scripts/prepare-model.cjs",
+    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac",
+    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win"
   },
   "build": {
     "appId": "com.boothdesk.app",
@@ -42,6 +43,11 @@
         "from": "vendor/bin",
         "to": "bin",
         "filter": ["**/*"]
+      },
+      {
+        "from": "vendor/models",
+        "to": "models",
+        "filter": ["ggml-small.en.bin"]
       }
     ],
     "artifactName": "BoothDesk-${version}-${os}-${arch}.${ext}",
