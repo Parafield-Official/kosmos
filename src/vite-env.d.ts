@@ -7,7 +7,7 @@ interface BoothDeskBridge {
   openProject: () => Promise<ProjectEnvelope | null>;
   reopenRecentProject: () => Promise<ProjectEnvelope | null>;
   saveProject: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
-  importText: (payload: ProjectEnvelope) => Promise<ProjectEnvelope | null>;
+  importText: (payload: ProjectEnvelope) => Promise<ManuscriptImportResult | null>;
   pasteText: (payload: ProjectEnvelope & { title: string; text: string }) => Promise<ProjectEnvelope>;
   loadExample: (payload: ProjectEnvelope) => Promise<ExampleEnvelope>;
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
@@ -19,6 +19,9 @@ interface BoothDeskBridge {
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
   exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
+  shareZip: (payload: ProjectEnvelope & { lightPack: boolean }) => Promise<ShareZipResult | null>;
+  getIdentity: (projectId: string) => Promise<LocalIdentity | null>;
+  setIdentity: (identity: LocalIdentity) => Promise<LocalIdentity>;
 }
 
 interface ProjectEnvelope {
@@ -29,6 +32,11 @@ interface ProjectEnvelope {
 interface AudioAttachment extends ProjectEnvelope {
   sourcePath: string;
   audioPath: string;
+}
+
+interface ManuscriptImportResult extends ProjectEnvelope {
+  chapters: import("./core/project/types").ChapterFile[];
+  sourcePath?: string;
 }
 
 interface ExampleEnvelope extends ProjectEnvelope {
@@ -75,6 +83,19 @@ interface AcxExportResult {
   files: string[];
   entries: Array<{ fileName: string; status: string; note?: string }>;
   report: string;
+}
+
+interface ShareZipResult {
+  outputPath: string;
+  fileCount: number;
+  bytes: number;
+}
+
+interface LocalIdentity {
+  projectId: string;
+  personName: string;
+  role: "author" | "narrator";
+  seat?: "N1" | "N2";
 }
 
 interface Window {

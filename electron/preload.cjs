@@ -29,4 +29,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
     return () => modelProgressListeners.delete(listener);
   },
   exportAcx: (payload) => ipcRenderer.invoke("acx:export", payload),
+  shareZip: (payload) => ipcRenderer.invoke("project:share-zip", payload),
+  getIdentity: (projectId) => ipcRenderer.invoke("identity:get", { projectId }),
+  setIdentity: (identity) => ipcRenderer.invoke("identity:set", identity),
 });

@@ -1,8 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { measurePcm, type AcxReport } from "../core/acx/measure";
 import { alignTranscript, type TranscriptWord } from "../core/proof/align";
+import {
+  addGlossaryEntry,
+  deleteGlossaryEntry,
+  renameGlossaryEntry,
+} from "../core/glossary/candidates";
 import { addChapter, createEmptyProject } from "../core/project/project";
-import type { ChapterFile, Pickup, ProjectFile } from "../core/project/types";
+import {
+  addChapterNote,
+  canApproveChapters,
+  setChapterAuthorStatus,
+} from "../core/project/collaboration";
+import type {
+  AuthorStatus,
+  ChapterFile,
+  GlossaryEntry,
+  Pickup,
+  ProjectFile,
+} from "../core/project/types";
 
 interface ProjectEnvelope {
   folder: string;
@@ -13,6 +29,8 @@ interface ProofResult {
   pickups: Pickup[];
   transcript: TranscriptWord[];
 }
+
+type ProjectPanel = "chapters" | "glossary" | "collaboration";
 
 export function App() {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
@@ -157,6 +175,16 @@ function ProjectHome({
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
   const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
+  const [activePanel, setActivePanel] = useState<ProjectPanel>("chapters");
+  const [identity, setIdentity] = useState<LocalIdentity | null>(null);
+  const [identityLoaded, setIdentityLoaded] = useState(false);
+  const [identityName, setIdentityName] = useState("");
+  const [identityRole, setIdentityRole] = useState<"author" | "narrator">("author");
+  const [identitySeat, setIdentitySeat] = useState<"N1" | "N2">("N1");
+  const [lightPack, setLightPack] = useState(true);
+  const [glossarySpelling, setGlossarySpelling] = useState("");
+  const [glossaryRespell, setGlossaryRespell] = useState("");
+  const [chapterNote, setChapterNote] = useState("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedChapter = useMemo(
@@ -230,6 +258,41 @@ function ProjectHome({
     });
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    setIdentityLoaded(false);
+    const firstPerson = project.people[0];
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setIdentity(null);
+      setIdentityName(firstPerson?.name ?? "");
+      setIdentityRole(firstPerson?.role ?? "author");
+      setIdentitySeat(firstPerson?.seat ?? "N1");
+      setIdentityLoaded(true);
+      return;
+    }
+
+    void window.boothDesk.getIdentity(project.id)
+      .then((current) => {
+        if (disposed) {
+          return;
+        }
+        setIdentity(current);
+        setIdentityName(current?.personName ?? firstPerson?.name ?? "");
+        setIdentityRole(current?.role ?? firstPerson?.role ?? "author");
+        setIdentitySeat(current?.seat ?? firstPerson?.seat ?? "N1");
+        setIdentityLoaded(true);
+      })
+      .catch((reason: unknown) => {
+        if (!disposed) {
+          setIdentityLoaded(true);
+          setNotice(messageFor(reason, "Could not load the local collaborator identity."));
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [project.id, folder]);
+
   async function importChapter() {
     if (!window.boothDesk || folder === "(browser preview)") {
       setComposerOpen(true);
@@ -240,8 +303,14 @@ function ProjectHome({
       const result = await window.boothDesk?.importText(envelope);
       if (result) {
         onChange(result);
-        const chapter = result.project.chapters[result.project.chapters.length - 1];
-        setSelectedChapterId(chapter.id);
+        const chapter = result.chapters[0] ?? result.project.chapters[result.project.chapters.length - 1];
+        if (chapter) {
+          setSelectedChapterId(chapter.id);
+        }
+        setNotice(
+          `${result.chapters.length} ${result.chapters.length === 1 ? "chapter" : "chapters"} imported. `
+          + `${result.project.glossary?.length ?? 0} glossary candidates need a human check.`,
+        );
       }
     });
   }
@@ -411,6 +480,122 @@ function ProjectHome({
     });
   }
 
+  async function persistProject(nextProject: ProjectFile): Promise<void> {
+    const nextEnvelope = window.boothDesk && folder !== "(browser preview)"
+      ? await window.boothDesk.saveProject({ folder, project: nextProject })
+      : { folder, project: nextProject };
+    onChange(nextEnvelope);
+  }
+
+  async function saveLocalIdentity() {
+    const cleanName = identityName.trim();
+    if (cleanName.length === 0) {
+      setNotice("Enter the name you use in this shared project.");
+      return;
+    }
+    await runAction("identity", async () => {
+      const nextIdentity: LocalIdentity = {
+        projectId: project.id,
+        personName: cleanName,
+        role: identityRole,
+        ...(identityRole === "narrator" ? { seat: identitySeat } : {}),
+      };
+      const existing = project.people.filter((person) => person.name.toLocaleLowerCase() !== cleanName.toLocaleLowerCase());
+      const nextProject: ProjectFile = {
+        ...project,
+        people: [
+          ...existing,
+          {
+            name: cleanName,
+            role: identityRole,
+            ...(identityRole === "narrator" ? { seat: identitySeat } : {}),
+          },
+        ],
+        updated_at: new Date().toISOString(),
+      };
+      await persistProject(nextProject);
+      if (window.boothDesk && folder !== "(browser preview)") {
+        await window.boothDesk.setIdentity(nextIdentity);
+      }
+      setIdentity(nextIdentity);
+      setNotice("Your local role is saved. It is kept outside the shared project folder.");
+    });
+  }
+
+  async function shareProject() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Collaborator ZIP export is available in the desktop app.");
+      return;
+    }
+    await runAction("share", async () => {
+      const result = await window.boothDesk?.shareZip({ ...envelope, lightPack });
+      if (result) {
+        setNotice(
+          `${lightPack ? "Light " : "Full "}collaborator pack written: ${result.outputPath} `
+          + `(${result.fileCount} files).`,
+        );
+      }
+    });
+  }
+
+  async function addGlossary() {
+    if (glossarySpelling.trim().length === 0) {
+      setNotice("Enter a spelling before adding a glossary row.");
+      return;
+    }
+    await runAction("glossary-add", async () => {
+      const glossary = addGlossaryEntry(project.glossary ?? [], glossarySpelling, {
+        respell: glossaryRespell,
+      });
+      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+      setGlossarySpelling("");
+      setGlossaryRespell("");
+    });
+  }
+
+  async function editGlossary(id: string, spelling: string, respell: string) {
+    await runAction(`glossary-${id}`, async () => {
+      const glossary = renameGlossaryEntry(project.glossary ?? [], id, spelling, respell);
+      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+    });
+  }
+
+  async function removeGlossary(id: string) {
+    await runAction(`glossary-delete-${id}`, async () => {
+      const glossary = deleteGlossaryEntry(project.glossary ?? [], id);
+      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+    });
+  }
+
+  async function saveNote() {
+    if (!selectedChapter || !identity) {
+      setNotice("Choose your local identity before adding a chapter note.");
+      return;
+    }
+    await runAction("chapter-note", async () => {
+      const nextProject = addChapterNote(
+        project,
+        selectedChapter.id,
+        identity.personName,
+        chapterNote,
+      );
+      await persistProject(nextProject);
+      setChapterNote("");
+    });
+  }
+
+  async function changeAuthorStatus(status: AuthorStatus) {
+    if (!selectedChapter || !identity) {
+      setNotice("Choose an author identity before changing chapter status.");
+      return;
+    }
+    await runAction(`status-${status}`, async () => {
+      await persistProject(
+        setChapterAuthorStatus(project, selectedChapter.id, status, identity.personName),
+      );
+    });
+  }
+
   function playPickup(pickup: Pickup) {
     if (!audioRef.current) {
       return;
@@ -443,7 +628,9 @@ function ProjectHome({
         <div className="book-home-heading">
           <div>
             <p className="phase-label">Project folder</p>
-            <h2 id="book-home-title">Chapters</h2>
+            <h2 id="book-home-title">
+              {activePanel === "chapters" ? "Chapters" : activePanel === "glossary" ? "Glossary" : "Collaboration"}
+            </h2>
             <p className="folder-path">{folder}</p>
           </div>
           <div className="heading-actions">
@@ -466,12 +653,68 @@ function ProjectHome({
             >
               {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
             </button>
+            <button
+              className="compact-button"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => void shareProject()}
+            >
+              {busyAction === "share" ? "Preparing ZIP…" : "Share project ZIP"}
+            </button>
           </div>
         </div>
 
         {notice ? <div className="inline-notice" role="status">{notice}</div> : null}
 
-        {project.chapters.length === 0 ? (
+        <nav className="workspace-tabs" aria-label="Project sections">
+          {(["chapters", "glossary", "collaboration"] as const).map((panel) => (
+            <button
+              key={panel}
+              className={activePanel === panel ? "active" : ""}
+              type="button"
+              onClick={() => setActivePanel(panel)}
+            >
+              {panel === "chapters" ? "Chapters" : panel === "glossary" ? "Glossary" : "Collaboration"}
+            </button>
+          ))}
+        </nav>
+
+        {activePanel === "glossary" ? (
+          <GlossaryPanel
+            glossary={project.glossary ?? []}
+            spelling={glossarySpelling}
+            respell={glossaryRespell}
+            busyAction={busyAction}
+            onSpelling={setGlossarySpelling}
+            onRespell={setGlossaryRespell}
+            onAdd={() => void addGlossary()}
+            onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
+            onDelete={(id) => void removeGlossary(id)}
+          />
+        ) : activePanel === "collaboration" ? (
+          <CollaborationPanel
+            project={project}
+            identity={identity}
+            identityLoaded={identityLoaded}
+            identityName={identityName}
+            identityRole={identityRole}
+            identitySeat={identitySeat}
+            lightPack={lightPack}
+            chapterNote={chapterNote}
+            selectedChapterId={selectedChapterId}
+            busyAction={busyAction}
+            onIdentityName={setIdentityName}
+            onIdentityRole={setIdentityRole}
+            onIdentitySeat={setIdentitySeat}
+            onLightPack={setLightPack}
+            onChapterNote={setChapterNote}
+            onSaveIdentity={() => void saveLocalIdentity()}
+            onShare={() => void shareProject()}
+            onSaveNote={() => void saveNote()}
+            onStatus={(status) => void changeAuthorStatus(status)}
+            onSelectChapter={setSelectedChapterId}
+          />
+        ) : project.chapters.length === 0 ? (
           <div className="empty-chapters">
             <div className="empty-icon" aria-hidden="true">+</div>
             <h3>Drop a manuscript or paste chapter 1.</h3>
@@ -543,6 +786,261 @@ function ProjectHome({
   );
 }
 
+function GlossaryPanel({
+  glossary,
+  spelling,
+  respell,
+  busyAction,
+  onSpelling,
+  onRespell,
+  onAdd,
+  onRename,
+  onDelete,
+}: {
+  glossary: GlossaryEntry[];
+  spelling: string;
+  respell: string;
+  busyAction: string | null;
+  onSpelling: (value: string) => void;
+  onRespell: (value: string) => void;
+  onAdd: () => void;
+  onRename: (id: string, spelling: string, respell: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <section className="phase-panel glossary-panel" aria-labelledby="glossary-panel-title">
+      <header className="panel-heading">
+        <div>
+          <p className="card-kicker">Offline, deterministic draft</p>
+          <h3 id="glossary-panel-title">Pronunciation bible</h3>
+        </div>
+        <span className="result-count">{glossary.length} entries</span>
+      </header>
+      <p className="panel-honesty">
+        We guessed names from capitals and uncommon spellings. Fix this list and record a clip for
+        anything a stranger would misread. An empty glossary is valid.
+      </p>
+
+      <div className="glossary-add-row">
+        <label>
+          Spelling
+          <input value={spelling} onChange={(event) => onSpelling(event.target.value)} placeholder="Leominster" />
+        </label>
+        <label>
+          Respell (optional)
+          <input value={respell} onChange={(event) => onRespell(event.target.value)} placeholder="LEM-ster" />
+        </label>
+        <button type="button" disabled={busyAction !== null} onClick={onAdd}>Add</button>
+      </div>
+
+      {glossary.length === 0 ? (
+        <div className="panel-empty">Import a manuscript to draft candidates, or add one by hand.</div>
+      ) : (
+        <div className="glossary-table-wrap">
+          <table className="glossary-table">
+            <thead>
+              <tr><th>Spelling</th><th>Respell</th><th>Count</th><th>Source</th><th /></tr>
+            </thead>
+            <tbody>
+              {glossary.map((entry) => (
+                <GlossaryRow
+                  key={entry.id}
+                  entry={entry}
+                  busy={busyAction !== null}
+                  onRename={onRename}
+                  onDelete={onDelete}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GlossaryRow({
+  entry,
+  busy,
+  onRename,
+  onDelete,
+}: {
+  entry: GlossaryEntry;
+  busy: boolean;
+  onRename: (id: string, spelling: string, respell: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [spelling, setSpelling] = useState(entry.spelling);
+  const [respell, setRespell] = useState(entry.respell ?? "");
+
+  useEffect(() => {
+    setSpelling(entry.spelling);
+    setRespell(entry.respell ?? "");
+  }, [entry.spelling, entry.respell]);
+
+  return (
+    <tr>
+      <td><input value={spelling} onChange={(event) => setSpelling(event.target.value)} /></td>
+      <td><input value={respell} onChange={(event) => setRespell(event.target.value)} placeholder="Human pronunciation" /></td>
+      <td>{entry.frequency}</td>
+      <td>{entry.source}</td>
+      <td className="glossary-actions">
+        <button
+          type="button"
+          disabled={busy || spelling.trim().length === 0}
+          onClick={() => onRename(entry.id, spelling, respell)}
+        >
+          Save
+        </button>
+        <button type="button" disabled={busy} onClick={() => onDelete(entry.id)}>Delete</button>
+      </td>
+    </tr>
+  );
+}
+
+function CollaborationPanel({
+  project,
+  identity,
+  identityLoaded,
+  identityName,
+  identityRole,
+  identitySeat,
+  lightPack,
+  chapterNote,
+  selectedChapterId,
+  busyAction,
+  onIdentityName,
+  onIdentityRole,
+  onIdentitySeat,
+  onLightPack,
+  onChapterNote,
+  onSaveIdentity,
+  onShare,
+  onSaveNote,
+  onStatus,
+  onSelectChapter,
+}: {
+  project: ProjectFile;
+  identity: LocalIdentity | null;
+  identityLoaded: boolean;
+  identityName: string;
+  identityRole: "author" | "narrator";
+  identitySeat: "N1" | "N2";
+  lightPack: boolean;
+  chapterNote: string;
+  selectedChapterId: string | null;
+  busyAction: string | null;
+  onIdentityName: (value: string) => void;
+  onIdentityRole: (value: "author" | "narrator") => void;
+  onIdentitySeat: (value: "N1" | "N2") => void;
+  onLightPack: (value: boolean) => void;
+  onChapterNote: (value: string) => void;
+  onSaveIdentity: () => void;
+  onShare: () => void;
+  onSaveNote: () => void;
+  onStatus: (status: AuthorStatus) => void;
+  onSelectChapter: (id: string) => void;
+}) {
+  const selected = project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null;
+  const authorCanApprove = Boolean(identity && canApproveChapters(project, identity.personName));
+  const notes = (project.chapter_notes ?? []).filter((note) => note.chapter_id === selectedChapterId);
+
+  return (
+    <section className="phase-panel collaboration-panel" aria-labelledby="collaboration-title">
+      <header className="panel-heading">
+        <div>
+          <p className="card-kicker">Folder handoff, no account</p>
+          <h3 id="collaboration-title">Author ↔ narrator</h3>
+        </div>
+        <span className="status-pill attached">{identity ? `${identity.personName} · ${identity.role}` : "Identity not set"}</span>
+      </header>
+      <p className="panel-honesty">
+        This folder is the collaboration. Roles and work travel in project.json; “who I am” stays
+        only in this app’s local data.
+      </p>
+
+      <div className="collaboration-grid">
+        <div className="collaboration-card">
+          <h4>Who am I on this computer?</h4>
+          {!identityLoaded ? <p>Loading local identity…</p> : null}
+          <label>Name<input value={identityName} onChange={(event) => onIdentityName(event.target.value)} placeholder="Alex Author" /></label>
+          <label>
+            Role
+            <select value={identityRole} onChange={(event) => onIdentityRole(event.target.value as "author" | "narrator")}>
+              <option value="author">I am the author</option>
+              <option value="narrator">I am a narrator</option>
+            </select>
+          </label>
+          {identityRole === "narrator" ? (
+            <label>
+              Seat
+              <select value={identitySeat} onChange={(event) => onIdentitySeat(event.target.value as "N1" | "N2")}>
+                <option value="N1">N1</option>
+                <option value="N2">N2</option>
+              </select>
+            </label>
+          ) : null}
+          <button type="button" disabled={busyAction !== null} onClick={onSaveIdentity}>
+            {busyAction === "identity" ? "Saving…" : "Save local identity"}
+          </button>
+          {project.people.length > 0 ? (
+            <ul className="people-list">
+              {project.people.map((person) => (
+                <li key={`${person.name}-${person.role}`}>{person.name} · {person.role}{person.seat ? ` · ${person.seat}` : ""}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        <div className="collaboration-card">
+          <h4>Share the project</h4>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={lightPack} onChange={(event) => onLightPack(event.target.checked)} />
+            Light pack: omit generated exports and unreferenced raw takes
+          </label>
+          <p>Scripts, proof alignment, notes, project roles, and glossary clips stay included.</p>
+          <button type="button" disabled={busyAction !== null} onClick={onShare}>
+            {busyAction === "share" ? "Preparing ZIP…" : "Zip project for collaborator"}
+          </button>
+        </div>
+
+        <div className="collaboration-card chapter-review-card">
+          <h4>Chapter review</h4>
+          {project.chapters.length === 0 ? <p>Add a chapter before leaving review notes.</p> : (
+            <>
+              <label>
+                Chapter
+                <select value={selectedChapterId ?? ""} onChange={(event) => onSelectChapter(event.target.value)}>
+                  {project.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
+                </select>
+              </label>
+              <p>Current author status: <strong>{selected?.author_status.replaceAll("_", " ")}</strong></p>
+              <div className="status-actions">
+                {(["needs_pickup", "approved", "ignore_this_flag"] as const).map((status) => (
+                  <button key={status} type="button" disabled={!authorCanApprove || busyAction !== null} onClick={() => onStatus(status)}>
+                    {status.replaceAll("_", " ")}
+                  </button>
+                ))}
+              </div>
+              {!authorCanApprove ? <p className="permission-note">Narrators can read author status and notes, but cannot approve the book.</p> : null}
+              <label>
+                Author note
+                <textarea rows={3} value={chapterNote} onChange={(event) => onChapterNote(event.target.value)} placeholder="That’s Leominster, LEM-ster." />
+              </label>
+              <button type="button" disabled={!authorCanApprove || chapterNote.trim().length === 0 || busyAction !== null} onClick={onSaveNote}>Add note</button>
+              {notes.length > 0 ? (
+                <ul className="note-list">
+                  {notes.map((note) => <li key={note.id}><strong>{note.author}</strong> {note.body}</li>)}
+                </ul>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ChapterTable({
   chapters,
   selectedId,
@@ -563,6 +1061,7 @@ function ChapterTable({
           <tr>
             <th>#</th>
             <th>Title</th>
+            <th>Est.</th>
             <th>Audio</th>
             <th>Author</th>
           </tr>
@@ -575,7 +1074,11 @@ function ChapterTable({
               onClick={() => onSelect(chapter.id)}
             >
               <td>{String(chapter.index).padStart(2, "0")}</td>
-              <td>{chapter.title}</td>
+              <td>
+                {chapter.title}
+                {chapter.duration_warning ? <span className="duration-warning" title={chapter.duration_warning}> · long</span> : null}
+              </td>
+              <td>{chapter.estimated_duration_minutes ? `${chapter.estimated_duration_minutes.toFixed(1)}m` : "—"}</td>
               <td>
                 <button
                   className="table-action"

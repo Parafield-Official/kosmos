@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "build": "npm run build:core && tsc --noEmit && vite build",
-    "build:core": "esbuild src/core/acx/master.ts --bundle --platform=node --format=cjs --outfile=dist-core/master.cjs && esbuild src/core/acx/export.ts --bundle --platform=node --format=cjs --outfile=dist-core/export.cjs",
+    "build:core": "esbuild src/core/acx/master.ts --bundle --platform=node --format=cjs --outfile=dist-core/master.cjs && esbuild src/core/acx/export.ts --bundle --platform=node --format=cjs --outfile=dist-core/export.cjs && esbuild src/core/manuscript/split.ts --bundle --platform=node --format=cjs --outfile=dist-core/manuscript.cjs && esbuild src/core/glossary/candidates.ts --bundle --platform=node --format=cjs --outfile=dist-core/glossary.cjs && esbuild src/core/sharing/pack.ts --bundle --platform=node --format=cjs --outfile=dist-core/sharing.cjs",
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -38,11 +38,15 @@
       }
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.music"
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -50,6 +54,7 @@
     }
   },
   "dependencies": {
+    "fflate": "0.8.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"
   },

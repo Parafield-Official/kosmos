@@ -5,6 +5,8 @@ const { spawn } = require("node:child_process");
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { transcribeAudio } = require("./asr.cjs");
 const { downloadModel, modelStatus } = require("./model.cjs");
+const { zipProjectFolder } = require("./share.cjs");
+const { loadIdentity, saveIdentity } = require("./identity.cjs");
 
 const isDevelopment = !app.isPackaged;
 
@@ -80,6 +82,8 @@ async function createProjectFolder() {
       N2: { label: "N2", color: "#2c4c7c" },
     },
     chapters: [],
+    glossary: [],
+    chapter_notes: [],
     created_at: now,
     updated_at: now,
   };
@@ -108,7 +112,12 @@ async function openProjectFolder() {
 
 async function readProjectFolder(folder) {
   const project = JSON.parse(await fs.readFile(path.join(folder, "project.json"), "utf8"));
-  return { folder, project };
+  const normalized = {
+    ...project,
+    glossary: Array.isArray(project.glossary) ? project.glossary : [],
+    chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
+  };
+  return { folder, project: normalized };
 }
 
 async function saveProjectFolder(folder, project) {
@@ -135,7 +144,7 @@ async function importTextFile(folder, project) {
 
   const sourcePath = result.filePaths[0];
   const text = await fs.readFile(sourcePath, "utf8");
-  return writeChapterText(folder, project, path.basename(sourcePath, path.extname(sourcePath)), text);
+  return writeImportedManuscript(folder, project, sourcePath, text);
 }
 
 async function writePastedText(folder, project, title, text) {
@@ -191,12 +200,19 @@ async function writeChapterText(folder, project, title, text) {
   const index = nextChapterIndex(project);
   const chapterId = `ch${String(index).padStart(2, "0")}`;
   const fileName = `${String(index).padStart(2, "0")}.json`;
+  const wordCount = countWords(text);
+  const estimatedMinutes = estimateDurationMinutes(wordCount);
   const chapter = {
     id: chapterId,
     index,
     title: title.trim() || `Chapter ${index}`,
     text_path: `manuscript/chapters/${fileName}`,
     pickups_path: `alignment/${String(index).padStart(2, "0")}.json`,
+    word_count: wordCount,
+    estimated_duration_minutes: estimatedMinutes,
+    duration_warning: estimatedMinutes > 120
+      ? "Estimated narration is over 120 minutes; ACX requires a chapter split."
+      : undefined,
     author_status: "draft",
   };
   const nextProject = {
@@ -212,6 +228,63 @@ async function writeChapterText(folder, project, title, text) {
   );
   const saved = await saveProjectFolder(folder, nextProject);
   return { ...saved, chapter };
+}
+
+async function writeImportedManuscript(folder, project, sourcePath, text) {
+  const manuscriptCore = loadCoreModule("manuscript");
+  const glossaryCore = loadCoreModule("glossary");
+  const sections = manuscriptCore.splitManuscript(text, { idPrefix: "ch" });
+  if (!Array.isArray(sections) || sections.length === 0) {
+    throw new Error("The manuscript is empty; add some text before importing.");
+  }
+
+  await fs.mkdir(path.join(folder, "manuscript", "originals"), { recursive: true });
+  await fs.copyFile(
+    sourcePath,
+    path.join(folder, "manuscript", "originals", path.basename(sourcePath)),
+  );
+
+  const firstIndex = nextChapterIndex(project);
+  const createdChapters = [];
+  for (const [offset, section] of sections.entries()) {
+    const index = firstIndex + offset;
+    const padded = String(index).padStart(2, "0");
+    const chapter = {
+      id: `ch${padded}`,
+      index,
+      title: section.title,
+      text_path: `manuscript/chapters/${padded}.json`,
+      pickups_path: `alignment/${padded}.json`,
+      word_count: section.word_count,
+      estimated_duration_minutes: section.estimated_duration_minutes,
+      duration_warning: section.over_120_minutes
+        ? "Estimated narration is over 120 minutes; ACX requires a chapter split."
+        : undefined,
+      author_status: "draft",
+    };
+    await fs.writeFile(
+      path.join(folder, chapter.text_path),
+      `${JSON.stringify({ schema: 1, spans: [{ text: section.text, seat: "narration", style: [] }] }, null, 2)}\n`,
+      "utf8",
+    );
+    createdChapters.push(chapter);
+  }
+
+  const existingUserGlossary = (project.glossary ?? []).filter(
+    (entry) => entry.source === "user",
+  );
+  const autoGlossary = glossaryCore.candidatesToGlossary(
+    glossaryCore.extractGlossaryCandidates(text),
+  );
+  const nextProject = {
+    ...project,
+    chapters: [...(project.chapters ?? []), ...createdChapters].sort((a, b) => a.index - b.index),
+    glossary: [...existingUserGlossary, ...autoGlossary],
+    chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
+    updated_at: new Date().toISOString(),
+  };
+  const saved = await saveProjectFolder(folder, nextProject);
+  return { ...saved, chapters: createdChapters, sourcePath };
 }
 
 async function attachAudioFile(folder, project, chapterId) {
@@ -380,6 +453,55 @@ async function exportAcxPack(folder, project) {
   }
 }
 
+async function shareProjectZip(folder, project, lightPack) {
+  await assertProjectFolder(folder);
+  const result = await dialog.showSaveDialog({
+    title: lightPack ? "Save a light collaborator pack" : "Save a collaborator pack",
+    defaultPath: path.join(
+      path.dirname(folder),
+      `${path.basename(folder).replace(/\.booth$/i, "")}-collaborator.zip`,
+    ),
+    filters: [{ name: "ZIP archive", extensions: ["zip"] }],
+  });
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  const sharingCore = loadCoreModule("sharing");
+  const available = await collectProjectFiles(folder);
+  const outputRelative = path.relative(folder, result.filePath);
+  const filtered = outputRelative && !outputRelative.startsWith("..") && !path.isAbsolute(outputRelative)
+    ? available.filter((relativePath) => relativePath !== outputRelative)
+    : available;
+  const relativePaths = sharingCore.planSharePaths(project, filtered, { lightPack: Boolean(lightPack) });
+  if (relativePaths.length === 0) {
+    throw new Error("There are no shareable project files yet.");
+  }
+  return zipProjectFolder({
+    folder,
+    outputPath: result.filePath,
+    relativePaths,
+  });
+}
+
+async function collectProjectFiles(folder, current = "") {
+  const directory = path.join(folder, current);
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
+    const relative = current ? path.join(current, entry.name) : entry.name;
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      files.push(...await collectProjectFiles(folder, relative));
+    } else if (entry.isFile()) {
+      files.push(relative.replaceAll(path.sep, "/"));
+    }
+  }
+  return files;
+}
+
 async function encodeCbrMp3(inputPath, outputPath, startSeconds, durationSeconds) {
   const args = [
     "-y", "-v", "error",
@@ -469,6 +591,14 @@ function nextChapterIndex(project) {
   return Math.max(0, ...(project.chapters ?? []).map((chapter) => Number(chapter.index) || 0)) + 1;
 }
 
+function countWords(text) {
+  return text.match(/[\p{L}\p{N}]+(?:['’.-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+}
+
+function estimateDurationMinutes(wordCount) {
+  return wordCount > 0 ? (wordCount / 9300) * 60 : 0;
+}
+
 function projectAssetPath(folder, relativePath) {
   if (typeof relativePath !== "string" || path.isAbsolute(relativePath)) {
     throw new Error("Project asset path must be relative");
@@ -518,6 +648,7 @@ async function ensureProjectLayout(folder) {
   await Promise.all(
     [
       "manuscript/chapters",
+      "manuscript/originals",
       "audio/glossary",
       "alignment",
       "export",
@@ -605,6 +736,24 @@ ipcMain.handle("acx:export", (_event, payload) => {
     throw new Error("Invalid ACX export request");
   }
   return exportAcxPack(payload.folder, payload.project);
+});
+ipcMain.handle("project:share-zip", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid collaborator pack request");
+  }
+  return shareProjectZip(payload.folder, payload.project, payload.lightPack);
+});
+ipcMain.handle("identity:get", (_event, payload) => {
+  if (!payload?.projectId) {
+    throw new Error("Invalid local identity request");
+  }
+  return loadIdentity(app.getPath("userData"), payload.projectId);
+});
+ipcMain.handle("identity:set", (_event, payload) => {
+  if (!payload?.projectId) {
+    throw new Error("Invalid local identity request");
+  }
+  return saveIdentity(app.getPath("userData"), payload);
 });
 ipcMain.handle("project:save", (_event, payload) => {
   if (!payload || typeof payload.folder !== "string" || !payload.project) {

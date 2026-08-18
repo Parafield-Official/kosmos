@@ -1,0 +1,75 @@
+import { describe, expect, it } from "vitest";
+import {
+  addGlossaryEntry,
+  candidatesToGlossary,
+  deleteGlossaryEntry,
+  extractGlossaryCandidates,
+  mergeGlossaryEntries,
+  renameGlossaryEntry,
+} from "./candidates";
+
+describe("offline glossary candidates", () => {
+  it("merges case variants, skips common headings, and recognizes name context", () => {
+    const text = [
+      "CHAPTER 1",
+      "The rain stopped. Elena said hello to Kael.",
+      "Said ELENA, ‘Kael will visit Bistritz in January.’",
+      "At dawn, Elena found Kael waiting.",
+      "Hope said it would work.",
+    ].join("\n");
+
+    const candidates = extractGlossaryCandidates(text);
+    const byName = new Map(candidates.map((candidate) => [candidate.spelling, candidate]));
+
+    expect(byName.get("Elena")?.frequency).toBe(3);
+    expect(byName.get("Kael")?.frequency).toBe(3);
+    expect(byName.get("Bistritz")?.frequency).toBe(1);
+    expect(byName.get("Hope")?.reasons).toContain("name-pattern");
+    expect(byName.has("Chapter")).toBe(false);
+    expect(byName.has("The")).toBe(false);
+    expect(byName.has("January")).toBe(false);
+  });
+
+  it("keeps unusual spellings even when the word list knows them", () => {
+    const candidates = extractGlossaryCandidates("We drove through Worcester. Worcester was quiet.");
+    expect(candidates.find((candidate) => candidate.spelling === "Worcester")?.reasons).toContain(
+      "unusual-spelling",
+    );
+  });
+
+  it("sorts by frequency, caps auto suggestions, and keeps stable ties", () => {
+    const invented = Array.from({ length: 100 }, (_, index) => {
+      const first = String.fromCharCode(65 + Math.floor(index / 26));
+      const second = String.fromCharCode(65 + (index % 26));
+      return `Zname${first}${second}`;
+    });
+    const text = invented.map((word, index) => `${word} ${index < 3 ? "Zorven ".repeat(4) : ""}`).join(" ");
+    const candidates = extractGlossaryCandidates(text, { limit: 80 });
+
+    expect(candidates).toHaveLength(80);
+    expect(candidates[0].spelling).toBe("Zorven");
+  });
+
+  it("lets the human add, rename, merge, and delete draft entries", () => {
+    let glossary = candidatesToGlossary(
+      extractGlossaryCandidates("Elena met ELENA. Kael waved."),
+    );
+    glossary = addGlossaryEntry(glossary, "Leominster", { id: "user-leominster" });
+    glossary = renameGlossaryEntry(glossary, "user-leominster", "Leominster", "LEM-ster");
+
+    const elena = glossary.find((entry) => entry.spelling === "Elena");
+    const kael = glossary.find((entry) => entry.spelling === "Kael");
+    expect(elena).toBeDefined();
+    expect(kael).toBeDefined();
+
+    glossary = mergeGlossaryEntries(glossary, elena!.id, kael!.id, "Elena / Kael");
+    expect(glossary.find((entry) => entry.id === elena!.id)).toMatchObject({
+      spelling: "Elena / Kael",
+      frequency: 3,
+    });
+    expect(glossary.some((entry) => entry.id === kael!.id)).toBe(false);
+
+    glossary = deleteGlossaryEntry(glossary, "user-leominster");
+    expect(glossary.some((entry) => entry.id === "user-leominster")).toBe(false);
+  });
+});

@@ -35,7 +35,30 @@ export interface ChapterFile {
   text_path: string;
   audio_path?: string;
   pickups_path?: string;
+  notes_path?: string;
+  word_count?: number;
+  estimated_duration_minutes?: number;
+  duration_warning?: string;
   author_status: AuthorStatus;
+  updated_at?: string;
+}
+
+export interface GlossaryEntry {
+  id: string;
+  spelling: string;
+  respell?: string;
+  clip_path?: string;
+  seats?: Seat[];
+  frequency: number;
+  source: "auto" | "user";
+}
+
+export interface ChapterNote {
+  id: string;
+  chapter_id: string;
+  author: string;
+  body: string;
+  created_at: string;
 }
 
 export interface ProjectFile {
@@ -50,6 +73,8 @@ export interface ProjectFile {
   people: ProjectPerson[];
   seats: Record<Seat, SeatDefinition>;
   chapters: ChapterFile[];
+  glossary?: GlossaryEntry[];
+  chapter_notes?: ChapterNote[];
   created_at: string;
   updated_at: string;
 }
@@ -67,4 +92,3 @@ export interface Pickup {
   confidence: number;
   note?: string;
 }
-

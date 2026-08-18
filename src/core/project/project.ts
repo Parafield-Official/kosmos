@@ -53,6 +53,8 @@ export function createEmptyProject(
     people: [],
     seats: structuredClone(DEFAULT_SEATS),
     chapters: [],
+    glossary: [],
+    chapter_notes: [],
     created_at: now,
     updated_at: now,
   };
@@ -148,4 +150,3 @@ function isSeatMap(value: unknown): value is Record<Seat, SeatDefinition> {
 
   return true;
 }
-
