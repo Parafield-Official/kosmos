@@ -404,9 +404,6 @@ async function loadProofExample(folder, project) {
   };
   const transcript = JSON.parse(await fs.readFile(path.join(sourceRoot, "on_vs_in.transcript.json"), "utf8"));
   const saved = await saveProjectFolder(folder, nextProject);
-  const legacyTeleprompterDefaults = candidate.teleprompter_preset_version !== 2
-    && candidate.teleprompter_theme === "dark"
-    && Number(candidate.teleprompter_font_size) === 48;
   return {
     ...saved,
     chapter,
@@ -804,6 +801,9 @@ function normalizeProjectSettings(value) {
     const number = Number(raw);
     return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
   };
+  const legacyTeleprompterDefaults = candidate.teleprompter_preset_version !== 2
+    && candidate.teleprompter_theme === "dark"
+    && Number(candidate.teleprompter_font_size) === 48;
   return {
     proof_sensitivity: candidate.proof_sensitivity === "conservative" || candidate.proof_sensitivity === "aggressive"
       ? candidate.proof_sensitivity
