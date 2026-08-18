@@ -11,6 +11,7 @@ import {
   recordLiveFlag,
   relevantPromptGlossary,
   remainingReadTimeLabel,
+  isFocusGuideVisible,
   teleprompterLayout,
   type PromptSegment,
 } from "./model";
@@ -170,6 +171,11 @@ describe("teleprompter model", () => {
       teleprompterOpen: false,
       studioNavOpen: true,
     });
+  });
+
+  it("keeps the manual focus guide visible when voice follow is off", () => {
+    expect(isFocusGuideVisible(true)).toBe(true);
+    expect(isFocusGuideVisible(false)).toBe(false);
   });
 });
 

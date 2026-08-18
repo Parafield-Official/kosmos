@@ -43,6 +43,11 @@ export function teleprompterLayout(open: boolean): TeleprompterLayout {
   };
 }
 
+/** The manual focus guide is useful even before voice follow is started. */
+export function isFocusGuideVisible(highlightLine: boolean): boolean {
+  return highlightLine;
+}
+
 export function bookDashboardStats(chapters: ChapterFile[]): BookDashboardStats {
   const totals = chapters.reduce((result, chapter) => {
     const words = Math.max(0, chapter.word_count ?? 0);

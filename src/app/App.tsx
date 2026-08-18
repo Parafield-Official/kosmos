@@ -33,6 +33,7 @@ import {
   createLiveFlagsState,
   dismissLiveFlag,
   filterPromptChapters,
+  isFocusGuideVisible,
   recordLiveFlag,
   promptChapterStatus,
   readingProgress,
@@ -2213,7 +2214,12 @@ function Teleprompter({
               </div>
             ) : null}
 
-            <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0} onScroll={trackReadingProgress}>
+            <div
+              ref={scrollRef}
+              className={`teleprompter-scroll${isFocusGuideVisible(highlightLine) ? " teleprompter-scroll-focus" : ""}`}
+              tabIndex={0}
+              onScroll={trackReadingProgress}
+            >
               <article
                 className={`teleprompter-page reading-font-${readingFont}`}
                 style={{ fontSize: `${clampFontSize(fontSize)}px`, lineHeight: lineSpacing }}
@@ -2358,7 +2364,7 @@ function Teleprompter({
                   ))}
                 </div>
                 <label className="booth-toggle">
-                  <span><strong>Highlight the current line</strong><em>Keep your eye on the line voice follow is checking.</em></span>
+                  <span><strong>Show the focus line</strong><em>Keep your place while you read; voice follow can still highlight the spoken line.</em></span>
                   <input type="checkbox" checked={highlightLine} onChange={(event) => setHighlightLine(event.target.checked)} />
                 </label>
                 <label className="booth-toggle">
