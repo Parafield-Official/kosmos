@@ -35,4 +35,34 @@ describe("offline punch splice", () => {
     expect(trimmed[2]).toBeCloseTo(0.3, 5);
     expect(trimmed[4]).toBeCloseTo(0.01, 5);
   });
+
+  it("rejects non-finite crossfade settings", () => {
+    const input = {
+      original: new Float32Array(10).fill(0),
+      replacement: new Float32Array(4).fill(0),
+      sampleRate: 10,
+      startSeconds: 0.2,
+      endSeconds: 0.5,
+    };
+    expect(() => splicePunch({ ...input, crossfadeMs: Number.NaN })).toThrow(/crossfade/i);
+    expect(() => splicePunch({ ...input, crossfadeMs: -1 })).toThrow(/crossfade/i);
+  });
+
+  it("splices feature-length sample ranges without overflowing argument limits", () => {
+    const original = new Float32Array(300_000).fill(0.1);
+    const replacement = new Float32Array(2_000).fill(0.2);
+
+    const edited = splicePunch({
+      original,
+      replacement,
+      sampleRate: 1_000,
+      startSeconds: 120,
+      endSeconds: 122,
+      crossfadeMs: 10,
+    });
+
+    expect(edited).toHaveLength(original.length - 20);
+    expect(edited[121_000]).toBeCloseTo(0.2);
+    expect(edited[250_000]).toBeCloseTo(0.1);
+  });
 });

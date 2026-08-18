@@ -52,17 +52,54 @@ const ORDER: MasterResult["processing_order"] = [
   "room_tone_pad",
 ];
 
+/**
+ * Checks that must pass for a mastered file to be considered deliverable.
+ * Format is intentionally excluded: the in-memory master has no container
+ * yet, so its format check is expected to be a warning until encoding.
+ */
+export function masteringStructuralFailure(report: Pick<AcxReport, "checks">): string | undefined {
+  const failed = ([
+    ["sample rate", report.checks.sample_rate],
+    ["channel count", report.checks.channels],
+    ["duration", report.checks.duration],
+    ["head room tone", report.checks.head_room_tone],
+    ["tail room tone", report.checks.tail_room_tone],
+  ] as const)
+    .filter(([, status]) => status === "fail")
+    .map(([label]) => label);
+  return failed.length > 0
+    ? `Mastered output failed required ACX checks: ${failed.join(", ")}.`
+    : undefined;
+}
+
 const FRAME_SECONDS = 0.02;
 const GATE_ATTACK_SECONDS = 0.005;
 const GATE_RELEASE_SECONDS = 0.5;
 const GATE_TARGET_DBFS = -70;
 
 export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): MasterResult {
-  const targetRms = options.targetRmsDbfs ?? -20;
-  const limiterCeiling = options.limiterCeilingDbfs ?? -3.2;
-  const noiseFloorMax = options.noiseFloorMaxDbfs ?? -60;
-  const headSeconds = clamp(options.headSeconds ?? 1.5, 0.5, 5);
-  const tailSeconds = clamp(options.tailSeconds ?? 1.5, 0.5, 5);
+  if (!Number.isInteger(input.sampleRate) || input.sampleRate <= 0) {
+    throw new Error("Master sample rate must be a positive integer");
+  }
+  if (!Number.isInteger(input.channels) || input.channels <= 0) {
+    throw new Error("Master channels must be a positive integer");
+  }
+  if (!input.samples || typeof input.samples.length !== "number") {
+    throw new Error("Master input must contain PCM samples");
+  }
+  if (input.samples.length % input.channels !== 0) {
+    throw new Error("Master PCM sample count must be divisible by the channel count");
+  }
+  for (const sample of input.samples) {
+    if (!Number.isFinite(sample)) {
+      throw new Error("Master PCM samples must be finite numbers");
+    }
+  }
+  const targetRms = finiteOr(options.targetRmsDbfs, -20);
+  const limiterCeiling = finiteOr(options.limiterCeilingDbfs, -3.2);
+  const noiseFloorMax = finiteOr(options.noiseFloorMaxDbfs, -60);
+  const headSeconds = clamp(finiteOr(options.headSeconds, 1.5), 0.5, 5);
+  const tailSeconds = clamp(finiteOr(options.tailSeconds, 1.5), 0.5, 5);
 
   const mono = mixToMono(input.samples, input.channels);
   const resampled = resampleLinear(mono, input.sampleRate, 44100);
@@ -107,7 +144,16 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
   }
 
   const after = measurePcm({ samples: padded, sampleRate: 44100, channels: 1 });
-  if (after.noise_floor_dbfs > noiseFloorMax && after.checks.noise_floor === "fail") {
+  if (after.checks.rms === "fail") {
+    return aborted(
+      before,
+      [...warnings, `The mastered take measures ${formatDb(after.rms_dbfs)} RMS, outside ACX's -23 to -18 dBFS window after true-peak limiting.`],
+      "The take could not reach the ACX loudness window without exceeding the true-peak ceiling.",
+      predictedFloor,
+      speechBefore,
+    );
+  }
+  if (after.checks.noise_floor === "fail") {
     return aborted(
       before,
       [
@@ -120,11 +166,22 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
     );
   }
 
-  if (after.true_peak_dbfs > limiterCeiling + 0.1) {
+  if (after.checks.true_peak === "fail") {
     return aborted(
       before,
       [...warnings, "The true-peak limiter could not reach its ceiling without another decode pass."],
       "True-peak limiting did not converge.",
+      predictedFloor,
+      speechBefore,
+    );
+  }
+
+  const structuralFailure = masteringStructuralFailure(after);
+  if (structuralFailure) {
+    return aborted(
+      before,
+      [...warnings, structuralFailure],
+      structuralFailure,
       predictedFloor,
       speechBefore,
     );
@@ -188,7 +245,10 @@ function analyzeSpeech(samples: number[], sampleRate: number, noiseFloorDbfs: nu
     : quietReference + 10;
   let speechFrames = frameRms.map((value) => value > threshold);
   if (!speechFrames.some(Boolean) && frameRms.length > 0) {
-    const loudest = Math.max(...frameRms);
+    let loudest = -Infinity;
+    for (const value of frameRms) {
+      loudest = Math.max(loudest, value);
+    }
     speechFrames = frameRms.map((value) => value >= loudest - 6);
   }
 
@@ -290,37 +350,66 @@ function padRoomTone(
   const bodyEnd = lastSpeechFrame < 0
     ? samples.length
     : Math.min(samples.length, (lastSpeechFrame + 1) * frameSize);
-  const body = samples.slice(bodyStart, bodyEnd);
   const room = quietRoomTone(samples, analysis, frameSize);
   const head = repeatRoomTone(room, Math.round(headSeconds * sampleRate));
   const tail = repeatRoomTone(room, Math.round(tailSeconds * sampleRate));
-  return [...head, ...body, ...tail];
+  const output = new Array<number>(head.length + (bodyEnd - bodyStart) + tail.length);
+  let outputIndex = 0;
+  for (const sample of head) {
+    output[outputIndex] = sample;
+    outputIndex += 1;
+  }
+  for (let index = bodyStart; index < bodyEnd; index += 1) {
+    output[outputIndex] = samples[index];
+    outputIndex += 1;
+  }
+  for (const sample of tail) {
+    output[outputIndex] = sample;
+    outputIndex += 1;
+  }
+  return output;
 }
 
 function quietRoomTone(samples: number[], analysis: SpeechAnalysis, frameSize: number): number[] {
+  let bestRoom: number[] | null = null;
+  let bestRms = Infinity;
   if (analysis.quietSegments.length > 0) {
-    const segment = analysis.quietSegments.reduce((best, candidate) => {
-      const bestRms = rmsDbfs(samples.slice(best.from * frameSize, best.to * frameSize));
-      const candidateRms = rmsDbfs(samples.slice(candidate.from * frameSize, candidate.to * frameSize));
-      return candidateRms < bestRms ? candidate : best;
-    });
-    const result = samples.slice(segment.from * frameSize, segment.to * frameSize);
-    if (result.some((sample) => Math.abs(sample) > 1e-9)) {
-      return result;
+    for (const segment of analysis.quietSegments) {
+      const candidate = samples.slice(segment.from * frameSize, segment.to * frameSize);
+      // Exact zero is editing silence, not room tone. Continue looking rather
+      // than falling back to the first half-second, which may contain speech.
+      if (!candidate.some((sample) => Math.abs(sample) > 1e-9)) {
+        continue;
+      }
+      const candidateRms = rmsDbfs(candidate);
+      if (candidateRms < bestRms) {
+        bestRoom = candidate;
+        bestRms = candidateRms;
+      }
     }
   }
-
-  const fallback = samples.slice(0, Math.min(samples.length, Math.round(0.5 / FRAME_SECONDS) * frameSize));
-  if (fallback.some((sample) => Math.abs(sample) > 1e-9)) {
-    return fallback;
+  if (bestRoom) {
+    return bestRoom;
   }
-  return [10 ** (GATE_TARGET_DBFS / 20)];
+  return syntheticRoomTone(Math.max(32, frameSize * 10));
 }
 
 function repeatRoomTone(room: number[], length: number): number[] {
   const output = new Array<number>(Math.max(0, length));
   for (let index = 0; index < output.length; index += 1) {
-    output[index] = room[index % room.length] || 10 ** (GATE_TARGET_DBFS / 20);
+    output[index] = room[index % room.length];
+  }
+  return output;
+}
+
+/** Deterministic low-level noise is safer than padding with DC or copied speech. */
+function syntheticRoomTone(length: number): number[] {
+  const output = new Array<number>(length);
+  const peak = (10 ** (GATE_TARGET_DBFS / 20)) * Math.sqrt(3);
+  let state = 0x6d2b79f5;
+  for (let index = 0; index < length; index += 1) {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
+    output[index] = (((state / 0x1_0000_0000) * 2) - 1) * peak;
   }
   return output;
 }
@@ -354,7 +443,7 @@ function mixToMono(samples: Float32Array | number[], channels: number): number[]
 }
 
 function resampleLinear(samples: number[], fromRate: number, toRate: number): number[] {
-  if (samples.length === 0 || fromRate <= 0 || fromRate === toRate) {
+  if (samples.length === 0 || !Number.isFinite(fromRate) || fromRate <= 0 || !Number.isFinite(toRate) || toRate <= 0 || fromRate === toRate) {
     return samples;
   }
   const length = Math.max(1, Math.round(samples.length * toRate / fromRate));
@@ -373,6 +462,10 @@ function resampleLinear(samples: number[], fromRate: number, toRate: number): nu
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function finiteOr(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function formatDb(value: number): string {

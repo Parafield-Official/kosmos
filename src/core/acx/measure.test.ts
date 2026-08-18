@@ -37,6 +37,75 @@ describe("ACX measurement", () => {
     expect(report.checks.format).toBe("fail");
   });
 
+  it("does not give an unclassified source a false green format check", () => {
+    const report = measurePcm({
+      samples: new Float32Array(44100).fill(0.1),
+      sampleRate: 44100,
+      channels: 1,
+    });
+
+    expect(report.checks.format).toBe("warn");
+  });
+
+  it("does not apply MP3 bitrate rules to a known lossless source", () => {
+    const report = measurePcm({
+      samples: new Float32Array(44100).fill(0.1),
+      sampleRate: 44100,
+      channels: 1,
+      format: "flac",
+      bitrate_kbps: 96,
+    });
+
+    expect(report.checks.format).toBe("pass");
+  });
+
+  it("rejects a runtime format that is outside the accepted source set", () => {
+    const report = measurePcm({
+      samples: new Float32Array(44100).fill(0.1),
+      sampleRate: 44100,
+      channels: 1,
+      format: "ogg" as never,
+    });
+
+    expect(report.checks.format).toBe("fail");
+  });
+
+  it("does not loop forever or emit NaN metadata for malformed decoder values", () => {
+    const report = measurePcm({
+      samples: new Float32Array([0, 0.1, 0]),
+      sampleRate: Number.NaN,
+      channels: Number.NaN,
+    });
+
+    expect(report.sample_rate).toBe(0);
+    expect(report.channels).toBe(0);
+    expect(report.checks.sample_rate).toBe("fail");
+    expect(report.checks.channels).toBe("fail");
+  });
+
+  it("rejects an incomplete interleaved audio frame", () => {
+    const report = measurePcm({
+      samples: new Float32Array([0, 0, 0]),
+      sampleRate: 44_100,
+      channels: 2,
+    });
+    expect(report.checks.channels).toBe("fail");
+  });
+
+  it("does not require room tone on a retail sample that starts on narration", () => {
+    const report = measurePcm({
+      samples: new Float32Array(44100).fill(0.1),
+      sampleRate: 44100,
+      channels: 1,
+      format: "mp3",
+      bitrate_kbps: 192,
+      vbr: false,
+    }, { requireRoomTone: false });
+
+    expect(report.checks.head_room_tone).toBe("pass");
+    expect(report.checks.tail_room_tone).toBe("pass");
+  });
+
   it("warns when a leading or trailing pad is digital silence", () => {
     const sampleRate = 1000;
     const head = new Array(600).fill(0.001);

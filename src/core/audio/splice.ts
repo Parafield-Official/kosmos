@@ -18,9 +18,12 @@ export function splicePunch(options: PunchSpliceOptions): Float32Array {
   if (options.endSeconds <= options.startSeconds) {
     throw new Error("Punch end must be after punch start");
   }
+  if (options.crossfadeMs !== undefined && (!Number.isFinite(options.crossfadeMs) || options.crossfadeMs < 0)) {
+    throw new Error("Punch crossfade must be a finite non-negative number");
+  }
 
-  const original = Array.from(options.original);
-  const replacement = Array.from(options.replacement);
+  const original = options.original;
+  const replacement = options.replacement;
   if (replacement.length === 0) {
     throw new Error("Punch replacement cannot be empty");
   }
@@ -32,33 +35,54 @@ export function splicePunch(options: PunchSpliceOptions): Float32Array {
     Math.floor(Math.min(start, original.length - end, replacement.length) / 2),
   );
 
-  const prefix = original.slice(0, start);
-  const suffix = original.slice(end);
-  const output: number[] = [];
-  output.push(...prefix.slice(0, Math.max(0, prefix.length - crossfade)));
+  const prefixLength = start;
+  const suffixStart = end;
+  const suffixLength = original.length - suffixStart;
+  const output = new Float32Array(
+    original.length - (end - start) + replacement.length - (crossfade * 2),
+  );
+  let outputIndex = 0;
+
+  // Copy in a loop rather than spreading a chapter-sized array into a
+  // function call. Long audiobook takes can contain hundreds of millions of
+  // samples, which otherwise exceeds JavaScript's argument limit.
+  const prefixBodyEnd = Math.max(0, prefixLength - crossfade);
+  for (let index = 0; index < prefixBodyEnd; index += 1) {
+    output[outputIndex] = original[index];
+    outputIndex += 1;
+  }
 
   if (crossfade > 0) {
-    const prefixStart = prefix.length - crossfade;
+    const prefixStart = prefixLength - crossfade;
     for (let index = 0; index < crossfade; index += 1) {
       const amount = (index + 1) / (crossfade + 1);
-      output.push(prefix[prefixStart + index] * (1 - amount) + replacement[index] * amount);
+      output[outputIndex] = original[prefixStart + index] * (1 - amount) + replacement[index] * amount;
+      outputIndex += 1;
     }
   }
 
   const replacementStart = crossfade;
   const replacementEnd = Math.max(replacementStart, replacement.length - crossfade);
-  output.push(...replacement.slice(replacementStart, replacementEnd));
+  for (let index = replacementStart; index < replacementEnd; index += 1) {
+    output[outputIndex] = replacement[index];
+    outputIndex += 1;
+  }
 
   if (crossfade > 0) {
     const replacementStartAtEnd = replacement.length - crossfade;
     for (let index = 0; index < crossfade; index += 1) {
       const amount = (index + 1) / (crossfade + 1);
-      output.push(replacement[replacementStartAtEnd + index] * (1 - amount) + suffix[index] * amount);
+      output[outputIndex] = replacement[replacementStartAtEnd + index] * (1 - amount)
+        + original[suffixStart + index] * amount;
+      outputIndex += 1;
     }
   }
 
-  output.push(...suffix.slice(crossfade));
-  return Float32Array.from(output);
+  for (let index = crossfade; index < suffixLength; index += 1) {
+    output[outputIndex] = original[suffixStart + index];
+    outputIndex += 1;
+  }
+  return output;
 }
 
 /** Remove quiet leading/trailing samples while retaining a small speech pad. */

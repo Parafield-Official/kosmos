@@ -26,6 +26,10 @@ jobs:
             target: win
             arch: x64
     runs-on: ${{ matrix.os }}
+    env:
+      # Pin the native proof engine so a tag rebuild is reproducible and can
+      # be audited against one upstream source revision.
+      WHISPER_CPP_COMMIT: 4834a2327d008ace3ec5a9ed00f51454bcabbc1c
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -37,7 +41,9 @@ jobs:
           cache: npm
 
       - name: Install JavaScript dependencies
-        run: npm ci --ignore-scripts
+        # electron-builder needs Electron's downloaded runtime in a clean
+        # runner; --ignore-scripts leaves that runtime absent.
+        run: npm ci
 
       - name: Check tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
@@ -65,8 +71,13 @@ jobs:
           cp "$(brew --prefix ffmpeg)/bin/ffmpeg" vendor/bin/ffmpeg
           cp "$(brew --prefix ffmpeg)/bin/ffprobe" vendor/bin/ffprobe
 
-          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$RUNNER_TEMP/whisper.cpp"
+          whisper_source="$RUNNER_TEMP/whisper.cpp"
+          git init "$whisper_source"
+          git -C "$whisper_source" remote add origin https://github.com/ggerganov/whisper.cpp.git
+          git -C "$whisper_source" fetch --depth 1 origin "$WHISPER_CPP_COMMIT"
+          git -C "$whisper_source" checkout --detach FETCH_HEAD
           cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper-build" \
+            -DBUILD_SHARED_LIBS=OFF \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
             -DWHISPER_BUILD_SERVER=OFF
@@ -95,8 +106,13 @@ jobs:
           # executables so the packaged app does not depend on PATH.
           find "$ffmpeg_dir" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
 
-          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$RUNNER_TEMP/whisper.cpp"
+          whisper_source="$RUNNER_TEMP/whisper.cpp"
+          git init "$whisper_source"
+          git -C "$whisper_source" remote add origin https://github.com/ggerganov/whisper.cpp.git
+          git -C "$whisper_source" fetch --depth 1 origin "$WHISPER_CPP_COMMIT"
+          git -C "$whisper_source" checkout --detach FETCH_HEAD
           cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper-build" \
+            -DBUILD_SHARED_LIBS=OFF \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
             -DWHISPER_BUILD_SERVER=OFF
@@ -104,10 +120,33 @@ jobs:
           whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
           test -n "$whisper_cli"
           cp "$whisper_cli" vendor/bin/whisper-cli.exe
+          # Static builds normally need no whisper DLLs, but retain any
+          # toolchain-side DLLs emitted by the selected Windows generator.
+          find "$RUNNER_TEMP/whisper-build" -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
             'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
+
+      - name: Verify staged native runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            test -x vendor/bin/ffmpeg
+            test -x vendor/bin/ffprobe
+            test -x vendor/bin/whisper-cli
+            vendor/bin/ffmpeg -version >/dev/null
+            vendor/bin/ffprobe -version >/dev/null
+            vendor/bin/whisper-cli --version >/dev/null
+          else
+            test -f vendor/bin/ffmpeg.exe
+            test -f vendor/bin/ffprobe.exe
+            test -f vendor/bin/whisper-cli.exe
+            vendor/bin/ffmpeg.exe -version >/dev/null
+            vendor/bin/ffprobe.exe -version >/dev/null
+            vendor/bin/whisper-cli.exe --version >/dev/null
+          fi
 
       - name: Build renderer and core bundles
         run: npm run build

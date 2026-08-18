@@ -32,6 +32,22 @@ describe("teleprompter model", () => {
     expect(lines.map((line) => line.text)).toEqual(["first", "", "second"]);
   });
 
+  it("does not merge dialogue and narration segments when their visual style matches", () => {
+    const lines = buildPromptLines([
+      { text: "Before ", seat: "narration", style: [] },
+      { text: "spoken", seat: "narration", style: [], dialogue: true },
+      { text: " after", seat: "narration", style: [] },
+    ]);
+
+    expect(lines[0].segments).toEqual([
+      expect.objectContaining({ text: "Before " }),
+      expect.objectContaining({ text: "spoken", dialogue: true }),
+      expect.objectContaining({ text: " after" }),
+    ]);
+    expect(lines[0].segments[0]).not.toHaveProperty("dialogue");
+    expect(lines[0].segments[2]).not.toHaveProperty("dialogue");
+  });
+
   it("clamps readable font sizes", () => {
     expect(clampFontSize(4)).toBe(20);
     expect(clampFontSize(48)).toBe(48);

@@ -119,4 +119,72 @@ describe("alignTranscript", () => {
     expect(result.transcript_words).toHaveLength(1);
     expect(result.pickups.every((pickup) => Number.isFinite(pickup.t_start) && Number.isFinite(pickup.t_end))).toBe(true);
   });
+
+  it("ignores transcript words with negative timing before saving an alignment", () => {
+    const result = alignTranscript({
+      chapterId: "ch-negative-time",
+      manuscript: "alpha beta",
+      transcript: [
+        { text: "alpha", start: -0.2, end: 0.1 },
+        { text: "beta", start: 0.2, end: 0.4 },
+      ],
+      durationSeconds: 1,
+    });
+
+    expect(result.transcript_words).toHaveLength(1);
+    expect(result.transcript_words[0].text).toBe("beta");
+  });
+
+  it("clamps ASR timestamps to the measured chapter duration", () => {
+    const result = alignTranscript({
+      chapterId: "ch-duration",
+      manuscript: "alpha beta",
+      transcript: [
+        { text: "alpha", start: 1, end: 2 },
+        { text: "beta", start: 9, end: 10 },
+      ],
+      durationSeconds: 5,
+    });
+
+    expect(result.transcript_words).toEqual([
+      expect.objectContaining({ text: "alpha", start: 1, end: 2 }),
+    ]);
+    expect(result.pickups.every((pickup) => pickup.t_end <= 5)).toBe(true);
+  });
+
+  it("normalizes malformed ASR confidence values", () => {
+    const result = alignTranscript({
+      chapterId: "ch-confidence",
+      manuscript: "one two",
+      transcript: [
+        { text: "zero", start: 0, end: 0.5, confidence: Number.NaN },
+      ],
+      durationSeconds: 1,
+    });
+    expect(result.pickups.every((pickup) => Number.isFinite(pickup.confidence))).toBe(true);
+  });
+
+  it("keeps a long-pause pickup separate from a nearby word mismatch", () => {
+    const result = alignTranscript({
+      chapterId: "ch-pause-boundary",
+      manuscript: "The fox jumped on the mat.",
+      transcript: words([
+        ["The", 0, 0.2],
+        ["fox", 0.3, 0.5],
+        ["jumped", 1.0, 1.05],
+        ["in", 1.1, 1.2],
+        ["the", 1.3, 1.5],
+        ["mat", 1.6, 1.8],
+      ]),
+      durationSeconds: 2,
+      pauseThresholdSeconds: 0.4,
+      mergeWindowSeconds: 0.4,
+    });
+
+    // The mismatch is close enough to the gap to exercise the merge window;
+    // the pause must remain a distinct workflow item.
+    expect(result.pickups.some((pickup) => pickup.kind === "sub")).toBe(true);
+    expect(result.pickups.some((pickup) => pickup.kind === "pause")).toBe(true);
+    expect(result.pickups).toHaveLength(2);
+  });
 });

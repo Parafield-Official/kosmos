@@ -4,6 +4,7 @@ import {
   candidatesToGlossary,
   deleteGlossaryEntry,
   extractGlossaryCandidates,
+  mergeGlossaryCandidates,
   linkGlossarySpans,
   mergeGlossaryEntries,
   renameGlossaryEntry,
@@ -103,6 +104,47 @@ describe("offline glossary candidates", () => {
     ]);
 
     expect(new Set(glossary.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it("preserves earlier glossary links when another manuscript is imported", () => {
+    const existing = [
+      {
+        id: "auto-kael",
+        spelling: "Kael",
+        frequency: 2,
+        source: "auto" as const,
+        clip_path: "audio/glossary/kael.wav",
+      },
+      {
+        id: "user-elena",
+        spelling: "Elena",
+        frequency: 0,
+        source: "user" as const,
+        respell: "eh-LAY-na",
+      },
+    ];
+
+    const merged = mergeGlossaryCandidates(existing, [
+      { spelling: "Elena", frequency: 3, reasons: ["capitalized"] },
+      { spelling: "Mara", frequency: 1, reasons: ["uncommon"] },
+    ]);
+
+    expect(merged).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "auto-kael", clip_path: "audio/glossary/kael.wav" }),
+      expect.objectContaining({ id: "user-elena", respell: "eh-LAY-na", frequency: 3 }),
+      expect.objectContaining({ id: "auto-mara", spelling: "Mara" }),
+    ]));
+    expect(new Set(merged.map((entry) => entry.id)).size).toBe(merged.length);
+  });
+
+  it("aggregates frequencies for preserved auto candidates", () => {
+    const merged = mergeGlossaryCandidates(
+      [{ id: "auto-kael", spelling: "Kael", frequency: 2, source: "auto" }],
+      [{ spelling: "KAEL", frequency: 3, reasons: ["repeated-capitalized"] }],
+    );
+    expect(merged).toEqual([
+      expect.objectContaining({ id: "auto-kael", spelling: "Kael", frequency: 5 }),
+    ]);
   });
 
   it("chooses the next available generated user ID after entries have been removed", () => {

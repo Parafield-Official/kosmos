@@ -1,14 +1,30 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { writeJsonAtomic } = require("./file-utils.cjs");
 
 const FILE_NAME = "identities.json";
+const saveQueues = new Map();
 
 async function loadIdentity(userDataPath, projectId) {
   validateProjectId(projectId);
   try {
     const state = JSON.parse(await fs.readFile(path.join(userDataPath, FILE_NAME), "utf8"));
-    const identity = state.projects?.[projectId];
-    return identity ? { projectId, ...identity } : null;
+    if (!state || typeof state !== "object" || !state.projects || typeof state.projects !== "object" || Array.isArray(state.projects)) {
+      return null;
+    }
+    const identity = state.projects[projectId];
+    if (!identity) {
+      return null;
+    }
+    const candidate = { projectId, ...identity };
+    try {
+      validateIdentity(candidate);
+      return candidate;
+    } catch {
+      // A hand-edited or interrupted local cache must never leak an invalid
+      // role/seat into the shared project UI.
+      return null;
+    }
   } catch (error) {
     if (error && error.code === "ENOENT") {
       return null;
@@ -19,15 +35,38 @@ async function loadIdentity(userDataPath, projectId) {
 
 async function saveIdentity(userDataPath, identity) {
   validateIdentity(identity);
-  await fs.mkdir(userDataPath, { recursive: true });
   const destination = path.join(userDataPath, FILE_NAME);
+  const previous = saveQueues.get(destination) ?? Promise.resolve();
+  const task = previous.catch(() => undefined).then(() => saveIdentityUnlocked(userDataPath, destination, identity));
+  saveQueues.set(destination, task);
+  try {
+    return await task;
+  } finally {
+    if (saveQueues.get(destination) === task) {
+      saveQueues.delete(destination);
+    }
+  }
+}
+
+async function saveIdentityUnlocked(userDataPath, destination, identity) {
+  await fs.mkdir(userDataPath, { recursive: true });
   let state = { schema: 1, projects: {} };
   try {
     state = JSON.parse(await fs.readFile(destination, "utf8"));
   } catch (error) {
-    if (!error || error.code !== "ENOENT") {
+    if (!error || (error.code !== "ENOENT" && error.name !== "SyntaxError")) {
       throw error;
     }
+  }
+  if (
+    !state
+    || typeof state !== "object"
+    || Array.isArray(state)
+    || !state.projects
+    || typeof state.projects !== "object"
+    || Array.isArray(state.projects)
+  ) {
+    state = { schema: 1, projects: {} };
   }
   const next = {
     schema: 1,
@@ -40,9 +79,7 @@ async function saveIdentity(userDataPath, identity) {
       },
     },
   };
-  const temporary = `${destination}.tmp-${process.pid}`;
-  await fs.writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  await fs.rename(temporary, destination);
+  await writeJsonAtomic(destination, next);
   return { projectId: identity.projectId, ...next.projects[identity.projectId] };
 }
 
@@ -63,7 +100,7 @@ function validateIdentity(identity) {
 }
 
 function validateProjectId(projectId) {
-  if (typeof projectId !== "string" || projectId.length === 0) {
+  if (typeof projectId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(projectId)) {
     throw new Error("Local identity needs a project id");
   }
 }

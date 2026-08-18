@@ -11,11 +11,19 @@ export function buildDuetTimeline(
 ): DuetSegment[] {
   const text = spans.map((span) => span.text).join("");
   const tokens = tokenizeManuscript(text);
-  if (tokens.length === 0 || durationSeconds <= 0) {
+  if (tokens.length === 0 || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
     return [];
   }
 
-  const timed = transcript.filter((word) => Number.isFinite(word.start) && Number.isFinite(word.end));
+  // Whisper can emit valid words without usable timestamps. Zero-duration
+  // entries must not create zero-length mix segments; fall back to the same
+  // deterministic proportional timeline used when alignment is absent.
+  const timed = transcript.filter((word) =>
+    Number.isFinite(word.start)
+    && Number.isFinite(word.end)
+    && word.start >= 0
+    && word.end > word.start,
+  );
   const tokenTimes = tokens.map((_token, index) => {
     if (timed.length === 0) {
       const start = durationSeconds * index / tokens.length;

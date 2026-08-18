@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { masterPcm } from "./master";
+import { masteringStructuralFailure, masterPcm } from "./master";
 
 describe("ACX master chain", () => {
   it("gates non-speech before gain and keeps the processing order explicit", () => {
@@ -37,6 +37,89 @@ describe("ACX master chain", () => {
     expect(result.status).toBe("aborted");
     expect(result.abort_reason).toMatch(/room|noise|voice/i);
     expect(result.samples).toHaveLength(0);
+  });
+
+  it("rejects malformed decoder metadata before resampling can allocate an invalid buffer", () => {
+    expect(() => masterPcm({
+      samples: new Float32Array([0, 0.1]),
+      sampleRate: Number.NaN,
+      channels: 1,
+    })).toThrow(/sample rate/i);
+  });
+
+  it("rejects truncated interleaved frames and non-finite samples", () => {
+    expect(() => masterPcm({
+      samples: new Float32Array([0, 0.1, 0.2]),
+      sampleRate: 44_100,
+      channels: 2,
+    })).toThrow(/divisible|channel/i);
+    expect(() => masterPcm({
+      samples: new Float32Array([0, Number.NaN]),
+      sampleRate: 44_100,
+      channels: 1,
+    })).toThrow(/finite/i);
+  });
+
+  it("does not report success when true-peak limiting leaves RMS outside ACX bounds", () => {
+    const sampleRate = 44_100;
+    const samples = new Float32Array(sampleRate * 3);
+    for (let index = 0; index < samples.length; index += 1) {
+      const inSpeech = index >= sampleRate / 2 && index < sampleRate * 2.5;
+      samples[index] = inSpeech ? 0.03 * Math.sin((2 * Math.PI * 220 * index) / sampleRate) : 0.0001;
+    }
+    samples[sampleRate] = 1;
+
+    const result = masterPcm({ samples, sampleRate, channels: 1 });
+
+    expect(result.status).toBe("aborted");
+    expect(result.abort_reason).toMatch(/loudness|true-peak/i);
+  });
+
+  it("does not recycle a speech fragment as room tone when the source pads are digital zero", () => {
+    const sampleRate = 1_000;
+    const samples = new Float32Array([
+      ...new Array(500).fill(0),
+      ...Array.from({ length: 1_000 }, (_value, index) => 0.15 * Math.sin((2 * Math.PI * 7 * index) / sampleRate)),
+      ...new Array(500).fill(0),
+    ]);
+
+    const result = masterPcm({ samples, sampleRate, channels: 1 });
+
+    expect(result.status).toBe("ok");
+    const head = Array.from(result.samples.slice(0, 1_500));
+    expect(Math.max(...head.map((value) => Math.abs(value)))).toBeLessThan(0.001);
+    expect(head.some((value) => value < 0)).toBe(true);
+    expect(head.some((value) => value > 0)).toBe(true);
+  });
+
+  it("treats duration and room-tone failures as a mastering abort, not a green result", () => {
+    const failure = masteringStructuralFailure({
+      checks: {
+        rms: "pass",
+        true_peak: "pass",
+        noise_floor: "pass",
+        sample_rate: "pass",
+        channels: "pass",
+        duration: "fail",
+        format: "warn",
+        head_room_tone: "pass",
+        tail_room_tone: "fail",
+      },
+    });
+    expect(failure).toMatch(/duration|tail room tone/i);
+    expect(masteringStructuralFailure({
+      checks: {
+        rms: "pass",
+        true_peak: "pass",
+        noise_floor: "pass",
+        sample_rate: "pass",
+        channels: "pass",
+        duration: "pass",
+        format: "warn",
+        head_room_tone: "pass",
+        tail_room_tone: "pass",
+      },
+    })).toBeUndefined();
   });
 });
 

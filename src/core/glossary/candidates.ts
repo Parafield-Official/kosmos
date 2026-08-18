@@ -143,6 +143,56 @@ export function candidatesToGlossary(candidates: GlossaryCandidate[]): GlossaryE
   });
 }
 
+/** Merge a new manuscript's deterministic candidates without orphaning older links. */
+export function mergeGlossaryCandidates(
+  existing: GlossaryEntry[],
+  candidates: GlossaryCandidate[],
+): GlossaryEntry[] {
+  const result = existing.map((entry) => ({
+    ...entry,
+    ...(entry.seats ? { seats: [...entry.seats] } : {}),
+  }));
+  const bySpelling = new Map<string, number>();
+  result.forEach((entry, index) => {
+    const key = entry.spelling.trim().toLocaleLowerCase("en-US");
+    const previousIndex = bySpelling.get(key);
+    if (previousIndex === undefined || prefersGlossaryEntry(entry, result[previousIndex])) {
+      bySpelling.set(key, index);
+    }
+  });
+  const generated = candidatesToGlossary(candidates);
+  for (const entry of generated) {
+    const key = entry.spelling.trim().toLocaleLowerCase("en-US");
+    const existingIndex = bySpelling.get(key);
+    if (existingIndex !== undefined) {
+      const current = result[existingIndex];
+      result[existingIndex] = {
+        ...current,
+        frequency: Math.max(0, current.frequency) + Math.max(0, entry.frequency),
+      };
+      continue;
+    }
+    let id = entry.id;
+    let suffix = 2;
+    while (result.some((candidate) => candidate.id === id)) {
+      id = `${entry.id}-${suffix}`;
+      suffix += 1;
+    }
+    bySpelling.set(key, result.length);
+    result.push({ ...entry, id });
+  }
+  return result;
+}
+
+function prefersGlossaryEntry(candidate: GlossaryEntry, current: GlossaryEntry): boolean {
+  if (candidate.source !== current.source) {
+    return candidate.source === "user";
+  }
+  const candidateEdited = Boolean(candidate.respell || candidate.clip_path);
+  const currentEdited = Boolean(current.respell || current.clip_path);
+  return candidateEdited && !currentEdited;
+}
+
 export function addGlossaryEntry(
   glossary: GlossaryEntry[],
   spelling: string,

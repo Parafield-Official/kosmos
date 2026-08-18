@@ -9,6 +9,10 @@ export interface ImportedManuscript {
   spans: ScriptSpan[];
 }
 
+const MAX_DOCX_TEXT_BYTES = 100 * 1024 * 1024;
+const MAX_EPUB_TEXT_BYTES = 200 * 1024 * 1024;
+const MAX_EPUB_TEXT_FILES = 1_000;
+
 /** Decode a local manuscript file. No format parser performs network access. */
 export function importManuscriptBytes(bytes: Uint8Array, extension: string): ImportedManuscript {
   const normalizedExtension = extension.replace(/^\./, "").toLocaleLowerCase("en-US");
@@ -16,12 +20,49 @@ export function importManuscriptBytes(bytes: Uint8Array, extension: string): Imp
     return fromPlainText(strFromU8(bytes), normalizedExtension === "txt" ? "txt" : "md");
   }
   if (normalizedExtension === "docx") {
-    return parseDocx(unzipSync(bytes));
+    return parseDocx(unzipManuscript(bytes, "docx"));
   }
   if (normalizedExtension === "epub") {
-    return parseEpub(unzipSync(bytes));
+    return parseEpub(unzipManuscript(bytes, "epub"));
   }
   throw new Error(`Unsupported manuscript format: .${normalizedExtension || "unknown"}`);
+}
+
+/**
+ * Expand only manuscript text entries and enforce decompressed budgets. ZIP
+ * archives can be tiny while declaring gigabytes of XML (a classic ZIP-bomb
+ * shape); passing an unrestricted archive to unzipSync would let a malformed
+ * import exhaust the renderer process.
+ */
+function unzipManuscript(
+  bytes: Uint8Array,
+  format: "docx" | "epub",
+): Record<string, Uint8Array> {
+  let totalBytes = 0;
+  let fileCount = 0;
+  const maxBytes = format === "docx" ? MAX_DOCX_TEXT_BYTES : MAX_EPUB_TEXT_BYTES;
+  const maxFiles = format === "docx" ? 1 : MAX_EPUB_TEXT_FILES;
+  return unzipSync(bytes, {
+    filter: (file) => {
+      const normalizedName = file.name.replaceAll("\\", "/");
+      const relevant = format === "docx"
+        ? /^word\/document\.xml$/iu.test(normalizedName)
+        : /(?:^meta-inf\/container\.xml$|\.opf$|\.(?:xhtml?|html?))$/iu.test(normalizedName);
+      if (!relevant) {
+        return false;
+      }
+      const originalSize = Number(file.originalSize);
+      if (!Number.isSafeInteger(originalSize) || originalSize < 0) {
+        throw new Error("Manuscript archive has an invalid uncompressed entry size");
+      }
+      fileCount += 1;
+      totalBytes += originalSize;
+      if (fileCount > maxFiles || originalSize > maxBytes || totalBytes > maxBytes) {
+        throw new Error("Manuscript archive is too large or contains too many text entries");
+      }
+      return true;
+    },
+  });
 }
 
 export function fromPlainText(text: string, format: "txt" | "md" | "pdf" = "txt"): ImportedManuscript {
@@ -157,9 +198,7 @@ function parseDocx(entries: Record<string, Uint8Array>): ImportedManuscript {
 }
 
 function parseEpub(entries: Record<string, Uint8Array>): ImportedManuscript {
-  const names = Object.keys(entries)
-    .filter((name) => /\.(?:xhtml?|html?)$/iu.test(name) && !/(?:nav|toc)/iu.test(name))
-    .sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
+  const names = epubReadingOrder(entries);
   if (names.length === 0) {
     throw new Error("EPUB contains no readable XHTML chapters");
   }
@@ -175,16 +214,118 @@ function parseEpub(entries: Record<string, Uint8Array>): ImportedManuscript {
   };
 }
 
+/**
+ * EPUBs are ordered by the OPF spine, not by their filenames. A surprising
+ * number of books use names such as `part-10.xhtml` and `part-2.xhtml`, so a
+ * lexical sort silently rearranges the manuscript. Keep the parser local and
+ * deliberately small: use the container/OPF metadata when present, then fall
+ * back to a deterministic natural filename order for malformed exports.
+ */
+function epubReadingOrder(entries: Record<string, Uint8Array>): string[] {
+  const allXhtml = Object.keys(entries)
+    .filter((name) => /\.(?:xhtml?|html?)$/iu.test(name) && !/(?:^|[/\\])(?:nav|toc)(?:[/\\]|\.|$)/iu.test(name));
+  if (allXhtml.length === 0) {
+    return [];
+  }
+
+  const containerName = Object.keys(entries).find((name) =>
+    name.toLocaleLowerCase("en-US") === "meta-inf/container.xml",
+  );
+  const containerXml = containerName ? strFromU8(entries[containerName]) : "";
+  const rootFilePath = readXmlAttribute(
+    containerXml.match(/<rootfile\b[^>]*>/iu)?.[0] ?? "",
+    "full-path",
+  );
+  const opfPath = rootFilePath ? normalizeEpubPath(rootFilePath) : findOpfPath(entries);
+  const opf = opfPath ? strFromU8(entries[opfPath] ?? new Uint8Array()) : "";
+  if (opf.length > 0) {
+    const manifest = new Map<string, string>();
+    for (const item of opf.matchAll(/<item\b([^>]*)\/?>(?:<\/item>)?/giu)) {
+      const attributes = item[1] ?? "";
+      const id = readXmlAttribute(attributes, "id");
+      const href = readXmlAttribute(attributes, "href");
+      const mediaType = readXmlAttribute(attributes, "media-type");
+      const properties = readXmlAttribute(attributes, "properties");
+      if (!id || !href || properties?.split(/\s+/u).includes("nav")) {
+        continue;
+      }
+      if (mediaType && !/application\/(?:xhtml\+xml|xml|html)/iu.test(mediaType)) {
+        continue;
+      }
+      const resolved = normalizeEpubPath(resolveEpubRelativePath(opfPath ?? "", href));
+      if (resolved && allXhtml.includes(resolved)) {
+        manifest.set(id, resolved);
+      }
+    }
+
+    const ordered = [] as string[];
+    for (const itemRef of opf.matchAll(/<itemref\b([^>]*)\/?>(?:<\/itemref>)?/giu)) {
+      const idref = readXmlAttribute(itemRef[1] ?? "", "idref");
+      const name = idref ? manifest.get(idref) : undefined;
+      if (name && !ordered.includes(name)) {
+        ordered.push(name);
+      }
+    }
+    if (ordered.length > 0) {
+      return ordered;
+    }
+  }
+
+  return allXhtml.sort((left, right) => left.localeCompare(right, "en", { numeric: true }));
+}
+
+function findOpfPath(entries: Record<string, Uint8Array>): string | undefined {
+  return Object.keys(entries)
+    .filter((name) => /\.opf$/iu.test(name))
+    .sort((left, right) => left.localeCompare(right, "en", { numeric: true }))[0];
+}
+
+function readXmlAttribute(source: string, name: string): string | undefined {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = source.match(new RegExp(`\\b${escaped}\\s*=\\s*(["'])(.*?)\\1`, "iu"));
+  return match ? decodeXmlEntities(match[2]) : undefined;
+}
+
+function resolveEpubRelativePath(basePath: string, relativePath: string): string {
+  const baseDirectory = basePath.includes("/") ? basePath.slice(0, basePath.lastIndexOf("/")) : "";
+  return `${baseDirectory}/${relativePath.split("#", 1)[0]}`;
+}
+
+function normalizeEpubPath(value: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value.replaceAll("\\", "/"));
+  } catch {
+    // Preserve a malformed local filename for the deterministic fallback;
+    // never let one bad percent escape crash an otherwise readable EPUB.
+    decoded = value.replaceAll("\\", "/");
+  }
+  const parts: string[] = [];
+  for (const part of decoded.split("/")) {
+    if (part === "" || part === ".") {
+      continue;
+    }
+    if (part === "..") {
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  return parts.join("/");
+}
+
 function extractRunText(runXml: string): string {
   const pieces: string[] = [];
-  for (const textMatch of runXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/giu)) {
-    pieces.push(decodeXmlEntities(textMatch[1]));
-  }
-  for (const _ of runXml.matchAll(/<w:tab\s*\/?>(?:<\/w:tab>)?/giu)) {
-    pieces.push("\t");
-  }
-  for (const _ of runXml.matchAll(/<w:br\s*\/?>(?:<\/w:br>)?/giu)) {
-    pieces.push("\n");
+  const tokenPattern = /<w:(t|tab|br)\b([^>]*)>([\s\S]*?)<\/w:\1>|<w:(tab|br)\b[^>]*\/?\s*>/giu;
+  for (const match of runXml.matchAll(tokenPattern)) {
+    const kind = (match[1] ?? match[4] ?? "").toLocaleLowerCase("en-US");
+    if (kind === "t") {
+      pieces.push(decodeXmlEntities(match[3] ?? ""));
+    } else if (kind === "tab") {
+      pieces.push("\t");
+    } else {
+      pieces.push("\n");
+    }
   }
   return pieces.join("");
 }
@@ -236,11 +377,47 @@ function stripTags(value: string): string {
 
 function decodeXmlEntities(value: string): string {
   return value
+    .replace(/&([a-z][a-z\d]+);/giu, (match, name: string) => decodeNamedEntity(match, name))
     .replace(/&lt;/gu, "<")
     .replace(/&gt;/gu, ">")
     .replace(/&quot;/gu, '"')
     .replace(/&apos;/gu, "'")
     .replace(/&amp;/gu, "&")
-    .replace(/&#(\d+);/gu, (_match, decimal: string) => String.fromCodePoint(Number(decimal)))
-    .replace(/&#x([\da-f]+);/giu, (_match, hexadecimal: string) => String.fromCodePoint(Number.parseInt(hexadecimal, 16)));
+    .replace(/&#(\d+);/gu, (match, decimal: string) => safeCodePoint(match, Number(decimal)))
+    .replace(/&#x([\da-f]+);/giu, (match, hexadecimal: string) => safeCodePoint(match, Number.parseInt(hexadecimal, 16)));
+}
+
+const COMMON_HTML_ENTITIES: Record<string, string> = {
+  nbsp: "\u00a0",
+  ndash: "\u2013",
+  mdash: "\u2014",
+  hellip: "\u2026",
+  ldquo: "\u201c",
+  rdquo: "\u201d",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  laquo: "\u00ab",
+  raquo: "\u00bb",
+  bull: "\u2022",
+  middot: "\u00b7",
+  thinsp: "\u2009",
+  ensp: "\u2002",
+  emsp: "\u2003",
+  copy: "\u00a9",
+  reg: "\u00ae",
+  trade: "\u2122",
+};
+
+function decodeNamedEntity(original: string, name: string): string {
+  return COMMON_HTML_ENTITIES[name.toLocaleLowerCase("en-US")] ?? original;
+}
+
+function safeCodePoint(original: string, value: number): string {
+  // XML numeric references cannot represent surrogate code points or values
+  // outside Unicode's range. Preserve malformed source text for a human to
+  // correct instead of crashing an otherwise readable manuscript import.
+  if (!Number.isInteger(value) || value < 0 || value > 0x10FFFF || (value >= 0xD800 && value <= 0xDFFF)) {
+    return original;
+  }
+  return String.fromCodePoint(value);
 }

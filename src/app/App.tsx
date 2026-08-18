@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { measurePcm, type AcxReport } from "../core/acx/measure";
+import type { AcxReport } from "../core/acx/measure";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "../core/proof/align";
@@ -14,12 +14,14 @@ import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
 import {
   addChapterNote,
+  canClaimIdentity,
   canApproveChapters,
   setChapterAuthorStatus,
   updatePickup,
 } from "../core/project/collaboration";
 import { assignPickupSeats, assignSpanSeat } from "../core/duet/seats";
 import { buildDuetTimeline } from "../core/duet/timeline";
+import { recordingElapsedSeconds } from "../core/recorder/timing";
 import {
   buildPromptLines,
   clampFontSize,
@@ -51,6 +53,7 @@ export function App() {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const projectRequestRef = useRef(0);
 
   useEffect(() => {
     const bridge = window.boothDesk;
@@ -58,16 +61,20 @@ export function App() {
       return;
     }
 
+    const request = projectRequestRef.current;
     void bridge.reopenRecentProject().then((recent) => {
-      if (recent) {
+      if (recent && projectRequestRef.current === request) {
         setProject(recent);
       }
     }).catch((reason: unknown) => {
-      setError(messageFor(reason, "Could not reopen the last project."));
+      if (projectRequestRef.current === request) {
+        setError(messageFor(reason, "Could not reopen the last project."));
+      }
     });
   }, []);
 
   async function chooseProject(action: "new" | "open") {
+    projectRequestRef.current += 1;
     setBusy(true);
     setError(null);
 
@@ -94,8 +101,23 @@ export function App() {
     return (
       <ProjectHome
         envelope={project}
-        onClose={() => setProject(null)}
-        onChange={setProject}
+        onClose={() => {
+          projectRequestRef.current += 1;
+          setProject(null);
+        }}
+        onChange={(next) => setProject((current) => {
+          // Ignore a late IPC response from a project that was closed while
+          // an operation was still finishing; it must not overwrite a newly
+          // opened project in the root screen.
+          if (
+            !current
+            || current.folder !== project.folder
+            || current.project.id !== project.project.id
+          ) {
+            return current;
+          }
+          return next;
+        })}
       />
     );
   }
@@ -181,6 +203,7 @@ function ProjectHome({
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     project.chapters[0]?.id ?? null,
   );
+  const [chapterReloadVersion, setChapterReloadVersion] = useState(0);
   const [chapterText, setChapterText] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
   const [chapterTitle, setChapterTitle] = useState("Chapter 1");
@@ -190,6 +213,7 @@ function ProjectHome({
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const actionLockRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
@@ -216,17 +240,15 @@ function ProjectHome({
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
   const [glossaryRecording, setGlossaryRecording] = useState<GlossaryEntry | null>(null);
+  const pendingTranscriptRef = useRef<{ chapterId: string; text: string } | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const glossaryAudioRef = useRef<HTMLAudioElement | null>(null);
-  const glossaryObjectUrlRef = useRef<string | null>(null);
+  const glossaryAudioUrlRef = useRef<string | null>(null);
 
   useEffect(() => () => {
-    if (glossaryObjectUrlRef.current) {
-      URL.revokeObjectURL(glossaryObjectUrlRef.current);
-      glossaryObjectUrlRef.current = null;
-    }
+    glossaryAudioUrlRef.current = null;
     glossaryAudioRef.current?.pause();
     glossaryAudioRef.current = null;
   }, []);
@@ -247,7 +269,23 @@ function ProjectHome({
     }
   }, [project.chapters, selectedChapter]);
 
+  // A replacement take, punch, or duet mix keeps the same chapter id but
+  // invalidates the previous proof/meter result. Clear those local views when
+  // the attached audio changes; the chapter-loading effect below will restore
+  // a persisted alignment only when the new take actually has one.
   useEffect(() => {
+    setProof(null);
+    setAcxReport(null);
+    setRoomReport(null);
+    setTranscriptText("");
+  }, [selectedChapter?.id, selectedChapter?.audio_path]);
+
+  useEffect(() => {
+    setRoomReport(null);
+  }, [project.room_test_path]);
+
+  useEffect(() => {
+    let disposed = false;
     setProof(null);
     setAcxReport(null);
     setTranscriptText("");
@@ -268,15 +306,28 @@ function ProjectHome({
       window.boothDesk.readAlignment({ ...envelope, chapterId: selectedChapter.id }),
     ])
       .then(([result, alignment]) => {
+        if (disposed) {
+          return;
+        }
         setChapterText(result.text);
         setChapterSpans(result.spans);
         if (alignment && alignment.chapter_id === selectedChapter.id) {
           setProof({ pickups: alignment.pickups, transcript: alignment.transcript });
           setTranscriptText(alignment.transcript.map((word) => word.text).join(" "));
+        } else if (pendingTranscriptRef.current?.chapterId === selectedChapter.id) {
+          setTranscriptText(pendingTranscriptRef.current.text);
+          pendingTranscriptRef.current = null;
         }
       })
-      .catch((reason: unknown) => setNotice(messageFor(reason, "Could not read the chapter text.")));
-  }, [selectedChapter?.id, folder]);
+      .catch((reason: unknown) => {
+        if (!disposed) {
+          setNotice(messageFor(reason, "Could not read the chapter text."));
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [selectedChapter?.id, folder, chapterReloadVersion]);
 
   useEffect(() => {
     setChapterManagerOpen(false);
@@ -286,30 +337,29 @@ function ProjectHome({
 
   useEffect(() => {
     let disposed = false;
-    let objectUrl: string | null = null;
 
     setAudioUrl(null);
     if (!selectedChapter?.audio_path || !window.boothDesk || folder === "(browser preview)") {
       return;
     }
 
-    void window.boothDesk.readAudio({ folder, relativePath: selectedChapter.audio_path })
-      .then(({ mime, base64 }) => {
+    void window.boothDesk.audioUrl({ folder, relativePath: selectedChapter.audio_path })
+      .then((url) => {
         if (disposed) {
           return;
         }
-        const bytes = base64ToBytes(base64);
-        const blobBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-        objectUrl = URL.createObjectURL(new Blob([blobBuffer], { type: mime }));
-        setAudioUrl(objectUrl);
+        setAudioUrl(url);
       })
-      .catch((reason: unknown) => setNotice(messageFor(reason, "Could not load the attached audio.")));
+      .catch((reason: unknown) => {
+        if (!disposed) {
+          setNotice(messageFor(reason, "Could not load the attached audio."));
+        }
+      });
 
     return () => {
       disposed = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
+      // booth-audio:// URLs are owned by the main process; there is no Blob
+      // object URL to revoke here.
     };
   }, [selectedChapter?.audio_path, folder]);
 
@@ -427,9 +477,9 @@ function ProjectHome({
       if (!result) {
         return;
       }
+      pendingTranscriptRef.current = { chapterId: result.chapter.id, text: result.transcriptText };
       onChange({ folder: result.folder, project: result.project });
       setSelectedChapterId(result.chapter.id);
-      setTranscriptText(result.transcriptText);
       setNotice("Proof fixture loaded. Click Proof chapter to find the deliberate on → in substitution.");
     });
   }
@@ -477,6 +527,10 @@ function ProjectHome({
       });
       if (result) {
         onChange(result);
+        // Mixing keeps the alignment as the seat timeline and pickup source;
+        // reload it immediately so the filtered pickup list survives the
+        // canonical audio-path change without requiring a project reopen.
+        setChapterReloadVersion((version) => version + 1);
         setNotice(`Duet mix written to ${result.mixPath}; stems are ${result.n1StemPath} and ${result.n2StemPath}. Timing used ${result.timingSource} mapping.`);
       }
     });
@@ -489,20 +543,13 @@ function ProjectHome({
     }
 
     await runAction(`meter-${chapter.id}`, async () => {
-      const decoded = await window.boothDesk?.decodeAudio({
+      const report = await window.boothDesk?.measureAudio({
         folder,
         relativePath: chapter.audio_path as string,
       });
-      if (!decoded) {
+      if (!report) {
         return;
       }
-      const samples = float32FromBase64(decoded.pcmBase64);
-      const report = measurePcm({
-        samples,
-        sampleRate: decoded.sampleRate,
-        channels: decoded.channels,
-        format: decoded.format,
-      });
       setAcxReport(report);
       await persistProject({
         ...project,
@@ -521,20 +568,25 @@ function ProjectHome({
     }
     const bridge = window.boothDesk;
     await runAction("room-meter", async () => {
+      const metadata = await bridge.audioMetadata({ folder, relativePath: project.room_test_path as string });
+      if (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds > 60) {
+        throw new Error("Room test audio must be 60 seconds or shorter before it can be measured.");
+      }
       const decoded = await bridge.decodeAudio({ folder, relativePath: project.room_test_path as string });
       if (!decoded) {
         return;
       }
+      if (!Number.isFinite(decoded.durationSeconds) || decoded.durationSeconds > 60) {
+        throw new Error("Room test audio must be 60 seconds or shorter before it can be measured.");
+      }
       let speechRmsDbfs: number | undefined;
       if (selectedChapter?.audio_path) {
         try {
-          const speechAudio = await bridge.decodeAudio({ folder, relativePath: selectedChapter.audio_path });
-          speechRmsDbfs = measurePcm({
-            samples: float32FromBase64(speechAudio.pcmBase64),
-            sampleRate: speechAudio.sampleRate,
-            channels: speechAudio.channels,
-            format: speechAudio.format,
-          }).rms_dbfs;
+          speechRmsDbfs = (await bridge.measureAudio({
+            folder,
+            relativePath: selectedChapter.audio_path,
+            requireRoomTone: false,
+          })).rms_dbfs;
         } catch {
           speechRmsDbfs = undefined;
         }
@@ -559,13 +611,19 @@ function ProjectHome({
       return;
     }
     await runAction(`proof-${chapter.id}`, async () => {
-      let duration = audioRef.current?.duration;
-      if ((!duration || !Number.isFinite(duration)) && window.boothDesk) {
-        const decoded = await window.boothDesk.decodeAudio({
+      // The audio element can still expose the previous chapter's duration
+      // for one render after selection changes. Ask the main process for the
+      // selected path's metadata so alignment timestamps never inherit stale
+      // UI state.
+      let duration: number | undefined;
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const metadata = await window.boothDesk.audioMetadata({
           folder,
           relativePath: chapter.audio_path as string,
         });
-        duration = decoded.durationSeconds;
+        duration = metadata.durationSeconds;
+      } else {
+        duration = audioRef.current?.duration;
       }
       let transcript: TranscriptWord[];
       if (transcriptText.trim().length > 0) {
@@ -758,13 +816,23 @@ function ProjectHome({
       return;
     }
     await runAction("identity", async () => {
+      if (!canClaimIdentity(project, cleanName, identityRole)) {
+        throw new Error(
+          identityRole === "author"
+            ? "This project already has an author. Use the name listed for that author, or choose the narrator role."
+            : "That name is already recorded with a different project role.",
+        );
+      }
       const nextIdentity: LocalIdentity = {
         projectId: project.id,
         personName: cleanName,
         role: identityRole,
         ...(identityRole === "narrator" ? { seat: identitySeat } : {}),
       };
-      const existing = project.people.filter((person) => person.name.toLocaleLowerCase() !== cleanName.toLocaleLowerCase());
+      const normalizedName = cleanName.toLocaleLowerCase("en-US");
+      const existing = project.people.filter(
+        (person) => person.name.trim().toLocaleLowerCase("en-US") !== normalizedName,
+      );
       const nextProject: ProjectFile = {
         ...project,
         people: [
@@ -804,10 +872,28 @@ function ProjectHome({
 
   async function changeProjectMode(mode: "solo" | "duet") {
     await runAction("mode", async () => {
-      await persistProject({ ...project, mode, updated_at: new Date().toISOString() });
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const result = await window.boothDesk.setProjectMode({ ...envelope, mode });
+        onChange(result);
+        setChapterReloadVersion((version) => version + 1);
+        if (mode === "solo") {
+          setChapterSpans((current) => current.map((span) => ({ ...span, seat: "narration" })));
+          setProof(null);
+        }
+      } else {
+        await persistProject({
+          ...project,
+          mode,
+          updated_at: new Date().toISOString(),
+        });
+        if (mode === "solo") {
+          setChapterSpans((current) => current.map((span) => ({ ...span, seat: "narration" })));
+          setProof(null);
+        }
+      }
       setNotice(mode === "duet"
         ? "Duet mode is on: N1 and N2 keep their voices inside every POV."
-        : "Solo mode is on: all spans default to narration.");
+        : "Solo mode is on: every script span is assigned to narration and stale seat proof was cleared.");
     });
   }
 
@@ -849,6 +935,9 @@ function ProjectHome({
       setChapterSpans(linkGlossarySpans(chapterSpans, glossary));
     }
     onChange(nextEnvelope);
+    if (window.boothDesk && folder !== "(browser preview)") {
+      setChapterReloadVersion((version) => version + 1);
+    }
   }
 
   async function addGlossary() {
@@ -903,23 +992,18 @@ function ProjectHome({
       return;
     }
     await runAction(`glossary-play-${entry.id}`, async () => {
-      const audio = await window.boothDesk?.readAudio({ folder, relativePath: entry.clip_path as string });
-      if (!audio) {
+      const url = await window.boothDesk?.audioUrl({ folder, relativePath: entry.clip_path as string });
+      if (!url) {
         return;
       }
-      if (glossaryObjectUrlRef.current) {
-        URL.revokeObjectURL(glossaryObjectUrlRef.current);
-      }
-      const bytes = base64ToBytes(audio.base64);
-      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-      const url = URL.createObjectURL(new Blob([buffer], { type: audio.mime }));
-      glossaryObjectUrlRef.current = url;
+      glossaryAudioRef.current?.pause();
+      glossaryAudioUrlRef.current = url;
       const player = new Audio(url);
       glossaryAudioRef.current = player;
       player.addEventListener("ended", () => {
-        if (glossaryObjectUrlRef.current === url) {
-          URL.revokeObjectURL(url);
-          glossaryObjectUrlRef.current = null;
+        if (glossaryAudioUrlRef.current === url) {
+          glossaryAudioUrlRef.current = null;
+          glossaryAudioRef.current = null;
         }
       }, { once: true });
       await player.play();
@@ -1021,6 +1105,9 @@ function ProjectHome({
       });
       if (result) {
         onChange(result);
+        setChapterReloadVersion((version) => version + 1);
+        setProof(null);
+        setAcxReport(null);
         setChapterManagerOpen(false);
         setNotice(`Chapters merged. The removed chapter source remains at ${result.preservedSourcePath}.`);
       }
@@ -1032,6 +1119,10 @@ function ProjectHome({
       setNotice("Seat assignment is available in the desktop app.");
       return;
     }
+    if (project.mode === "solo" && chapterSeat !== "narration") {
+      setNotice("Solo projects can use only the narration seat. Switch to duet mode first.");
+      return;
+    }
     await runAction("chapter-seat", async () => {
       const result = await window.boothDesk?.setChapterSeat({
         ...envelope,
@@ -1040,6 +1131,9 @@ function ProjectHome({
       });
       if (result) {
         onChange(result);
+        setChapterReloadVersion((version) => version + 1);
+        setProof(null);
+        setAcxReport(null);
         setNotice(`All spans in ${selectedChapter.title} are now assigned to ${chapterSeat}.`);
       }
     });
@@ -1050,7 +1144,7 @@ function ProjectHome({
       return;
     }
     await runAction(`span-seat-${index}`, async () => {
-      const nextSpans = assignSpanSeat(chapterSpans, index, seat);
+      const nextSpans = assignSpanSeat(chapterSpans, index, project.mode === "solo" ? "narration" : seat);
       setChapterSpans(nextSpans);
       if (window.boothDesk && folder !== "(browser preview)") {
         const result = await window.boothDesk.setChapterSpans({
@@ -1059,6 +1153,8 @@ function ProjectHome({
           spans: nextSpans,
         });
         onChange(result);
+        setProof(null);
+        setAcxReport(null);
       }
       setNotice(`Span ${index + 1} is assigned to ${seat}.`);
     });
@@ -1073,6 +1169,10 @@ function ProjectHome({
   }
 
   async function runAction(name: string, action: () => Promise<void>): Promise<boolean> {
+    if (actionLockRef.current) {
+      return false;
+    }
+    actionLockRef.current = true;
     setBusyAction(name);
     setNotice(null);
     try {
@@ -1083,13 +1183,14 @@ function ProjectHome({
       return false;
     } finally {
       setBusyAction(null);
+      actionLockRef.current = false;
     }
   }
 
   return (
     <main className="app-shell project-shell">
       <AppHeader eyebrow="Book home" title={project.name}>
-        <button className="text-button" type="button" onClick={onClose}>
+        <button className="text-button" type="button" disabled={busyAction !== null} onClick={onClose}>
           Close project
         </button>
       </AppHeader>
@@ -1104,7 +1205,7 @@ function ProjectHome({
             <p className="folder-path">{folder}</p>
           </div>
           <div className="heading-actions">
-            <button className="compact-button" type="button" onClick={() => setComposerOpen(true)}>
+            <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setComposerOpen(true)}>
               Paste chapter
             </button>
             <button
@@ -1131,7 +1232,7 @@ function ProjectHome({
             >
               {busyAction === "share" ? "Preparing ZIP…" : "Share project ZIP"}
             </button>
-            <button className="compact-button" type="button" onClick={() => setRoomTestOpen(true)}>
+            <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setRoomTestOpen(true)}>
               Room test
             </button>
           </div>
@@ -1145,6 +1246,7 @@ function ProjectHome({
               key={panel}
               className={activePanel === panel ? "active" : ""}
               type="button"
+              disabled={busyAction !== null}
               onClick={() => setActivePanel(panel)}
             >
               {panel === "chapters" ? "Chapters" : panel === "glossary" ? "Glossary" : panel === "collaboration" ? "Collaboration" : "Settings"}
@@ -1312,6 +1414,7 @@ function ProjectHome({
           splitOffset={splitOffset}
           splitTitle={splitTitle}
           seat={chapterSeat}
+          projectMode={project.mode}
           busyAction={busyAction}
           onSplitOffset={setSplitOffset}
           onSplitTitle={setSplitTitle}
@@ -1334,7 +1437,18 @@ function ProjectHome({
           onFontSize={setPromptFontSize}
           onTheme={setPromptTheme}
           onPlayGlossary={(entry) => void playGlossaryClip(entry)}
-          onClose={() => setTeleprompterOpen(false)}
+          onClose={() => {
+            setTeleprompterOpen(false);
+            if (
+              promptFontSize !== projectSettings.teleprompter_font_size
+              || promptTheme !== projectSettings.teleprompter_theme
+            ) {
+              void persistSettings({
+                teleprompter_font_size: promptFontSize,
+                teleprompter_theme: promptTheme,
+              });
+            }
+          }}
         />
       ) : null}
 
@@ -1518,6 +1632,11 @@ function RecorderPanel({
   disabled: boolean;
   onSave: (wavBase64: string) => Promise<unknown>;
 }) {
+  const MAX_RECORDING_SECONDS = 2 * 60 * 60;
+  // MediaRecorder can flush one or more timeslice chunks after stop is
+  // requested. Stop slightly early so the validated WAV cannot cross the
+  // project's hard two-hour boundary while those final chunks arrive.
+  const RECORDING_STOP_MARGIN_SECONDS = 1;
   const [status, setStatus] = useState<"idle" | "recording" | "paused" | "processing" | "review" | "error">("idle");
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
@@ -1528,21 +1647,35 @@ function RecorderPanel({
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef(0);
-  const pausedAtRef = useRef(0);
+  const pausedAtRef = useRef<number | null>(null);
+  const pausedDurationRef = useRef(0);
   const timerRef = useRef<number | null>(null);
   const levelTimerRef = useRef<number | null>(null);
   const monitorContextRef = useRef<AudioContext | null>(null);
+  const mountedRef = useRef(true);
+  const startingRef = useRef(false);
+  const confirmingRef = useRef(false);
 
-  useEffect(() => () => {
-    if (timerRef.current !== null) {
-      window.clearInterval(timerRef.current);
-    }
-    if (levelTimerRef.current !== null) {
-      window.clearInterval(levelTimerRef.current);
-    }
-    recorderRef.current?.stop();
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    void monitorContextRef.current?.close();
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      startingRef.current = false;
+      confirmingRef.current = false;
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+      }
+      if (levelTimerRef.current !== null) {
+        window.clearInterval(levelTimerRef.current);
+      }
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.onstop = null;
+        recorder.stop();
+      }
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      void monitorContextRef.current?.close();
+    };
   }, []);
 
   useEffect(() => () => {
@@ -1552,9 +1685,17 @@ function RecorderPanel({
   }, [pendingUrl]);
 
   async function start() {
-    if (disabled || status === "recording" || status === "processing" || status === "review") {
+    if (
+      disabled
+      || startingRef.current
+      || status === "recording"
+      || status === "paused"
+      || status === "processing"
+      || status === "review"
+    ) {
       return;
     }
+    startingRef.current = true;
     setError(null);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -1564,12 +1705,22 @@ function RecorderPanel({
         throw new Error("This desktop build does not expose a local recorder.");
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       chunksRef.current = [];
       const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
         .find((candidate) => MediaRecorder.isTypeSupported(candidate));
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       recorderRef.current = recorder;
+      const monitorContext = new AudioContext();
+      monitorContextRef.current = monitorContext;
+      const source = monitorContext.createMediaStreamSource(stream);
+      const analyser = monitorContext.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           chunksRef.current.push(event.data);
@@ -1580,18 +1731,24 @@ function RecorderPanel({
       };
       recorder.start(250);
       startedAtRef.current = performance.now();
-      pausedAtRef.current = 0;
+      pausedAtRef.current = null;
+      pausedDurationRef.current = 0;
       setSeconds(0);
       setStatus("recording");
       timerRef.current = window.setInterval(() => {
-        setSeconds((performance.now() - startedAtRef.current - pausedAtRef.current) / 1000);
+        const now = performance.now();
+        const elapsed = recordingElapsedSeconds(
+          now,
+          startedAtRef.current,
+          pausedDurationRef.current,
+          pausedAtRef.current ?? undefined,
+        );
+        setSeconds(Math.min(MAX_RECORDING_SECONDS, elapsed));
+        if (elapsed >= MAX_RECORDING_SECONDS - RECORDING_STOP_MARGIN_SECONDS && recorderRef.current?.state === "recording") {
+          stop();
+          setError("The two-hour recording limit was reached. Review the take before saving it.");
+        }
       }, 100);
-      const monitorContext = new AudioContext();
-      monitorContextRef.current = monitorContext;
-      const source = monitorContext.createMediaStreamSource(stream);
-      const analyser = monitorContext.createAnalyser();
-      analyser.fftSize = 512;
-      source.connect(analyser);
       const values = new Uint8Array(analyser.fftSize);
       levelTimerRef.current = window.setInterval(() => {
         analyser.getByteTimeDomainData(values);
@@ -1602,10 +1759,30 @@ function RecorderPanel({
         setLevel(Math.min(1, peak));
       }, 80);
     } catch (reason) {
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.onstop = null;
+        recorder.stop();
+      }
+      recorderRef.current = null;
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
-      setStatus("error");
-      setError(messageFor(reason, "Microphone permission or recording failed."));
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (levelTimerRef.current !== null) {
+        window.clearInterval(levelTimerRef.current);
+        levelTimerRef.current = null;
+      }
+      void monitorContextRef.current?.close();
+      monitorContextRef.current = null;
+      if (mountedRef.current) {
+        setStatus("error");
+        setError(messageFor(reason, "Microphone permission or recording failed."));
+      }
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -1624,7 +1801,11 @@ function RecorderPanel({
     if (!recorder || recorder.state !== "paused") {
       return;
     }
-    pausedAtRef.current = performance.now() - pausedAtRef.current;
+    const now = performance.now();
+    if (pausedAtRef.current !== null) {
+      pausedDurationRef.current += Math.max(0, now - pausedAtRef.current);
+      pausedAtRef.current = null;
+    }
     recorder.resume();
     setStatus("recording");
   }
@@ -1633,6 +1814,10 @@ function RecorderPanel({
     const recorder = recorderRef.current;
     if (!recorder || (recorder.state !== "recording" && recorder.state !== "paused")) {
       return;
+    }
+    if (recorder.state === "paused" && pausedAtRef.current !== null) {
+      pausedDurationRef.current += Math.max(0, performance.now() - pausedAtRef.current);
+      pausedAtRef.current = null;
     }
     recorder.stop();
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1648,13 +1833,21 @@ function RecorderPanel({
   }
 
   async function finishRecording(mimeType: string) {
+    let decodeContext: AudioContext | null = null;
     try {
       const blob = new Blob(chunksRef.current, { type: mimeType });
       const arrayBuffer = await blob.arrayBuffer();
-      const context = new AudioContext();
-      const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
+      decodeContext = new AudioContext();
+      const decoded = await decodeContext.decodeAudioData(arrayBuffer.slice(0));
       const mono = resampleAudioBufferToMono(decoded, 44_100);
-      await context.close();
+      if (mono.length === 0) {
+        throw new Error("The take did not contain any audio samples.");
+      }
+      await decodeContext.close();
+      decodeContext = null;
+      if (!mountedRef.current) {
+        return;
+      }
       const wavBase64 = bytesToBase64(encodeWavPcm16(mono, 44_100, 1));
       const nextBytes = base64ToBytes(wavBase64);
       const nextBuffer = nextBytes.buffer.slice(nextBytes.byteOffset, nextBytes.byteOffset + nextBytes.byteLength) as ArrayBuffer;
@@ -1663,9 +1856,12 @@ function RecorderPanel({
       setStatus("review");
       setLevel(0);
     } catch (reason) {
-      setStatus("error");
-      setError(messageFor(reason, "Could not convert the take to a WAV."));
+      if (mountedRef.current) {
+        setStatus("error");
+        setError(messageFor(reason, "Could not convert the take to a WAV."));
+      }
     } finally {
+      void decodeContext?.close();
       recorderRef.current = null;
       streamRef.current = null;
       chunksRef.current = [];
@@ -1675,15 +1871,22 @@ function RecorderPanel({
   }
 
   async function confirmTake() {
-    if (!pendingWav) {
+    if (!pendingWav || confirmingRef.current) {
       return;
     }
+    confirmingRef.current = true;
     setStatus("processing");
     setError(null);
     try {
       const saveResult = await onSave(pendingWav);
+      if (!mountedRef.current) {
+        return;
+      }
       if (saveResult === false) {
-        setStatus("error");
+        // Keep the reviewed take available when the project write fails. The
+        // caller displays the actionable error, and the user can retry or
+        // discard instead of losing the only copy behind an error state.
+        setStatus("review");
         return;
       }
       setPendingWav(null);
@@ -1693,8 +1896,12 @@ function RecorderPanel({
       setPendingUrl(null);
       setStatus("idle");
     } catch (reason) {
-      setStatus("error");
-      setError(messageFor(reason, "Could not save this take."));
+      if (mountedRef.current) {
+        setStatus("review");
+        setError(messageFor(reason, "Could not save this take."));
+      }
+    } finally {
+      confirmingRef.current = false;
     }
   }
 
@@ -1750,7 +1957,7 @@ function RecorderPanel({
 
 function resampleAudioBufferToMono(buffer: AudioBuffer, targetRate: number): Float32Array {
   if (buffer.length === 0 || buffer.numberOfChannels === 0) {
-    return new Float32Array(1);
+    return new Float32Array(0);
   }
   const outputLength = Math.max(1, Math.round(buffer.duration * targetRate));
   const output = new Float32Array(outputLength);
@@ -1786,6 +1993,7 @@ function ChapterManager({
   splitOffset,
   splitTitle,
   seat,
+  projectMode,
   busyAction,
   onSplitOffset,
   onSplitTitle,
@@ -1802,6 +2010,7 @@ function ChapterManager({
   splitOffset: number;
   splitTitle: string;
   seat: "narration" | "N1" | "N2";
+  projectMode: "solo" | "duet";
   busyAction: string | null;
   onSplitOffset: (value: number) => void;
   onSplitTitle: (value: string) => void;
@@ -1845,12 +2054,12 @@ function ChapterManager({
         <div className="manager-inline">
           <select id="manager-seat" value={seat} onChange={(event) => onSeat(event.target.value as "narration" | "N1" | "N2")}>
             <option value="narration">Narration</option>
-            <option value="N1">N1</option>
-            <option value="N2">N2</option>
+            <option value="N1" disabled={projectMode === "solo"}>N1</option>
+            <option value="N2" disabled={projectMode === "solo"}>N2</option>
           </select>
           <button type="button" disabled={busyAction !== null} onClick={onApplySeat}>Apply seat</button>
         </div>
-        <p className="manager-help">This v1 control applies one seat to every span in the chapter; finer span painting is next.</p>
+        <p className="manager-help">This applies one seat to every span; use the chapter desk for finer span painting. Solo mode persists narration only.</p>
 
         <button type="button" disabled={!nextChapter || busyAction !== null} onClick={onMerge}>
           {busyAction === "chapter-merge" ? "Merging…" : nextChapter ? `Merge with “${nextChapter.title}”` : "No following chapter to merge"}
@@ -2203,7 +2412,7 @@ function CollaborationPanel({
             <>
               <label>
                 Chapter
-                <select value={selectedChapterId ?? ""} onChange={(event) => onSelectChapter(event.target.value)}>
+                <select value={selectedChapterId ?? ""} disabled={busyAction !== null} onChange={(event) => onSelectChapter(event.target.value)}>
                   {project.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
                 </select>
               </label>
@@ -2266,7 +2475,13 @@ function ChapterTable({
             <tr
               key={chapter.id}
               className={chapter.id === selectedId ? "selected-row" : ""}
-              onClick={() => onSelect(chapter.id)}
+              aria-selected={chapter.id === selectedId}
+              aria-disabled={busyAction !== null}
+              onClick={() => {
+                if (busyAction === null) {
+                  onSelect(chapter.id);
+                }
+              }}
             >
               <td>{String(chapter.index).padStart(2, "0")}</td>
               <td>
@@ -2280,7 +2495,7 @@ function ChapterTable({
                 <button
                   className="table-action"
                   type="button"
-                  disabled={busyAction === `attach-${chapter.id}`}
+                  disabled={busyAction !== null}
                   onClick={(event) => {
                     event.stopPropagation();
                     onAttach(chapter);
@@ -2372,7 +2587,7 @@ function ChapterDesk({
           <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
             {chapter.audio_path ? "Audio attached" : "No audio"}
           </span>
-          <button className="table-action" type="button" onClick={onManage}>Manage script</button>
+          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Manage script</button>
         </div>
       </header>
 
@@ -2383,7 +2598,7 @@ function ChapterDesk({
         <p>{chapterText || "Loading manuscript…"}</p>
       </details>
 
-      <SpanSeatEditor spans={spans} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
+      <SpanSeatEditor spans={spans} projectMode={projectMode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
 
       <div className="proof-input">
         <label htmlFor="local-transcript">Local word transcript</label>
@@ -2391,6 +2606,7 @@ function ChapterDesk({
           id="local-transcript"
           rows={4}
           value={transcriptText}
+          disabled={busyAction !== null}
           onChange={(event) => onTranscriptChange(event.target.value)}
           placeholder="Leave blank to transcribe locally, or paste the words heard in the take…"
         />
@@ -2414,7 +2630,7 @@ function ChapterDesk({
         <button
           className="secondary-button"
           type="button"
-          disabled={chapterText.trim().length === 0}
+          disabled={chapterText.trim().length === 0 || busyAction !== null}
           onClick={onOpenTeleprompter}
         >
           Open teleprompter
@@ -2454,7 +2670,7 @@ function ChapterDesk({
         />
       ) : null}
 
-      {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} onUpdate={onUpdatePickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
+      {proof ? <PickupList pickups={proof.pickups} busyAction={busyAction} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} onUpdate={onUpdatePickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
       {acxReport ? <AcxMeter report={acxReport} /> : null}
     </article>
   );
@@ -2462,10 +2678,12 @@ function ChapterDesk({
 
 function SpanSeatEditor({
   spans,
+  projectMode,
   disabled,
   onAssign,
 }: {
   spans: ScriptSpan[];
+  projectMode: "solo" | "duet";
   disabled: boolean;
   onAssign: (index: number, seat: "narration" | "N1" | "N2") => void;
 }) {
@@ -2490,8 +2708,8 @@ function SpanSeatEditor({
               onChange={(event) => onAssign(index, event.target.value as "narration" | "N1" | "N2")}
             >
               <option value="narration">Narration</option>
-              <option value="N1">N1</option>
-              <option value="N2">N2</option>
+              <option value="N1" disabled={projectMode === "solo"}>N1</option>
+              <option value="N2" disabled={projectMode === "solo"}>N2</option>
             </select>
           </li>
         ))}
@@ -2542,7 +2760,7 @@ function DuetTracksPanel({
       </div>
       <div className="duet-mix-actions">
         <label>Narration seat
-          <select value={narrationSeat} onChange={(event) => onNarrationSeat(event.target.value as "N1" | "N2")}>
+            <select value={narrationSeat} disabled={busyAction !== null} onChange={(event) => onNarrationSeat(event.target.value as "N1" | "N2")}>
             <option value="N1">N1</option>
             <option value="N2">N2</option>
           </select>
@@ -2556,7 +2774,7 @@ function DuetTracksPanel({
   );
 }
 
-function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -2570,7 +2788,7 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
         </div>
         <div className="result-heading-actions">
           <label className="pickup-seat-filter">Seat
-            <select value={seatFilter} onChange={(event) => onSeatFilter(event.target.value as "all" | "narration" | "N1" | "N2")}>
+            <select value={seatFilter} disabled={busyAction !== null} onChange={(event) => onSeatFilter(event.target.value as "all" | "narration" | "N1" | "N2")}>
               <option value="all">All</option>
               <option value="narration">Narration</option>
               <option value="N1">N1</option>
@@ -2578,13 +2796,13 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
             </select>
           </label>
           <label className="pickup-seat-filter">Show
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "open" | "all")}>
+            <select value={statusFilter} disabled={busyAction !== null} onChange={(event) => setStatusFilter(event.target.value as "open" | "all")}>
               <option value="open">Open</option>
               <option value="all">All</option>
             </select>
           </label>
           <span className="result-count">{openCount} open</span>
-          <button className="table-action" type="button" onClick={onExportMarkers}>Export markers</button>
+          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportMarkers}>Export markers</button>
         </div>
       </div>
       {visiblePickups.length === 0 ? (
@@ -2598,15 +2816,15 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
           {visiblePickups.map((pickup) => (
             <li key={pickup.id} className={`pickup-row ${pickup.status}`}>
               <span className="pickup-actions">
-                <button type="button" onClick={() => onPlay(pickup)}>Play</button>
-                {pickup.status === "open" ? <button type="button" onClick={() => onPunch(pickup)}>Punch</button> : null}
+                <button type="button" disabled={busyAction !== null} onClick={() => onPlay(pickup)}>Play</button>
+                {pickup.status === "open" ? <button type="button" disabled={busyAction !== null} onClick={() => onPunch(pickup)}>Punch</button> : null}
                 {pickup.status === "open" ? (
                   <>
-                    <button type="button" onClick={() => onUpdate(pickup, { status: "done" })}>Done</button>
-                    <button type="button" onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
+                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "done" })}>Done</button>
+                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
                   </>
                 ) : (
-                  <button type="button" onClick={() => onUpdate(pickup, { status: "open" })}>Reopen</button>
+                  <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "open" })}>Reopen</button>
                 )}
               </span>
               <time>{formatTime(pickup.t_start)}</time>
@@ -2618,7 +2836,7 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
               <span className="kind-badge">{pickup.kind}</span>
               <details className="pickup-note">
                 <summary>{pickup.note ? "Edit note" : "Note"}</summary>
-                <PickupNoteEditor pickup={pickup} onSave={(note) => onUpdate(pickup, { note })} />
+                <PickupNoteEditor pickup={pickup} busy={busyAction !== null} onSave={(note) => onUpdate(pickup, { note })} />
               </details>
             </li>
           ))}
@@ -2628,13 +2846,13 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
   );
 }
 
-function PickupNoteEditor({ pickup, onSave }: { pickup: Pickup; onSave: (note: string) => void }) {
+function PickupNoteEditor({ pickup, busy, onSave }: { pickup: Pickup; busy: boolean; onSave: (note: string) => void }) {
   const [note, setNote] = useState(pickup.note ?? "");
   useEffect(() => setNote(pickup.note ?? ""), [pickup.id, pickup.note]);
   return (
     <div className="pickup-note-editor">
       <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Human note for the collaborator" />
-      <button type="button" disabled={note.trim().length === 0} onClick={() => onSave(note)}>Save note</button>
+      <button type="button" disabled={busy || note.trim().length === 0} onClick={() => onSave(note)}>Save note</button>
     </div>
   );
 }
@@ -2646,6 +2864,16 @@ function AcxMeter({ report }: { report: AcxReport }) {
     ["Noise floor", "≤ −60 dBFS", formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
     ["Sample rate", "44.1 kHz", `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
     ["Channels", "Mono or stereo", String(report.channels), report.checks.channels],
+    ["Format", "Known local format", report.format.toUpperCase(), report.checks.format],
+    [
+      "Bitrate / mode",
+      "MP3 ≥ 192 kbps CBR",
+      report.format === "mp3"
+        ? `${report.bitrate_kbps?.toFixed(0) ?? "?"} kbps ${report.vbr === true ? "VBR" : report.vbr === false ? "CBR" : "mode unknown"}`
+        : "Not applicable to source",
+      report.checks.format,
+    ],
+    ["Duration", "≤ 120 min", `${(report.duration_seconds / 60).toFixed(2)} min`, report.checks.duration],
     ["Head room tone", "0.5–5.0 s", `${report.head_room_tone_s.toFixed(2)} s`, report.checks.head_room_tone],
     ["Tail room tone", "0.5–5.0 s", `${report.tail_room_tone_s.toFixed(2)} s`, report.checks.tail_room_tone],
   ] as const;

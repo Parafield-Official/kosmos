@@ -1,6 +1,10 @@
 import type { AcxReport } from "./measure";
 import type { ChapterFile, ProjectFile } from "../project/types";
 
+// Keep desktop export decisions tied to the same versioned specification used
+// by the meter and master, rather than duplicating retail limits in Electron.
+export { ACX_SPEC } from "./spec";
+
 export interface ExportPlanOptions {
   includeOpeningCredits?: boolean;
   includeClosingCredits?: boolean;
@@ -25,7 +29,7 @@ export interface ReportEntry {
   fileName: string;
   before?: AcxReport;
   after?: AcxReport;
-  status: "pass" | "fail" | "not_measured";
+  status: "pass" | "warn" | "fail" | "not_measured";
   note?: string;
 }
 
@@ -133,4 +137,3 @@ function creditTemplate(kind: "opening" | "closing"): string {
 function format(value: number): string {
   return Number.isFinite(value) ? value.toFixed(1) : "-inf";
 }
-

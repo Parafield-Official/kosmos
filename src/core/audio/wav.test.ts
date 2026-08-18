@@ -25,6 +25,24 @@ describe("local WAV recorder codec", () => {
     expect(() => decodeWavPcm16(bytes)).toThrow(/16-bit PCM/i);
   });
 
+  it("rejects empty recordings instead of treating them as valid takes", () => {
+    expect(() => encodeWavPcm16(new Float32Array(0), 44_100, 1)).toThrow(/empty/i);
+    const bytes = new Uint8Array(44);
+    const view = new DataView(bytes.buffer);
+    new TextEncoder().encodeInto("RIFF", bytes);
+    new TextEncoder().encodeInto("WAVE", bytes.subarray(8));
+    new TextEncoder().encodeInto("fmt ", bytes.subarray(12));
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 44_100, true);
+    view.setUint32(28, 88_200, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    new TextEncoder().encodeInto("data", bytes.subarray(36));
+    expect(() => decodeWavPcm16(bytes)).toThrow(/empty/i);
+  });
+
   it("rejects a data chunk whose length is not a complete PCM frame", () => {
     const bytes = encodeWavPcm16(Float32Array.from([0, 0]), 44_100, 1);
     new DataView(bytes.buffer).setUint32(40, 3, true);

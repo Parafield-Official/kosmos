@@ -13,6 +13,7 @@ interface BoothDeskBridge {
   splitChapter: (payload: ProjectEnvelope & { chapterId: string; offset: number; secondTitle: string }) => Promise<ChapterEditResult>;
   mergeChapters: (payload: ProjectEnvelope & { firstChapterId: string; secondChapterId: string }) => Promise<ProjectEnvelope & { preservedSourcePath: string }>;
   setChapterSeat: (payload: ProjectEnvelope & { chapterId: string; seat: "narration" | "N1" | "N2" }) => Promise<ProjectEnvelope>;
+  setProjectMode: (payload: ProjectEnvelope & { mode: "solo" | "duet" }) => Promise<ProjectEnvelope>;
   setChapterSpans: (payload: ProjectEnvelope & { chapterId: string; spans: import("./core/project/types").ScriptSpan[] }) => Promise<ProjectEnvelope>;
   loadExample: (payload: ProjectEnvelope) => Promise<ExampleEnvelope>;
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
@@ -26,8 +27,10 @@ interface BoothDeskBridge {
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room" | "glossary"; chapterId?: string; glossaryId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
   applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
   mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
-  readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
+  audioUrl: (payload: { folder: string; relativePath: string }) => Promise<string>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
+  audioMetadata: (payload: { folder: string; relativePath: string }) => Promise<AudioMetadata>;
+  measureAudio: (payload: { folder: string; relativePath: string; requireRoomTone?: boolean }) => Promise<import("./core/acx/measure").AcxReport>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
   modelStatus: () => Promise<ModelStatus>;
   downloadModel: () => Promise<ModelStatus>;
@@ -118,7 +121,18 @@ interface DecodedAudio {
   channels: number;
   format: import("./core/acx/measure").AudioFormat;
   durationSeconds: number;
+  bitrateKbps?: number;
+  vbr?: boolean;
   pcmBase64: string;
+}
+
+interface AudioMetadata {
+  sampleRate: number;
+  channels: number;
+  format: import("./core/acx/measure").AudioFormat;
+  durationSeconds: number;
+  bitrateKbps?: number;
+  vbr?: boolean;
 }
 
 interface TranscriptionResult {

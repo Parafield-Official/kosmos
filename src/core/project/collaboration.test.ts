@@ -3,6 +3,7 @@ import { createEmptyProject, addChapter, parseProject, serializeProject } from "
 import {
   addChapterNote,
   addPickupNote,
+  canClaimIdentity,
   canApproveChapters,
   setChapterAuthorStatus,
   updatePickup,
@@ -10,6 +11,16 @@ import {
 import type { Pickup } from "./types";
 
 describe("folder collaboration roles", () => {
+  it("prevents accidental role self-promotion while allowing narrator onboarding", () => {
+    let project = createEmptyProject("Book", { id: "book" });
+    project.people = [{ name: "Alex", role: "author" }];
+
+    expect(canClaimIdentity(project, "Alex", "author")).toBe(true);
+    expect(canClaimIdentity(project, "Alex", "narrator")).toBe(false);
+    expect(canClaimIdentity(project, "Nia", "narrator")).toBe(true);
+    expect(canClaimIdentity(project, "Nia", "author")).toBe(false);
+  });
+
   it("round-trips an author note and approval for a narrator to read", () => {
     let project = createEmptyProject("Shared Book", {
       id: "shared-book",
@@ -102,5 +113,21 @@ describe("folder collaboration roles", () => {
     const next = updatePickup(pickup, { status: "done", note: "Retake approved." });
     expect(next).toMatchObject({ id: "pickup-2", status: "done", note: "Retake approved." });
     expect(pickup.status).toBe("open");
+  });
+
+  it("rejects unknown workflow statuses at the runtime boundary", () => {
+    const pickup: Pickup = {
+      id: "pickup-3",
+      chapter_id: "ch01",
+      t_start: 0,
+      t_end: 1,
+      expected: "one",
+      heard: "one",
+      kind: "sub",
+      seat: "narration",
+      status: "open",
+      confidence: 1,
+    };
+    expect(() => updatePickup(pickup, { status: "unknown" as never })).toThrow(/status/i);
   });
 });

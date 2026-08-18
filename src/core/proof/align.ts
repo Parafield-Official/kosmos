@@ -74,13 +74,33 @@ interface PickupRun {
  */
 export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   const manuscriptTokens = tokenizeManuscript(input.manuscript);
-  const transcriptWords = input.transcript.filter((word) =>
-    typeof word.text === "string"
-    && normalizeToken(word.text).length > 0
-    && Number.isFinite(word.start)
-    && Number.isFinite(word.end)
-    && word.end >= word.start,
-  );
+  const normalizedTranscriptWords = input.transcript
+    .filter((word) =>
+      typeof word.text === "string"
+      && normalizeToken(word.text).length > 0
+      && Number.isFinite(word.start)
+      && Number.isFinite(word.end)
+      && word.start >= 0
+      && word.end >= 0
+      && word.end >= word.start,
+    )
+    .map((word) => ({ ...word, confidence: normalizedConfidence(word.confidence) }));
+  const hasDuration = Number.isFinite(input.durationSeconds) && (input.durationSeconds ?? 0) >= 0;
+  const durationSeconds = hasDuration
+    ? input.durationSeconds as number
+    : inferDuration(normalizedTranscriptWords);
+  const transcriptWords = hasDuration
+    ? normalizedTranscriptWords
+      .filter((word) => word.start <= durationSeconds)
+      .map((word) => {
+        const start = Math.min(durationSeconds, word.start);
+        return {
+          ...word,
+          start,
+          end: Math.min(durationSeconds, Math.max(start, word.end)),
+        };
+      })
+    : normalizedTranscriptWords;
   const transcriptValues = transcriptWords.map((word) => normalizeToken(word.text));
   const manuscriptValues = manuscriptTokens.map((token) => token.value);
   const operations = diffTokens(manuscriptValues, transcriptValues);
@@ -88,9 +108,6 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   let operationIndex = 0;
   let pickupOrdinal = 0;
   let previousTranscript: TranscriptWord | undefined;
-  const durationSeconds = Number.isFinite(input.durationSeconds) && (input.durationSeconds ?? 0) >= 0
-    ? input.durationSeconds as number
-    : inferDuration(transcriptWords);
 
   while (operationIndex < operations.length) {
     const operation = operations[operationIndex];
@@ -229,7 +246,7 @@ function detectPausePickups(input: PauseDetectionInput): Pickup[] {
       kind: "pause",
       seat: input.seat,
       status: "open",
-      confidence: clamp(confidence, 0, 1),
+    confidence: normalizedConfidence(confidence),
     });
   }
   return pauses;
@@ -249,14 +266,18 @@ function runToPickup(
   }
 
   const kind = expected && heard ? "sub" : expected ? "skip" : "insert";
-  const tStart = run.transcript.length > 0
-    ? Math.min(...run.transcript.map((word) => word.start))
-    : run.previousTranscript?.end ?? 0;
-  const tEnd = run.transcript.length > 0
-    ? Math.max(...run.transcript.map((word) => word.end))
-    : run.nextTranscript?.start ?? durationSeconds;
+  let tStart = run.previousTranscript?.end ?? 0;
+  let tEnd = run.nextTranscript?.start ?? durationSeconds;
+  if (run.transcript.length > 0) {
+    tStart = Infinity;
+    tEnd = -Infinity;
+    for (const word of run.transcript) {
+      tStart = Math.min(tStart, word.start);
+      tEnd = Math.max(tEnd, word.end);
+    }
+  }
   const confidence = run.transcript.length > 0
-    ? average(run.transcript.map((word) => clamp(word.confidence ?? 0, 0, 1)))
+    ? average(run.transcript.map((word) => normalizedConfidence(word.confidence)))
     : 0;
 
   return {
@@ -283,7 +304,12 @@ function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
   const merged: Pickup[] = [];
   for (const pickup of pickups) {
     const previous = merged[merged.length - 1];
-    if (!previous || pickup.t_start - previous.t_end > mergeWindow) {
+    if (
+      !previous
+      || previous.kind === "pause"
+      || pickup.kind === "pause"
+      || pickup.t_start - previous.t_end > mergeWindow
+    ) {
       merged.push(pickup);
       continue;
     }
@@ -313,7 +339,11 @@ function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
 }
 
 function inferDuration(transcript: TranscriptWord[]): number {
-  return transcript.length === 0 ? 0 : Math.max(...transcript.map((word) => word.end));
+  let duration = 0;
+  for (const word of transcript) {
+    duration = Math.max(duration, word.end);
+  }
+  return duration;
 }
 
 function average(values: number[]): number {
@@ -322,6 +352,10 @@ function average(values: number[]): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizedConfidence(value: number | undefined): number {
+  return Number.isFinite(value) ? clamp(value as number, 0, 1) : 0;
 }
 
 function stablePickupId(

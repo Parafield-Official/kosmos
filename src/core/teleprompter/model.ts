@@ -88,6 +88,7 @@ function appendSegment(line: PromptLine, segment: PromptSegment): void {
   if (
     previous
     && previous.seat === segment.seat
+    && previous.dialogue === segment.dialogue
     && previous.glossary_id === segment.glossary_id
     && JSON.stringify(previous.style) === JSON.stringify(segment.style)
   ) {

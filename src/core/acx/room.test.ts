@@ -38,4 +38,19 @@ describe("room test gain budget", () => {
     expect(result.status).toBe("warn");
     expect(result.warning).toMatch(/10.*20/);
   });
+
+  it("fails malformed room audio instead of treating NaN as a quiet floor", () => {
+    const result = analyzeRoomTest({
+      samples: Float32Array.from([0, Number.NaN, 0]),
+      sampleRate: 1000,
+      channels: 1,
+    });
+    expect(result.status).toBe("fail");
+    expect(result.warning).toMatch(/invalid audio/i);
+  });
+
+  it("fails an empty or truncated multichannel recording", () => {
+    expect(analyzeRoomTest({ samples: new Float32Array(0), sampleRate: 1000, channels: 1 }).status).toBe("fail");
+    expect(analyzeRoomTest({ samples: new Float32Array([0, 0, 0]), sampleRate: 1000, channels: 2 }).status).toBe("fail");
+  });
 });

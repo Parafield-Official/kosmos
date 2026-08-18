@@ -27,6 +27,28 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
   const durationSeconds = input.sampleRate > 0 && input.channels > 0
     ? input.samples.length / input.sampleRate / input.channels
     : 0;
+  if (
+    !Number.isFinite(input.sampleRate)
+    || !Number.isInteger(input.sampleRate)
+    || input.sampleRate <= 0
+    || !Number.isFinite(input.channels)
+    || !Number.isInteger(input.channels)
+    || input.channels <= 0
+    || input.samples.length === 0
+    || input.samples.length % input.channels !== 0
+    || input.samples.some((sample) => !Number.isFinite(sample))
+  ) {
+    return {
+      durationSeconds: 0,
+      noiseFloorDbfs: Number.NaN,
+      speechRmsDbfs: Number.isFinite(input.speechRmsDbfs) ? input.speechRmsDbfs as number : target,
+      targetRmsDbfs: target,
+      neededBoostDb: 0,
+      predictedFloorDbfs: Number.NaN,
+      status: "fail",
+      warning: "The room test contains invalid audio metadata or non-finite samples; record it again.",
+    };
+  }
   const mono = mixToMono(input.samples, input.channels);
   const noiseFloor = rmsDbfs(mono);
   const speechRms = Number.isFinite(input.speechRmsDbfs) ? input.speechRmsDbfs as number : target;

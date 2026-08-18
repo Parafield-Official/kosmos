@@ -22,6 +22,35 @@ export function canAddAuthorNotes(project: ProjectFile, actorName: string): bool
   return canApproveChapters(project, actorName);
 }
 
+/**
+ * Check a local identity against the shared role roster before it is written.
+ * The folder is not an authentication system, but this prevents a narrator
+ * from accidentally self-promoting to author (or changing an existing
+ * person's role) just by opening the collaboration panel.
+ *
+ * An empty roster is the deliberate bootstrap case: the first person may
+ * choose author or narrator. New narrators may join an existing project; a
+ * new author may join only when no author has been recorded yet.
+ */
+export function canClaimIdentity(
+  project: ProjectFile,
+  personName: string,
+  role: "author" | "narrator",
+): boolean {
+  const cleanName = personName.trim();
+  if (cleanName.length === 0) {
+    return false;
+  }
+  const existing = project.people.find((person) => samePerson(person.name, cleanName));
+  if (existing) {
+    return existing.role === role;
+  }
+  if (role === "author") {
+    return !project.people.some((person) => person.role === "author");
+  }
+  return true;
+}
+
 /** Set a chapter's author-facing workflow state with an explicit role check. */
 export function setChapterAuthorStatus(
   project: ProjectFile,
@@ -30,6 +59,9 @@ export function setChapterAuthorStatus(
   actorName: string,
   now = new Date().toISOString(),
 ): ProjectFile {
+  if (!(["draft", "needs_pickup", "approved", "ignore_this_flag"] as const).includes(status)) {
+    throw new Error(`Unknown chapter author status: ${String(status)}`);
+  }
   if (AUTHOR_ONLY_STATUSES.has(status) && !canApproveChapters(project, actorName)) {
     throw new Error("Only a person with the author role can set author status");
   }
@@ -68,7 +100,7 @@ export function addChapterNote(
   }
   const now = options.now ?? new Date().toISOString();
   const note: ChapterNote = {
-    id: options.id ?? `note-${now.replace(/[^0-9]/g, "").slice(0, 14)}-${(project.chapter_notes?.length ?? 0) + 1}`,
+    id: options.id ?? `note-${randomId()}`,
     chapter_id: chapterId,
     author: actorName.trim(),
     body: cleanBody,
@@ -79,6 +111,13 @@ export function addChapterNote(
     chapter_notes: [...(project.chapter_notes ?? []), note],
     updated_at: now,
   };
+}
+
+function randomId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 /** Attach a short, plain-text explanation to a proof pickup. */
@@ -96,6 +135,9 @@ export function updatePickup(
 ): Pickup {
   const next = { ...pickup };
   if (changes.status) {
+    if (!(["open", "done", "ignored"] as const).includes(changes.status)) {
+      throw new Error(`Unknown pickup status: ${String(changes.status)}`);
+    }
     next.status = changes.status;
   }
   if (changes.note !== undefined) {

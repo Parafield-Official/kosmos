@@ -33,6 +33,9 @@ describe("collaborator pack planning", () => {
       "local.me",
       ".git/config",
       ".DS_Store",
+      "project.json.tmp-123",
+      "export/.acx-staging-123/REPORT.txt",
+      "audio/01_raw.wav.backup-123",
     ];
 
     const full = planSharePaths(project, files, { lightPack: false });
@@ -50,6 +53,9 @@ describe("collaborator pack planning", () => {
     ]);
     expect(full).not.toContain("local.me");
     expect(full).not.toContain(".git/config");
+    expect(full).not.toContain("project.json.tmp-123");
+    expect(full).not.toContain("export/.acx-staging-123/REPORT.txt");
+    expect(full).not.toContain("audio/01_raw.wav.backup-123");
   });
 
   it("rejects absolute and parent-traversal archive paths", () => {
@@ -60,5 +66,29 @@ describe("collaborator pack planning", () => {
     expect(() => planSharePaths(project, ["/tmp/secret.txt"], { lightPack: false })).toThrow(
       /unsafe project path/i,
     );
+  });
+
+  it("keeps a chapter's preserved raw take in a light pack after a punch edit", () => {
+    let project = createEmptyProject("Edited book", { id: "edited-book" });
+    project = addChapter(project, {
+      id: "ch01",
+      index: 1,
+      title: "One",
+      text_path: "manuscript/chapters/01.json",
+      audio_path: "audio/01_edited.wav",
+      raw_audio_path: "audio/01_raw.wav",
+      edited_audio_path: "audio/01_edited.wav",
+      pickups_path: "alignment/01.json",
+    });
+
+    const light = planSharePaths(project, [
+      "project.json",
+      "manuscript/chapters/01.json",
+      "alignment/01.json",
+      "audio/01_raw.wav",
+      "audio/01_edited.wav",
+    ], { lightPack: true });
+
+    expect(light).toContain("audio/01_raw.wav");
   });
 });

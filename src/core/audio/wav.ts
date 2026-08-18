@@ -9,6 +9,9 @@ export function encodeWavPcm16(samples: Float32Array, sampleRate: number, channe
   if (!Number.isInteger(sampleRate) || sampleRate <= 0 || !Number.isInteger(channels) || channels <= 0) {
     throw new Error("WAV sample rate and channels must be positive integers");
   }
+  if (samples.length === 0) {
+    throw new Error("WAV samples cannot be empty");
+  }
   if (samples.length % channels !== 0) {
     throw new Error("Interleaved sample count must be divisible by channels");
   }
@@ -88,6 +91,9 @@ export function decodeWavPcm16(bytes: Uint8Array): DecodedWav {
   }
   if (dataLength % blockAlign !== 0) {
     throw new Error("WAV data chunk is not aligned to a complete PCM frame");
+  }
+  if (dataLength === 0) {
+    throw new Error("WAV data chunk is empty");
   }
   const count = Math.floor(dataLength / 2);
   const samples = new Float32Array(count);

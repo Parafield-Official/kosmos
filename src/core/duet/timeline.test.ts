@@ -37,4 +37,29 @@ describe("duet script timeline", () => {
       { start: 2, end: 4, seat: "N2" },
     ]);
   });
+
+  it("uses proportional timing when Whisper words have no usable duration", () => {
+    expect(buildDuetTimeline(
+      [
+        { text: "one ", seat: "N1", style: [] },
+        { text: "two", seat: "N2", style: [] },
+      ],
+      [
+        { text: "one", start: 0, end: 0 },
+        { text: "two", start: 0, end: 0 },
+      ],
+      4,
+    )).toEqual([
+      { start: 0, end: 2, seat: "N1" },
+      { start: 2, end: 4, seat: "N2" },
+    ]);
+  });
+
+  it("returns no timeline for a non-finite chapter duration", () => {
+    expect(buildDuetTimeline(
+      [{ text: "one", seat: "N1", style: [] }],
+      [],
+      Number.NaN,
+    )).toEqual([]);
+  });
 });

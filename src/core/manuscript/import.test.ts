@@ -21,6 +21,15 @@ describe("offline manuscript format import", () => {
     ]);
   });
 
+  it("keeps DOCX tabs and line breaks in their source order", () => {
+    const documentXml = `<?xml version="1.0"?><w:document xmlns:w="x"><w:body>
+      <w:p><w:r><w:t>Before</w:t><w:br/><w:t>After</w:t><w:tab/><w:t>End</w:t></w:r></w:p>
+    </w:body></w:document>`;
+    const bytes = zipSync({ "word/document.xml": strToU8(documentXml) });
+
+    expect(importManuscriptBytes(bytes, "docx").text).toBe("Before\nAfter\tEnd");
+  });
+
   it("extracts readable body text from EPUB XHTML in deterministic order", () => {
     const bytes = zipSync({
       "OEBPS/02.xhtml": strToU8("<html><body><h1>Chapter 2</h1><p>Second &amp; final.</p></body></html>"),
@@ -30,6 +39,24 @@ describe("offline manuscript format import", () => {
     expect(imported.format).toBe("epub");
     expect(imported.text).toBe("Chapter 1\nFirst.\nChapter 2\nSecond & final.");
     expect(imported.spans).toHaveLength(1);
+  });
+
+  it("follows the EPUB spine instead of guessing order from filenames", () => {
+    const bytes = zipSync({
+      "META-INF/container.xml": strToU8(
+        `<container><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>`,
+      ),
+      "OPS/package.opf": strToU8(`
+        <package><manifest>
+          <item id="late" href="late.xhtml" media-type="application/xhtml+xml"/>
+          <item id="early" href="early.xhtml" media-type="application/xhtml+xml"/>
+        </manifest><spine><itemref idref="early"/><itemref idref="late"/></spine></package>
+      `),
+      "OPS/late.xhtml": strToU8("<html><body><p>Late</p></body></html>"),
+      "OPS/early.xhtml": strToU8("<html><body><p>Early</p></body></html>"),
+    });
+
+    expect(importManuscriptBytes(bytes, "epub").text).toBe("Early\nLate");
   });
 
   it("normalizes plain text and rejects unknown formats", () => {
@@ -43,5 +70,32 @@ describe("offline manuscript format import", () => {
     expect(imported.spans.some((span) => span.dialogue && span.text.includes("couldn’t"))).toBe(true);
     expect(imported.spans.some((span) => !span.dialogue && span.text.includes("Then she said"))).toBe(true);
     expect(imported.spans.filter((span) => span.dialogue).every((span) => span.seat === "narration")).toBe(true);
+  });
+
+  it("keeps malformed numeric entities literal instead of crashing the import", () => {
+    const bytes = zipSync({
+      "OEBPS/01.xhtml": strToU8("<html><body><p>Safe &#x110000; and &#99999999; text.</p></body></html>"),
+    });
+    expect(() => importManuscriptBytes(bytes, "epub")).not.toThrow();
+    expect(importManuscriptBytes(bytes, "epub").text).toContain("&#x110000;");
+  });
+
+  it("decodes common HTML entities used by EPUB exports", () => {
+    const bytes = zipSync({
+      "OEBPS/01.xhtml": strToU8("<html><body><p>A&nbsp;dash &mdash; really &hellip; &ldquo;yes&rdquo;.</p></body></html>"),
+    });
+    expect(importManuscriptBytes(bytes, "epub").text).toBe("A\u00a0dash — really … “yes”.");
+  });
+
+  it("rejects an EPUB with an unreasonable number of text entries before expanding all of them", () => {
+    const entries = Object.fromEntries(
+      Array.from({ length: 1_001 }, (_value, index) => [
+        `OEBPS/${String(index).padStart(4, "0")}.xhtml`,
+        strToU8("<html><body><p>word</p></body></html>"),
+      ]),
+    );
+    const bytes = zipSync(entries);
+
+    expect(() => importManuscriptBytes(bytes, "epub")).toThrow(/archive|entries|large/i);
   });
 });

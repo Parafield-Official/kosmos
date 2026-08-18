@@ -15,20 +15,32 @@ export function planSharePaths(
   options: SharePackOptions,
 ): string[] {
   const referencedAudio = new Set<string>();
-  for (const chapter of project.chapters) {
-    if (chapter.audio_path) {
-      referencedAudio.add(normalizeSafePath(chapter.audio_path));
+  const addReferenced = (value: unknown): void => {
+    if (typeof value === "string" && value.length > 0) {
+      referencedAudio.add(normalizeSafePath(value));
     }
+  };
+  for (const chapter of project.chapters) {
+    addReferenced(chapter.audio_path);
+    addReferenced(chapter.raw_audio_path);
+    addReferenced(chapter.edited_audio_path);
+    addReferenced(chapter.bed_audio_path);
+    addReferenced(chapter.overdub_audio_path);
+    addReferenced(chapter.duet_mix_path);
+    addReferenced(chapter.n1_stem_path);
+    addReferenced(chapter.n2_stem_path);
   }
   for (const entry of project.glossary ?? []) {
-    if (entry.clip_path) {
-      referencedAudio.add(normalizeSafePath(entry.clip_path));
-    }
+    addReferenced(entry.clip_path);
+  }
+  addReferenced(project.room_test_path);
+  for (const punch of project.punch_recordings ?? []) {
+    addReferenced(punch.path);
+    addReferenced(punch.edited_path);
   }
 
-  return availablePaths
-    .map(normalizeSafePath)
-    .filter((relativePath) => !isLocalOnlyPath(relativePath))
+  return Array.from(new Set(availablePaths.map(normalizeSafePath)))
+    .filter((relativePath) => !isLocalOnlyPath(relativePath) && !isTransientPath(relativePath))
     .filter((relativePath) => {
       if (!options.lightPack) {
         return true;
@@ -53,6 +65,7 @@ function normalizeSafePath(value: string): string {
   if (
     normalized.startsWith("/")
     || /^[a-z]:\//i.test(normalized)
+    || normalized.includes("\0")
     || segments.some((segment) => segment === ".." || segment === "")
   ) {
     throw new Error(`Unsafe project path: ${value}`);
@@ -70,6 +83,19 @@ function isLocalOnlyPath(relativePath: string): boolean {
     || fileName === "thumbs.db"
     || fileName === "local.me"
     || fileName === "me.json";
+}
+
+/** Atomic writes and failed exports can leave recovery artifacts in a folder.
+ * They are implementation details, not collaborator data, and including one
+ * can make a ZIP look like a second project or leak a stale manuscript copy.
+ */
+function isTransientPath(relativePath: string): boolean {
+  return relativePath.split("/").some((segment) =>
+    segment.startsWith(".acx-staging-")
+    || segment.includes(".tmp-")
+    || segment.includes(".backup-")
+    || segment.includes(".part-"),
+  );
 }
 
 function isRawAudioPath(relativePath: string): boolean {

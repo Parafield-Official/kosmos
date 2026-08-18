@@ -29,4 +29,134 @@ describe("project folder model", () => {
     expect(decoded.chapters[0].author_status).toBe("draft");
     expect(decoded.settings?.pause_threshold_seconds).toBe(4);
   });
+
+  it("rejects malformed chapter records before they can crash a workflow", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{
+        id: "ch01",
+        index: 1,
+        title: "One",
+        text_path: "../outside.json",
+        author_status: "draft",
+      }],
+    }))).toThrow(/chapter|path/i);
+  });
+
+  it("rejects unsafe shared audio references", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      glossary: [{
+        id: "glossary-1",
+        spelling: "Name",
+        frequency: 1,
+        source: "user",
+        clip_path: "../../voice.wav",
+      }],
+    }))).toThrow(/unsafe.*clip/i);
+  });
+
+  it("rejects duplicate glossary and dangling collaboration references", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      glossary: [
+        { id: "same", spelling: "Name", frequency: 1, source: "user" },
+        { id: "same", spelling: "Other", frequency: 1, source: "user" },
+      ],
+    }))).toThrow(/duplicate glossary/i);
+
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapter_notes: [{ id: "note", chapter_id: "missing", author: "A", body: "B", created_at: "now" }],
+    }))).toThrow(/unknown chapter/i);
+  });
+
+  it("rejects invalid persisted settings instead of silently changing behavior", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      settings: { ...project.settings, teleprompter_font_size: 0 },
+    }))).toThrow(/teleprompter/i);
+  });
+
+  it("rejects duplicate chapter asset paths and unsafe chapter ids", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    const chapter = {
+      id: "ch01",
+      index: 1,
+      title: "One",
+      text_path: "manuscript/chapters/01.json",
+      pickups_path: "alignment/01.json",
+      author_status: "draft" as const,
+    };
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [chapter, { ...chapter, id: "ch02", index: 2 }],
+    }))).toThrow(/path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{ ...chapter, id: "../outside" }],
+    }))).toThrow(/chapter/i);
+  });
+
+  it("keeps writable project references inside their assigned asset folders", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    const chapter = {
+      id: "ch01",
+      index: 1,
+      title: "One",
+      text_path: "manuscript/chapters/01.json",
+      pickups_path: "alignment/01.json",
+      author_status: "draft" as const,
+    };
+
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{ ...chapter, text_path: "project.json" }],
+    }))).toThrow(/text path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{ ...chapter, pickups_path: "manuscript/chapters/01.json" }],
+    }))).toThrow(/alignment path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{ ...chapter, audio_path: "acx_spec.json" }],
+    }))).toThrow(/audio_path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      room_test_path: "project.json",
+    }))).toThrow(/room test path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      glossary: [{ id: "name", spelling: "Name", frequency: 1, source: "user", clip_path: "project.json" }],
+    }))).toThrow(/clip path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [chapter],
+      punch_recordings: [{
+        id: "punch-1",
+        chapter_id: "ch01",
+        path: "project.json",
+        created_at: "2026-08-18T00:00:00.000Z",
+      }],
+    }))).toThrow(/audio path/i);
+  });
+
+  it("rejects unsupported ACX pins and ambiguous collaborator identities", () => {
+    const project = createEmptyProject("Book", { id: "book" });
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      acx_spec_version: "future-acx",
+    }))).toThrow(/ACX spec version/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      people: [
+        { name: "Alex", role: "author" },
+        { name: " alex ", role: "narrator", seat: "N1" },
+      ],
+    }))).toThrow(/duplicate person/i);
+  });
 });

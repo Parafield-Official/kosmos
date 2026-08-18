@@ -11,6 +11,11 @@ export interface PcmAudio {
   vbr?: boolean;
 }
 
+export interface MeasureOptions {
+  /** Retail samples begin on narration and intentionally have no room-tone pad. */
+  requireRoomTone?: boolean;
+}
+
 export interface AcxReport {
   rms_dbfs: number;
   true_peak_dbfs: number;
@@ -70,7 +75,9 @@ export function rmsDbfs(samples: Float32Array | number[]): number {
 /**
  * Estimate reconstructed peaks with a 4x windowed-sinc interpolator. This is
  * deliberately a meter primitive rather than a sample-peak shortcut: ACX's
- * -3 dB ceiling applies to inter-sample peaks too.
+ * -3 dB ceiling applies to inter-sample peaks too. The phase coefficients are
+ * cached per call so a feature-length chapter does not repeatedly evaluate
+ * trigonometric functions for the same FIR taps.
  */
 export function truePeakDbfs(
   samples: Float32Array | number[],
@@ -81,25 +88,33 @@ export function truePeakDbfs(
     return -Infinity;
   }
 
-  const channelSignals = splitChannels(samples, channels);
+  const channelCount = positiveIntegerOrZero(channels) || 1;
+  const frameCount = Math.floor(samples.length / channelCount);
   let peak = 0;
-  for (const signal of channelSignals) {
-    peak = Math.max(peak, oversampledPeak(signal, oversampleFactor));
+  const factor = Number.isInteger(oversampleFactor) && oversampleFactor > 0 ? oversampleFactor : 4;
+  for (let channel = 0; channel < channelCount; channel += 1) {
+    peak = Math.max(peak, oversampledPeak(samples, frameCount, channelCount, channel, factor));
   }
   return dbfs(peak);
 }
 
-export function measurePcm(audio: PcmAudio): AcxReport {
+export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxReport {
   const samples = audio.samples;
-  const durationSeconds = audio.sampleRate > 0 && audio.channels > 0
-    ? samples.length / audio.channels / audio.sampleRate
+  // Keep malformed metadata from reaching frame loops (a NaN frame size would
+  // never advance the loop) while still reporting the invalid value as a
+  // failed sample-rate/channel check.
+  const sampleRate = positiveIntegerOrZero(audio.sampleRate);
+  const channels = positiveIntegerOrZero(audio.channels);
+  const durationSeconds = sampleRate > 0 && channels > 0
+    ? samples.length / channels / sampleRate
     : 0;
-  const frameRms = frameRmsDbfs(samples, audio.sampleRate, audio.channels);
-  const noiseFloor = detectNoiseFloor(samples, audio.sampleRate, audio.channels, frameRms);
-  const roomTone = measureRoomTone(samples, audio.sampleRate, audio.channels, frameRms, noiseFloor);
+  const frameRms = frameRmsDbfs(samples, sampleRate, channels);
+  const noiseFloor = detectNoiseFloor(samples, sampleRate, channels, frameRms);
+  const roomTone = measureRoomTone(samples, sampleRate, channels, frameRms, noiseFloor);
   const samplePeak = samplePeakDbfs(samples);
-  const truePeak = truePeakDbfs(samples, audio.channels);
+  const truePeak = truePeakDbfs(samples, channels > 0 ? channels : 1);
   const format = audio.format ?? "unknown";
+  const requireRoomTone = options.requireRoomTone !== false;
 
   const checks = {
     rms: rangeStatus(
@@ -110,18 +125,18 @@ export function measurePcm(audio: PcmAudio): AcxReport {
     ),
     true_peak: upperBoundStatus(truePeak, ACX_SPEC.true_peak_dbfs_max, 0.5),
     noise_floor: upperBoundStatus(noiseFloor, ACX_SPEC.noise_floor_dbfs_max, 0.5, true),
-    sample_rate: audio.sampleRate === ACX_SPEC.sample_rate ? "pass" : "fail",
-    channels: audio.channels === 1 || audio.channels === 2 ? "pass" : "fail",
+    sample_rate: sampleRate === ACX_SPEC.sample_rate ? "pass" : "fail",
+    channels: (channels === 1 || channels === 2) && samples.length % channels === 0 ? "pass" : "fail",
     duration: durationSeconds <= ACX_SPEC.max_file_seconds ? "pass" : "fail",
     format: formatStatus(audio),
-    head_room_tone: roomTone.head.seconds >= ACX_SPEC.room_tone_head_s.min &&
+    head_room_tone: !requireRoomTone || (roomTone.head.seconds >= ACX_SPEC.room_tone_head_s.min &&
       roomTone.head.seconds <= ACX_SPEC.room_tone_head_s.max &&
-      !roomTone.head.digitalSilence
+      !roomTone.head.digitalSilence)
       ? "pass"
       : "fail",
-    tail_room_tone: roomTone.tail.seconds >= ACX_SPEC.room_tone_tail_s.min &&
+    tail_room_tone: !requireRoomTone || (roomTone.tail.seconds >= ACX_SPEC.room_tone_tail_s.min &&
       roomTone.tail.seconds <= ACX_SPEC.room_tone_tail_s.max &&
-      !roomTone.tail.digitalSilence
+      !roomTone.tail.digitalSilence)
       ? "pass"
       : "fail",
   } satisfies AcxReport["checks"];
@@ -131,8 +146,8 @@ export function measurePcm(audio: PcmAudio): AcxReport {
     true_peak_dbfs: truePeak,
     sample_peak_dbfs: samplePeak,
     noise_floor_dbfs: noiseFloor,
-    sample_rate: audio.sampleRate,
-    channels: audio.channels,
+    sample_rate: sampleRate,
+    channels,
     duration_seconds: durationSeconds,
     format,
     bitrate_kbps: audio.bitrate_kbps,
@@ -147,12 +162,21 @@ export function measurePcm(audio: PcmAudio): AcxReport {
 }
 
 function formatStatus(audio: PcmAudio): CheckStatus {
+  if (audio.format === undefined || audio.format === "unknown") {
+    return "warn";
+  }
+  if (!("wav" === audio.format || "mp3" === audio.format || "flac" === audio.format || "m4a" === audio.format || "aiff" === audio.format)) {
+    return "fail";
+  }
+  if (audio.format === "mp3" && (audio.bitrate_kbps === undefined || audio.vbr === undefined)) {
+    return "warn";
+  }
   if (audio.format === "mp3" && (audio.vbr === true || (audio.bitrate_kbps ?? Infinity) < ACX_SPEC.min_bitrate_cbr)) {
     return "fail";
   }
-  if (audio.vbr === true || (audio.bitrate_kbps !== undefined && audio.bitrate_kbps < ACX_SPEC.min_bitrate_cbr)) {
-    return "fail";
-  }
+  // Bitrate and VBR rules are submission rules for MP3. A source WAV/FLAC
+  // may have a low or absent codec bitrate and is still a known, measurable
+  // input for the meter/master workflow.
   return "pass";
 }
 
@@ -190,50 +214,89 @@ function upperBoundStatus(
   return "pass";
 }
 
-function splitChannels(samples: Float32Array | number[], channels: number): number[][] {
-  const count = Math.max(1, Math.floor(channels));
-  const output = Array.from({ length: count }, () => [] as number[]);
-  for (let index = 0; index < samples.length; index += 1) {
-    output[index % count].push(samples[index]);
-  }
-  return output;
-}
-
-function oversampledPeak(signal: number[], factor: number): number {
-  if (signal.length === 0) {
+function oversampledPeak(
+  samples: Float32Array | number[],
+  frameCount: number,
+  stride: number,
+  channel: number,
+  factor: number,
+): number {
+  if (frameCount === 0) {
     return 0;
   }
-  if (signal.length === 1) {
-    return Math.abs(signal[0]);
+  if (frameCount === 1) {
+    return Math.abs(samples[channel]);
   }
 
   const radius = 16;
-  const outputLength = (signal.length - 1) * factor + 1;
-  let peak = 0;
-
-  for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
-    const position = outputIndex / factor;
-    const center = Math.floor(position);
-    let value = 0;
+  const safeFactor = Math.min(16, Math.max(1, factor));
+  const phaseFilters = Array.from({ length: safeFactor }, (_unused, phase) => {
+    if (phase === 0) {
+      return null;
+    }
+    const coefficients: number[] = [];
     let weight = 0;
-    const first = Math.max(0, center - radius + 1);
-    const last = Math.min(signal.length - 1, center + radius);
-
-    for (let sourceIndex = first; sourceIndex <= last; sourceIndex += 1) {
-      const distance = position - sourceIndex;
+    for (let sourceOffset = -radius + 1; sourceOffset <= radius; sourceOffset += 1) {
+      const distance = phase / safeFactor - sourceOffset;
       const absoluteDistance = Math.abs(distance);
-      if (absoluteDistance >= radius) {
-        continue;
-      }
-      const coefficient = sinc(distance) * raisedCosine(absoluteDistance / radius);
-      value += signal[sourceIndex] * coefficient;
+      const coefficient = absoluteDistance < radius
+        ? sinc(distance) * raisedCosine(absoluteDistance / radius)
+        : 0;
+      coefficients.push(coefficient);
       weight += coefficient;
     }
+    return { coefficients, weight };
+  });
 
-    if (Math.abs(weight) > 1e-12) {
-      value /= weight;
+  let peak = 0;
+
+  // Phase zero is exactly the stored sample; scanning it once also handles
+  // the final sample without a special output-index branch.
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    peak = Math.max(peak, Math.abs(samples[frame * stride + channel]));
+  }
+
+  for (let interval = 0; interval < frameCount - 1; interval += 1) {
+    const edgeInterval = interval < radius - 1 || interval >= frameCount - radius - 1;
+    for (let phase = 1; phase < safeFactor; phase += 1) {
+      const filter = phaseFilters[phase];
+      if (!filter) {
+        continue;
+      }
+      let value = 0;
+      if (edgeInterval) {
+        // At the two short edges the window is clipped, so retain the exact
+        // normalized calculation used by the reference implementation.
+        const position = interval + phase / safeFactor;
+        const center = Math.floor(position);
+        let weight = 0;
+        const first = Math.max(0, center - radius + 1);
+        const last = Math.min(frameCount - 1, center + radius);
+        for (let sourceIndex = first; sourceIndex <= last; sourceIndex += 1) {
+          const distance = position - sourceIndex;
+          const absoluteDistance = Math.abs(distance);
+          if (absoluteDistance >= radius) {
+            continue;
+          }
+          const coefficient = sinc(distance) * raisedCosine(absoluteDistance / radius);
+          value += samples[sourceIndex * stride + channel] * coefficient;
+          weight += coefficient;
+        }
+        if (Math.abs(weight) > 1e-12) {
+          value /= weight;
+        }
+      } else {
+        const first = interval - radius + 1;
+        const coefficients = filter.coefficients;
+        for (let offset = 0; offset < coefficients.length; offset += 1) {
+          value += samples[(first + offset) * stride + channel] * coefficients[offset];
+        }
+        if (Math.abs(filter.weight) > 1e-12) {
+          value /= filter.weight;
+        }
+      }
+      peak = Math.max(peak, Math.abs(value));
     }
-    peak = Math.max(peak, Math.abs(value));
   }
   return peak;
 }
@@ -255,6 +318,9 @@ function frameRmsDbfs(
   sampleRate: number,
   channels: number,
 ): number[] {
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0 || !Number.isInteger(channels) || channels <= 0) {
+    return [];
+  }
   const samplesPerFrame = Math.max(1, Math.round(sampleRate * FRAME_SECONDS * Math.max(1, channels)));
   const frames: number[] = [];
   for (let start = 0; start < samples.length; start += samplesPerFrame) {
@@ -298,9 +364,11 @@ function detectNoiseFloor(
   }
 
   if (candidates.length > 0) {
-    return Math.min(
-      ...candidates.map(([from, to]) => rmsDbfs(sliceFrames(samples, sampleRate, channels, from, to))),
-    );
+    let quietest = Infinity;
+    for (const [from, to] of candidates) {
+      quietest = Math.min(quietest, rmsDbfs(sliceFrames(samples, sampleRate, channels, from, to)));
+    }
+    return quietest === Infinity ? rmsDbfs(samples) : quietest;
   }
 
   const fallbackFrames = Math.max(1, Math.ceil(0.5 / FRAME_SECONDS));
@@ -366,10 +434,17 @@ function sliceFrames(
   fromFrame: number,
   toFrame: number,
 ): number[] {
+  if (!Number.isInteger(sampleRate) || sampleRate <= 0 || !Number.isInteger(channels) || channels <= 0) {
+    return [];
+  }
   const samplesPerFrame = Math.max(1, Math.round(sampleRate * FRAME_SECONDS * Math.max(1, channels)));
   return Array.prototype.slice.call(samples, fromFrame * samplesPerFrame, toFrame * samplesPerFrame);
 }
 
 function isDigitalSilence(sample: number): boolean {
   return Math.abs(sample) <= DIGITAL_SILENCE_EPSILON;
+}
+
+function positiveIntegerOrZero(value: number): number {
+  return Number.isInteger(value) && value > 0 ? value : 0;
 }
