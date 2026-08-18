@@ -30,6 +30,18 @@ export interface PromptChapterStatus {
   tone: "idle" | "recorded" | "review" | "ready";
 }
 
+export interface TeleprompterLayout {
+  teleprompterOpen: boolean;
+  studioNavOpen: boolean;
+}
+
+export function teleprompterLayout(open: boolean): TeleprompterLayout {
+  return {
+    teleprompterOpen: open,
+    studioNavOpen: !open,
+  };
+}
+
 export function bookDashboardStats(chapters: ChapterFile[]): BookDashboardStats {
   const totals = chapters.reduce((result, chapter) => {
     const words = Math.max(0, chapter.word_count ?? 0);

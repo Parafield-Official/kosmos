@@ -11,6 +11,7 @@ import {
   recordLiveFlag,
   relevantPromptGlossary,
   remainingReadTimeLabel,
+  teleprompterLayout,
   type PromptSegment,
 } from "./model";
 import type { ChapterFile, GlossaryEntry } from "../project/types";
@@ -143,6 +144,17 @@ describe("teleprompter model", () => {
     expect(remainingReadTimeLabel(12, 0.25)).toBe("9m left");
     expect(remainingReadTimeLabel(1, 0.7)).toBe("Under a minute");
     expect(remainingReadTimeLabel(12, 1)).toBe("Chapter complete");
+  });
+
+  it("keeps the teleprompter in the current app view and frees reading space", () => {
+    expect(teleprompterLayout(true)).toEqual({
+      teleprompterOpen: true,
+      studioNavOpen: false,
+    });
+    expect(teleprompterLayout(false)).toEqual({
+      teleprompterOpen: false,
+      studioNavOpen: true,
+    });
   });
 });
 

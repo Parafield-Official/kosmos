@@ -35,6 +35,7 @@ import {
   readingProgress,
   relevantPromptGlossary,
   remainingReadTimeLabel,
+  teleprompterLayout,
   type PromptTheme,
 } from "../core/teleprompter/model";
 import { matchLiveWindow, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
@@ -243,6 +244,7 @@ function ProjectHome({
   const [modelProgress, setModelProgress] = useState(0);
   const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
   const [activePanel, setActivePanel] = useState<StudioTab>("book");
+  const [studioNavOpen, setStudioNavOpen] = useState(true);
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
   const [identityName, setIdentityName] = useState("");
@@ -1208,6 +1210,12 @@ function ProjectHome({
     }
   }
 
+  function setTeleprompterMode(open: boolean) {
+    const layout = teleprompterLayout(open);
+    setTeleprompterOpen(layout.teleprompterOpen);
+    setStudioNavOpen(layout.studioNavOpen);
+  }
+
   const page = studioPageCopy(activePanel);
   const nextStep = nextBoothStep(project, selectedChapter, proof);
   const reviewCount = project.chapters.reduce((sum, chapter) => {
@@ -1217,15 +1225,87 @@ function ProjectHome({
     return sum + (chapter.open_pickups ?? 0);
   }, 0);
 
+  const teleprompterView = teleprompterOpen && selectedChapter ? (
+    <Teleprompter
+      projectName={project.name}
+      chapter={selectedChapter}
+      chapterId={selectedChapter.id}
+      title={selectedChapter.title}
+      chapters={project.chapters}
+      people={project.people}
+      estimatedMinutes={selectedChapter.estimated_duration_minutes}
+      notes={(project.chapter_notes ?? []).filter((note) => note.chapter_id === selectedChapter.id)}
+      spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
+      glossary={project.glossary ?? []}
+      proof={proof}
+      acxReport={acxReport}
+      audioUrl={audioUrl}
+      busyAction={busyAction}
+      fontSize={promptFontSize}
+      theme={promptTheme}
+      onFontSize={setPromptFontSize}
+      onTheme={setPromptTheme}
+      onPlayGlossary={(entry) => void playGlossaryClip(entry)}
+      onSelectChapter={(id) => setSelectedChapterId(id)}
+      onAttach={(id) => {
+        const chapter = project.chapters.find((item) => item.id === id);
+        if (chapter) void attachAudio(chapter);
+      }}
+      onProof={(id) => {
+        const chapter = project.chapters.find((item) => item.id === id);
+        if (chapter) void runProof(chapter);
+      }}
+      onCheckAudio={(id) => {
+        const chapter = project.chapters.find((item) => item.id === id);
+        if (chapter) void runAcxCheck(chapter);
+      }}
+      onReview={() => {
+        setTeleprompterMode(false);
+        setActivePanel("review");
+        if (
+          promptFontSize !== projectSettings.teleprompter_font_size
+          || promptTheme !== projectSettings.teleprompter_theme
+        ) {
+          void persistSettings({
+            teleprompter_font_size: promptFontSize,
+            teleprompter_theme: promptTheme,
+          });
+        }
+      }}
+      onClose={() => {
+        setTeleprompterMode(false);
+        if (
+          promptFontSize !== projectSettings.teleprompter_font_size
+          || promptTheme !== projectSettings.teleprompter_theme
+        ) {
+          void persistSettings({
+            teleprompter_font_size: promptFontSize,
+            teleprompter_theme: promptTheme,
+          });
+        }
+      }}
+    />
+  ) : null;
+
   return (
-    <div className="studio-shell">
-      <aside className="studio-nav" aria-label="Booth">
+    <div className={studioNavOpen ? "studio-shell" : "studio-shell nav-closed"}>
+      {studioNavOpen ? <aside className="studio-nav" aria-label="Booth">
         <div className="studio-brand">
           <div className="brand-mark" aria-hidden="true">BD</div>
           <div>
             <p className="studio-brand-kicker">Booth Desk</p>
             <strong>{project.name}</strong>
           </div>
+          <button
+            className="studio-nav-collapse"
+            type="button"
+            aria-label="Hide navigation"
+            title="Hide navigation"
+            aria-expanded={studioNavOpen}
+            onClick={() => setStudioNavOpen(false)}
+          >
+            ‹
+          </button>
         </div>
 
         <nav className="studio-nav-list">
@@ -1236,7 +1316,7 @@ function ProjectHome({
               className={activePanel === tab.id ? "studio-nav-item active" : "studio-nav-item"}
               disabled={busyAction !== null}
               onClick={() => {
-                setTeleprompterOpen(false);
+                setTeleprompterMode(false);
                 setActivePanel(tab.id);
               }}
             >
@@ -1262,7 +1342,7 @@ function ProjectHome({
             className={activePanel === "settings" ? "studio-nav-item active" : "studio-nav-item"}
             disabled={busyAction !== null}
             onClick={() => {
-              setTeleprompterOpen(false);
+              setTeleprompterMode(false);
               setActivePanel("settings");
             }}
           >
@@ -1273,10 +1353,21 @@ function ProjectHome({
             <span><strong>Close book</strong></span>
           </button>
         </div>
-      </aside>
+      </aside> : null}
 
-      <div className="studio-main">
-        <header className="studio-topbar">
+      <div className={teleprompterOpen ? "studio-main reader-active" : "studio-main"}>
+        {!studioNavOpen ? (
+          <button
+            className="studio-nav-reveal"
+            type="button"
+            aria-label="Show navigation"
+            title="Show navigation"
+            onClick={() => setStudioNavOpen(true)}
+          >
+            › <span>Menu</span>
+          </button>
+        ) : null}
+        {!teleprompterOpen ? <header className="studio-topbar">
           <div>
             <p className="phase-label">{page.kicker}</p>
             <h2 id="book-home-title">{page.title}</h2>
@@ -1301,12 +1392,13 @@ function ProjectHome({
               {identity ? `${identity.personName} · ${identity.role}` : "Role not set"}
             </span>
           </div>
-        </header>
+        </header> : null}
 
-        {notice ? <div className="inline-notice" role="status">{notice}</div> : null}
+        {!teleprompterOpen && notice ? <div className="inline-notice" role="status">{notice}</div> : null}
 
-        <section className="studio-page" aria-labelledby="book-home-title">
-          {activePanel === "book" ? (
+        <section className={teleprompterOpen ? "studio-page reader-page" : "studio-page"} aria-labelledby="book-home-title">
+          {teleprompterView}
+          {!teleprompterOpen && activePanel === "book" ? (
             <BookPage
               project={project}
               selectedChapter={selectedChapter}
@@ -1328,7 +1420,7 @@ function ProjectHome({
               }}
               onOpenTeleprompter={(id) => {
                 setSelectedChapterId(id);
-                setTeleprompterOpen(true);
+                setTeleprompterMode(true);
               }}
               onFollowStep={() => {
                 if (project.chapters.length === 0) {
@@ -1343,7 +1435,7 @@ function ProjectHome({
             />
           ) : null}
 
-          {activePanel === "record" ? (
+          {!teleprompterOpen && activePanel === "record" ? (
             selectedChapter ? (
               <RecordPage
                 chapter={selectedChapter}
@@ -1357,7 +1449,7 @@ function ProjectHome({
                 onToggleRoom={() => setRoomTestOpen((open) => !open)}
                 onMeasureRoom={() => void runRoomCheck()}
                 onSaveRoom={(wav) => saveRecordedWav(wav, "room")}
-                onOpenTeleprompter={() => setTeleprompterOpen(true)}
+                onOpenTeleprompter={() => setTeleprompterMode(true)}
                 onSaveRecording={(wavBase64) => saveRecordedWav(wavBase64, "chapter")}
                 onAttach={(chapter) => void attachAudio(chapter)}
                 projectMode={project.mode}
@@ -1371,7 +1463,7 @@ function ProjectHome({
             )
           ) : null}
 
-          {activePanel === "review" ? (
+          {!teleprompterOpen && activePanel === "review" ? (
             selectedChapter ? (
               <ReviewPage
                 chapter={selectedChapter}
@@ -1398,7 +1490,7 @@ function ProjectHome({
             )
           ) : null}
 
-          {activePanel === "finish" ? (
+          {!teleprompterOpen && activePanel === "finish" ? (
             selectedChapter ? (
               <FinishPage
                 chapter={selectedChapter}
@@ -1414,7 +1506,7 @@ function ProjectHome({
             )
           ) : null}
 
-          {activePanel === "words" ? (
+          {!teleprompterOpen && activePanel === "words" ? (
             <GlossaryPanel
               glossary={project.glossary ?? []}
               spelling={glossarySpelling}
@@ -1431,7 +1523,7 @@ function ProjectHome({
             />
           ) : null}
 
-          {activePanel === "people" ? (
+          {!teleprompterOpen && activePanel === "people" ? (
             <CollaborationPanel
               project={project}
               identity={identity}
@@ -1458,7 +1550,7 @@ function ProjectHome({
             />
           ) : null}
 
-          {activePanel === "settings" ? (
+          {!teleprompterOpen && activePanel === "settings" ? (
             <SettingsPanel
               settings={projectSettings}
               busyAction={busyAction}
@@ -1500,70 +1592,6 @@ function ProjectHome({
           onMerge={() => void mergeSelectedWithNext()}
           onApplySeat={() => void applyChapterSeat()}
           onClose={() => setChapterManagerOpen(false)}
-        />
-      ) : null}
-
-      {teleprompterOpen && selectedChapter ? (
-        <Teleprompter
-          projectName={project.name}
-          chapter={selectedChapter}
-          chapterId={selectedChapter.id}
-          title={selectedChapter.title}
-          chapters={project.chapters}
-          people={project.people}
-          estimatedMinutes={selectedChapter.estimated_duration_minutes}
-          notes={(project.chapter_notes ?? []).filter((note) => note.chapter_id === selectedChapter.id)}
-          spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
-          glossary={project.glossary ?? []}
-          proof={proof}
-          acxReport={acxReport}
-          audioUrl={audioUrl}
-          busyAction={busyAction}
-          fontSize={promptFontSize}
-          theme={promptTheme}
-          onFontSize={setPromptFontSize}
-          onTheme={setPromptTheme}
-          onPlayGlossary={(entry) => void playGlossaryClip(entry)}
-          onSelectChapter={(id) => {
-            setSelectedChapterId(id);
-          }}
-          onAttach={(id) => {
-            const chapter = project.chapters.find((item) => item.id === id);
-            if (chapter) void attachAudio(chapter);
-          }}
-          onProof={(id) => {
-            const chapter = project.chapters.find((item) => item.id === id);
-            if (chapter) void runProof(chapter);
-          }}
-          onCheckAudio={(id) => {
-            const chapter = project.chapters.find((item) => item.id === id);
-            if (chapter) void runAcxCheck(chapter);
-          }}
-          onReview={() => {
-            setTeleprompterOpen(false);
-            setActivePanel("review");
-            if (
-              promptFontSize !== projectSettings.teleprompter_font_size
-              || promptTheme !== projectSettings.teleprompter_theme
-            ) {
-              void persistSettings({
-                teleprompter_font_size: promptFontSize,
-                teleprompter_theme: promptTheme,
-              });
-            }
-          }}
-          onClose={() => {
-            setTeleprompterOpen(false);
-            if (
-              promptFontSize !== projectSettings.teleprompter_font_size
-              || promptTheme !== projectSettings.teleprompter_theme
-            ) {
-              void persistSettings({
-                teleprompter_font_size: promptFontSize,
-                teleprompter_theme: promptTheme,
-              });
-            }
-          }}
         />
       ) : null}
 
