@@ -75,6 +75,13 @@ describe("offline manuscript format import", () => {
     expect(imported.spans.map((span) => span.text).join("")).toBe(imported.text);
   });
 
+  it("keeps the plain-text source available for hash chapter splitting", () => {
+    const imported = importManuscriptBytes(strToU8("# Leaflets\n\nThe opening."), ".txt");
+    expect(imported.source_text).toBe("# Leaflets\n\nThe opening.");
+    expect(imported.text).not.toContain("# Leaflets");
+    expect(imported.spans.map((span) => span.text).join("")).toBe(imported.text);
+  });
+
   it("marks quoted dialogue without assigning a narrator seat", () => {
     const imported = fromPlainText('Mara said, "Stay here." Then she said, ‘I couldn’t leave.’', "txt");
     expect(imported.spans.some((span) => span.dialogue && span.text.includes("Stay here"))).toBe(true);

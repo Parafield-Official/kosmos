@@ -34,6 +34,8 @@ export interface SplitManuscriptOptions {
   defaultTitle?: string;
   idPrefix?: string;
   maxChapterMinutes?: number;
+  /** Treat every line beginning with # as a chapter heading (plain text books). */
+  hashStartsChapter?: boolean;
 }
 
 export interface PastedChapter {
@@ -74,14 +76,23 @@ export function splitManuscript(
   source: string,
   options: SplitManuscriptOptions = {},
 ): ManuscriptChapter[] {
-  const normalized = hideMarkdownHeadingMarkers(source.replace(/\r\n?/g, "\n"));
+  const sourceNormalized = source.replace(/\r\n?/g, "\n");
+  const normalized = hideMarkdownHeadingMarkers(sourceNormalized);
   if (normalized.trim().length === 0) {
     return [];
   }
 
+  const sourceLines = sourceNormalized.split("\n");
   const lines = normalized.split("\n");
+  let hashHeadingNumber = 0;
   const headings = lines.flatMap((line, lineIndex) => {
-    const title = headingTitle(line, lineIndex, lines);
+    const hashTitle = options.hashStartsChapter
+      ? hashHeadingTitle(sourceLines[lineIndex], hashHeadingNumber + 1)
+      : null;
+    if (hashTitle) {
+      hashHeadingNumber += 1;
+    }
+    const title = hashTitle ?? headingTitle(line, lineIndex, lines);
     return title ? [{ lineIndex, title }] : [];
   });
   const maxMinutes = options.maxChapterMinutes ?? MAX_CHAPTER_MINUTES;
@@ -163,7 +174,7 @@ export function splitManuscript(
  */
 export function parsePastedChapter(source: string, fallbackTitle = "Chapter 1"): PastedChapter {
   const normalizedFallback = fallbackTitle.trim() || "Chapter 1";
-  const chapters = splitManuscript(source, { defaultTitle: normalizedFallback });
+  const chapters = splitManuscript(source, { defaultTitle: normalizedFallback, hashStartsChapter: true });
   const bodyChapters = chapters.filter((chapter) => chapter.title !== "Front matter");
   if (bodyChapters.length > 1) {
     throw new Error("Paste one chapter at a time. Use Import manuscript for a complete book.");
@@ -354,4 +365,18 @@ function headingTitle(line: string, lineIndex: number, lines: string[]): string 
   }
 
   return null;
+}
+
+function hashHeadingTitle(line: string | undefined, fallbackNumber: number): string | null {
+  if (line === undefined) {
+    return null;
+  }
+  const match = /^[\t ]{0,3}#{1,6}(?:[\t ]+(.+?))?[\t ]*$/u.exec(line);
+  if (!match) {
+    return null;
+  }
+  const title = (match[1] ?? "")
+    .replace(/[\t ]+#{1,6}[\t ]*$/u, "")
+    .trim();
+  return title || `Chapter ${fallbackNumber}`;
 }

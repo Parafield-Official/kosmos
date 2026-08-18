@@ -449,7 +449,10 @@ async function writeChapterText(folder, project, title, text) {
 async function writeImportedManuscript(folder, project, sourcePath, imported) {
   const manuscriptCore = loadCoreModule("manuscript");
   const glossaryCore = loadCoreModule("glossary");
-  const sections = manuscriptCore.splitManuscript(imported.text, { idPrefix: "ch" });
+  const sections = manuscriptCore.splitManuscript(imported.source_text ?? imported.text, {
+    idPrefix: "ch",
+    hashStartsChapter: imported.format === "txt",
+  });
   if (!Array.isArray(sections) || sections.length === 0) {
     throw new Error("The manuscript is empty; add some text before importing.");
   }

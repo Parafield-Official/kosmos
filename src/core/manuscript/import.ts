@@ -8,6 +8,8 @@ export interface ImportedManuscript {
   format: ManuscriptFormat;
   text: string;
   spans: ScriptSpan[];
+  /** Original normalized plain text, retained for format-specific chapter splitting. */
+  source_text?: string;
 }
 
 const MAX_DOCX_TEXT_BYTES = 100 * 1024 * 1024;
@@ -67,11 +69,13 @@ function unzipManuscript(
 }
 
 export function fromPlainText(text: string, format: "txt" | "md" | "pdf" = "txt"): ImportedManuscript {
-  const normalized = hideMarkdownHeadingMarkers(text.replace(/^\uFEFF/u, "").replace(/\r\n?/g, "\n"));
+  const sourceText = text.replace(/^\uFEFF/u, "").replace(/\r\n?/g, "\n");
+  const normalized = hideMarkdownHeadingMarkers(sourceText);
   const baseSpan: ScriptSpan = { text: normalized, seat: "narration", style: [] };
   return {
     format,
     text: normalized,
+    source_text: sourceText,
     spans: inferDialogueSpans([baseSpan]),
   };
 }

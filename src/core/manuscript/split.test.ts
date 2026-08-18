@@ -65,6 +65,18 @@ describe("manuscript chapter splitting", () => {
     expect(chapters[0].text).not.toContain("# Chapter 1");
   });
 
+  it("treats every hash heading as a plain-text chapter boundary", () => {
+    const chapters = splitManuscript(
+      "# Leaflets\n\nAt dusk they pour from the sky.\n\n## The second page\n\nThe tide climbs.",
+      { hashStartsChapter: true },
+    );
+
+    expect(chapters.map((chapter) => chapter.title)).toEqual(["Leaflets", "The second page"]);
+    expect(chapters[0].text).toBe("At dusk they pour from the sky.");
+    expect(chapters[1].text).toBe("The tide climbs.");
+    expect(chapters.every((chapter) => !chapter.text.includes("#"))).toBe(true);
+  });
+
   it("normalizes a single pasted chapter and rejects a whole-book paste", () => {
     expect(parsePastedChapter("# Chapter 1\n\nThe opening line.")).toEqual({
       title: "Chapter 1",
