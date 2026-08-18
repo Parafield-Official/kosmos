@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { measurePcm, type AcxReport } from "../core/acx/measure";
+import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { alignTranscript, type TranscriptWord } from "../core/proof/align";
 import {
@@ -201,7 +202,7 @@ function ProjectHome({
   const [promptFontSize, setPromptFontSize] = useState(48);
   const [promptTheme, setPromptTheme] = useState<PromptTheme>("dark");
   const [roomTestOpen, setRoomTestOpen] = useState(false);
-  const [roomReport, setRoomReport] = useState<AcxReport | null>(null);
+  const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -448,16 +449,31 @@ function ProjectHome({
       setNotice("Record a room test before measuring it.");
       return;
     }
+    const bridge = window.boothDesk;
     await runAction("room-meter", async () => {
-      const decoded = await window.boothDesk?.decodeAudio({ folder, relativePath: project.room_test_path as string });
+      const decoded = await bridge.decodeAudio({ folder, relativePath: project.room_test_path as string });
       if (!decoded) {
         return;
       }
-      setRoomReport(measurePcm({
+      let speechRmsDbfs: number | undefined;
+      if (selectedChapter?.audio_path) {
+        try {
+          const speechAudio = await bridge.decodeAudio({ folder, relativePath: selectedChapter.audio_path });
+          speechRmsDbfs = measurePcm({
+            samples: float32FromBase64(speechAudio.pcmBase64),
+            sampleRate: speechAudio.sampleRate,
+            channels: speechAudio.channels,
+            format: speechAudio.format,
+          }).rms_dbfs;
+        } catch {
+          speechRmsDbfs = undefined;
+        }
+      }
+      setRoomReport(analyzeRoomTest({
         samples: float32FromBase64(decoded.pcmBase64),
         sampleRate: decoded.sampleRate,
         channels: decoded.channels,
-        format: decoded.format,
+        speechRmsDbfs,
       }));
     });
   }
@@ -577,7 +593,7 @@ function ProjectHome({
     if (kind !== "room" && !selectedChapter) {
       throw new Error("Choose a chapter before recording.");
     }
-    await runAction(`recording-${kind}`, async () => {
+    return runAction(`recording-${kind}`, async () => {
       const result = await window.boothDesk?.saveRecordingWav({
         ...envelope,
         kind,
@@ -594,6 +610,27 @@ function ProjectHome({
               ? `Room test saved to ${result.path}.`
               : `Chapter WAV saved and attached at ${result.path}.`,
         );
+      }
+    });
+  }
+
+  async function applyPunchRecordingWav(wavBase64: string, pickup: Pickup): Promise<boolean> {
+    if (!window.boothDesk || folder === "(browser preview)" || !selectedChapter) {
+      throw new Error("Punch splicing is available in the desktop app with an attached chapter take.");
+    }
+    return runAction("punch", async () => {
+      const result = await window.boothDesk?.applyPunchRecording({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        pickupId: pickup.id,
+        tStart: pickup.t_start,
+        tEnd: pickup.t_end,
+        trimSilence: true,
+        wavBase64,
+      });
+      if (result) {
+        onChange(result);
+        setNotice(`Punch applied to a new edited take at ${result.editedPath}. The raw take remains at ${selectedChapter.raw_audio_path || selectedChapter.audio_path}.`);
       }
     });
   }
@@ -851,13 +888,15 @@ function ProjectHome({
     void audioRef.current.play();
   }
 
-  async function runAction(name: string, action: () => Promise<void>) {
+  async function runAction(name: string, action: () => Promise<void>): Promise<boolean> {
     setBusyAction(name);
     setNotice(null);
     try {
       await action();
+      return true;
     } catch (reason) {
       setNotice(messageFor(reason, "That action could not be completed."));
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -947,7 +986,7 @@ function ProjectHome({
             <button className="compact-button room-check-button" type="button" disabled={!project.room_test_path || busyAction !== null} onClick={() => void runRoomCheck()}>
               {busyAction === "room-meter" ? "Measuring…" : "Measure room floor"}
             </button>
-            {roomReport ? <AcxMeter report={roomReport} /> : null}
+            {roomReport ? <RoomTestResult report={roomReport} /> : null}
           </section>
         ) : null}
 
@@ -1108,8 +1147,10 @@ function ProjectHome({
               label={`Punch at ${formatTime(punchPickup.t_start)}`}
               disabled={!window.boothDesk || busyAction !== null}
               onSave={async (wav) => {
-                await saveRecordedWav(wav, "punch", punchPickup.id);
-                setPunchPickup(null);
+                const applied = await applyPunchRecordingWav(wav, punchPickup);
+                if (applied) {
+                  setPunchPickup(null);
+                }
               }}
             />
             <div className="actions"><button className="secondary-button" type="button" onClick={() => setPunchPickup(null)}>Cancel</button></div>
@@ -1219,12 +1260,14 @@ function RecorderPanel({
 }: {
   label: string;
   disabled: boolean;
-  onSave: (wavBase64: string) => Promise<void>;
+  onSave: (wavBase64: string) => Promise<unknown>;
 }) {
-  const [status, setStatus] = useState<"idle" | "recording" | "paused" | "processing" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "recording" | "paused" | "processing" | "review" | "error">("idle");
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [pendingWav, setPendingWav] = useState<string | null>(null);
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -1246,8 +1289,14 @@ function RecorderPanel({
     void monitorContextRef.current?.close();
   }, []);
 
+  useEffect(() => () => {
+    if (pendingUrl) {
+      URL.revokeObjectURL(pendingUrl);
+    }
+  }, [pendingUrl]);
+
   async function start() {
-    if (disabled || status === "recording" || status === "processing") {
+    if (disabled || status === "recording" || status === "processing" || status === "review") {
       return;
     }
     setError(null);
@@ -1350,8 +1399,12 @@ function RecorderPanel({
       const decoded = await context.decodeAudioData(arrayBuffer.slice(0));
       const mono = resampleAudioBufferToMono(decoded, 44_100);
       await context.close();
-      await onSave(bytesToBase64(encodeWavPcm16(mono, 44_100, 1)));
-      setStatus("idle");
+      const wavBase64 = bytesToBase64(encodeWavPcm16(mono, 44_100, 1));
+      const nextBytes = base64ToBytes(wavBase64);
+      const nextBuffer = nextBytes.buffer.slice(nextBytes.byteOffset, nextBytes.byteOffset + nextBytes.byteLength) as ArrayBuffer;
+      setPendingWav(wavBase64);
+      setPendingUrl(URL.createObjectURL(new Blob([nextBuffer], { type: "audio/wav" })));
+      setStatus("review");
       setLevel(0);
     } catch (reason) {
       setStatus("error");
@@ -1363,6 +1416,40 @@ function RecorderPanel({
       void monitorContextRef.current?.close();
       monitorContextRef.current = null;
     }
+  }
+
+  async function confirmTake() {
+    if (!pendingWav) {
+      return;
+    }
+    setStatus("processing");
+    setError(null);
+    try {
+      const saveResult = await onSave(pendingWav);
+      if (saveResult === false) {
+        setStatus("error");
+        return;
+      }
+      setPendingWav(null);
+      if (pendingUrl) {
+        URL.revokeObjectURL(pendingUrl);
+      }
+      setPendingUrl(null);
+      setStatus("idle");
+    } catch (reason) {
+      setStatus("error");
+      setError(messageFor(reason, "Could not save this take."));
+    }
+  }
+
+  function discardTake() {
+    setPendingWav(null);
+    if (pendingUrl) {
+      URL.revokeObjectURL(pendingUrl);
+    }
+    setPendingUrl(null);
+    setStatus("idle");
+    setError(null);
   }
 
   return (
@@ -1378,17 +1465,27 @@ function RecorderPanel({
         <span style={{ width: `${Math.round(level * 100)}%` }} />
       </div>
       <div className="recorder-actions">
-        <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing"} onClick={() => void start()}>
+        <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing" || status === "review"} onClick={() => void start()}>
           Record
         </button>
         <button type="button" disabled={status !== "recording"} onClick={pause}>Pause</button>
         <button type="button" disabled={status !== "paused"} onClick={resume}>Resume</button>
         <button type="button" disabled={status !== "recording" && status !== "paused"} onClick={stop}>
-          {status === "processing" ? "Converting…" : "Stop & save WAV"}
+          {status === "processing" ? "Saving…" : status === "review" ? "Review take" : "Stop & review"}
         </button>
       </div>
+      {status === "review" && pendingUrl ? (
+        <div className="recorder-review">
+          <p className="card-kicker">Listen before writing the project</p>
+          <audio controls preload="metadata" src={pendingUrl} />
+          <div className="recorder-review-actions">
+            <button type="button" className="primary-button" onClick={() => void confirmTake()}>Use this take</button>
+            <button type="button" className="secondary-button" onClick={discardTake}>Discard</button>
+          </div>
+        </div>
+      ) : null}
       <p className="recorder-honesty">
-        No mic access is requested until Record. Booth Desk writes a 44.1 kHz mono WAV and leaves DAW multitrack work to Reaper.
+        No mic access is requested until Record. Stop opens a local review; Booth Desk writes a 44.1 kHz mono WAV only after you confirm. DAW multitrack work stays in Reaper.
       </p>
       {error ? <p className="recorder-error">{error}</p> : null}
     </section>
@@ -1892,7 +1989,7 @@ function ChapterDesk({
   onManage: () => void;
   onExportMarkers: () => void;
   onOpenTeleprompter: () => void;
-  onSaveRecording: (wavBase64: string) => Promise<void>;
+  onSaveRecording: (wavBase64: string) => Promise<unknown>;
   onPunchPickup: (pickup: Pickup) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
@@ -2070,6 +2167,29 @@ function AcxMeter({ report }: { report: AcxReport }) {
       <p className="meter-honesty">
         Measurable specs only. ACX can still reject clicks, echo, or a wrong read.
       </p>
+    </section>
+  );
+}
+
+function RoomTestResult({ report }: { report: RoomTestReport }) {
+  return (
+    <section className="result-panel room-result" aria-labelledby="room-result-title">
+      <div className="result-heading">
+        <div>
+          <p className="card-kicker">Gain budget</p>
+          <h4 id="room-result-title">Room estimate</h4>
+        </div>
+        <span className={`traffic-light ${report.status}`}>{report.status}</span>
+      </div>
+      <dl className="room-stats">
+        <div><dt>Silence recorded</dt><dd>{report.durationSeconds.toFixed(1)} s</dd></div>
+        <div><dt>Noise floor RMS</dt><dd>{formatDb(report.noiseFloorDbfs)}</dd></div>
+        <div><dt>Speech RMS used</dt><dd>{formatDb(report.speechRmsDbfs)}</dd></div>
+        <div><dt>Needed boost</dt><dd>{report.neededBoostDb.toFixed(1)} dB</dd></div>
+        <div><dt>Predicted floor after boost</dt><dd>{formatDb(report.predictedFloorDbfs)}</dd></div>
+      </dl>
+      <p className={`room-warning ${report.status}`}>{report.warning}</p>
+      <p className="meter-honesty">This is a room estimate, not a promise that a finished chapter will pass. Listen for HVAC, clicks, and echo.</p>
     </section>
   );
 }

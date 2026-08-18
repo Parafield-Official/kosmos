@@ -21,6 +21,7 @@ interface BoothDeskBridge {
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room"; chapterId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
+  applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
   readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
@@ -86,6 +87,12 @@ interface MarkerExportResult {
 interface RecordingSaveResult extends ProjectEnvelope {
   path: string;
   kind: "chapter" | "punch" | "room";
+}
+
+interface PunchSaveResult extends ProjectEnvelope {
+  kind: "punch";
+  path: string;
+  editedPath: string;
 }
 
 interface DecodedAudio {

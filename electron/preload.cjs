@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   readAlignment: (payload) => ipcRenderer.invoke("project:read-alignment", payload),
   exportMarkers: (payload) => ipcRenderer.invoke("project:export-markers", payload),
   saveRecordingWav: (payload) => ipcRenderer.invoke("recording:save-wav", payload),
+  applyPunchRecording: (payload) => ipcRenderer.invoke("recording:apply-punch", payload),
   readAudio: (payload) => ipcRenderer.invoke("audio:read", payload),
   decodeAudio: (payload) => ipcRenderer.invoke("audio:decode", payload),
   transcribe: (payload) => ipcRenderer.invoke("proof:transcribe", payload),

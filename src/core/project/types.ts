@@ -34,6 +34,8 @@ export interface ChapterFile {
   title: string;
   text_path: string;
   audio_path?: string;
+  raw_audio_path?: string;
+  edited_audio_path?: string;
   bed_audio_path?: string;
   overdub_audio_path?: string;
   duet_mix_path?: string;
@@ -69,6 +71,9 @@ export interface PunchRecording {
   chapter_id: string;
   pickup_id?: string;
   path: string;
+  edited_path?: string;
+  t_start?: number;
+  t_end?: number;
   created_at: string;
 }
 
