@@ -18,6 +18,7 @@ interface BoothDeskBridge {
   modelStatus: () => Promise<ModelStatus>;
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
+  exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
 }
 
 interface ProjectEnvelope {
@@ -67,6 +68,13 @@ interface ModelProgress {
   received: number;
   total: number;
   fraction: number;
+}
+
+interface AcxExportResult {
+  folder: string;
+  files: string[];
+  entries: Array<{ fileName: string; status: string; note?: string }>;
+  report: string;
 }
 
 interface Window {

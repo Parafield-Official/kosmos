@@ -1,5 +1,6 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const os = require("node:os");
 const { spawn } = require("node:child_process");
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { transcribeAudio } = require("./asr.cjs");
@@ -283,6 +284,141 @@ async function decodeAudioFile(folder, relativePath) {
   };
 }
 
+async function exportAcxPack(folder, project) {
+  await assertProjectFolder(folder);
+  const masterCore = loadCoreModule("master");
+  const exportCore = loadCoreModule("export");
+  const outputFolder = path.join(folder, "export", "acx");
+  await fs.rm(outputFolder, { recursive: true, force: true });
+  await fs.mkdir(outputFolder, { recursive: true });
+  const temporaryFolder = await fs.mkdtemp(path.join(os.tmpdir(), "booth-desk-export-"));
+  const entries = [];
+  const outputFiles = [];
+  let retailPcm = null;
+
+  try {
+    const chapters = [...(project.chapters ?? [])].sort((a, b) => a.index - b.index);
+    if (chapters.length === 0) {
+      throw new Error("Add at least one chapter before exporting an ACX pack");
+    }
+
+    for (const chapter of chapters) {
+      if (!chapter.audio_path) {
+        entries.push({
+          fileName: `chapter_${String(chapter.index).padStart(2, "0")}.mp3`,
+          status: "not_measured",
+          note: "No audio is attached to this chapter.",
+        });
+        continue;
+      }
+
+      const decoded = await decodeAudioFile(folder, chapter.audio_path);
+      const samples = float32FromBase64(decoded.pcmBase64);
+      const master = masterCore.masterPcm({
+        samples,
+        sampleRate: decoded.sampleRate,
+        channels: decoded.channels,
+      });
+      const fileName = exportCore.chapterFileName(chapter);
+      if (master.status !== "ok") {
+        entries.push({
+          fileName,
+          before: master.before,
+          status: "fail",
+          note: master.abort_reason,
+        });
+        continue;
+      }
+
+      if (!retailPcm) {
+        retailPcm = master.samples;
+      }
+
+      const temporaryPcm = path.join(temporaryFolder, `${chapter.id}.f32le`);
+      await fs.writeFile(temporaryPcm, Buffer.from(master.samples.buffer, master.samples.byteOffset, master.samples.byteLength));
+      const destination = path.join(outputFolder, fileName);
+      await encodeCbrMp3(temporaryPcm, destination, 0, master.samples.length / 44100);
+      const measured = await decodeAudioFile(folder, path.relative(folder, destination));
+      const measuredSamples = float32FromBase64(measured.pcmBase64);
+      const after = masterCore.measurePcm({
+        samples: measuredSamples,
+        sampleRate: measured.sampleRate,
+        channels: measured.channels,
+        format: "mp3",
+        bitrate_kbps: 192,
+        vbr: false,
+      });
+      entries.push({ fileName, before: master.before, after, status: after.traffic_light === "red" ? "fail" : "pass" });
+      outputFiles.push(fileName);
+    }
+
+    const plan = exportCore.buildExportPlan(project);
+    for (const readme of plan.readmeFiles) {
+      await fs.writeFile(path.join(outputFolder, readme.fileName), readme.contents, "utf8");
+    }
+
+    const firstChapter = chapters.find((chapter) => chapter.audio_path);
+    if (firstChapter && retailPcm) {
+      const samples = retailPcm;
+      const start = Math.min(samples.length, Math.round(1.5 * 44100));
+      const sampleLength = Math.min(samples.length - start, Math.round(180 * 44100));
+      const samplePath = path.join(temporaryFolder, "retail.f32le");
+      const sampleBytes = samples.slice(start, start + sampleLength);
+      await fs.writeFile(samplePath, Buffer.from(sampleBytes.buffer, sampleBytes.byteOffset, sampleBytes.byteLength));
+      await encodeCbrMp3(samplePath, path.join(outputFolder, "99_retail_sample.mp3"), 0, sampleLength / 44100);
+      outputFiles.push("99_retail_sample.mp3");
+      entries.push({ fileName: "99_retail_sample.mp3", status: "pass", note: "Starts after the chapter lead-in; review the selected range." });
+    } else {
+      entries.push({ fileName: "99_retail_sample.mp3", status: "not_measured", note: "Attach chapter audio to create a retail sample." });
+    }
+
+    const report = exportCore.reportText(entries);
+    await fs.writeFile(path.join(outputFolder, "REPORT.txt"), report, "utf8");
+    return { folder: outputFolder, files: outputFiles, entries, report };
+  } finally {
+    await fs.rm(temporaryFolder, { recursive: true, force: true });
+  }
+}
+
+async function encodeCbrMp3(inputPath, outputPath, startSeconds, durationSeconds) {
+  const args = [
+    "-y", "-v", "error",
+    "-f", "f32le", "-ar", "44100", "-ac", "1",
+    "-ss", String(Math.max(0, startSeconds)),
+    "-t", String(Math.max(0, durationSeconds)),
+    "-i", inputPath,
+    "-map_metadata", "-1",
+    "-codec:a", "libmp3lame",
+    "-b:a", "192k",
+    "-ar", "44100",
+    "-ac", "1",
+    "-write_xing", "0",
+    outputPath,
+  ];
+  await runFfmpeg(args);
+}
+
+function loadCoreModule(name) {
+  const candidates = [
+    path.join(app.getAppPath(), "dist-core", `${name}.cjs`),
+    path.join(__dirname, "..", "dist-core", `${name}.cjs`),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return require(candidate);
+    } catch {
+      // Try the next build location.
+    }
+  }
+  throw new Error("The audio core is not bundled. Run npm run build before exporting.");
+}
+
+function float32FromBase64(base64) {
+  const bytes = Buffer.from(base64, "base64");
+  const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return new Float32Array(copy);
+}
+
 async function probeAudio(audioPath) {
   try {
     const output = await runCommand("ffprobe", [
@@ -463,6 +599,12 @@ ipcMain.handle("proof:download-model", async (event) => {
       event.sender.send("proof:model-progress", progress);
     }
   });
+});
+ipcMain.handle("acx:export", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid ACX export request");
+  }
+  return exportAcxPack(payload.folder, payload.project);
 });
 ipcMain.handle("project:save", (_event, payload) => {
   if (!payload || typeof payload.folder !== "string" || !payload.project) {

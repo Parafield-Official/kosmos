@@ -28,4 +28,5 @@ contextBridge.exposeInMainWorld("boothDesk", {
     modelProgressListeners.add(listener);
     return () => modelProgressListeners.delete(listener);
   },
+  exportAcx: (payload) => ipcRenderer.invoke("acx:export", payload),
 });

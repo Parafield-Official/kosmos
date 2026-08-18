@@ -11,7 +11,8 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run build:core && tsc --noEmit && vite build",
+    "build:core": "esbuild src/core/acx/master.ts --bundle --platform=node --format=cjs --outfile=dist-core/master.cjs && esbuild src/core/acx/export.ts --bundle --platform=node --format=cjs --outfile=dist-core/export.cjs",
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -25,6 +26,7 @@
     "asar": true,
     "files": [
       "dist/**/*",
+      "dist-core/**/*",
       "electron/**/*",
       "acx_spec.json",
       "package.json"
@@ -59,6 +61,7 @@
     "concurrently": "^10.0.4",
     "electron": "^40.10.2",
     "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.4",

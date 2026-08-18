@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-core/
 release/
 .DS_Store
 *.log
@@ -8,4 +9,3 @@ release/
 !.env.example
 *.local
 .booth/
-

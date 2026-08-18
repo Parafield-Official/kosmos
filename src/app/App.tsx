@@ -156,6 +156,7 @@ function ProjectHome({
   const [notice, setNotice] = useState<string | null>(null);
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
+  const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedChapter = useMemo(
@@ -396,6 +397,20 @@ function ProjectHome({
     });
   }
 
+  async function exportAcx() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("ACX export is available in the desktop app after the master core is built.");
+      return;
+    }
+    await runAction("export", async () => {
+      const result = await window.boothDesk?.exportAcx(envelope);
+      if (result) {
+        setExportResult(result);
+        setNotice(`ACX pack written to ${result.folder}. Review REPORT.txt and listen once.`);
+      }
+    });
+  }
+
   function playPickup(pickup: Pickup) {
     if (!audioRef.current) {
       return;
@@ -442,6 +457,14 @@ function ProjectHome({
               onClick={() => void importChapter()}
             >
               Import text
+            </button>
+            <button
+              className="secondary-button compact-button"
+              type="button"
+              disabled={project.chapters.length === 0 || busyAction !== null}
+              onClick={() => void exportAcx()}
+            >
+              {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
             </button>
           </div>
         </div>
@@ -496,6 +519,12 @@ function ProjectHome({
           </div>
         )}
       </section>
+
+      {exportResult ? (
+        <p className="export-summary">
+          Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} · REPORT.txt included
+        </p>
+      ) : null}
 
       {composerOpen ? (
         <ChapterComposer
