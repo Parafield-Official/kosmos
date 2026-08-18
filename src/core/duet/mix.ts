@@ -47,12 +47,13 @@ export function mixDuetTracks(input: DuetMixInput): DuetMixResult {
       mask[index] = value;
     }
   }
-  // A gap is room tone/silence; an explicit segment wins over earlier overlap.
+  // A gap carries the bed's room tone when available; an explicit segment wins
+  // over earlier overlap. Stems remain seat-masked below.
   const mix = new Float32Array(input.n1.length);
   const n1Stem = new Float32Array(input.n1.length);
   const n2Stem = new Float32Array(input.n2.length);
   for (let index = 0; index < mix.length; index += 1) {
-    mix[index] = mask[index] === 2 ? input.n2[index] : mask[index] === 1 ? input.n1[index] : 0;
+    mix[index] = mask[index] === 2 ? input.n2[index] : input.n1[index];
     n1Stem[index] = mask[index] === 1 ? input.n1[index] : 0;
     n2Stem[index] = mask[index] === 2 ? input.n2[index] : 0;
   }

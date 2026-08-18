@@ -1361,6 +1361,170 @@ footer {
   color: #8b3b31;
 }
 
+.duet-tracks-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #c9d3df;
+  border-radius: 12px;
+  background: #f0f4f8;
+}
+
+.span-seat-editor {
+  margin: 16px 0 2px;
+  padding: 10px 12px;
+  border: 1px solid #d8cec2;
+  border-radius: 9px;
+  background: #fffaf3;
+}
+
+.span-seat-editor summary {
+  color: #674b3a;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.span-seat-editor p {
+  margin: 8px 0;
+  color: #887b70;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.span-seat-editor ol {
+  display: grid;
+  gap: 6px;
+  max-height: 250px;
+  margin: 0;
+  padding: 0 0 0 25px;
+  overflow-y: auto;
+}
+
+.span-seat-editor li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.span-seat-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #51453b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.span-seat-editor select {
+  padding: 4px 6px;
+  border: 1px solid #cbbcaf;
+  border-radius: 5px;
+  color: #674b3a;
+  background: #fff;
+  font-size: 10px;
+}
+
+.duet-tracks-panel h4 {
+  margin: 0;
+  color: #35495d;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 500;
+}
+
+.duet-tracks-panel .panel-honesty {
+  color: #596b7c;
+}
+
+.duet-track-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.duet-track-card {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid #cbd5df;
+  border-radius: 9px;
+  background: #fbfdff;
+}
+
+.duet-track-card strong {
+  color: #35495d;
+  font-size: 12px;
+}
+
+.duet-track-card span {
+  min-height: 30px;
+  overflow: hidden;
+  color: #758596;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duet-track-card button,
+.duet-mix-actions button {
+  padding: 7px 9px;
+  border: 1px solid #aab9c7;
+  border-radius: 7px;
+  color: #385a76;
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.duet-track-card button:disabled,
+.duet-mix-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.duet-mix-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.duet-mix-actions label {
+  display: grid;
+  gap: 5px;
+  color: #617284;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.duet-mix-actions select {
+  padding: 7px 9px;
+  border: 1px solid #aab9c7;
+  border-radius: 7px;
+  color: #385a76;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.duet-output {
+  margin: 12px 0 0;
+  color: #617284;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
 .room-check-button {
   margin-top: 12px;
 }

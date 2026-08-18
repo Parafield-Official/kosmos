@@ -478,6 +478,43 @@ async function setChapterSeat(folder, project, chapterId, seat) {
   });
 }
 
+async function setChapterSpans(folder, project, chapterId, spans) {
+  await assertProjectFolder(folder);
+  if (!Array.isArray(spans)) {
+    throw new Error("Chapter spans must be an array");
+  }
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error(`Unknown chapter: ${chapterId}`);
+  }
+  const normalized = spans.map((span) => {
+    if (!span || typeof span.text !== "string") {
+      throw new Error("Every chapter span needs text");
+    }
+    if (span.seat !== "narration" && span.seat !== "N1" && span.seat !== "N2") {
+      throw new Error("Every chapter span needs a valid seat");
+    }
+    const styles = Array.isArray(span.style)
+      ? span.style.filter((style) => ["bold", "italic", "underline", "highlight"].includes(style))
+      : [];
+    return {
+      text: span.text,
+      seat: span.seat,
+      style: styles,
+      ...(typeof span.glossary_id === "string" ? { glossary_id: span.glossary_id } : {}),
+    };
+  });
+  await writeChapterDocument(folder, chapter.text_path, { schema: 1, spans: normalized });
+  const now = new Date().toISOString();
+  return saveProjectFolder(folder, {
+    ...project,
+    chapters: project.chapters.map((candidate) => candidate.id === chapterId
+      ? { ...candidate, updated_at: now }
+      : candidate),
+    updated_at: now,
+  });
+}
+
 async function readChapterDocument(folder, chapter) {
   const value = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.text_path), "utf8"));
   if (!Array.isArray(value.spans)) {
@@ -541,6 +578,44 @@ async function attachAudioFile(folder, project, chapterId) {
   };
   const saved = await saveProjectFolder(folder, nextProject);
   return { ...saved, sourcePath, audioPath: path.join(folder, destinationRelative) };
+}
+
+async function attachDuetTrackFile(folder, project, chapterId, kind) {
+  await assertProjectFolder(folder);
+  if (project.mode !== "duet") {
+    throw new Error("Switch the project to duet mode before attaching bed or overdub audio.");
+  }
+  if (kind !== "bed" && kind !== "overdub") {
+    throw new Error("Duet track must be bed or overdub");
+  }
+  const result = await dialog.showOpenDialog({
+    title: kind === "bed" ? "Choose the N1 bed recording" : "Choose the N2 overdub recording",
+    properties: ["openFile"],
+    filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "m4a", "aiff", "aif"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error("Choose a chapter before attaching a duet track");
+  }
+  const sourcePath = result.filePaths[0];
+  const extension = path.extname(sourcePath).toLowerCase() || ".wav";
+  const destinationRelative = `audio/duet/${String(chapter.index).padStart(2, "0")}_${kind}${extension}`;
+  await fs.mkdir(path.dirname(projectAssetPath(folder, destinationRelative)), { recursive: true });
+  await fs.copyFile(sourcePath, projectAssetPath(folder, destinationRelative));
+  const now = new Date().toISOString();
+  const field = kind === "bed" ? "bed_audio_path" : "overdub_audio_path";
+  const nextProject = {
+    ...project,
+    chapters: project.chapters.map((candidate) => candidate.id === chapterId
+      ? { ...candidate, [field]: destinationRelative, updated_at: now }
+      : candidate),
+    updated_at: now,
+  };
+  const saved = await saveProjectFolder(folder, nextProject);
+  return { ...saved, kind, sourcePath, audioPath: destinationRelative };
 }
 
 async function attachGlossaryClip(folder, project, glossaryId) {
@@ -827,6 +902,94 @@ async function decodeMono44100(audioPath) {
   ]);
   const copy = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
   return new Float32Array(copy);
+}
+
+async function mixDuetChapterFile(folder, project, chapterId, narrationSeat = "N1", crossfadeMs = 20) {
+  await assertProjectFolder(folder);
+  if (project.mode !== "duet") {
+    throw new Error("Switch the project to duet mode before mixing a chapter.");
+  }
+  if (narrationSeat !== "N1" && narrationSeat !== "N2") {
+    throw new Error("Narration seat must be N1 or N2");
+  }
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter?.bed_audio_path || !chapter.overdub_audio_path) {
+    throw new Error("Attach both a bed and an overdub before mixing this chapter.");
+  }
+
+  const [bed, overdub] = await Promise.all([
+    decodeMono44100(projectAssetPath(folder, chapter.bed_audio_path)),
+    decodeMono44100(projectAssetPath(folder, chapter.overdub_audio_path)),
+  ]);
+  const length = Math.max(bed.length, overdub.length);
+  const n1 = padFloat32(bed, length);
+  const n2 = padFloat32(overdub, length);
+  const document = await readChapterDocument(folder, chapter);
+  const alignment = chapter.pickups_path
+    ? await readJsonIfPresent(projectAssetPath(folder, chapter.pickups_path))
+    : null;
+  const timingSource = alignment?.transcript?.length > 0 ? "alignment" : "proportional";
+  const timelineCore = loadCoreModule("duet-timeline");
+  const mixCore = loadCoreModule("duet-mix");
+  const segments = timelineCore.buildDuetTimeline(
+    document.spans,
+    alignment?.transcript ?? [],
+    length / 44100,
+  );
+  const mixed = mixCore.mixDuetTracks({
+    n1,
+    n2,
+    sampleRate: 44100,
+    segments,
+    narrationSeat,
+    crossfadeMs,
+  });
+  const audioCore = loadCoreModule("audio");
+  const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
+  const prefix = `audio/duet/${String(chapter.index).padStart(2, "0")}`;
+  const mixPath = `${prefix}_mix_${stamp}.wav`;
+  const n1StemPath = `${prefix}_N1_${stamp}.wav`;
+  const n2StemPath = `${prefix}_N2_${stamp}.wav`;
+  await fs.mkdir(path.dirname(projectAssetPath(folder, mixPath)), { recursive: true });
+  await Promise.all([
+    fs.writeFile(projectAssetPath(folder, mixPath), Buffer.from(audioCore.encodeWavPcm16(mixed.mix, 44100, 1))),
+    fs.writeFile(projectAssetPath(folder, n1StemPath), Buffer.from(audioCore.encodeWavPcm16(mixed.n1Stem, 44100, 1))),
+    fs.writeFile(projectAssetPath(folder, n2StemPath), Buffer.from(audioCore.encodeWavPcm16(mixed.n2Stem, 44100, 1))),
+  ]);
+  const now = new Date().toISOString();
+  const nextProject = {
+    ...project,
+    chapters: project.chapters.map((candidate) => candidate.id === chapterId
+      ? {
+          ...candidate,
+          audio_path: mixPath,
+          duet_mix_path: mixPath,
+          n1_stem_path: n1StemPath,
+          n2_stem_path: n2StemPath,
+          updated_at: now,
+        }
+      : candidate),
+    updated_at: now,
+  };
+  const saved = await saveProjectFolder(folder, nextProject);
+  return { ...saved, mixPath, n1StemPath, n2StemPath, segments: segments.length, timingSource };
+}
+
+async function readJsonIfPresent(filePath) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function padFloat32(samples, length) {
+  const output = new Float32Array(length);
+  output.set(samples.subarray(0, length));
+  return output;
 }
 
 function mixInterleavedToMono(samples, channels) {
@@ -1354,6 +1517,12 @@ ipcMain.handle("project:set-chapter-seat", (_event, payload) => {
   }
   return setChapterSeat(payload.folder, payload.project, payload.chapterId, payload.seat);
 });
+ipcMain.handle("project:set-chapter-spans", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid chapter span request");
+  }
+  return setChapterSpans(payload.folder, payload.project, payload.chapterId, payload.spans);
+});
 ipcMain.handle("project:example", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
     throw new Error("Invalid example request");
@@ -1365,6 +1534,12 @@ ipcMain.handle("project:attach-audio", (_event, payload) => {
     throw new Error("Invalid audio attachment request");
   }
   return attachAudioFile(payload.folder, payload.project, payload.chapterId);
+});
+ipcMain.handle("duet:attach-track", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId || !payload?.kind) {
+    throw new Error("Invalid duet track attachment request");
+  }
+  return attachDuetTrackFile(payload.folder, payload.project, payload.chapterId, payload.kind);
 });
 ipcMain.handle("glossary:attach-clip", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.glossaryId) {
@@ -1407,6 +1582,18 @@ ipcMain.handle("recording:apply-punch", (_event, payload) => {
     throw new Error("Invalid punch application request");
   }
   return applyPunchRecording(payload.folder, payload.project, payload);
+});
+ipcMain.handle("duet:mix-chapter", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid duet mix request");
+  }
+  return mixDuetChapterFile(
+    payload.folder,
+    payload.project,
+    payload.chapterId,
+    payload.narrationSeat,
+    payload.crossfadeMs,
+  );
 });
 ipcMain.handle("audio:read", (_event, payload) => {
   if (!payload?.folder || !payload?.relativePath) {

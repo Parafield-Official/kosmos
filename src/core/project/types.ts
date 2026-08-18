@@ -39,6 +39,8 @@ export interface ChapterFile {
   bed_audio_path?: string;
   overdub_audio_path?: string;
   duet_mix_path?: string;
+  n1_stem_path?: string;
+  n2_stem_path?: string;
   pickups_path?: string;
   notes_path?: string;
   word_count?: number;

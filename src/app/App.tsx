@@ -14,6 +14,8 @@ import {
   canApproveChapters,
   setChapterAuthorStatus,
 } from "../core/project/collaboration";
+import { assignPickupSeats, assignSpanSeat } from "../core/duet/seats";
+import { buildDuetTimeline } from "../core/duet/timeline";
 import {
   buildPromptLines,
   clampFontSize,
@@ -205,6 +207,7 @@ function ProjectHome({
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
+  const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedChapter = useMemo(
@@ -420,6 +423,39 @@ function ProjectHome({
     });
   }
 
+  async function attachDuetTrack(kind: "bed" | "overdub") {
+    if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Duet track attachment is available in the desktop app after switching to duet mode.");
+      return;
+    }
+    await runAction(`duet-${kind}`, async () => {
+      const result = await window.boothDesk?.attachDuetTrack({ ...envelope, chapterId: selectedChapter.id, kind });
+      if (result) {
+        onChange(result);
+        setNotice(`${kind === "bed" ? "N1 bed" : "N2 overdub"} attached at ${result.audioPath}.`);
+      }
+    });
+  }
+
+  async function mixDuetChapter() {
+    if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Duet mixing is available in the desktop app.");
+      return;
+    }
+    await runAction("duet-mix", async () => {
+      const result = await window.boothDesk?.mixDuetChapter({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        narrationSeat: duetNarrationSeat,
+        crossfadeMs: 20,
+      });
+      if (result) {
+        onChange(result);
+        setNotice(`Duet mix written to ${result.mixPath}; stems are ${result.n1StemPath} and ${result.n2StemPath}. Timing used ${result.timingSource} mapping.`);
+      }
+    });
+  }
+
   async function runAcxCheck(chapter: ChapterFile) {
     if (!chapter.audio_path || !window.boothDesk) {
       setNotice("Attach an audio file before running the ACX check.");
@@ -516,20 +552,26 @@ function ProjectHome({
         transcript,
         durationSeconds: duration || 1,
       });
-      setProof({ pickups: result.pickups, transcript });
+      const pickups = project.mode === "duet"
+        ? assignPickupSeats(
+            result.pickups,
+            buildDuetTimeline(chapterSpans, transcript, duration || 1),
+          )
+        : result.pickups;
+      setProof({ pickups, transcript });
       if (window.boothDesk && folder !== "(browser preview)") {
         const saved = await window.boothDesk.saveAlignment({
           ...envelope,
           chapterId: chapter.id,
-          pickups: result.pickups,
+          pickups,
           transcript,
         });
         onChange(saved);
       }
       setNotice(
-        result.pickups.length === 0
+        pickups.length === 0
           ? "No word mismatches found in this transcript. Listen once for acting and noise."
-          : `${result.pickups.length} word ${result.pickups.length === 1 ? "mismatch" : "mismatches"} found.`,
+          : `${pickups.length} word ${pickups.length === 1 ? "mismatch" : "mismatches"} found.`,
       );
     });
   }
@@ -880,6 +922,25 @@ function ProjectHome({
     });
   }
 
+  async function applySpanSeat(index: number, seat: "narration" | "N1" | "N2") {
+    if (!selectedChapter) {
+      return;
+    }
+    await runAction(`span-seat-${index}`, async () => {
+      const nextSpans = assignSpanSeat(chapterSpans, index, seat);
+      setChapterSpans(nextSpans);
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const result = await window.boothDesk.setChapterSpans({
+          ...envelope,
+          chapterId: selectedChapter.id,
+          spans: nextSpans,
+        });
+        onChange(result);
+      }
+      setNotice(`Span ${index + 1} is assigned to ${seat}.`);
+    });
+  }
+
   function playPickup(pickup: Pickup) {
     if (!audioRef.current) {
       return;
@@ -1078,6 +1139,13 @@ function ProjectHome({
                 onPunchPickup={setPunchPickup}
                 pickupSeatFilter={pickupSeatFilter}
                 onPickupSeatFilter={setPickupSeatFilter}
+                spans={chapterSpans}
+                onAssignSpanSeat={(index, seat) => void applySpanSeat(index, seat)}
+                projectMode={project.mode}
+                duetNarrationSeat={duetNarrationSeat}
+                onDuetNarrationSeat={setDuetNarrationSeat}
+                onAttachDuetTrack={(kind) => void attachDuetTrack(kind)}
+                onMixDuet={mixDuetChapter}
               />
             ) : null}
           </div>
@@ -1970,6 +2038,13 @@ function ChapterDesk({
   onPunchPickup,
   pickupSeatFilter,
   onPickupSeatFilter,
+  spans,
+  onAssignSpanSeat,
+  projectMode,
+  duetNarrationSeat,
+  onDuetNarrationSeat,
+  onAttachDuetTrack,
+  onMixDuet,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -1993,6 +2068,13 @@ function ChapterDesk({
   onPunchPickup: (pickup: Pickup) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
+  spans: ScriptSpan[];
+  onAssignSpanSeat: (index: number, seat: "narration" | "N1" | "N2") => void;
+  projectMode: "solo" | "duet";
+  duetNarrationSeat: "N1" | "N2";
+  onDuetNarrationSeat: (value: "N1" | "N2") => void;
+  onAttachDuetTrack: (kind: "bed" | "overdub") => void;
+  onMixDuet: () => Promise<void>;
 }) {
   return (
     <article className="chapter-desk">
@@ -2015,6 +2097,8 @@ function ChapterDesk({
         <summary>Manuscript preview</summary>
         <p>{chapterText || "Loading manuscript…"}</p>
       </details>
+
+      <SpanSeatEditor spans={spans} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
 
       <div className="proof-input">
         <label htmlFor="local-transcript">Local word transcript</label>
@@ -2074,9 +2158,113 @@ function ChapterDesk({
         onSave={onSaveRecording}
       />
 
+      {projectMode === "duet" ? (
+        <DuetTracksPanel
+          chapter={chapter}
+          busyAction={busyAction}
+          narrationSeat={duetNarrationSeat}
+          onNarrationSeat={onDuetNarrationSeat}
+          onAttach={onAttachDuetTrack}
+          onMix={onMixDuet}
+        />
+      ) : null}
+
       {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
       {acxReport ? <AcxMeter report={acxReport} /> : null}
     </article>
+  );
+}
+
+function SpanSeatEditor({
+  spans,
+  disabled,
+  onAssign,
+}: {
+  spans: ScriptSpan[];
+  disabled: boolean;
+  onAssign: (index: number, seat: "narration" | "N1" | "N2") => void;
+}) {
+  if (spans.length === 0) {
+    return null;
+  }
+  return (
+    <details className="span-seat-editor">
+      <summary>Assign dialogue / narration seats ({spans.length} spans)</summary>
+      <p>Paint a span by choosing N1 or N2. Solo projects can leave everything as narration.</p>
+      <ol>
+        {spans.map((span, index) => (
+          <li key={`${index}-${span.text.slice(0, 12)}`}>
+            <span className="span-seat-text">{span.text || "(line break)"}</span>
+            <select
+              aria-label={`Seat for span ${index + 1}`}
+              value={span.seat}
+              disabled={disabled}
+              onChange={(event) => onAssign(index, event.target.value as "narration" | "N1" | "N2")}
+            >
+              <option value="narration">Narration</option>
+              <option value="N1">N1</option>
+              <option value="N2">N2</option>
+            </select>
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function DuetTracksPanel({
+  chapter,
+  busyAction,
+  narrationSeat,
+  onNarrationSeat,
+  onAttach,
+  onMix,
+}: {
+  chapter: ChapterFile;
+  busyAction: string | null;
+  narrationSeat: "N1" | "N2";
+  onNarrationSeat: (value: "N1" | "N2") => void;
+  onAttach: (kind: "bed" | "overdub") => void;
+  onMix: () => Promise<void>;
+}) {
+  const ready = Boolean(chapter.bed_audio_path && chapter.overdub_audio_path);
+  return (
+    <section className="duet-tracks-panel" aria-labelledby="duet-tracks-title">
+      <div className="result-heading">
+        <div>
+          <p className="card-kicker">Phase 5 · async seats</p>
+          <h4 id="duet-tracks-title">Bed + overdub</h4>
+        </div>
+        <span className="result-count">{ready ? "Ready to mix" : "Two tracks needed"}</span>
+      </div>
+      <p className="panel-honesty">
+        N1 is the bed and N2 is the overdub. Booth Desk maps the manuscript seats onto the shared timeline; it does not perform either part.
+      </p>
+      <div className="duet-track-grid">
+        <div className="duet-track-card">
+          <strong>N1 bed</strong>
+          <span>{chapter.bed_audio_path ?? "Not attached"}</span>
+          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("bed")}>{chapter.bed_audio_path ? "Replace bed" : "Attach bed"}</button>
+        </div>
+        <div className="duet-track-card">
+          <strong>N2 overdub</strong>
+          <span>{chapter.overdub_audio_path ?? "Not attached"}</span>
+          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("overdub")}>{chapter.overdub_audio_path ? "Replace overdub" : "Attach overdub"}</button>
+        </div>
+      </div>
+      <div className="duet-mix-actions">
+        <label>Narration seat
+          <select value={narrationSeat} onChange={(event) => onNarrationSeat(event.target.value as "N1" | "N2")}>
+            <option value="N1">N1</option>
+            <option value="N2">N2</option>
+          </select>
+        </label>
+        <button className="primary-button" type="button" disabled={!ready || busyAction !== null} onClick={() => void onMix()}>
+          {busyAction === "duet-mix" ? "Mixing…" : "Mix chapter + stems"}
+        </button>
+      </div>
+      {chapter.duet_mix_path ? <p className="duet-output">Last mix: {chapter.duet_mix_path}<br />N1 stem: {chapter.n1_stem_path}<br />N2 stem: {chapter.n2_stem_path}</p> : null}
+    </section>
   );
 }
 

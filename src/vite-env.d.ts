@@ -13,8 +13,10 @@ interface BoothDeskBridge {
   splitChapter: (payload: ProjectEnvelope & { chapterId: string; offset: number; secondTitle: string }) => Promise<ChapterEditResult>;
   mergeChapters: (payload: ProjectEnvelope & { firstChapterId: string; secondChapterId: string }) => Promise<ProjectEnvelope & { preservedSourcePath: string }>;
   setChapterSeat: (payload: ProjectEnvelope & { chapterId: string; seat: "narration" | "N1" | "N2" }) => Promise<ProjectEnvelope>;
+  setChapterSpans: (payload: ProjectEnvelope & { chapterId: string; spans: import("./core/project/types").ScriptSpan[] }) => Promise<ProjectEnvelope>;
   loadExample: (payload: ProjectEnvelope) => Promise<ExampleEnvelope>;
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
+  attachDuetTrack: (payload: ProjectEnvelope & { chapterId: string; kind: "bed" | "overdub" }) => Promise<DuetTrackAttachment | null>;
   attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
   saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
@@ -22,6 +24,7 @@ interface BoothDeskBridge {
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room"; chapterId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
   applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
+  mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
   readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
@@ -41,6 +44,12 @@ interface ProjectEnvelope {
 }
 
 interface AudioAttachment extends ProjectEnvelope {
+  sourcePath: string;
+  audioPath: string;
+}
+
+interface DuetTrackAttachment extends ProjectEnvelope {
+  kind: "bed" | "overdub";
   sourcePath: string;
   audioPath: string;
 }
@@ -93,6 +102,14 @@ interface PunchSaveResult extends ProjectEnvelope {
   kind: "punch";
   path: string;
   editedPath: string;
+}
+
+interface DuetMixSaveResult extends ProjectEnvelope {
+  mixPath: string;
+  n1StemPath: string;
+  n2StemPath: string;
+  segments: number;
+  timingSource: "alignment" | "proportional";
 }
 
 interface DecodedAudio {
