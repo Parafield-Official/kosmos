@@ -664,6 +664,12 @@ footer {
   font-size: 28px;
 }
 
+.chapter-heading-tools {
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+}
+
 .result-heading h4 {
   font-size: 25px;
 }
@@ -1026,6 +1032,60 @@ footer {
 
 .chapter-composer .actions {
   margin-top: 22px;
+}
+
+.chapter-manager {
+  width: min(760px, 100%);
+}
+
+.chapter-manager > button,
+.manager-inline button {
+  padding: 9px 12px;
+  border: 1px solid #b9977f;
+  border-radius: 8px;
+  color: #f3d0ba;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.chapter-manager > button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.chapter-manager button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.manager-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.manager-inline select {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #cfc3b6;
+  border-radius: 8px;
+  color: #312a25;
+  background: #fffdf9;
+  font: inherit;
+}
+
+.manager-help {
+  margin: 7px 0 0;
+  color: #a99c90;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.manager-divider {
+  margin-top: 16px;
+  border-top: 1px solid #4c4239;
 }
 
 

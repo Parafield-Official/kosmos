@@ -1,3 +1,5 @@
+import type { ScriptSpan } from "../project/types";
+
 /**
  * Deterministic, local manuscript chapter splitting.
  *
@@ -23,6 +25,9 @@ export interface ManuscriptChapter {
   /** Character offsets in the normalized source, useful for an import UI. */
   source_start: number;
   source_end: number;
+  /** Exact body range in the normalized source; heading text is excluded. */
+  content_start: number;
+  content_end: number;
 }
 
 export interface SplitManuscriptOptions {
@@ -77,6 +82,8 @@ export function splitManuscript(
       text: normalized.trim(),
       sourceStart: firstNonWhitespaceOffset(normalized),
       sourceEnd: lastNonWhitespaceEnd(normalized),
+      contentStart: firstNonWhitespaceOffset(normalized),
+      contentEnd: lastNonWhitespaceEnd(normalized),
       maxMinutes,
     })];
   }
@@ -95,6 +102,8 @@ export function splitManuscript(
         text: preamble,
         sourceStart: preambleStart,
         sourceEnd: Math.max(preambleStart, headingStart - 1),
+        contentStart: preambleStart,
+        contentEnd: preambleStart + preamble.length,
         maxMinutes,
       }),
     );
@@ -111,6 +120,9 @@ export function splitManuscript(
     const bodyEnd = nextHeading
       ? Math.max(bodyStart, lineStartOffset(lines, nextHeading.lineIndex) - 1)
       : normalized.length;
+    const leadingWhitespace = rawBody.match(/^\s*/u)?.[0].length ?? 0;
+    const contentStart = Math.min(bodyEnd, bodyStart + leadingWhitespace);
+    const contentEnd = Math.max(contentStart, bodyStart + rawBody.trimEnd().length);
 
     chapters.push(
       makeChapter({
@@ -120,6 +132,8 @@ export function splitManuscript(
         text,
         sourceStart: headingStart,
         sourceEnd: Math.max(headingStart, bodyEnd),
+        contentStart,
+        contentEnd,
         maxMinutes,
       }),
     );
@@ -158,6 +172,8 @@ export function splitChapterAt(
     text: leftText,
     sourceStart: chapter.source_start,
     sourceEnd: chapter.source_start + offset - 1,
+    contentStart: chapter.content_start,
+    contentEnd: chapter.content_start + offset,
     maxMinutes: MAX_CHAPTER_MINUTES,
   });
   const right = makeChapter({
@@ -167,6 +183,8 @@ export function splitChapterAt(
     text: rightText,
     sourceStart: chapter.source_start + offset,
     sourceEnd: chapter.source_end,
+    contentStart: chapter.content_start + offset,
+    contentEnd: chapter.content_end,
     maxMinutes: MAX_CHAPTER_MINUTES,
   });
   return [left, right];
@@ -185,6 +203,8 @@ export function mergeChapters(
     text: mergedText,
     sourceStart: Math.min(first.source_start, second.source_start),
     sourceEnd: Math.max(first.source_end, second.source_end),
+    contentStart: Math.min(first.content_start, second.content_start),
+    contentEnd: Math.max(first.content_end, second.content_end),
     maxMinutes: MAX_CHAPTER_MINUTES,
   });
 }
@@ -196,6 +216,8 @@ function makeChapter(input: {
   text: string;
   sourceStart: number;
   sourceEnd: number;
+  contentStart: number;
+  contentEnd: number;
   maxMinutes: number;
 }): ManuscriptChapter {
   const wordCount = countWords(input.text);
@@ -210,7 +232,48 @@ function makeChapter(input: {
     over_120_minutes: estimated > input.maxMinutes,
     source_start: input.sourceStart,
     source_end: input.sourceEnd,
+    content_start: input.contentStart,
+    content_end: input.contentEnd,
   };
+}
+
+/** Slice styled manuscript spans by normalized source offsets without flattening styles. */
+export function sliceScriptSpans(
+  spans: ScriptSpan[],
+  start: number,
+  end: number,
+): ScriptSpan[] {
+  if (end <= start) {
+    return [];
+  }
+  const result: ScriptSpan[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    const spanStart = cursor;
+    const spanEnd = cursor + span.text.length;
+    cursor = spanEnd;
+    const overlapStart = Math.max(start, spanStart);
+    const overlapEnd = Math.min(end, spanEnd);
+    if (overlapEnd <= overlapStart) {
+      continue;
+    }
+    const text = span.text.slice(overlapStart - spanStart, overlapEnd - spanStart);
+    if (text.length === 0) {
+      continue;
+    }
+    const previous = result.at(-1);
+    if (
+      previous
+      && previous.seat === span.seat
+      && JSON.stringify(previous.style) === JSON.stringify(span.style)
+      && previous.glossary_id === span.glossary_id
+    ) {
+      previous.text += text;
+    } else {
+      result.push({ ...span, text, style: [...span.style] });
+    }
+  }
+  return result;
 }
 
 function lineStartOffset(lines: string[], lineIndex: number): number {

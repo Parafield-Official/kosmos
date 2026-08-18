@@ -136,15 +136,31 @@ async function importTextFile(folder, project) {
   const result = await dialog.showOpenDialog({
     title: "Import a chapter manuscript",
     properties: ["openFile"],
-    filters: [{ name: "Plain text", extensions: ["txt", "md", "markdown"] }],
+    filters: [{ name: "Manuscript", extensions: ["txt", "md", "markdown", "docx", "epub", "pdf"] }],
   });
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
 
   const sourcePath = result.filePaths[0];
-  const text = await fs.readFile(sourcePath, "utf8");
-  return writeImportedManuscript(folder, project, sourcePath, text);
+  const bytes = await fs.readFile(sourcePath);
+  const manuscriptCore = loadCoreModule("manuscript");
+  let imported;
+  if (path.extname(sourcePath).toLowerCase() === ".pdf") {
+    let extracted;
+    try {
+      extracted = await runCommand("pdftotext", ["-layout", sourcePath, "-"]);
+    } catch (error) {
+      throw new Error(`Could not extract a PDF text layer. Scanned PDFs are not supported (${String(error)}).`);
+    }
+    imported = manuscriptCore.fromPlainText(extracted.toString("utf8"), "pdf");
+  } else {
+    imported = manuscriptCore.importManuscriptBytes(
+      new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+      path.extname(sourcePath),
+    );
+  }
+  return writeImportedManuscript(folder, project, sourcePath, imported);
 }
 
 async function writePastedText(folder, project, title, text) {
@@ -230,10 +246,10 @@ async function writeChapterText(folder, project, title, text) {
   return { ...saved, chapter };
 }
 
-async function writeImportedManuscript(folder, project, sourcePath, text) {
+async function writeImportedManuscript(folder, project, sourcePath, imported) {
   const manuscriptCore = loadCoreModule("manuscript");
   const glossaryCore = loadCoreModule("glossary");
-  const sections = manuscriptCore.splitManuscript(text, { idPrefix: "ch" });
+  const sections = manuscriptCore.splitManuscript(imported.text, { idPrefix: "ch" });
   if (!Array.isArray(sections) || sections.length === 0) {
     throw new Error("The manuscript is empty; add some text before importing.");
   }
@@ -262,9 +278,17 @@ async function writeImportedManuscript(folder, project, sourcePath, text) {
         : undefined,
       author_status: "draft",
     };
+    const styledSpans = manuscriptCore.sliceScriptSpans(
+      imported.spans,
+      section.content_start,
+      section.content_end,
+    );
+    const spans = styledSpans.length > 0
+      ? styledSpans
+      : [{ text: section.text, seat: "narration", style: [] }];
     await fs.writeFile(
       path.join(folder, chapter.text_path),
-      `${JSON.stringify({ schema: 1, spans: [{ text: section.text, seat: "narration", style: [] }] }, null, 2)}\n`,
+      `${JSON.stringify({ schema: 1, spans }, null, 2)}\n`,
       "utf8",
     );
     createdChapters.push(chapter);
@@ -274,7 +298,7 @@ async function writeImportedManuscript(folder, project, sourcePath, text) {
     (entry) => entry.source === "user",
   );
   const autoGlossary = glossaryCore.candidatesToGlossary(
-    glossaryCore.extractGlossaryCandidates(text),
+    glossaryCore.extractGlossaryCandidates(imported.text),
   );
   const nextProject = {
     ...project,
@@ -284,7 +308,202 @@ async function writeImportedManuscript(folder, project, sourcePath, text) {
     updated_at: new Date().toISOString(),
   };
   const saved = await saveProjectFolder(folder, nextProject);
-  return { ...saved, chapters: createdChapters, sourcePath };
+  return { ...saved, chapters: createdChapters, sourcePath, format: imported.format };
+}
+
+async function renameChapterFile(folder, project, chapterId, title) {
+  await assertProjectFolder(folder);
+  const cleanTitle = typeof title === "string" ? title.trim() : "";
+  if (cleanTitle.length === 0) {
+    throw new Error("Chapter title cannot be empty");
+  }
+  const now = new Date().toISOString();
+  let found = false;
+  const nextProject = {
+    ...project,
+    chapters: (project.chapters ?? []).map((chapter) => {
+      if (chapter.id !== chapterId) {
+        return chapter;
+      }
+      found = true;
+      return { ...chapter, title: cleanTitle, updated_at: now };
+    }),
+    updated_at: now,
+  };
+  if (!found) {
+    throw new Error(`Unknown chapter: ${chapterId}`);
+  }
+  return saveProjectFolder(folder, nextProject);
+}
+
+async function splitChapterFile(folder, project, chapterId, offset, secondTitle) {
+  await assertProjectFolder(folder);
+  const manuscriptCore = loadCoreModule("manuscript");
+  const chapters = [...(project.chapters ?? [])].sort((a, b) => a.index - b.index);
+  const position = chapters.findIndex((chapter) => chapter.id === chapterId);
+  if (position < 0) {
+    throw new Error(`Unknown chapter: ${chapterId}`);
+  }
+  const chapter = chapters[position];
+  if (chapter.audio_path) {
+    throw new Error("Detach or move chapter audio before splitting the manuscript chapter.");
+  }
+  const document = await readChapterDocument(folder, chapter);
+  const text = document.spans.map((span) => span.text).join("");
+  if (!Number.isInteger(offset) || offset <= 0 || offset >= text.length) {
+    throw new Error("Place the cursor inside the manuscript before splitting.");
+  }
+  const leftSpans = manuscriptCore.sliceScriptSpans(document.spans, 0, offset);
+  const rightSpans = manuscriptCore.sliceScriptSpans(document.spans, offset, text.length);
+  const leftText = leftSpans.map((span) => span.text).join("");
+  const rightText = rightSpans.map((span) => span.text).join("");
+  if (leftText.trim().length === 0 || rightText.trim().length === 0) {
+    throw new Error("Both sides of a manual split need manuscript text.");
+  }
+
+  const newId = nextSplitChapterId(project, chapter.id);
+  const newPath = `manuscript/chapters/${newId}.json`;
+  const now = new Date().toISOString();
+  const leftWordCount = manuscriptCore.countWords(leftText);
+  const rightWordCount = manuscriptCore.countWords(rightText);
+  const leftMinutes = manuscriptCore.estimateDurationMinutes(leftWordCount);
+  const rightMinutes = manuscriptCore.estimateDurationMinutes(rightWordCount);
+  chapters[position] = {
+    ...chapter,
+    word_count: leftWordCount,
+    estimated_duration_minutes: leftMinutes,
+    duration_warning: durationWarning(leftMinutes),
+    author_status: "draft",
+    updated_at: now,
+  };
+  const created = {
+    id: newId,
+    index: chapter.index + 1,
+    title: typeof secondTitle === "string" && secondTitle.trim().length > 0
+      ? secondTitle.trim()
+      : `${chapter.title} (continued)`,
+    text_path: newPath,
+    pickups_path: `alignment/${newId}.json`,
+    word_count: rightWordCount,
+    estimated_duration_minutes: rightMinutes,
+    duration_warning: durationWarning(rightMinutes),
+    author_status: "draft",
+    updated_at: now,
+  };
+  chapters.splice(position + 1, 0, created);
+  const renumbered = chapters.map((candidate, index) => ({ ...candidate, index: index + 1 }));
+
+  await writeChapterDocument(folder, chapter.text_path, { ...document, spans: leftSpans });
+  await writeChapterDocument(folder, newPath, { ...document, spans: rightSpans });
+  const saved = await saveProjectFolder(folder, {
+    ...project,
+    chapters: renumbered,
+    updated_at: now,
+  });
+  return { ...saved, chapter: created };
+}
+
+async function mergeChapterFiles(folder, project, firstChapterId, secondChapterId) {
+  await assertProjectFolder(folder);
+  const manuscriptCore = loadCoreModule("manuscript");
+  const chapters = [...(project.chapters ?? [])].sort((a, b) => a.index - b.index);
+  const firstPosition = chapters.findIndex((chapter) => chapter.id === firstChapterId);
+  const secondPosition = chapters.findIndex((chapter) => chapter.id === secondChapterId);
+  if (firstPosition < 0 || secondPosition !== firstPosition + 1) {
+    throw new Error("Only adjacent chapters can be merged in manuscript order.");
+  }
+  const first = chapters[firstPosition];
+  const second = chapters[secondPosition];
+  if (first.audio_path || second.audio_path) {
+    throw new Error("Detach or move chapter audio before merging manuscript chapters.");
+  }
+  const [firstDocument, secondDocument] = await Promise.all([
+    readChapterDocument(folder, first),
+    readChapterDocument(folder, second),
+  ]);
+  const firstText = firstDocument.spans.map((span) => span.text).join("");
+  const secondText = secondDocument.spans.map((span) => span.text).join("");
+  const separator = /\s$/u.test(firstText) || /^\s/u.test(secondText) ? "" : "\n\n";
+  const spans = [
+    ...firstDocument.spans,
+    ...(separator ? [{ text: separator, seat: "narration", style: [] }] : []),
+    ...secondDocument.spans,
+  ];
+  const mergedText = `${firstText}${separator}${secondText}`;
+  const wordCount = manuscriptCore.countWords(mergedText);
+  const minutes = manuscriptCore.estimateDurationMinutes(wordCount);
+  const now = new Date().toISOString();
+  chapters[firstPosition] = {
+    ...first,
+    word_count: wordCount,
+    estimated_duration_minutes: minutes,
+    duration_warning: durationWarning(minutes),
+    author_status: "draft",
+    updated_at: now,
+  };
+  chapters.splice(secondPosition, 1);
+  const renumbered = chapters.map((candidate, index) => ({ ...candidate, index: index + 1 }));
+  await writeChapterDocument(folder, first.text_path, { ...firstDocument, spans });
+  const saved = await saveProjectFolder(folder, {
+    ...project,
+    chapters: renumbered,
+    updated_at: now,
+  });
+  return { ...saved, preservedSourcePath: second.text_path };
+}
+
+async function setChapterSeat(folder, project, chapterId, seat) {
+  await assertProjectFolder(folder);
+  if (seat !== "narration" && seat !== "N1" && seat !== "N2") {
+    throw new Error("Seat must be narration, N1, or N2");
+  }
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error(`Unknown chapter: ${chapterId}`);
+  }
+  const document = await readChapterDocument(folder, chapter);
+  await writeChapterDocument(folder, chapter.text_path, {
+    ...document,
+    spans: document.spans.map((span) => ({ ...span, seat })),
+  });
+  const now = new Date().toISOString();
+  return saveProjectFolder(folder, {
+    ...project,
+    chapters: project.chapters.map((candidate) => candidate.id === chapterId
+      ? { ...candidate, updated_at: now }
+      : candidate),
+    updated_at: now,
+  });
+}
+
+async function readChapterDocument(folder, chapter) {
+  const value = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.text_path), "utf8"));
+  if (!Array.isArray(value.spans)) {
+    throw new Error(`Chapter script is missing spans: ${chapter.title}`);
+  }
+  return value;
+}
+
+async function writeChapterDocument(folder, relativePath, value) {
+  const destination = projectAssetPath(folder, relativePath);
+  const temporary = `${destination}.tmp-${process.pid}`;
+  await fs.writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await fs.rename(temporary, destination);
+}
+
+function nextSplitChapterId(project, baseId) {
+  const ids = new Set((project.chapters ?? []).map((chapter) => chapter.id));
+  let suffix = 2;
+  while (ids.has(`${baseId}-part${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseId}-part${suffix}`;
+}
+
+function durationWarning(minutes) {
+  return minutes > 120
+    ? "Estimated narration is over 120 minutes; ACX requires a chapter split."
+    : undefined;
 }
 
 async function attachAudioFile(folder, project, chapterId) {
@@ -317,6 +536,41 @@ async function attachAudioFile(folder, project, chapterId) {
   return { ...saved, sourcePath, audioPath: path.join(folder, destinationRelative) };
 }
 
+async function attachGlossaryClip(folder, project, glossaryId) {
+  await assertProjectFolder(folder);
+  const entry = (project.glossary ?? []).find((candidate) => candidate.id === glossaryId);
+  if (!entry) {
+    throw new Error("Glossary entry not found");
+  }
+  const result = await dialog.showOpenDialog({
+    title: `Choose a pronunciation clip for ${entry.spelling}`,
+    properties: ["openFile"],
+    filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "m4a", "aiff", "aif"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  const sourcePath = result.filePaths[0];
+  const extension = path.extname(sourcePath).toLowerCase() || ".wav";
+  const base = `audio/glossary/${slugFileName(entry.spelling)}`;
+  let destinationRelative = `${base}${extension}`;
+  let suffix = 2;
+  while (await fileExists(path.join(folder, destinationRelative))) {
+    destinationRelative = `${base}-${suffix}${extension}`;
+    suffix += 1;
+  }
+  await fs.copyFile(sourcePath, path.join(folder, destinationRelative));
+  const nextProject = {
+    ...project,
+    glossary: (project.glossary ?? []).map((candidate) => candidate.id === glossaryId
+      ? { ...candidate, clip_path: destinationRelative }
+      : candidate),
+    updated_at: new Date().toISOString(),
+  };
+  const saved = await saveProjectFolder(folder, nextProject);
+  return { ...saved, sourcePath, clipPath: destinationRelative };
+}
+
 async function readChapterText(folder, project, chapterId) {
   await assertProjectFolder(folder);
   const chapter = project.chapters?.find((candidate) => candidate.id === chapterId);
@@ -324,7 +578,7 @@ async function readChapterText(folder, project, chapterId) {
     throw new Error("Chapter not found");
   }
   const value = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.text_path), "utf8"));
-  const text = Array.isArray(value.spans) ? value.spans.map((span) => span.text).join("\n") : "";
+  const text = Array.isArray(value.spans) ? value.spans.map((span) => span.text).join("") : "";
   return { chapterId, text, spans: value.spans ?? [] };
 }
 
@@ -622,6 +876,26 @@ function mimeForExtension(extension) {
   }[extension.toLowerCase()] || "application/octet-stream";
 }
 
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function slugFileName(value) {
+  return value
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || "pronunciation";
+}
+
 async function rememberRecentProject(folder) {
   const statePath = path.join(app.getPath("userData"), "state.json");
   await fs.mkdir(path.dirname(statePath), { recursive: true });
@@ -681,6 +955,41 @@ ipcMain.handle("project:paste-text", (_event, payload) => {
   }
   return writePastedText(payload.folder, payload.project, payload.title, payload.text);
 });
+ipcMain.handle("project:rename-chapter", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid chapter rename request");
+  }
+  return renameChapterFile(payload.folder, payload.project, payload.chapterId, payload.title);
+});
+ipcMain.handle("project:split-chapter", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid chapter split request");
+  }
+  return splitChapterFile(
+    payload.folder,
+    payload.project,
+    payload.chapterId,
+    payload.offset,
+    payload.secondTitle,
+  );
+});
+ipcMain.handle("project:merge-chapters", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.firstChapterId || !payload?.secondChapterId) {
+    throw new Error("Invalid chapter merge request");
+  }
+  return mergeChapterFiles(
+    payload.folder,
+    payload.project,
+    payload.firstChapterId,
+    payload.secondChapterId,
+  );
+});
+ipcMain.handle("project:set-chapter-seat", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid chapter seat request");
+  }
+  return setChapterSeat(payload.folder, payload.project, payload.chapterId, payload.seat);
+});
 ipcMain.handle("project:example", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
     throw new Error("Invalid example request");
@@ -692,6 +1001,12 @@ ipcMain.handle("project:attach-audio", (_event, payload) => {
     throw new Error("Invalid audio attachment request");
   }
   return attachAudioFile(payload.folder, payload.project, payload.chapterId);
+});
+ipcMain.handle("glossary:attach-clip", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.glossaryId) {
+    throw new Error("Invalid glossary clip request");
+  }
+  return attachGlossaryClip(payload.folder, payload.project, payload.glossaryId);
 });
 ipcMain.handle("project:chapter-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

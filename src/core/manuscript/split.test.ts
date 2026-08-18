@@ -3,6 +3,7 @@ import {
   estimateDurationMinutes,
   mergeChapters,
   renameChapter,
+  sliceScriptSpans,
   splitChapterAt,
   splitManuscript,
 } from "./split";
@@ -69,5 +70,17 @@ describe("manuscript chapter splitting", () => {
     const merged = mergeChapters(left, right);
     expect(merged.text).toBe(original.text);
     expect(renameChapter(merged, "Renamed").title).toBe("Renamed");
+  });
+
+  it("slices styled spans without flattening DOCX emphasis", () => {
+    const spans = [
+      { text: "Chapter 1\n", seat: "narration" as const, style: [] },
+      { text: "soft", seat: "narration" as const, style: ["italic" as const] },
+      { text: " and loud", seat: "N1" as const, style: ["bold" as const] },
+    ];
+    expect(sliceScriptSpans(spans, 10, 23)).toEqual([
+      { text: "soft", seat: "narration", style: ["italic"] },
+      { text: " and loud", seat: "N1", style: ["bold"] },
+    ]);
   });
 });

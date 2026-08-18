@@ -185,6 +185,10 @@ function ProjectHome({
   const [glossarySpelling, setGlossarySpelling] = useState("");
   const [glossaryRespell, setGlossaryRespell] = useState("");
   const [chapterNote, setChapterNote] = useState("");
+  const [chapterManagerOpen, setChapterManagerOpen] = useState(false);
+  const [splitOffset, setSplitOffset] = useState(0);
+  const [splitTitle, setSplitTitle] = useState("");
+  const [chapterSeat, setChapterSeat] = useState<"narration" | "N1" | "N2">("narration");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const selectedChapter = useMemo(
@@ -217,6 +221,12 @@ function ProjectHome({
       .then((result) => setChapterText(result.text))
       .catch((reason: unknown) => setNotice(messageFor(reason, "Could not read the chapter text.")));
   }, [selectedChapter?.id, folder]);
+
+  useEffect(() => {
+    setChapterManagerOpen(false);
+    setSplitOffset(Math.max(1, Math.floor(chapterText.length / 2)));
+    setSplitTitle(selectedChapter ? `${selectedChapter.title} (continued)` : "");
+  }, [selectedChapter?.id]);
 
   useEffect(() => {
     let disposed = false;
@@ -308,7 +318,7 @@ function ProjectHome({
           setSelectedChapterId(chapter.id);
         }
         setNotice(
-          `${result.chapters.length} ${result.chapters.length === 1 ? "chapter" : "chapters"} imported. `
+          `${result.chapters.length} ${result.chapters.length === 1 ? "chapter" : "chapters"} imported${result.format ? ` from ${result.format.toUpperCase()}` : ""}. `
           + `${result.project.glossary?.length ?? 0} glossary candidates need a human check.`,
         );
       }
@@ -567,6 +577,23 @@ function ProjectHome({
     });
   }
 
+  async function attachGlossaryClip(id: string) {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Pronunciation clip attachment is available in the desktop app.");
+      return;
+    }
+    await runAction(`glossary-clip-${id}`, async () => {
+      const result = await window.boothDesk?.attachGlossaryClip({
+        ...envelope,
+        glossaryId: id,
+      });
+      if (result) {
+        onChange(result);
+        setNotice(`Pronunciation clip copied into ${result.clipPath}.`);
+      }
+    });
+  }
+
   async function saveNote() {
     if (!selectedChapter || !identity) {
       setNotice("Choose your local identity before adding a chapter note.");
@@ -593,6 +620,96 @@ function ProjectHome({
       await persistProject(
         setChapterAuthorStatus(project, selectedChapter.id, status, identity.personName),
       );
+    });
+  }
+
+  async function renameSelectedChapter(title: string) {
+    if (!selectedChapter) {
+      return;
+    }
+    await runAction("chapter-rename", async () => {
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const result = await window.boothDesk.renameChapter({
+          ...envelope,
+          chapterId: selectedChapter.id,
+          title,
+        });
+        onChange(result);
+      } else {
+        await persistProject({
+          ...project,
+          chapters: project.chapters.map((chapter) => chapter.id === selectedChapter.id
+            ? { ...chapter, title: title.trim() }
+            : chapter),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      setNotice("Chapter renamed.");
+    });
+  }
+
+  async function splitSelectedChapter() {
+    if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Manual file splitting is available in the desktop app.");
+      return;
+    }
+    await runAction("chapter-split", async () => {
+      const result = await window.boothDesk?.splitChapter({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        offset: splitOffset,
+        secondTitle: splitTitle,
+      });
+      if (result) {
+        onChange(result);
+        setSelectedChapterId(result.chapter.id);
+        setChapterManagerOpen(false);
+        setNotice("Chapter split. Styles and seats were preserved on both sides.");
+      }
+    });
+  }
+
+  async function mergeSelectedWithNext() {
+    if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Manual file merging is available in the desktop app.");
+      return;
+    }
+    const ordered = [...project.chapters].sort((left, right) => left.index - right.index);
+    const position = ordered.findIndex((chapter) => chapter.id === selectedChapter.id);
+    const next = ordered[position + 1];
+    if (!next) {
+      setNotice("There is no following chapter to merge.");
+      return;
+    }
+    await runAction("chapter-merge", async () => {
+      const result = await window.boothDesk?.mergeChapters({
+        ...envelope,
+        firstChapterId: selectedChapter.id,
+        secondChapterId: next.id,
+      });
+      if (result) {
+        onChange(result);
+        setChapterManagerOpen(false);
+        setNotice(`Chapters merged. The removed chapter source remains at ${result.preservedSourcePath}.`);
+      }
+    });
+  }
+
+  async function applyChapterSeat() {
+    if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Seat assignment is available in the desktop app.");
+      return;
+    }
+    await runAction("chapter-seat", async () => {
+      const result = await window.boothDesk?.setChapterSeat({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        seat: chapterSeat,
+      });
+      if (result) {
+        onChange(result);
+        setNotice(`All spans in ${selectedChapter.title} are now assigned to ${chapterSeat}.`);
+      }
     });
   }
 
@@ -643,7 +760,7 @@ function ProjectHome({
               disabled={busyAction !== null}
               onClick={() => void importChapter()}
             >
-              Import text
+              Import manuscript
             </button>
             <button
               className="secondary-button compact-button"
@@ -690,6 +807,7 @@ function ProjectHome({
             onAdd={() => void addGlossary()}
             onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
             onDelete={(id) => void removeGlossary(id)}
+            onAttachClip={(id) => void attachGlossaryClip(id)}
           />
         ) : activePanel === "collaboration" ? (
           <CollaborationPanel
@@ -757,6 +875,7 @@ function ProjectHome({
                 onProof={() => void runProof(selectedChapter)}
                 onMeasure={() => void runAcxCheck(selectedChapter)}
                 onPlayPickup={playPickup}
+                onManage={() => setChapterManagerOpen(true)}
               />
             ) : null}
           </div>
@@ -781,8 +900,114 @@ function ProjectHome({
         />
       ) : null}
 
+      {chapterManagerOpen && selectedChapter ? (
+        <ChapterManager
+          chapter={selectedChapter}
+          nextChapter={[...project.chapters]
+            .sort((left, right) => left.index - right.index)
+            .find((chapter) => chapter.index > selectedChapter.index) ?? null}
+          text={chapterText}
+          splitOffset={splitOffset}
+          splitTitle={splitTitle}
+          seat={chapterSeat}
+          busyAction={busyAction}
+          onSplitOffset={setSplitOffset}
+          onSplitTitle={setSplitTitle}
+          onSeat={setChapterSeat}
+          onRename={(title) => void renameSelectedChapter(title)}
+          onSplit={() => void splitSelectedChapter()}
+          onMerge={() => void mergeSelectedWithNext()}
+          onApplySeat={() => void applyChapterSeat()}
+          onClose={() => setChapterManagerOpen(false)}
+        />
+      ) : null}
+
       <footer>Project data is stored in this folder · schema {project.schema}</footer>
     </main>
+  );
+}
+
+function ChapterManager({
+  chapter,
+  nextChapter,
+  text,
+  splitOffset,
+  splitTitle,
+  seat,
+  busyAction,
+  onSplitOffset,
+  onSplitTitle,
+  onSeat,
+  onRename,
+  onSplit,
+  onMerge,
+  onApplySeat,
+  onClose,
+}: {
+  chapter: ChapterFile;
+  nextChapter: ChapterFile | null;
+  text: string;
+  splitOffset: number;
+  splitTitle: string;
+  seat: "narration" | "N1" | "N2";
+  busyAction: string | null;
+  onSplitOffset: (value: number) => void;
+  onSplitTitle: (value: string) => void;
+  onSeat: (value: "narration" | "N1" | "N2") => void;
+  onRename: (title: string) => void;
+  onSplit: () => void;
+  onMerge: () => void;
+  onApplySeat: () => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(chapter.title);
+  useEffect(() => setTitle(chapter.title), [chapter.id, chapter.title]);
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="chapter-composer chapter-manager" role="dialog" aria-modal="true" aria-labelledby="manager-title">
+        <p className="phase-label">Manual manuscript controls</p>
+        <h2 id="manager-title">{chapter.title}</h2>
+        <label htmlFor="manager-title-input">Rename chapter</label>
+        <div className="manager-inline">
+          <input id="manager-title-input" value={title} onChange={(event) => setTitle(event.target.value)} />
+          <button type="button" disabled={busyAction !== null || title.trim().length === 0} onClick={() => onRename(title)}>Save title</button>
+        </div>
+
+        <label htmlFor="manager-manuscript">Select a cursor position, then split</label>
+        <textarea
+          id="manager-manuscript"
+          rows={10}
+          value={text}
+          readOnly
+          onSelect={(event) => onSplitOffset(event.currentTarget.selectionStart ?? 0)}
+        />
+        <p className="manager-help">Split offset: {splitOffset} / {text.length}. The operation preserves span styles and seat assignments.</p>
+        <label htmlFor="manager-second-title">New chapter title</label>
+        <input id="manager-second-title" value={splitTitle} onChange={(event) => onSplitTitle(event.target.value)} />
+        <button type="button" disabled={busyAction !== null || splitOffset <= 0 || splitOffset >= text.length} onClick={onSplit}>
+          {busyAction === "chapter-split" ? "Splitting…" : "Split at cursor"}
+        </button>
+
+        <div className="manager-divider" />
+        <label htmlFor="manager-seat">Assign this chapter’s spans to a seat</label>
+        <div className="manager-inline">
+          <select id="manager-seat" value={seat} onChange={(event) => onSeat(event.target.value as "narration" | "N1" | "N2")}>
+            <option value="narration">Narration</option>
+            <option value="N1">N1</option>
+            <option value="N2">N2</option>
+          </select>
+          <button type="button" disabled={busyAction !== null} onClick={onApplySeat}>Apply seat</button>
+        </div>
+        <p className="manager-help">This v1 control applies one seat to every span in the chapter; finer span painting is next.</p>
+
+        <button type="button" disabled={!nextChapter || busyAction !== null} onClick={onMerge}>
+          {busyAction === "chapter-merge" ? "Merging…" : nextChapter ? `Merge with “${nextChapter.title}”` : "No following chapter to merge"}
+        </button>
+        <div className="actions">
+          <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onClose}>Close</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -796,6 +1021,7 @@ function GlossaryPanel({
   onAdd,
   onRename,
   onDelete,
+  onAttachClip,
 }: {
   glossary: GlossaryEntry[];
   spelling: string;
@@ -806,6 +1032,7 @@ function GlossaryPanel({
   onAdd: () => void;
   onRename: (id: string, spelling: string, respell: string) => void;
   onDelete: (id: string) => void;
+  onAttachClip: (id: string) => void;
 }) {
   return (
     <section className="phase-panel glossary-panel" aria-labelledby="glossary-panel-title">
@@ -849,6 +1076,7 @@ function GlossaryPanel({
                   busy={busyAction !== null}
                   onRename={onRename}
                   onDelete={onDelete}
+                  onAttachClip={onAttachClip}
                 />
               ))}
             </tbody>
@@ -864,11 +1092,13 @@ function GlossaryRow({
   busy,
   onRename,
   onDelete,
+  onAttachClip,
 }: {
   entry: GlossaryEntry;
   busy: boolean;
   onRename: (id: string, spelling: string, respell: string) => void;
   onDelete: (id: string) => void;
+  onAttachClip: (id: string) => void;
 }) {
   const [spelling, setSpelling] = useState(entry.spelling);
   const [respell, setRespell] = useState(entry.respell ?? "");
@@ -891,6 +1121,9 @@ function GlossaryRow({
           onClick={() => onRename(entry.id, spelling, respell)}
         >
           Save
+        </button>
+        <button type="button" disabled={busy} onClick={() => onAttachClip(entry.id)}>
+          {entry.clip_path ? "Replace clip" : "Add clip"}
         </button>
         <button type="button" disabled={busy} onClick={() => onDelete(entry.id)}>Delete</button>
       </td>
@@ -1117,6 +1350,7 @@ function ChapterDesk({
   onProof,
   onMeasure,
   onPlayPickup,
+  onManage,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -1133,6 +1367,7 @@ function ChapterDesk({
   onProof: () => void;
   onMeasure: () => void;
   onPlayPickup: (pickup: Pickup) => void;
+  onManage: () => void;
 }) {
   return (
     <article className="chapter-desk">
@@ -1141,9 +1376,12 @@ function ChapterDesk({
           <p className="card-kicker">Selected chapter</p>
           <h3>{chapter.title}</h3>
         </div>
-        <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
-          {chapter.audio_path ? "Audio attached" : "No audio"}
-        </span>
+        <div className="chapter-heading-tools">
+          <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
+            {chapter.audio_path ? "Audio attached" : "No audio"}
+          </span>
+          <button className="table-action" type="button" onClick={onManage}>Manage script</button>
+        </div>
       </header>
 
       {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}

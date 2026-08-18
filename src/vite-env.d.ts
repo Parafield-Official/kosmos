@@ -9,8 +9,13 @@ interface BoothDeskBridge {
   saveProject: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
   importText: (payload: ProjectEnvelope) => Promise<ManuscriptImportResult | null>;
   pasteText: (payload: ProjectEnvelope & { title: string; text: string }) => Promise<ProjectEnvelope>;
+  renameChapter: (payload: ProjectEnvelope & { chapterId: string; title: string }) => Promise<ProjectEnvelope>;
+  splitChapter: (payload: ProjectEnvelope & { chapterId: string; offset: number; secondTitle: string }) => Promise<ChapterEditResult>;
+  mergeChapters: (payload: ProjectEnvelope & { firstChapterId: string; secondChapterId: string }) => Promise<ProjectEnvelope & { preservedSourcePath: string }>;
+  setChapterSeat: (payload: ProjectEnvelope & { chapterId: string; seat: "narration" | "N1" | "N2" }) => Promise<ProjectEnvelope>;
   loadExample: (payload: ProjectEnvelope) => Promise<ExampleEnvelope>;
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
+  attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
   readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
@@ -34,9 +39,19 @@ interface AudioAttachment extends ProjectEnvelope {
   audioPath: string;
 }
 
+interface GlossaryClipAttachment extends ProjectEnvelope {
+  sourcePath: string;
+  clipPath: string;
+}
+
 interface ManuscriptImportResult extends ProjectEnvelope {
   chapters: import("./core/project/types").ChapterFile[];
   sourcePath?: string;
+  format?: "txt" | "md" | "docx" | "epub" | "pdf";
+}
+
+interface ChapterEditResult extends ProjectEnvelope {
+  chapter: import("./core/project/types").ChapterFile;
 }
 
 interface ExampleEnvelope extends ProjectEnvelope {
