@@ -13,6 +13,7 @@ import {
   renameGlossaryEntry,
 } from "../core/glossary/candidates";
 import { fromPlainText } from "../core/manuscript/import";
+import { parsePastedChapter } from "../core/manuscript/split";
 import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
 import {
@@ -474,11 +475,14 @@ function ProjectHome({
     }
 
     await runAction("paste", async () => {
+      const autoTitle = /^Chapter\s+\d+$/iu.test(chapterTitle.trim());
+      const parsed = parsePastedChapter(pastedText, chapterTitle);
+      const title = autoTitle ? parsed.title : chapterTitle.trim();
       if (window.boothDesk && folder !== "(browser preview)") {
         const result = await window.boothDesk.pasteText({
           ...envelope,
-          title: chapterTitle,
-          text: pastedText,
+          title,
+          text: parsed.text,
         });
         onChange(result);
         const chapter = result.project.chapters[result.project.chapters.length - 1];
@@ -488,15 +492,15 @@ function ProjectHome({
         const chapter: ChapterFile = {
           id: `ch${String(index).padStart(2, "0")}`,
           index,
-          title: chapterTitle || `Chapter ${index}`,
+          title: title || `Chapter ${index}`,
           text_path: `manuscript/chapters/${String(index).padStart(2, "0")}.json`,
           pickups_path: `alignment/${String(index).padStart(2, "0")}.json`,
           author_status: "draft",
         };
         onChange({ folder, project: addChapter(project, chapter) });
         setSelectedChapterId(chapter.id);
-        setChapterText(pastedText);
-        setChapterSpans(fromPlainText(pastedText, "txt").spans);
+        setChapterText(parsed.text);
+        setChapterSpans(fromPlainText(parsed.text, "txt").spans);
       }
       setPastedText("");
       setComposerOpen(false);

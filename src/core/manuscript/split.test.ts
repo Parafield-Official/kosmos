@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimateDurationMinutes,
   mergeChapters,
+  parsePastedChapter,
   renameChapter,
   sliceScriptSpans,
   splitChapterAt,
@@ -49,6 +50,29 @@ describe("manuscript chapter splitting", () => {
     const plain = splitManuscript("A paragraph with no heading.", { defaultTitle: "Untitled" });
     expect(plain).toHaveLength(1);
     expect(plain[0]).toMatchObject({ title: "Untitled", text: "A paragraph with no heading." });
+  });
+
+  it("recognizes Markdown chapter headings and keeps the marker out of the body", () => {
+    const chapters = splitManuscript(
+      "# Chapter 1\n\nThe Bridgertons are the most prolific family in London.\n\n## Chapter 2\n\nThe next story begins.",
+    );
+
+    expect(chapters.map((chapter) => chapter.title)).toEqual(["Chapter 1", "Chapter 2"]);
+    expect(chapters.map((chapter) => chapter.text)).toEqual([
+      "The Bridgertons are the most prolific family in London.",
+      "The next story begins.",
+    ]);
+    expect(chapters[0].text).not.toContain("# Chapter 1");
+  });
+
+  it("normalizes a single pasted chapter and rejects a whole-book paste", () => {
+    expect(parsePastedChapter("# Chapter 1\n\nThe opening line.")).toEqual({
+      title: "Chapter 1",
+      text: "The opening line.",
+    });
+    expect(() => parsePastedChapter("# Chapter 1\n\nFirst.\n\n# Chapter 2\n\nSecond.")).toThrow(
+      /one chapter at a time/i,
+    );
   });
 
   it("estimates ACX duration and flags chapters over two hours", () => {

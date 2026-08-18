@@ -36,6 +36,11 @@ export interface SplitManuscriptOptions {
   maxChapterMinutes?: number;
 }
 
+export interface PastedChapter {
+  title: string;
+  text: string;
+}
+
 interface Heading {
   lineIndex: number;
   title: string;
@@ -68,9 +73,10 @@ export function splitManuscript(
   }
 
   const lines = normalized.split("\n");
-  const headings = lines.flatMap((line, lineIndex) =>
-    isHeadingLine(line, lineIndex, lines) ? [{ lineIndex, title: line.trim() }] : [],
-  );
+  const headings = lines.flatMap((line, lineIndex) => {
+    const title = headingTitle(line, lineIndex, lines);
+    return title ? [{ lineIndex, title }] : [];
+  });
   const maxMinutes = options.maxChapterMinutes ?? MAX_CHAPTER_MINUTES;
   const idPrefix = options.idPrefix ?? "ch";
 
@@ -140,6 +146,26 @@ export function splitManuscript(
   });
 
   return chapters;
+}
+
+/**
+ * Normalize text pasted into the single-chapter composer. A leading Markdown
+ * or named chapter heading becomes the title instead of narration text. A
+ * multi-chapter paste is rejected so authors do not silently lose chapters;
+ * the manuscript importer should be used for a complete book.
+ */
+export function parsePastedChapter(source: string, fallbackTitle = "Chapter 1"): PastedChapter {
+  const normalizedFallback = fallbackTitle.trim() || "Chapter 1";
+  const chapters = splitManuscript(source, { defaultTitle: normalizedFallback });
+  const bodyChapters = chapters.filter((chapter) => chapter.title !== "Front matter");
+  if (bodyChapters.length > 1) {
+    throw new Error("Paste one chapter at a time. Use Import manuscript for a complete book.");
+  }
+  const chapter = bodyChapters[0];
+  if (chapter) {
+    return { title: chapter.title, text: chapter.text };
+  }
+  return { title: normalizedFallback, text: source.replace(/\r\n?/g, "\n").trim() };
 }
 
 /** Rename a chapter without changing its body or source offsets. */
@@ -298,16 +324,18 @@ function lastNonWhitespaceEnd(value: string): number {
   return end;
 }
 
-function isHeadingLine(line: string, lineIndex: number, lines: string[]): boolean {
-  const candidate = line.trim();
+function headingTitle(line: string, lineIndex: number, lines: string[]): string | null {
+  const rawCandidate = line.trim();
+  const markdownHeading = /^#{1,6}[\t ]+(.+?)(?:[\t ]+#+)?$/u.exec(rawCandidate);
+  const candidate = (markdownHeading?.[1] ?? rawCandidate).trim();
   if (candidate.length === 0 || candidate.length > 140) {
-    return false;
+    return null;
   }
 
   // The named headings in the spec are intentionally permissive about a
   // subtitle and punctuation, but require a word boundary after the name.
   if (/^(?:chapter\b.*|prologue\b.*|epilogue\b.*|opening\s+credits?\b.*|closing\s+credits?\b.*)$/i.test(candidate)) {
-    return true;
+    return candidate;
   }
 
   // Numbered headings are only accepted when visually isolated. This avoids
@@ -315,8 +343,8 @@ function isHeadingLine(line: string, lineIndex: number, lines: string[]): boolea
   if (/^\d{1,3}(?:[.)]|\s*[-—:]\s*|$)(?:\s*\S.*)?$/.test(candidate)) {
     const previousBlank = lineIndex === 0 || lines[lineIndex - 1].trim() === "";
     const nextBlank = lineIndex === lines.length - 1 || lines[lineIndex + 1].trim() === "";
-    return previousBlank && nextBlank;
+    return previousBlank && nextBlank ? candidate : null;
   }
 
-  return false;
+  return null;
 }

@@ -342,7 +342,10 @@ async function writePastedText(folder, project, title, text) {
   if (typeof title !== "string" || typeof text !== "string" || text.trim().length === 0) {
     throw new Error("A chapter needs a title and some text");
   }
-  return writeChapterText(folder, project, title, text);
+  const manuscriptCore = loadCoreModule("manuscript");
+  const parsed = manuscriptCore.parsePastedChapter(text, title);
+  const savedTitle = /^Chapter\s+\d+$/iu.test(title.trim()) ? parsed.title : title.trim();
+  return writeChapterText(folder, project, savedTitle, parsed.text);
 }
 
 async function loadProofExample(folder, project) {
