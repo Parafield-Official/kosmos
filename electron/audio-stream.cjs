@@ -10,23 +10,23 @@ function decodeAudioRequest(value) {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("Invalid Booth Desk audio URL");
+    throw new Error("Invalid Kosmos audio URL");
   }
   if (url.protocol !== "booth-audio:" || url.hostname !== "local") {
-    throw new Error("Invalid Booth Desk audio URL");
+    throw new Error("Invalid Kosmos audio URL");
   }
   const encoded = url.pathname.replace(/^\//u, "");
   if (!encoded || !/^[A-Za-z0-9_-]+$/u.test(encoded)) {
-    throw new Error("Invalid Booth Desk audio URL payload");
+    throw new Error("Invalid Kosmos audio URL payload");
   }
   let payload;
   try {
     payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
   } catch {
-    throw new Error("Invalid Booth Desk audio URL payload");
+    throw new Error("Invalid Kosmos audio URL payload");
   }
   if (!payload || typeof payload.folder !== "string" || typeof payload.relativePath !== "string") {
-    throw new Error("Invalid Booth Desk audio URL payload");
+    throw new Error("Invalid Kosmos audio URL payload");
   }
   return payload;
 }

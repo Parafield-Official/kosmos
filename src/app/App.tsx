@@ -150,10 +150,10 @@ export function App() {
   return (
     <main className="welcome-shell">
       <header className="welcome-brand">
-        <div className="brand-mark" aria-hidden="true">BD</div>
+        <div className="brand-mark" aria-hidden="true">K</div>
         <div>
           <p className="eyebrow">Local audiobook booth</p>
-          <h1>Booth Desk</h1>
+          <h1>Kosmos</h1>
         </div>
       </header>
 
@@ -1348,9 +1348,9 @@ function ProjectHome({
     <div className={studioNavOpen ? "studio-shell" : "studio-shell nav-closed"}>
       {studioNavOpen ? <aside className="studio-nav" aria-label="Booth">
         <div className="studio-brand">
-          <div className="brand-mark" aria-hidden="true">BD</div>
+          <div className="brand-mark" aria-hidden="true">K</div>
           <div>
-            <p className="studio-brand-kicker">Booth Desk</p>
+            <p className="studio-brand-kicker">Kosmos</p>
             <strong>{project.name}</strong>
           </div>
           <button
@@ -1661,7 +1661,7 @@ function ProjectHome({
           <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="punch-title">
             <p className="phase-label">Pickup recording</p>
             <h2 id="punch-title">{punchPickup.expected || "Pickup"}</h2>
-            <p className="manager-help">Record the replacement line. Booth Desk saves a separate WAV; the original chapter take remains untouched.</p>
+            <p className="manager-help">Record the replacement line. Kosmos saves a separate WAV; the original chapter take remains untouched.</p>
             <RecorderPanel
               label={`Punch at ${formatTime(punchPickup.t_start)}`}
               disabled={!window.boothDesk || busyAction !== null}
@@ -2122,7 +2122,7 @@ function Teleprompter({
         <aside className="booth-chapters" aria-label="Book chapters">
           <header className="booth-rail-heading">
             <div>
-              <p>Booth Desk</p>
+              <p>Kosmos</p>
               <strong>{projectName}</strong>
             </div>
             <button type="button" aria-label="Hide chapters" onClick={() => setChaptersOpen(false)}>←</button>
@@ -2295,7 +2295,7 @@ function Teleprompter({
               <div className="booth-proof-empty">
                 <span aria-hidden="true">♪</span>
                 <h4>No recording attached yet</h4>
-                <p>Add the chapter take, then Booth Desk can find word changes, pauses, and audio issues.</p>
+                <p>Add the chapter take, then Kosmos can find word changes, pauses, and audio issues.</p>
                 <button type="button" className="primary-button" disabled={busyAction !== null} onClick={() => onAttach(chapterId)}>Attach recording</button>
               </div>
             )}
@@ -4248,7 +4248,7 @@ function AppHeader({
 }) {
   return (
     <header className="topbar">
-      <div className="brand-mark" aria-hidden="true">BD</div>
+      <div className="brand-mark" aria-hidden="true">K</div>
       <div>
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>

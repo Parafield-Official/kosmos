@@ -62,6 +62,11 @@ const MAX_ROOM_TEST_SECONDS = 60;
 const MAX_MANUSCRIPT_BYTES = 200_000_000;
 const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
 
+// Kosmos is a product rename, not a data migration. Keep the established
+// application-data folder so existing model caches, identities, and recent
+// project state remain available after the update.
+app.setPath("userData", path.join(app.getPath("appData"), "booth-desk"));
+
 protocol.registerSchemesAsPrivileged([{
   scheme: "booth-audio",
   privileges: {
@@ -85,7 +90,7 @@ function createWindow() {
     height: 760,
     minWidth: 880,
     minHeight: 620,
-    title: "Booth Desk",
+    title: "Kosmos",
     backgroundColor: "#f3eee6",
     show: false,
     webPreferences: {
@@ -107,7 +112,7 @@ function createWindow() {
 
 async function createProjectFolder() {
   const result = await dialog.showOpenDialog({
-    title: "Choose a folder for the Booth Desk project",
+    title: "Choose a folder for the Kosmos project",
     properties: ["openDirectory", "createDirectory"],
   });
 
@@ -173,7 +178,7 @@ async function createProjectFolder() {
 
 async function openProjectFolder() {
   const result = await dialog.showOpenDialog({
-    title: "Open a Booth Desk project",
+    title: "Open a Kosmos project",
     properties: ["openDirectory"],
   });
 
@@ -1065,7 +1070,7 @@ async function saveRecordingWav(folder, project, payload) {
   }
   const bytes = Buffer.from(payload.wavBase64, "base64");
   if (bytes.length > MAX_RECORDER_WAV_BYTES) {
-    throw new Error("Recorder WAV is larger than Booth Desk's supported audio limit");
+    throw new Error("Recorder WAV is larger than Kosmos's supported audio limit");
   }
   if (bytes.subarray(0, 4).toString("ascii") !== "RIFF" || bytes.subarray(8, 12).toString("ascii") !== "WAVE") {
     throw new Error("Recorder output is not a RIFF/WAVE file");
@@ -1081,7 +1086,7 @@ async function saveRecordingWav(folder, project, payload) {
       throw new Error("Recorder WAV contains no audio samples");
     }
     if (duration > MAX_AUDIO_SECONDS) {
-      throw new Error(`Recorder WAV exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute limit`);
+      throw new Error(`Recorder WAV exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute limit`);
     }
     if (kind === "room" && duration > MAX_ROOM_TEST_SECONDS) {
       throw new Error(`Room tests must be ${MAX_ROOM_TEST_SECONDS} seconds or shorter`);
@@ -1168,7 +1173,7 @@ async function applyPunchRecording(folder, project, payload) {
   const spliceCore = loadCoreModule("splice");
   const replacementBytes = Buffer.from(payload.wavBase64, "base64");
   if (replacementBytes.length > MAX_RECORDER_WAV_BYTES) {
-    throw new Error("Punch WAV is larger than Booth Desk's supported audio limit");
+    throw new Error("Punch WAV is larger than Kosmos's supported audio limit");
   }
   const replacement = audioCore.decodeWavPcm16(new Uint8Array(
     replacementBytes.buffer,
@@ -1181,7 +1186,7 @@ async function applyPunchRecording(folder, project, payload) {
     throw new Error("Punch WAV contains no audio samples");
   }
   if (replacementDuration > MAX_AUDIO_SECONDS) {
-    throw new Error(`Punch WAV exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute limit`);
+    throw new Error(`Punch WAV exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute limit`);
   }
   const original = await decodeMono44100(projectAssetPath(folder, chapter.audio_path));
   const originalDuration = original.length / 44100;
@@ -1351,7 +1356,7 @@ async function decodeAudioPcmAtPath(folder, relativePath, resolveAssetPath) {
   const audioPath = resolveAssetPath(folder, relativePath);
   const metadata = await probeAudio(audioPath);
   if (metadata.duration > MAX_AUDIO_SECONDS) {
-    throw new Error(`Audio exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute decode limit.`);
+    throw new Error(`Audio exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute decode limit.`);
   }
   const channels = metadata.channels;
   const sampleRate = metadata.sampleRate;
@@ -1364,7 +1369,7 @@ async function decodeAudioPcmAtPath(folder, relativePath, resolveAssetPath) {
   }
   const actualDuration = audioDurationFromPcm(pcm.length, channels, sampleRate);
   if (!Number.isFinite(actualDuration) || actualDuration > MAX_AUDIO_SECONDS) {
-    throw new Error(`Decoded audio exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute limit.`);
+    throw new Error(`Decoded audio exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute limit.`);
   }
   return {
     sampleRate,
@@ -1386,7 +1391,7 @@ async function audioMetadata(folder, relativePath) {
   const audioPath = projectAudioPath(folder, relativePath);
   const metadata = await probeAudio(audioPath);
   if (metadata.duration > MAX_AUDIO_SECONDS) {
-    throw new Error(`Audio exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute decode limit.`);
+    throw new Error(`Audio exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute decode limit.`);
   }
   return {
     sampleRate: metadata.sampleRate,
@@ -1440,7 +1445,7 @@ async function decodeMono44100(audioPath) {
   }
   const duration = pcm.length / 4 / 44100;
   if (!Number.isFinite(duration) || duration > MAX_AUDIO_SECONDS) {
-    throw new Error(`Decoded audio exceeds Booth Desk's ${MAX_AUDIO_SECONDS / 60} minute limit.`);
+    throw new Error(`Decoded audio exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute limit.`);
   }
   const copy = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
   return new Float32Array(copy);
@@ -1896,7 +1901,7 @@ async function shareSeatPack(folder, project, seat) {
     await writeFileAtomic(
       projectAssetPath(staging, "SEAT_PACK_README.txt"),
       [
-        `Booth Desk ${seat} seat pack`,
+        `Kosmos ${seat} seat pack`,
         "",
         "Duet means each character keeps the same narrator inside every POV.",
         "This subset contains only your assigned lines (plus narration for N1), author notes, glossary clips, and any bed audio.",

@@ -9,7 +9,7 @@ function absoluteFolder(folder) {
   return path.resolve(folder);
 }
 
-/** Verify that an IPC folder is a real Booth Desk project, not a symlink. */
+/** Verify that an IPC folder is a real Kosmos project, not a symlink. */
 async function assertProjectFolder(folder) {
   const root = absoluteFolder(folder);
   const folderStat = await fs.lstat(root);

@@ -226,10 +226,10 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: booth-desk-${{ matrix.target }}-${{ matrix.arch }}
+          name: kosmos-${{ matrix.target }}-${{ matrix.arch }}
           path: |
-            release/BoothDesk-*
-            release/*.blockmap
+            dist/Kosmos-*
+            dist/*.blockmap
           if-no-files-found: error
 
   publish:

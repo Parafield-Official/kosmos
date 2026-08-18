@@ -18,7 +18,7 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
   const cliPath = findWhisperCli({ resourcesPath, appPath, requireBundled });
   if (!cliPath) {
     throw new Error(
-      "Speech checking is not ready yet. Reinstall Booth Desk or choose a transcript on the chapter screen.",
+      "Speech checking is not ready yet. Reinstall Kosmos or choose a transcript on the chapter screen.",
     );
   }
 

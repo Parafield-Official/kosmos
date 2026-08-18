@@ -1,13 +1,13 @@
-# Booth Desk
+# Kosmos
 
 [Download for Mac](https://github.com/Manishram-ai/booth-desk/releases/latest) · [Download for Windows](https://github.com/Manishram-ai/booth-desk/releases/latest)
 
-Booth Desk is a free, offline desktop app for turning a manuscript and human
+Kosmos is a free, offline desktop app for turning a manuscript and human
 recordings into proofed, ACX-ready audiobook files. Your book and your voice
 stay on this computer. There are no accounts, meters, analytics, or
 cloud-uploaded manuscripts.
 
-Booth Desk does not read the book, generate a voice, replace a DAW, or promise
+Kosmos does not read the book, generate a voice, replace a DAW, or promise
 to catch acting, accents, clicks, or echo. Proof catches text mismatches; a
 human still listens.
 
@@ -41,7 +41,7 @@ development.
 ## Install (release builds)
 
 1. Download the Mac `.dmg` or Windows `.exe` from the latest GitHub Release.
-2. macOS: open the disk image and drag Booth Desk to Applications. If
+2. macOS: open the disk image and drag Kosmos to Applications. If
    Gatekeeper blocks an unsigned build, right-click the app and choose Open.
 3. Windows: run the installer. If SmartScreen appears for an unsigned build,
    choose More info → Run anyway.
@@ -57,7 +57,7 @@ The target first-use flow is:
 1. File → New Project and choose a folder.
 2. Paste or import one chapter of plain text.
 3. Attach that chapter's WAV or MP3 (or choose **Try the proof fixture**).
-4. Click Proof. Booth Desk uses local Whisper when installed; for a fixture or
+4. Click Proof. Kosmos uses local Whisper when installed; for a fixture or
    development build you may paste a local transcript instead.
 5. Review timestamped word mismatches and check the ACX traffic light with RMS, true peak, noise floor, rate,
    channels, duration, and room-tone values.
@@ -65,7 +65,7 @@ The target first-use flow is:
 ## Working next to Reaper
 
 Record and edit in Reaper (or another DAW), then attach the finished WAV to a
-chapter. Booth Desk is the script, proof, pickup, and ACX desk beside your DAW;
+chapter. Kosmos is the script, proof, pickup, and ACX desk beside your DAW;
 it is not a replacement multitrack editor. The optional in-app recorder is for
 DIY authors who need a simple record/stop/punch workflow.
 
@@ -110,4 +110,4 @@ build asset before creating the installer. End users do not run that step.
 
 ## License
 
-Booth Desk is released under the [MIT License](LICENSE).
+Kosmos is released under the [MIT License](LICENSE).

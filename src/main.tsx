@@ -6,7 +6,7 @@ import "./styles.css";
 const root = document.getElementById("root");
 
 if (!root) {
-  throw new Error("Booth Desk root element is missing");
+  throw new Error("Kosmos root element is missing");
 }
 
 createRoot(root).render(

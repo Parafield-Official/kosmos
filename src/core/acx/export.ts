@@ -44,7 +44,7 @@ export function buildExportPlan(
     items.push({
       kind: "opening_credits",
       fileName: "00_opening_credits.mp3",
-      note: "Provide a recorded opening-credit slot; Booth Desk never generates spoken credits.",
+      note: "Provide a recorded opening-credit slot; Kosmos never generates spoken credits.",
     });
   } else {
     readmeFiles.push({
@@ -66,7 +66,7 @@ export function buildExportPlan(
     items.push({
       kind: "closing_credits",
       fileName: "98_closing_credits.mp3",
-      note: "Provide a recorded closing-credit slot; Booth Desk never generates spoken credits.",
+      note: "Provide a recorded closing-credit slot; Kosmos never generates spoken credits.",
     });
   } else {
     readmeFiles.push({
@@ -95,7 +95,7 @@ export function chapterFileName(chapter: Pick<ChapterFile, "index">): string {
 
 export function reportText(entries: ReportEntry[]): string {
   const lines = [
-    "Booth Desk ACX export report",
+    "Kosmos ACX export report",
     "============================",
     "Measurable specs only. Human QC still matters for clicks, echo, and a wrong read.",
     "",
@@ -131,7 +131,7 @@ function summary(report: AcxReport): string {
 
 function creditTemplate(kind: "opening" | "closing"): string {
   const label = kind === "opening" ? "Opening" : "Closing";
-  return `${label} credits slot\n\nRecord this line in a human voice, then replace the README slot with the exported MP3:\n\n{Title}, written by {Author}, narrated by {Narrator}.\n\nBooth Desk does not generate spoken credits with TTS.\n`;
+  return `${label} credits slot\n\nRecord this line in a human voice, then replace the README slot with the exported MP3:\n\n{Title}, written by {Author}, narrated by {Narrator}.\n\nKosmos does not generate spoken credits with TTS.\n`;
 }
 
 function format(value: number): string {

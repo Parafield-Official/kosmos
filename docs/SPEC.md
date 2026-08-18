@@ -1,8 +1,8 @@
-# Booth Desk — Agent Build Spec
+# Kosmos — Agent Build Spec
 
 > **For the implementing agent:** This is the source of truth. Build this product. Do not invent a store, a player, or an AI narrator. Do not phone home. Ship a free, offline, open-source desktop app that humans use to turn a manuscript + human recordings into ACX-ready files.
 >
-> **Product name:** Booth Desk  
+> **Product name:** Kosmos
 > **License:** MIT  
 > **Price:** $0. No accounts. No meters.  
 > **Platforms:** macOS **and** Windows, both first-class. Linux optional if the same stack builds.  
@@ -15,7 +15,7 @@ If this spec and a “nice extra” conflict, follow this spec.
 
 ## 0. One-sentence job
 
-A person (or two) reads a book into a microphone. Booth Desk is the **booth engineer + export clerk**: it keeps the script, catches when the take does not match the page, lists pickups, and writes files Audible/ACX will accept.
+A person (or two) reads a book into a microphone. Kosmos is the **booth engineer + export clerk**: it keeps the script, catches when the take does not match the page, lists pickups, and writes files Audible/ACX will accept.
 
 It does **not** read the book. It does **not** replace Reaper for working narrators. It does **not** sell audiobooks. It is **not** “another Audacity mastering macro.”
 
@@ -151,7 +151,7 @@ A real `r/ACX` reply to chapterpass was:
 
 1. ACX master **must** include head/tail room-tone length, noise-floor gate, **true** peak (not sample peak), CBR not VBR, and a **named file pack**. Loudness-only = the macro already won.
 2. **AudioBabble fixture:** clean speech + **−42 dBFS white noise** → after master, floor passes **without** metallic voice. If the *voice* is noisy, **abort** — do not “fix” a bathroom.
-3. If we **only** ship this master, that Reddit question has no answer. People should use the free macro. Booth Desk exists because the macro **does not know what the book said** and does not do pickups, author notes, or duet.
+3. If we **only** ship this master, that Reddit question has no answer. People should use the free macro. Kosmos exists because the macro **does not know what the book said** and does not do pickups, author notes, or duet.
 4. Never market “better than the Audacity macro.” Market: “the macro does not know the manuscript.”
 
 Implement the gate on purpose: **fast attack, long release, non-speech only.** Document it so the next AudioBabble can see it.
@@ -286,7 +286,7 @@ Full-page reading view.
 - **Voice follow (optional):** ASR in near-real-time highlights the current word and scrolls. If ASR lags, fall back to manual without fighting the user.
 - **Live misread light: default OFF.** When ON: only high-precision mismatches. Dismiss remembers that line. **3 false alarms in one chapter → auto-dim** (“flags paused — too many false alarms”) with an undo.
 - Two thresholds in code: `proof.recall` (batch) vs `live.precision` (prompter). Never one slider for both.
-- Mic: use default input. Do **not** hog the device if the user is recording in Reaper — document “set Booth Desk to listen-only / same input.” Prefer loopback-free: we listen to the mic for follow; Reaper also records the mic. On macOS this is allowed (two apps, one input).
+- Mic: use default input. Do **not** hog the device if the user is recording in Reaper — document “set Kosmos to listen-only / same input.” Prefer loopback-free: we listen to the mic for follow; Reaper also records the mic. On macOS this is allowed (two apps, one input).
 - We are the **script window**, not a second DAW.
 
 ### 5.8 Simple in-app recorder (DIY only) — P1
@@ -541,7 +541,7 @@ If Tauri is too painful in the first week, Electron is acceptable **only if** yo
 
 Two different “best” boards. Do not confuse them.
 
-| Job | What actually leads | Ship in Booth Desk v1? |
+| Job | What actually leads | Ship in Kosmos v1? |
 |---|---|---|
 | **What did they say?** (WER) | Open ASR leaderboard: NVIDIA Canary-Qwen-2.5B, IBM Granite, later 2B models. Whisper Large v3 is not #1. | **No** as default. GPU/Python, not a 16 GB laptop `.dmg`. |
 | **When did they say it?** (boundary ms) | **MFA 3.0** (Jun 2026 paper): mean error **< 15 ms**; beats WhisperX, MMS, NeMo, BFA, MAPS. 2024 Interspeech: MFA already beat WhisperX/MMS on TIMIT + Buckeye. | Optional refine **after** proof, on **matching** spans only. |
@@ -682,7 +682,7 @@ Show the arithmetic on screen.
 
 ## 10. UI copy (use this tone)
 
-- First run: “Booth Desk runs on this computer. It does not upload your book or your voice. It does not read the book for you.”
+- First run: “Kosmos runs on this computer. It does not upload your book or your voice. It does not read the book for you.”
 - Proof header: “Word mismatches only. Listen once for acting and noise.”
 - ACX green: “Measurable specs pass. ACX can still reject clicks, echo, or a wrong read.”
 - Room fail: “Do not record a whole book tonight.”
@@ -700,13 +700,13 @@ Narrators will not `pip install`. The last free proofing suite died on that. **v
 
 | File | Who |
 |---|---|
-| `BoothDesk-x.y.z-mac-universal.dmg` or separate `...-arm64.dmg` + `...-x64.dmg` | Mac (Apple Silicon + Intel) |
-| `BoothDesk-x.y.z-win-x64.exe` (NSIS) or `.msi` | Windows 10/11 64-bit |
+| `Kosmos-x.y.z-mac-universal.dmg` or separate `...-arm64.dmg` + `...-x64.dmg` | Mac (Apple Silicon + Intel) |
+| `Kosmos-x.y.z-win-x64.exe` (NSIS) or `.msi` | Windows 10/11 64-bit |
 | checksums (`SHA256SUMS`) | Anyone who wants to verify |
 
 **Install UX:**
 
-- **Mac:** open `.dmg` → drag Booth Desk to Applications → launch. If Gatekeeper blocks: document “right-click → Open” (unsigned OSS). Code-sign + notarize if you have an Apple developer account; do not block ship on that.
+- **Mac:** open `.dmg` → drag Kosmos to Applications → launch. If Gatekeeper blocks: document “right-click → Open” (unsigned OSS). Code-sign + notarize if you have an Apple developer account; do not block ship on that.
 - **Windows:** run `.exe` → Next Next Finish. If SmartScreen: document “More info → Run anyway.” Sign if you have a cert; do not block ship.
 - First launch: privacy sentence. The installer already contains Whisper and the verified model, so the first **Proof** works offline with no setup on both OSes.
 
@@ -863,7 +863,7 @@ Teleprompter, glossary, duet, and in-app punch make it a **complete booth**. The
 ## 17. First commit the agent should make
 
 1. Repo + MIT + this spec copied to `/docs/SPEC.md`.  
-2. Empty Tauri app titled “Booth Desk”.  
+2. Empty Tauri app titled “Kosmos”.
 3. `testdata` + failing tests for `proof_on_vs_in` and `acx_true_peak_oversample`.  
 4. Then make those two tests pass.  
 5. Then Journey A UI.

@@ -34,7 +34,7 @@ function resolveRuntimeBinary({
   }
 
   if (requireBundled) {
-    throw new Error(`The packaged Booth Desk build is missing its bundled ${name} runtime.`);
+    throw new Error(`The packaged Kosmos build is missing its bundled ${name} runtime.`);
   }
 
   // Let the operating system resolve a system installation for source builds.

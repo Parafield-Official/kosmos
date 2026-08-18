@@ -1,4 +1,4 @@
-# Booth Desk examples
+# Kosmos examples
 
 The `proof/on_vs_in.*` fixture contains a short, synthetic speech recording
 whose transcript deliberately says `in` where the manuscript says `on`. It is

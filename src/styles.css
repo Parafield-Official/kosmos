@@ -2906,7 +2906,7 @@ button {
 }
 
 /* PromptVO-inspired book dashboard and focused reading desk. The structure
-   stays local-first and keeps Booth Desk's cream/violet visual language. */
+   stays local-first and keeps Kosmos's cream/violet visual language. */
 .book-dashboard-hero {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(88px, 0.42fr));

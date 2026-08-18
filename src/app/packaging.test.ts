@@ -16,4 +16,9 @@ describe("packaged renderer configuration", () => {
       filter: ["ggml-small.en.bin"],
     });
   });
+
+  it("uses Kosmos as the installer and window product name", () => {
+    expect(packageJson.build.productName).toBe("Kosmos");
+    expect(packageJson.build.artifactName).toContain("Kosmos-");
+  });
 });

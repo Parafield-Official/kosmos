@@ -42,7 +42,7 @@ export function markerFileSet(
     {
       fileName: `${safeBase}_MARKERS_README.txt`,
       contents: [
-        "Booth Desk marker export",
+        "Kosmos marker export",
         "",
         "Audacity: File → Import → Labels, then choose the *_audacity_labels.txt file.",
         "Reaper: import the tab-delimited *_reaper_markers.tsv file or copy its rows into the marker list.",

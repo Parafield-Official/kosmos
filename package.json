@@ -25,7 +25,7 @@
   },
   "build": {
     "appId": "com.boothdesk.app",
-    "productName": "Booth Desk",
+    "productName": "Kosmos",
     "asar": true,
     "files": [
       "dist/**/*",
@@ -50,7 +50,7 @@
         "filter": ["ggml-small.en.bin"]
       }
     ],
-    "artifactName": "BoothDesk-${version}-${os}-${arch}.${ext}",
+    "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",
     "mac": {
       "target": [
         "dmg"

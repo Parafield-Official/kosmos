@@ -120,7 +120,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
     return aborted(
       before,
       warnings,
-      `The measured floor would rise to ${formatDb(predictedFloor)} after the required gain. Treat the room before recording; Booth Desk will not melt the voice with noise reduction.`,
+      `The measured floor would rise to ${formatDb(predictedFloor)} after the required gain. Treat the room before recording; Kosmos will not melt the voice with noise reduction.`,
       predictedFloor,
       speechBefore,
     );
