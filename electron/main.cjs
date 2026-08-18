@@ -7,6 +7,7 @@ const { transcribeAudio } = require("./asr.cjs");
 const { downloadModel, modelStatus } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
+const { resolveRuntimeBinary } = require("./runtime.cjs");
 
 const isDevelopment = !app.isPackaged;
 
@@ -1386,7 +1387,12 @@ function float32FromBase64(base64) {
 
 async function probeAudio(audioPath) {
   try {
-    const output = await runCommand("ffprobe", [
+    const output = await runCommand(resolveRuntimeBinary({
+      name: "ffprobe",
+      envVar: "FFPROBE_PATH",
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }), [
       "-v", "error", "-show_entries", "stream=channels,sample_rate:format=duration",
       "-of", "json", audioPath,
     ]);
@@ -1402,7 +1408,12 @@ async function probeAudio(audioPath) {
 }
 
 function runFfmpeg(args) {
-  return runCommand(process.env.FFMPEG_PATH || "ffmpeg", args);
+  return runCommand(resolveRuntimeBinary({
+    name: "ffmpeg",
+    envVar: "FFMPEG_PATH",
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  }), args);
 }
 
 function runCommand(command, args) {

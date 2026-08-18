@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { measurePcm, type AcxReport } from "../core/acx/measure";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
-import { alignTranscript, type TranscriptWord } from "../core/proof/align";
+import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "../core/proof/align";
 import {
   addGlossaryEntry,
   deleteGlossaryEntry,
@@ -151,7 +151,7 @@ export function App() {
             </li>
           </ol>
           <p className="honesty-copy">
-            Word mismatches only. Listen once for acting and noise.
+            Word mismatches and long pauses only. Listen once for acting and noise.
           </p>
         </aside>
       </section>
@@ -574,12 +574,13 @@ function ProjectHome({
         transcript,
         durationSeconds: duration || 1,
       });
-      const pickups = project.mode === "duet"
+      const freshPickups = project.mode === "duet"
         ? assignPickupSeats(
             result.pickups,
             buildDuetTimeline(chapterSpans, transcript, duration || 1),
           )
         : result.pickups;
+      const pickups = preservePickupWorkflow(proof?.pickups ?? [], freshPickups);
       setProof({ pickups, transcript });
       if (window.boothDesk && folder !== "(browser preview)") {
         const saved = await window.boothDesk.saveAlignment({
@@ -590,10 +591,13 @@ function ProjectHome({
         });
         onChange(saved);
       }
+      const mismatchCount = pickups.filter((pickup) => pickup.kind !== "pause").length;
+      const pauseCount = pickups.filter((pickup) => pickup.kind === "pause").length;
       setNotice(
         pickups.length === 0
-          ? "No word mismatches found in this transcript. Listen once for acting and noise."
-          : `${pickups.length} word ${pickups.length === 1 ? "mismatch" : "mismatches"} found.`,
+          ? "No word mismatches or long pauses found in this transcript. Listen once for acting and noise."
+          : `${mismatchCount > 0 ? `${mismatchCount} word ${mismatchCount === 1 ? "mismatch" : "mismatches"}` : "No word mismatches"}`
+            + `${pauseCount > 0 ? `; ${pauseCount} long ${pauseCount === 1 ? "pause" : "pauses"}` : ""} found.`,
       );
     });
   }
@@ -1294,6 +1298,7 @@ function ProjectHome({
           theme={promptTheme}
           onFontSize={setPromptFontSize}
           onTheme={setPromptTheme}
+          onPlayGlossary={(entry) => void playGlossaryClip(entry)}
           onClose={() => setTeleprompterOpen(false)}
         />
       ) : null}
@@ -1353,6 +1358,7 @@ function Teleprompter({
   theme,
   onFontSize,
   onTheme,
+  onPlayGlossary,
   onClose,
 }: {
   title: string;
@@ -1362,11 +1368,22 @@ function Teleprompter({
   theme: PromptTheme;
   onFontSize: (value: number) => void;
   onTheme: (value: PromptTheme) => void;
+  onPlayGlossary: (entry: GlossaryEntry) => void;
   onClose: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
   const [liveFlags] = useState(false);
+  const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
+
+  function activateGlossary(entry: GlossaryEntry) {
+    setGlossaryHint(
+      entry.clip_path
+        ? `${entry.spelling}: playing the saved human pronunciation clip.`
+        : `${entry.spelling}: ${entry.respell || "no clip or respelling yet"}.`,
+    );
+    onPlayGlossary(entry);
+  }
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1408,25 +1425,41 @@ function Teleprompter({
         {liveFlags
           ? "Live flags are experimental and high-precision only; manual scrolling remains in control."
           : "Flags are off in this build so they do not cry wolf. Space/PageDown scrolls; listen to the take for acting, clicks, and room tone."}
+        {glossaryHint ? <strong className="teleprompter-glossary-hint" role="status">{glossaryHint}</strong> : null}
       </div>
       <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
         <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
           {lines.map((line) => (
             <p key={line.index} className="teleprompter-line">
-              {line.segments.map((segment, index) => (
-                <span
-                  key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
-                  className={segment.glossary_id ? "prompt-glossary-word" : undefined}
-                  title={segment.glossary_id ? glossary.find((entry) => entry.id === segment.glossary_id)?.respell ?? "Glossary candidate" : undefined}
-                  style={{
-                    fontWeight: segment.style.includes("bold") ? 700 : undefined,
-                    fontStyle: segment.style.includes("italic") ? "italic" : undefined,
-                    textDecoration: segment.style.includes("underline") ? "underline" : undefined,
-                    background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
-                    color: segment.seat === "N1" ? "#d88a64" : segment.seat === "N2" ? "#82a9d7" : undefined,
-                  }}
-                >{segment.text}</span>
-              ))}
+              {line.segments.map((segment, index) => {
+                const glossaryEntry = segment.glossary_id
+                  ? glossary.find((entry) => entry.id === segment.glossary_id)
+                  : undefined;
+                return (
+                  <span
+                    key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
+                    className={glossaryEntry ? "prompt-glossary-word" : undefined}
+                    title={glossaryEntry?.respell ?? (glossaryEntry ? "Glossary candidate" : undefined)}
+                    role={glossaryEntry ? "button" : undefined}
+                    tabIndex={glossaryEntry ? 0 : undefined}
+                    onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
+                    onKeyDown={glossaryEntry ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        activateGlossary(glossaryEntry);
+                      }
+                    } : undefined}
+                    style={{
+                      fontWeight: segment.style.includes("bold") ? 700 : undefined,
+                      fontStyle: segment.style.includes("italic") ? "italic" : undefined,
+                      textDecoration: segment.style.includes("underline") ? "underline" : undefined,
+                      background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+                      color: segment.seat === "N1" ? "#d88a64" : segment.seat === "N2" ? "#82a9d7" : undefined,
+                    }}
+                  >{segment.text}</span>
+                );
+              })}
             </p>
           ))}
         </article>
@@ -2409,7 +2442,7 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatF
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Word mismatches only</p>
+          <p className="card-kicker">Word mismatches + long pauses</p>
           <h4 id="pickup-title">Pickups</h4>
         </div>
         <div className="result-heading-actions">

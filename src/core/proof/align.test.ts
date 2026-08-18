@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { alignTranscript, type TranscriptWord } from "./align";
+import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "./align";
+import type { Pickup } from "../project/types";
 
 function words(items: Array<[string, number, number]>): TranscriptWord[] {
   return items.map(([text, start, end]) => ({ text, start, end, confidence: 0.98 }));
@@ -46,5 +47,61 @@ describe("alignTranscript", () => {
     expect(result.pickups[0].expected).toContain("This sentence is missing");
     expect(result.pickups[0].heard).toBe("");
   });
-});
 
+  it("flags a long mid-sentence pause but ignores a sentence-boundary gap", () => {
+    const result = alignTranscript({
+      chapterId: "ch01",
+      manuscript: "The fox, after waiting, jumped on the mat. Then it slept.",
+      transcript: words([
+        ["The", 0.1, 0.3],
+        ["fox", 0.35, 0.55],
+        ["after", 0.6, 0.8],
+        ["waiting", 5.1, 5.4],
+        ["jumped", 5.5, 5.8],
+        ["on", 5.9, 6.1],
+        ["the", 6.2, 6.4],
+        ["mat", 6.5, 6.7],
+        ["Then", 11.0, 11.2],
+        ["it", 11.3, 11.5],
+        ["slept", 11.6, 11.8],
+      ]),
+      durationSeconds: 12,
+    });
+
+    expect(result.pickups.filter((pickup) => pickup.kind === "pause")).toHaveLength(1);
+    expect(result.pickups.find((pickup) => pickup.kind === "pause")).toMatchObject({
+      expected: "Pause > 4s",
+      t_start: 0.8,
+      t_end: 5.1,
+    });
+  });
+
+  it("carries a human's done/ignored state into a re-proof", () => {
+    const previous: Pickup[] = [{
+      id: "old-id",
+      chapter_id: "ch01",
+      t_start: 1,
+      t_end: 2,
+      expected: "on",
+      heard: "in",
+      kind: "sub",
+      seat: "narration",
+      status: "ignored",
+      confidence: 0.4,
+      note: "Dialect is intentional.",
+    }];
+    const next: Pickup[] = [{
+      ...previous[0],
+      id: "new-id",
+      t_start: 3,
+      t_end: 4,
+      status: "open",
+      note: undefined,
+    }];
+    expect(preservePickupWorkflow(previous, next)[0]).toMatchObject({
+      id: "new-id",
+      status: "ignored",
+      note: "Dialect is intentional.",
+    });
+  });
+});

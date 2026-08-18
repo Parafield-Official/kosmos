@@ -1,0 +1,149 @@
+name: Release installers
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ matrix.target }} ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: mac
+            arch: arm64
+          - os: macos-13
+            target: mac
+            arch: x64
+          - os: windows-latest
+            target: win
+            arch: x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$tag_version" = "$package_version" || {
+            echo "Tag $tag_version does not match package.json $package_version" >&2
+            exit 1
+          }
+
+      - name: Prepare macOS runtime assets
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake
+          mkdir -p vendor/bin
+
+          # Homebrew supplies a reproducible build-time FFmpeg. Replace these
+          # two files with an audited LGPL-compatible/static build before
+          # publishing a public release; the resolver itself is agnostic.
+          brew install ffmpeg
+          cp "$(brew --prefix ffmpeg)/bin/ffmpeg" vendor/bin/ffmpeg
+          cp "$(brew --prefix ffmpeg)/bin/ffprobe" vendor/bin/ffprobe
+
+          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$RUNNER_TEMP/whisper.cpp"
+          cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper-build" \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_SERVER=OFF
+          cmake --build "$RUNNER_TEMP/whisper-build" --config Release --parallel 2
+          whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -name whisper-cli -perm -111 | head -n 1)"
+          test -n "$whisper_cli"
+          cp "$whisper_cli" vendor/bin/whisper-cli
+          chmod +x vendor/bin/*
+          printf '%s\n' \
+            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            > vendor/bin/THIRD_PARTY_NOTICES.txt
+
+      - name: Prepare Windows runtime assets
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          choco install ffmpeg cmake --no-progress
+          mkdir -p vendor/bin
+          ffmpeg_path="$(cygpath -u "$(where.exe ffmpeg | head -n 1)")"
+          ffmpeg_dir="$(dirname "$ffmpeg_path")"
+          cp "$ffmpeg_dir/ffmpeg.exe" vendor/bin/ffmpeg.exe
+          cp "$ffmpeg_dir/ffprobe.exe" vendor/bin/ffprobe.exe
+          # Chocolatey builds may use side-by-side DLLs; keep them beside the
+          # executables so the packaged app does not depend on PATH.
+          find "$ffmpeg_dir" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
+
+          git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git "$RUNNER_TEMP/whisper.cpp"
+          cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper-build" \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=ON \
+            -DWHISPER_BUILD_SERVER=OFF
+          cmake --build "$RUNNER_TEMP/whisper-build" --config Release --parallel 2
+          whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
+          test -n "$whisper_cli"
+          cp "$whisper_cli" vendor/bin/whisper-cli.exe
+          printf '%s\r\n' \
+            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            > vendor/bin/THIRD_PARTY_NOTICES.txt
+
+      - name: Build renderer and core bundles
+        run: npm run build
+
+      - name: Package installer
+        shell: bash
+        run: npx electron-builder --${{ matrix.target }} --${{ matrix.arch }} --publish never
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: booth-desk-${{ matrix.target }}-${{ matrix.arch }}
+          path: |
+            release/BoothDesk-*
+            release/*.blockmap
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release-artifacts
+        run: |
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-artifacts/*

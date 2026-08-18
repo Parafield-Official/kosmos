@@ -35,8 +35,14 @@
       {
         "from": "public/examples",
         "to": "examples"
+      },
+      {
+        "from": "vendor/bin",
+        "to": "bin",
+        "filter": ["**/*"]
       }
     ],
+    "artifactName": "BoothDesk-${version}-${os}-${arch}.${ext}",
     "mac": {
       "target": [
         "dmg"

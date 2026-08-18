@@ -1263,6 +1263,12 @@ footer {
   line-height: 1.45;
 }
 
+.teleprompter-glossary-hint {
+  display: inline-block;
+  margin-left: 10px;
+  color: inherit;
+}
+
 .teleprompter-sepia .teleprompter-honesty,
 .teleprompter-cream .teleprompter-honesty {
   color: #725c4e;
@@ -1291,7 +1297,13 @@ footer {
 
 .prompt-glossary-word {
   border-bottom: 2px dotted currentColor;
-  cursor: help;
+  cursor: pointer;
+}
+
+.prompt-glossary-word:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
 .recorder-panel {

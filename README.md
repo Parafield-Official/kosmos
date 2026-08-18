@@ -31,9 +31,11 @@ The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
 flags remain disabled in this pre-release until that path can meet the
 high-precision/auto-dim requirement without crying wolf.
 
-This is a pre-release development build. The source path currently expects a
-local `ffmpeg`; the release pipeline must bundle the LGPL build and
-`whisper-cli` before `.dmg` / `.exe` artifacts are called installable v1 builds.
+This is a pre-release development build. Source builds can use a local
+`ffmpeg`/`ffprobe` and `whisper-cli`; the tag workflow has a platform-runtime
+staging path, but an actual public installer still requires an audited
+LGPL-compatible FFmpeg build (including any dynamic libraries and notices) in
+`vendor/bin` before publication.
 
 ## Install (release builds)
 

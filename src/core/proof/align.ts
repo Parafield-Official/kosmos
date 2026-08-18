@@ -15,12 +15,44 @@ export interface AlignTranscriptInput {
   durationSeconds?: number;
   seat?: Seat;
   mergeWindowSeconds?: number;
+  /** Gaps longer than this can become a pause pickup when they occur mid-sentence. */
+  pauseThresholdSeconds?: number;
 }
 
 export interface AlignmentResult {
   pickups: Pickup[];
   manuscript_tokens: ManuscriptToken[];
   transcript_words: TranscriptWord[];
+}
+
+/** Carry human review state forward when a re-proof finds the same pickup. */
+export function preservePickupWorkflow(previous: Pickup[], next: Pickup[]): Pickup[] {
+  const byId = new Map(previous.map((pickup) => [pickup.id, pickup]));
+  const bySignature = new Map<string, Pickup[]>();
+  for (const pickup of previous) {
+    const key = pickupSignature(pickup);
+    const bucket = bySignature.get(key) ?? [];
+    bucket.push(pickup);
+    bySignature.set(key, bucket);
+  }
+  const used = new Set<string>();
+  return next.map((pickup) => {
+    const exact = byId.get(pickup.id);
+    const candidate = exact && !used.has(exact.id)
+      ? exact
+      : (bySignature.get(pickupSignature(pickup)) ?? [])
+        .filter((old) => !used.has(old.id))
+        .sort((left, right) => Math.abs(left.t_start - pickup.t_start) - Math.abs(right.t_start - pickup.t_start))[0];
+    if (!candidate) {
+      return pickup;
+    }
+    used.add(candidate.id);
+    return {
+      ...pickup,
+      status: candidate.status,
+      ...(candidate.note ? { note: candidate.note } : {}),
+    };
+  });
 }
 
 type DiffOperation =
@@ -95,11 +127,103 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     }
   }
 
+  const pausePickups = detectPausePickups({
+    chapterId: input.chapterId,
+    manuscript: input.manuscript,
+    manuscriptTokens,
+    transcriptWords,
+    operations,
+    thresholdSeconds: input.pauseThresholdSeconds ?? 4,
+    seat: input.seat ?? "narration",
+    durationSeconds: input.durationSeconds ?? inferDuration(transcriptWords),
+    startOrdinal: pickupOrdinal,
+  });
   return {
-    pickups: mergePickups(pickups, input.mergeWindowSeconds ?? 0.4),
+    pickups: mergePickups(
+      [...pickups, ...pausePickups].sort((left, right) => left.t_start - right.t_start),
+      input.mergeWindowSeconds ?? 0.4,
+    ),
     manuscript_tokens: manuscriptTokens,
     transcript_words: transcriptWords,
   };
+}
+
+interface PauseDetectionInput {
+  chapterId: string;
+  manuscript: string;
+  manuscriptTokens: ManuscriptToken[];
+  transcriptWords: TranscriptWord[];
+  operations: DiffOperation[];
+  thresholdSeconds: number;
+  seat: Seat;
+  durationSeconds: number;
+  startOrdinal: number;
+}
+
+/** Detect only long, mid-sentence gaps; normal breaths and paragraph breaks stay quiet. */
+function detectPausePickups(input: PauseDetectionInput): Pickup[] {
+  const threshold = Number.isFinite(input.thresholdSeconds)
+    ? Math.max(0, input.thresholdSeconds)
+    : 4;
+  if (threshold <= 0 || input.transcriptWords.length < 2) {
+    return [];
+  }
+
+  const manuscriptByTranscript = new Map<number, number>();
+  for (const operation of input.operations) {
+    if (operation.kind === "equal") {
+      manuscriptByTranscript.set(operation.transcriptIndex, operation.manuscriptIndex);
+    }
+  }
+
+  const pauses: Pickup[] = [];
+  for (let index = 0; index < input.transcriptWords.length - 1; index += 1) {
+    const previous = input.transcriptWords[index];
+    const next = input.transcriptWords[index + 1];
+    const gap = next.start - previous.end;
+    if (!Number.isFinite(gap) || gap <= threshold) {
+      continue;
+    }
+    const previousManuscriptIndex = manuscriptByTranscript.get(index);
+    const nextManuscriptIndex = manuscriptByTranscript.get(index + 1);
+    if (
+      previousManuscriptIndex === undefined
+      || nextManuscriptIndex === undefined
+      || nextManuscriptIndex !== previousManuscriptIndex + 1
+    ) {
+      // A non-adjacent pair usually means the reader skipped or inserted text;
+      // the word pickup already explains that interval.
+      continue;
+    }
+    const previousToken = input.manuscriptTokens[previousManuscriptIndex];
+    const nextToken = input.manuscriptTokens[nextManuscriptIndex];
+    const between = input.manuscript.slice(previousToken.end, nextToken.start);
+    if (/[.!?。！？\n]/u.test(between)) {
+      continue;
+    }
+    const confidence = Math.min(previous.confidence ?? 0, next.confidence ?? 0);
+    pauses.push({
+      id: stablePickupId(
+        input.chapterId,
+        "pause",
+        `>${threshold}s`,
+        "",
+        previous.end,
+        next.start,
+        input.startOrdinal + pauses.length,
+      ),
+      chapter_id: input.chapterId,
+      t_start: Math.max(0, previous.end),
+      t_end: Math.max(Math.max(0, previous.end), next.start),
+      expected: `Pause > ${threshold}s`,
+      heard: "",
+      kind: "pause",
+      seat: input.seat,
+      status: "open",
+      confidence: clamp(confidence, 0, 1),
+    });
+  }
+  return pauses;
 }
 
 function runToPickup(
@@ -207,6 +331,10 @@ function stablePickupId(
   return `pickup-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+function pickupSignature(pickup: Pickup): string {
+  return `${pickup.kind}|${pickup.expected}|${pickup.heard}`;
+}
+
 function diffTokens(a: string[], b: string[]): DiffOperation[] {
   const n = a.length;
   const m = b.length;
@@ -286,4 +414,3 @@ function backtrackDiff(trace: Array<Map<number, number>>, a: string[], b: string
 
   return operations.reverse();
 }
-
