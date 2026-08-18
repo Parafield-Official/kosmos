@@ -82,13 +82,16 @@ describe("runtime binary resolution", () => {
   });
 
   it("can require a bundled runtime instead of silently using PATH", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "booth-runtime-missing-"));
     expect(() => resolveRuntimeBinary({
       name: "ffmpeg",
       resourcesPath: "/tmp/booth-missing-resources",
       appPath: "/tmp/booth-missing-app",
+      cwd: root,
       platform: "darwin",
       env: {},
       requireBundled: true,
     })).toThrow(/bundled ffmpeg/i);
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });

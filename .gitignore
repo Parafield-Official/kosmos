@@ -9,3 +9,12 @@ release/
 !.env.example
 *.local
 .booth/
+vendor/bin/ffmpeg
+vendor/bin/ffprobe
+vendor/bin/ffmpeg.exe
+vendor/bin/ffprobe.exe
+vendor/bin/whisper-cli
+vendor/bin/whisper-cli.exe
+vendor/bin/*.dylib
+vendor/bin/*.dll
+vendor/bin/FFMPEG_AUDIT.json

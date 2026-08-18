@@ -61,7 +61,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          brew install cmake nasm pkg-config lame
+          brew install cmake nasm pkg-config lame mpg123
           mkdir -p vendor/bin
 
           # Build FFmpeg from the pinned upstream source with GPL and
@@ -81,26 +81,48 @@ jobs:
             --disable-doc \
             --disable-shared \
             --enable-static \
-            --enable-libmp3lame
+            --disable-avdevice \
+            --disable-indevs \
+            --disable-outdevs \
+            --disable-libxcb \
+            --disable-libxcb-shm \
+            --disable-libxcb-xfixes \
+            --disable-libxcb-shape \
+            --disable-xlib \
+            --disable-appkit \
+            --disable-audiotoolbox \
+            --disable-videotoolbox \
+            --enable-libmp3lame \
+            --extra-cflags="-I$(brew --prefix lame)/include" \
+            --extra-ldflags="-L$(brew --prefix lame)/lib"
           make -j2
           make install
           popd
           cp "$ffmpeg_prefix/bin/ffmpeg" vendor/bin/ffmpeg
           cp "$ffmpeg_prefix/bin/ffprobe" vendor/bin/ffprobe
-          lame_lib="$(find "$(brew --prefix lame)/lib" -maxdepth 1 -type f -name 'libmp3lame*.dylib' | head -n 1)"
-          test -n "$lame_lib"
-          lame_name="$(basename "$lame_lib")"
-          cp "$lame_lib" "vendor/bin/$lame_name"
+          for library in libmp3lame*.dylib libmpg123*.dylib; do
+            source_library="$(find "$(brew --prefix lame)/lib" "$(brew --prefix mpg123)/lib" -maxdepth 1 -type f -name "$library" | head -n 1)"
+            test -n "$source_library"
+            cp "$source_library" "vendor/bin/$(basename "$source_library")"
+          done
           for executable in vendor/bin/ffmpeg vendor/bin/ffprobe; do
             install_name_tool -add_rpath '@loader_path' "$executable"
             while IFS= read -r dependency; do
-              install_name_tool -change "$dependency" "@loader_path/$lame_name" "$executable"
-            done < <(otool -L "$executable" | awk '/libmp3lame/ {print $1}')
+              dependency_name="$(basename "$dependency")"
+              install_name_tool -change "$dependency" "@loader_path/$dependency_name" "$executable"
+            done < <(otool -L "$executable" | awk '/libmp3lame|libmpg123/ {print $1}')
+          done
+          for library in vendor/bin/*.dylib; do
+            install_name_tool -id "@loader_path/$(basename "$library")" "$library"
+            while IFS= read -r dependency; do
+              dependency_name="$(basename "$dependency")"
+              install_name_tool -change "$dependency" "@loader_path/$dependency_name" "$library"
+            done < <(otool -L "$library" | awk '/libmp3lame|libmpg123/ {print $1}')
           done
           printf '%s\n' \
             "FFmpeg ${ffmpeg_version}, built from https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz" \
             'License: LGPL-2.1-or-later; configure flags disable GPL and non-free components.' \
-            'LAME: LGPL, bundled as a dynamic dependency beside the executables.' \
+            'LAME and mpg123: LGPL-compatible dynamic dependencies bundled beside the executables.' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_source="$RUNNER_TEMP/whisper.cpp"

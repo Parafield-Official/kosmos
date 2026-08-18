@@ -1,0 +1,7 @@
+FFmpeg runtime license notice:
+
+The staged FFmpeg build must be LGPL-2.1-or-later compatible. It must be
+built with GPL and non-free components disabled, and its version output must
+be checked by `npm run audit:runtime` before distribution. Any dynamic LGPL
+dependencies (such as LAME) must travel beside the executables and be listed
+here with their source/version and license.
