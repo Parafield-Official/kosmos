@@ -1009,6 +1009,20 @@ function ProjectHome({
     });
   }
 
+  async function refreshGlossarySuggestions() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Refresh suggestions is available in the desktop app.");
+      return;
+    }
+    await runAction("glossary-refresh", async () => {
+      const result = await window.boothDesk?.refreshGlossary(envelope);
+      if (result) {
+        onChange(result);
+        setNotice(`${result.project.glossary?.length ?? 0} pronunciation suggestions remain after the lexicon check.`);
+      }
+    });
+  }
+
   async function attachGlossaryClip(id: string) {
     if (!window.boothDesk || folder === "(browser preview)") {
       setNotice("Pronunciation clip attachment is available in the desktop app.");
@@ -1581,6 +1595,7 @@ function ProjectHome({
               onSpelling={setGlossarySpelling}
               onRespell={setGlossaryRespell}
               onAdd={() => void addGlossary()}
+              onRefresh={() => void refreshGlossarySuggestions()}
               onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
               onDelete={(id) => void removeGlossary(id)}
               onAttachClip={(id) => void attachGlossaryClip(id)}
@@ -2898,6 +2913,7 @@ function GlossaryPanel({
   onSpelling,
   onRespell,
   onAdd,
+  onRefresh,
   onRename,
   onDelete,
   onAttachClip,
@@ -2911,6 +2927,7 @@ function GlossaryPanel({
   onSpelling: (value: string) => void;
   onRespell: (value: string) => void;
   onAdd: () => void;
+  onRefresh: () => void;
   onRename: (id: string, spelling: string, respell: string) => void;
   onDelete: (id: string) => void;
   onAttachClip: (id: string) => void;
@@ -2924,7 +2941,10 @@ function GlossaryPanel({
           <p className="card-kicker">Pronunciation</p>
           <h3 id="glossary-panel-title">Pronunciation guide</h3>
         </div>
-        <span className="result-count">{glossary.length} entries</span>
+        <div className="panel-heading-actions">
+          <span className="result-count">{glossary.length} entries</span>
+          <button type="button" className="table-action" disabled={busyAction !== null} onClick={onRefresh}>Refresh suggestions</button>
+        </div>
       </header>
       <p className="panel-honesty">
         Add names and tricky words so everyone says them the same way.

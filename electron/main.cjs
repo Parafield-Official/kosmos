@@ -62,6 +62,7 @@ const MAX_RECORDER_WAV_BYTES = 1_500_000_000;
 const MAX_ROOM_TEST_SECONDS = 60;
 const MAX_MANUSCRIPT_BYTES = 200_000_000;
 const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
+let pronunciationLexicon = null;
 
 // Kosmos is a product rename, not a data migration. Keep the established
 // application-data folder so existing model caches, identities, and recent
@@ -464,7 +465,9 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
   const firstIndex = nextChapterIndex(project);
   const glossary = glossaryCore.mergeGlossaryCandidates(
     project.glossary ?? [],
-    glossaryCore.extractGlossaryCandidates(imported.text),
+    glossaryCore.extractGlossaryCandidates(imported.text, {
+      lexicon: loadPronunciationLexicon(),
+    }),
   );
   const createdChapters = [];
   for (const [offset, section] of sections.entries()) {
@@ -945,6 +948,27 @@ async function relinkGlossary(folder, project) {
     await writeChapterDocument(folder, chapter.text_path, { ...document, spans });
   }
   return saveProjectFolder(folder, { ...project, updated_at: new Date().toISOString() });
+}
+
+async function refreshGlossary(folder, project) {
+  await assertProjectEnvelope(folder, project);
+  const glossaryCore = loadCoreModule("glossary");
+  const documents = await Promise.all((project.chapters ?? []).map(async (chapter) => ({
+    chapter,
+    document: await readChapterDocument(folder, chapter),
+  })));
+  const manuscript = documents
+    .map(({ document }) => document.spans.map((span) => span.text).join(""))
+    .join("\n");
+  const candidates = glossaryCore.extractGlossaryCandidates(manuscript, {
+    lexicon: loadPronunciationLexicon(),
+  });
+  const glossary = glossaryCore.replaceAutoGlossaryCandidates(project.glossary ?? [], candidates);
+  for (const { chapter, document } of documents) {
+    const spans = glossaryCore.linkGlossarySpans(document.spans, glossary);
+    await writeChapterDocument(folder, chapter.text_path, { ...document, spans });
+  }
+  return saveProjectFolder(folder, { ...project, glossary, updated_at: new Date().toISOString() });
 }
 
 async function readChapterText(folder, project, chapterId) {
@@ -2000,6 +2024,24 @@ function loadCoreModule(name) {
   throw new Error("The audio core is not bundled. Run npm run build before exporting.");
 }
 
+function loadPronunciationLexicon() {
+  if (pronunciationLexicon) {
+    return pronunciationLexicon;
+  }
+  const roots = [
+    path.join(process.resourcesPath, "cmudict", "cmudict.dict"),
+    path.join(app.getAppPath(), "vendor", "cmudict", "cmudict.dict"),
+    path.join(__dirname, "..", "vendor", "cmudict", "cmudict.dict"),
+  ];
+  const source = roots.find((candidate) => fsSync.existsSync(candidate));
+  if (!source) {
+    return undefined;
+  }
+  const glossaryCore = loadCoreModule("glossary");
+  pronunciationLexicon = glossaryCore.parsePronouncingDictionary(fsSync.readFileSync(source, "utf8"));
+  return pronunciationLexicon;
+}
+
 function float32View(bytes) {
   if (bytes.byteLength % 4 !== 0) {
     throw new Error("Decoded PCM output is not aligned to 32-bit samples");
@@ -2268,6 +2310,12 @@ ipcMain.handle("glossary:relink", (_event, payload) => {
     throw new Error("Invalid glossary relink request");
   }
   return relinkGlossary(payload.folder, payload.project);
+});
+ipcMain.handle("glossary:refresh", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid glossary refresh request");
+  }
+  return refreshGlossary(payload.folder, payload.project);
 });
 ipcMain.handle("project:chapter-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

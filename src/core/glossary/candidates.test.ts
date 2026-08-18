@@ -7,6 +7,8 @@ import {
   mergeGlossaryCandidates,
   linkGlossarySpans,
   mergeGlossaryEntries,
+  parsePronouncingDictionary,
+  replaceAutoGlossaryCandidates,
   renameGlossaryEntry,
 } from "./candidates";
 
@@ -37,6 +39,58 @@ describe("offline glossary candidates", () => {
     expect(candidates.find((candidate) => candidate.spelling === "Worcester")?.reasons).toContain(
       "unusual-spelling",
     );
+  });
+
+  it("keeps ordinary words out of pronunciation suggestions while retaining names", () => {
+    const lexicon = parsePronouncingDictionary(`
+      hotel HH OW0 T EH1 L
+      bees B IY1 Z
+      big B IH1 G
+      walls W AO1 L Z
+      fingers F IH1 NG G ER0 Z
+      Werner W ER1 N ER0
+    `);
+
+    const candidates = extractGlossaryCandidates(
+      "Werner said the hotel had big walls. Bees covered his fingers.",
+      { lexicon },
+    );
+
+    expect(candidates.map((candidate) => candidate.spelling)).toEqual(["Werner"]);
+  });
+
+  it("flags a known heteronym when the lexicon has multiple pronunciations", () => {
+    const lexicon = parsePronouncingDictionary(`
+      read R EH1 D
+      read(2) R IY1 D
+      this DH IH1 S
+      please P L IY1 Z
+    `);
+
+    const candidates = extractGlossaryCandidates("Please read this. I read it.", { lexicon });
+
+    expect(candidates).toEqual([
+      expect.objectContaining({ spelling: "read", reasons: expect.arrayContaining(["ambiguous-pronunciation"]) }),
+    ]);
+  });
+
+  it("refreshes auto suggestions without deleting authored pronunciation work", () => {
+    const refreshed = replaceAutoGlossaryCandidates(
+      [
+        { id: "auto-hotel", spelling: "hotel", frequency: 8, source: "auto" },
+        { id: "user-family", spelling: "family", frequency: 0, source: "user", respell: "FAM-lee" },
+        { id: "auto-werner", spelling: "Werner", frequency: 2, source: "auto", clip_path: "audio/glossary/werner.wav" },
+      ],
+      [
+        { spelling: "Werner", frequency: 3, reasons: ["name-pattern"] },
+      ],
+    );
+
+    expect(refreshed).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "user-family", spelling: "family", respell: "FAM-lee" }),
+      expect.objectContaining({ spelling: "Werner", frequency: 3, clip_path: "audio/glossary/werner.wav" }),
+    ]));
+    expect(refreshed.some((entry) => entry.spelling === "hotel")).toBe(false);
   });
 
   it("sorts by frequency, caps auto suggestions, and keeps stable ties", () => {

@@ -4,12 +4,26 @@ import { COMMON_ENGLISH_WORDS } from "./common-english";
 export interface GlossaryCandidate {
   spelling: string;
   frequency: number;
-  reasons: Array<"capitalized" | "repeated-capitalized" | "uncommon" | "name-pattern" | "unusual-spelling">;
+  reasons: CandidateReason[];
+}
+
+export type CandidateReason =
+  | "capitalized"
+  | "repeated-capitalized"
+  | "uncommon"
+  | "name-pattern"
+  | "unusual-spelling"
+  | "ambiguous-pronunciation";
+
+export interface PronunciationLexicon {
+  has(word: string): boolean;
+  pronunciationCount(word: string): number;
 }
 
 export interface CandidateOptions {
   limit?: number;
   commonWords?: ReadonlySet<string>;
+  lexicon?: PronunciationLexicon;
 }
 
 export interface AddGlossaryOptions {
@@ -28,6 +42,20 @@ interface Token {
   sentenceStart: boolean;
 }
 
+const NAME_CONTEXT_WORDS = new Set([
+  "asked", "called", "cried", "named", "replied", "said", "shouted", "whispered", "yelled",
+]);
+const TITLE_OR_ROLE_WORDS = new Set([
+  "aunt", "author", "brother", "chapter", "dear", "duchess", "duke", "everyone", "father",
+  "gentle", "lady", "lord", "mother", "mr", "mrs", "miss", "reader", "read", "sister", "society",
+]);
+const HETERONYM_WORDS = new Set([
+  "address", "advocate", "attribute", "bass", "bow", "close", "content", "conduct", "contract",
+  "convert", "desert", "does", "dove", "entrance", "export", "import", "increase", "insult", "lead",
+  "live", "minute", "object", "polish", "present", "produce", "project", "protest", "read", "record",
+  "refuse", "reject", "resume", "row", "sewer", "sow", "subject", "suspect", "tear", "use", "wind", "wound",
+]);
+
 const TOKEN_PATTERN = /[\p{L}][\p{L}\p{M}\d]*(?:['’.-][\p{L}\p{M}\d]+)*/gu;
 const REASON_ORDER: GlossaryCandidate["reasons"][number][] = [
   "capitalized",
@@ -35,6 +63,7 @@ const REASON_ORDER: GlossaryCandidate["reasons"][number][] = [
   "name-pattern",
   "uncommon",
   "unusual-spelling",
+  "ambiguous-pronunciation",
 ];
 
 /** Extract a bounded, explainable candidate list without leaving the machine. */
@@ -43,83 +72,147 @@ export function extractGlossaryCandidates(
   options: CandidateOptions = {},
 ): GlossaryCandidate[] {
   const commonWords = options.commonWords ?? COMMON_ENGLISH_WORDS;
+  const lexicon = options.lexicon;
   const tokens = tokenize(manuscript);
   const aggregates = new Map<
     string,
     {
       frequency: number;
       capitalizedFrequency: number;
+      capitalizedMidSentenceFrequency: number;
+      namePatternFrequency: number;
+      unusualFrequency: number;
+      nonAsciiFrequency: number;
+      acronymFrequency: number;
+      known: boolean;
       variants: Map<string, number>;
-      reasons: Set<GlossaryCandidate["reasons"][number]>;
     }
   >();
 
   tokens.forEach((token, index) => {
-    const common = commonWords.has(token.canonical);
-    const next = tokens[index + 1]?.canonical;
-    const previous = tokens[index - 1]?.canonical;
-    const namePattern = previous === "said" || next === "said";
-    const unusual = hasUnusualSpelling(token.canonical);
-    const reasons = new Set<GlossaryCandidate["reasons"][number]>();
-
-    if (token.capitalized && !token.sentenceStart && !common) {
-      reasons.add("capitalized");
-    }
-    if (token.capitalized && !common) {
-      // Repeated-capitalized is assigned after aggregation, but retaining the
-      // count here means a word can remain a candidate even at sentence starts.
-      reasons.add("repeated-capitalized");
-    }
-    if (!common) {
-      reasons.add("uncommon");
-    }
-    if (namePattern) {
-      reasons.add("name-pattern");
-    }
-    if (unusual) {
-      reasons.add("unusual-spelling");
-    }
-
-    if (reasons.size === 0) {
-      return;
-    }
+    const known = lexicon ? lexicon.has(token.canonical) : commonWords.has(token.canonical);
+    const next = tokens[index + 1];
+    const previous = tokens[index - 1];
+    const namePattern = !token.canonical.includes("'") && token.capitalized && (
+      Boolean(previous && NAME_CONTEXT_WORDS.has(previous.canonical) && isAdjacentNameContext(manuscript, previous, token))
+      || Boolean(next && NAME_CONTEXT_WORDS.has(next.canonical) && isAdjacentNameContext(manuscript, token, next))
+    );
+    const unusual = hasUnusualSpelling(token.canonical)
+      && !(token.canonical.includes("-") && token.canonical.split("-").every((part) => isKnownWord(part, commonWords, lexicon)));
 
     const current = aggregates.get(token.canonical) ?? {
       frequency: 0,
       capitalizedFrequency: 0,
+      capitalizedMidSentenceFrequency: 0,
+      namePatternFrequency: 0,
+      unusualFrequency: 0,
+      nonAsciiFrequency: 0,
+      acronymFrequency: 0,
+      known,
       variants: new Map<string, number>(),
-      reasons: new Set<GlossaryCandidate["reasons"][number]>(),
     };
     current.frequency += 1;
+    current.known = current.known || known;
     if (token.capitalized) {
       current.capitalizedFrequency += 1;
+      if (!token.sentenceStart) {
+        current.capitalizedMidSentenceFrequency += 1;
+      }
+    }
+    if (namePattern) {
+      current.namePatternFrequency += 1;
+    }
+    if (unusual) {
+      current.unusualFrequency += 1;
+    }
+    if ([...token.raw].some((character) => (character.codePointAt(0) ?? 0) > 0x7f)) {
+      current.nonAsciiFrequency += 1;
+    }
+    if (token.raw.length > 1 && token.raw === token.raw.toLocaleUpperCase("en-US") && token.raw !== token.raw.toLocaleLowerCase("en-US")) {
+      current.acronymFrequency += 1;
     }
     current.variants.set(token.raw, (current.variants.get(token.raw) ?? 0) + 1);
-    reasons.forEach((reason) => current.reasons.add(reason));
     aggregates.set(token.canonical, current);
   });
 
   const candidates = Array.from(aggregates.entries()).map(([canonical, aggregate]) => {
-    if (aggregate.capitalizedFrequency < 3) {
-      aggregate.reasons.delete("repeated-capitalized");
-    } else {
-      aggregate.reasons.add("repeated-capitalized");
+    const titleOrRole = TITLE_OR_ROLE_WORDS.has(canonical);
+    const nameSignal = !titleOrRole && (
+      aggregate.namePatternFrequency > 0
+      || (!aggregate.known && aggregate.capitalizedMidSentenceFrequency >= 2)
+      || (aggregate.capitalizedFrequency > 0 && !aggregate.known)
+    );
+    const unusualSignal = aggregate.unusualFrequency > 0 || aggregate.nonAsciiFrequency > 0;
+    const unknownSignal = !aggregate.known && !titleOrRole && (
+      unusualSignal
+      || aggregate.acronymFrequency > 0
+    );
+    const ambiguousSignal = HETERONYM_WORDS.has(canonical)
+      && (lexicon ? lexicon.pronunciationCount(canonical) > 1 : false);
+    if (!nameSignal && !unknownSignal && !ambiguousSignal) {
+      return null;
+    }
+    const reasons = new Set<CandidateReason>();
+    if (nameSignal && aggregate.capitalizedMidSentenceFrequency > 0) {
+      reasons.add("capitalized");
+    }
+    if (nameSignal && aggregate.capitalizedFrequency >= 3) {
+      reasons.add("repeated-capitalized");
+    }
+    if (aggregate.namePatternFrequency > 0) {
+      reasons.add("name-pattern");
+    }
+    if (!aggregate.known) {
+      reasons.add("uncommon");
+    }
+    if (unusualSignal) {
+      reasons.add("unusual-spelling");
+    }
+    if (ambiguousSignal) {
+      reasons.add("ambiguous-pronunciation");
     }
     return {
       spelling: representativeSpelling(aggregate.variants, canonical),
       frequency: aggregate.frequency,
-      reasons: REASON_ORDER.filter((reason) => aggregate.reasons.has(reason)),
+      reasons: REASON_ORDER.filter((reason) => reasons.has(reason)),
     } satisfies GlossaryCandidate;
-  });
+  }).filter((candidate): candidate is GlossaryCandidate => candidate !== null);
 
   candidates.sort((left, right) => {
     if (right.frequency !== left.frequency) {
       return right.frequency - left.frequency;
     }
+    const scoreDelta = candidateScore(right) - candidateScore(left);
+    if (scoreDelta !== 0) {
+      return scoreDelta;
+    }
     return left.spelling.localeCompare(right.spelling, "en", { sensitivity: "base" });
   });
 
   return candidates.slice(0, Math.max(0, options.limit ?? 80));
+}
+
+/** Parse the line-oriented CMUdict format into the small interface extraction needs. */
+export function parsePronouncingDictionary(contents: string): PronunciationLexicon {
+  const pronunciations = new Map<string, Set<string>>();
+  for (const line of contents.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith(";;")) {
+      continue;
+    }
+    const match = /^(\S+)\s+(.+)$/u.exec(trimmed);
+    if (!match) {
+      continue;
+    }
+    const spelling = match[1].replace(/\(\d+\)$/u, "").toLocaleLowerCase("en-US");
+    const pronunciationsForWord = pronunciations.get(spelling) ?? new Set<string>();
+    pronunciationsForWord.add(match[2].trim());
+    pronunciations.set(spelling, pronunciationsForWord);
+  }
+  return {
+    has: (word) => pronunciations.has(word.toLocaleLowerCase("en-US")),
+    pronunciationCount: (word) => pronunciations.get(word.toLocaleLowerCase("en-US"))?.size ?? 0,
+  };
 }
 
 /** Convert the explainable draft list to the persisted project shape. */
@@ -180,6 +273,43 @@ export function mergeGlossaryCandidates(
     }
     bySpelling.set(key, result.length);
     result.push({ ...entry, id });
+  }
+  return result;
+}
+
+/** Rebuild generated rows after the lexicon or manuscript changes. */
+export function replaceAutoGlossaryCandidates(
+  existing: GlossaryEntry[],
+  candidates: GlossaryCandidate[],
+): GlossaryEntry[] {
+  const result = existing
+    .filter((entry) => entry.source === "user" || Boolean(entry.respell || entry.clip_path || entry.seats?.length))
+    .map((entry) => ({
+      ...entry,
+      ...(entry.seats ? { seats: [...entry.seats] } : {}),
+    }));
+  const bySpelling = new Map<string, number>();
+  result.forEach((entry, index) => {
+    bySpelling.set(entry.spelling.trim().toLocaleLowerCase("en-US"), index);
+  });
+  for (const generated of candidatesToGlossary(candidates)) {
+    const key = generated.spelling.trim().toLocaleLowerCase("en-US");
+    const existingIndex = bySpelling.get(key);
+    if (existingIndex !== undefined) {
+      result[existingIndex] = {
+        ...result[existingIndex],
+        frequency: generated.frequency,
+      };
+      continue;
+    }
+    let id = generated.id;
+    let suffix = 2;
+    while (result.some((entry) => entry.id === id)) {
+      id = `${generated.id}-${suffix}`;
+      suffix += 1;
+    }
+    bySpelling.set(key, result.length);
+    result.push({ ...generated, id });
   }
   return result;
 }
@@ -248,7 +378,7 @@ export function renameGlossaryEntry(
       return entry;
     }
     found = true;
-    return { ...entry, spelling: clean, respell: respell?.trim() || undefined };
+    return { ...entry, spelling: clean, respell: respell?.trim() || undefined, source: "user" as const };
   });
   if (!found) {
     throw new Error(`Unknown glossary entry: ${id}`);
@@ -376,6 +506,18 @@ function tokenize(text: string): Token[] {
   return tokens;
 }
 
+function isKnownWord(
+  word: string,
+  commonWords: ReadonlySet<string>,
+  lexicon: PronunciationLexicon | undefined,
+): boolean {
+  return lexicon ? lexicon.has(word) : commonWords.has(word);
+}
+
+function isAdjacentNameContext(text: string, left: Token, right: Token): boolean {
+  return !/[.!?\n]/u.test(text.slice(left.end, right.start));
+}
+
 function normalizeToken(raw: string): string {
   return raw
     .replace(/[’']s$/iu, "")
@@ -410,7 +552,19 @@ function representativeSpelling(variants: Map<string, number>, canonical: string
 }
 
 function hasUnusualSpelling(word: string): boolean {
-  return /(?:cest|chester|cestershire|ough|eaux|sch|tz|cz|[aeiou][^aeiou]{3,})/iu.test(word);
+  return /(?:cest|chester|cestershire|eaux|ough|sch|tz|cz)/iu.test(word);
+}
+
+function candidateScore(candidate: GlossaryCandidate): number {
+  return candidate.reasons.reduce((score, reason) => score + (
+    reason === "name-pattern" ? 5
+      : reason === "unusual-spelling" ? 4
+        : reason === "ambiguous-pronunciation" ? 4
+          : reason === "capitalized" ? 3
+            : reason === "repeated-capitalized" ? 2
+              : reason === "uncommon" ? 1
+                : 0
+  ), 0);
 }
 
 function slug(value: string): string {

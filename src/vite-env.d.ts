@@ -20,6 +20,7 @@ interface BoothDeskBridge {
   attachDuetTrack: (payload: ProjectEnvelope & { chapterId: string; kind: "bed" | "overdub" }) => Promise<DuetTrackAttachment | null>;
   attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
   relinkGlossary: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
+  refreshGlossary: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
   saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;

@@ -48,6 +48,11 @@
         "from": "vendor/models",
         "to": "models",
         "filter": ["ggml-small.en.bin"]
+      },
+      {
+        "from": "vendor/cmudict",
+        "to": "cmudict",
+        "filter": ["cmudict.dict", "README", "SOURCE.md"]
       }
     ],
     "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",

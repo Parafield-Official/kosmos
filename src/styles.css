@@ -833,6 +833,12 @@ button {
   letter-spacing: -0.04em;
 }
 
+.panel-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .panel-honesty {
   max-width: 760px;
   margin: 10px 0 20px;
