@@ -1,0 +1,8 @@
+Kosmos bundles a standalone Microsoft MarkItDown helper for local manuscript conversion.
+
+MarkItDown is distributed under the MIT License.
+Source: https://github.com/microsoft/markitdown
+
+The helper is built from scripts/markitdown_cli.py with the pinned dependency
+set installed by the release workflow. It runs without plugins, network calls,
+Azure services, or user-provided code.

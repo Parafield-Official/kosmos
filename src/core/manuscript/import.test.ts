@@ -64,6 +64,17 @@ describe("offline manuscript format import", () => {
     expect(() => importManuscriptBytes(strToU8("x"), ".pages")).toThrow(/unsupported/i);
   });
 
+  it("hides Markdown heading markers without changing source offsets", () => {
+    const imported = importManuscriptBytes(
+      strToU8("# Chapter 1\n\n## The opening scene\n\nText."),
+      ".txt",
+    );
+    expect(imported.text).not.toContain("# Chapter 1");
+    expect(imported.text).not.toContain("## The opening scene");
+    expect(imported.text).toContain("The opening scene");
+    expect(imported.spans.map((span) => span.text).join("")).toBe(imported.text);
+  });
+
   it("marks quoted dialogue without assigning a narrator seat", () => {
     const imported = fromPlainText('Mara said, "Stay here." Then she said, ‘I couldn’t leave.’', "txt");
     expect(imported.spans.some((span) => span.dialogue && span.text.includes("Stay here"))).toBe(true);

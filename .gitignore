@@ -8,6 +8,7 @@ release/
 .env.*
 !.env.example
 *.local
+__pycache__/
 .booth/
 vendor/bin/ffmpeg
 vendor/bin/ffprobe
@@ -24,5 +25,6 @@ vendor/bin/FFMPEG_AUDIT.json
 !vendor/bin/*.dylib
 !vendor/bin/FFMPEG_AUDIT.json
 !vendor/bin/WHISPER_AUDIT.json
+!vendor/bin/MARKITDOWN_LICENSE.txt
 vendor/models/*
 !vendor/models/README.md

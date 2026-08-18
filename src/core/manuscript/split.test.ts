@@ -54,14 +54,14 @@ describe("manuscript chapter splitting", () => {
 
   it("recognizes Markdown chapter headings and keeps the marker out of the body", () => {
     const chapters = splitManuscript(
-      "# Chapter 1\n\nThe Bridgertons are the most prolific family in London.\n\n## Chapter 2\n\nThe next story begins.",
+      "# Chapter 1\n\n## The opening scene\n\nThe Bridgertons are the most prolific family in London.\n\n## Chapter 2\n\nThe next story begins.",
     );
 
     expect(chapters.map((chapter) => chapter.title)).toEqual(["Chapter 1", "Chapter 2"]);
-    expect(chapters.map((chapter) => chapter.text)).toEqual([
-      "The Bridgertons are the most prolific family in London.",
-      "The next story begins.",
-    ]);
+    expect(chapters[0].text).toContain("The opening scene");
+    expect(chapters[0].text).not.toContain("# The opening scene");
+    expect(chapters[0].text).toContain("The Bridgertons are the most prolific family in London.");
+    expect(chapters[1].text).toBe("The next story begins.");
     expect(chapters[0].text).not.toContain("# Chapter 1");
   });
 

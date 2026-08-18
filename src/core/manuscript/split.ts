@@ -41,6 +41,13 @@ export interface PastedChapter {
   text: string;
 }
 
+/** Replace Markdown heading markers with same-length spaces for clean display. */
+export function hideMarkdownHeadingMarkers(source: string): string {
+  return source
+    .replace(/^(#{1,6})(?=[\t ]+)/gmu, (markers) => " ".repeat(markers.length))
+    .replace(/([\t ]+)(#{1,6})(?=[\t ]*$)/gmu, (_match, spacing, markers) => `${spacing}${" ".repeat(markers.length)}`);
+}
+
 interface Heading {
   lineIndex: number;
   title: string;
@@ -67,7 +74,7 @@ export function splitManuscript(
   source: string,
   options: SplitManuscriptOptions = {},
 ): ManuscriptChapter[] {
-  const normalized = source.replace(/\r\n?/g, "\n");
+  const normalized = hideMarkdownHeadingMarkers(source.replace(/\r\n?/g, "\n"));
   if (normalized.trim().length === 0) {
     return [];
   }

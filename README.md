@@ -33,6 +33,11 @@ The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
 flags remain disabled in this pre-release until that path can meet the
 high-precision/auto-dim requirement without crying wolf.
 
+Rich manuscript imports use Microsoft's offline [MarkItDown](https://github.com/microsoft/markitdown)
+helper in release installers, with the built-in Kosmos parser as a safe
+fallback. Source builds can point to a local helper with `MARKITDOWN_PATH`;
+plain-text and Markdown chapter parsing remain local and deterministic.
+
 This is a pre-release development build. Release packaging stages the audited
 FFmpeg/ffprobe and whisper.cpp runtimes plus the checksum-verified `small.en`
 model inside the application. Source builds may still override those tools for
@@ -106,7 +111,9 @@ npm run package:win   # on Windows
 ```
 
 The packaging commands fetch and verify the pinned official Whisper model as a
-build asset before creating the installer. End users do not run that step.
+build asset before creating the installer. Release CI also bundles MarkItDown
+and its DOCX/PDF conversion dependencies; end users do not run either setup
+step.
 
 ## License
 

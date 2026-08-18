@@ -40,6 +40,33 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Set up Python for Microsoft MarkItDown
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build bundled Microsoft MarkItDown helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade \
+            'markitdown[docx,pdf]==0.1.6' \
+            'pyinstaller==6.22.2'
+          mkdir -p vendor/bin
+          PYINSTALLER_CONFIG_DIR="$RUNNER_TEMP/pyinstaller" \
+            pyinstaller \
+              --noconfirm \
+              --clean \
+              --onefile \
+              --collect-data magika \
+              --name markitdown \
+              --distpath vendor/bin \
+              --workpath "$RUNNER_TEMP/markitdown-build" \
+              --specpath "$RUNNER_TEMP/markitdown-spec" \
+              scripts/markitdown_cli.py
+          chmod +x vendor/bin/markitdown* || true
+
       - name: Install JavaScript dependencies
         # electron-builder needs Electron's downloaded runtime in a clean
         # runner; --ignore-scripts leaves that runtime absent.
@@ -211,6 +238,14 @@ jobs:
             vendor/bin/ffprobe.exe -version >/dev/null
             vendor/bin/whisper-cli.exe --version >/dev/null
           fi
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            test -x vendor/bin/markitdown
+            vendor/bin/markitdown --help >/dev/null
+          else
+            test -f vendor/bin/markitdown.exe
+            vendor/bin/markitdown.exe --help >/dev/null
+          fi
+          test -s vendor/bin/MARKITDOWN_LICENSE.txt
           npm run audit:runtime
 
       - name: Prepare verified Whisper model

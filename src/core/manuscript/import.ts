@@ -1,5 +1,6 @@
 import { strFromU8, unzipSync } from "fflate";
 import type { ScriptSpan } from "../project/types";
+import { hideMarkdownHeadingMarkers } from "./split";
 
 export type ManuscriptFormat = "txt" | "md" | "docx" | "epub" | "pdf";
 
@@ -66,7 +67,7 @@ function unzipManuscript(
 }
 
 export function fromPlainText(text: string, format: "txt" | "md" | "pdf" = "txt"): ImportedManuscript {
-  const normalized = text.replace(/^\uFEFF/u, "").replace(/\r\n?/g, "\n");
+  const normalized = hideMarkdownHeadingMarkers(text.replace(/^\uFEFF/u, "").replace(/\r\n?/g, "\n"));
   const baseSpan: ScriptSpan = { text: normalized, seat: "narration", style: [] };
   return {
     format,

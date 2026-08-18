@@ -40,6 +40,21 @@ describe("teleprompter model", () => {
     expect(lines.map((line) => line.text)).toEqual(["first", "", "second"]);
   });
 
+  it("hides Markdown heading markers from existing teleprompter documents", () => {
+    const lines = buildPromptLines([
+      { text: "# Chapter 1\n## Scene", seat: "narration", style: [] },
+    ]);
+
+    expect(lines.map((line) => line.text)).not.toEqual(expect.arrayContaining([
+      expect.stringContaining("#"),
+    ]));
+    expect(lines.map((line) => line.text)).toEqual([
+      expect.stringContaining("Chapter 1"),
+      expect.stringContaining("Scene"),
+    ]);
+    expect(lines.flatMap((line) => line.segments).map((segment) => segment.text).join("")).not.toContain("#");
+  });
+
   it("does not merge dialogue and narration segments when their visual style matches", () => {
     const lines = buildPromptLines([
       { text: "Before ", seat: "narration", style: [] },

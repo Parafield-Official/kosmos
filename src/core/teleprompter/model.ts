@@ -1,4 +1,5 @@
 import type { ChapterFile, GlossaryEntry, ScriptSpan } from "../project/types";
+import { hideMarkdownHeadingMarkers } from "../manuscript/split";
 
 export type PromptSegment = ScriptSpan;
 export type PromptTheme = "dark" | "sepia" | "cream";
@@ -142,10 +143,25 @@ export function buildPromptLines(spans: ScriptSpan[]): PromptLine[] {
   while (lines.length > 1 && lines.at(-1)?.text.length === 0) {
     lines.pop();
   }
+  lines.forEach(hidePromptHeadingMarkers);
   lines.forEach((line, index) => {
     line.index = index;
   });
   return lines;
+}
+
+function hidePromptHeadingMarkers(line: PromptLine): void {
+  const safeText = hideMarkdownHeadingMarkers(line.text);
+  if (safeText === line.text) {
+    return;
+  }
+  let offset = 0;
+  line.segments = line.segments.map((segment) => {
+    const text = safeText.slice(offset, offset + segment.text.length);
+    offset += segment.text.length;
+    return { ...segment, text };
+  });
+  line.text = safeText;
 }
 
 export function clampFontSize(value: number): number {

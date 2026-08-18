@@ -1,10 +1,14 @@
 # Release runtime assets
 
-Release builds use the platform-specific `ffmpeg`, `ffprobe`, and
-`whisper-cli` binaries in this directory. The macOS arm64 runtime is staged
+Release builds use the platform-specific `ffmpeg`, `ffprobe`, `whisper-cli`,
+and `markitdown` helpers in this directory. The macOS arm64 runtime is staged
 for the private release repository so a clean clone can build and test the
 same proof workflow. A source checkout may still override them with
-`FFMPEG_PATH`, `FFPROBE_PATH`, and `WHISPER_CLI_PATH`.
+`FFMPEG_PATH`, `FFPROBE_PATH`, `WHISPER_CLI_PATH`, and `MARKITDOWN_PATH`.
+
+`markitdown` is Microsoft's plugin-free, offline document converter. Release
+CI builds it from `scripts/markitdown_cli.py` with the pinned DOCX/PDF extras
+and includes its `MARKITDOWN_LICENSE.txt` notice beside the executable.
 
 Before `electron-builder` runs, `npm run audit:runtime` must pass. It requires
 `FFMPEG_LICENSE.txt`, executes both FFmpeg tools, rejects `--enable-gpl` and

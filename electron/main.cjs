@@ -10,6 +10,7 @@ const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand } = require("./process.cjs");
+const { convertWithMarkItDown } = require("./markitdown.cjs");
 const {
   assertProjectFolder,
   ensureProjectDirectory,
@@ -313,8 +314,22 @@ async function importTextFile(folder, project) {
     throw new Error(`Manuscript files must be regular files smaller than ${MAX_MANUSCRIPT_BYTES} bytes.`);
   }
   const manuscriptCore = loadCoreModule("manuscript");
+  const extension = path.extname(sourcePath).toLowerCase();
   let imported;
-  if (path.extname(sourcePath).toLowerCase() === ".pdf") {
+  const convertedMarkdown = await convertWithMarkItDown({
+    sourcePath,
+    extension,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    cwd: process.cwd(),
+    requireBundled: app.isPackaged,
+  });
+  if (convertedMarkdown) {
+    imported = {
+      ...manuscriptCore.fromPlainText(convertedMarkdown, "md"),
+      format: extension.replace(/^\./u, ""),
+    };
+  } else if (extension === ".pdf") {
     let extracted;
     try {
       extracted = await runCommand(resolveRuntimeBinary({
