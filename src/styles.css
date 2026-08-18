@@ -74,17 +74,6 @@ button {
   text-transform: uppercase;
 }
 
-.local-badge {
-  margin-left: auto;
-  padding: 7px 11px;
-  border: 1px solid rgba(155, 207, 166, 0.26);
-  border-radius: 999px;
-  color: #b9ddc0;
-  background: rgba(101, 161, 114, 0.11);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .welcome-panel {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
@@ -131,40 +120,6 @@ button {
   color: #655b53;
   font-size: 17px;
   line-height: 1.65;
-}
-
-.privacy-note {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  max-width: 580px;
-  padding: 14px 16px;
-  border: 1px solid #d8d0c4;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.44);
-}
-
-.privacy-note p {
-  margin: 0;
-  color: #6c6259;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.privacy-note strong {
-  color: #342d27;
-}
-
-.privacy-icon {
-  display: grid;
-  width: 29px;
-  height: 29px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 50%;
-  color: #315c3b;
-  background: #d5e3d6;
-  font-weight: 800;
 }
 
 .actions {
@@ -268,15 +223,6 @@ button {
   color: #958b82;
   font-size: 12px;
   line-height: 1.5;
-}
-
-footer {
-  max-width: 1240px;
-  margin: 17px auto 0;
-  color: #827b74;
-  font-size: 11px;
-  letter-spacing: 0.05em;
-  text-align: center;
 }
 
 .project-shell {
@@ -1761,17 +1707,6 @@ footer {
 
 .book-home-heading .phase-label {
   margin-bottom: 12px;
-}
-
-.folder-path {
-  max-width: 680px;
-  margin: 12px 0 0;
-  overflow: hidden;
-  color: #85796f;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .compact-button {

@@ -129,18 +129,16 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <AppHeader eyebrow="Offline audiobook workspace" title="Booth Desk" />
+      <AppHeader eyebrow="Audiobook workspace" title="Booth Desk" />
 
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
-          <p className="phase-label">Phase 0 · Foundation</p>
-          <h2 id="welcome-title">Keep the page and the take together.</h2>
+          <p className="phase-label">Start here</p>
+          <h2 id="welcome-title">Make your next chapter sound right.</h2>
           <p className="lede">
-            Create a project folder for one book. Booth Desk keeps its script,
-            human recordings, pickups, and ACX checks together on disk.
+            Bring your manuscript, recordings, notes, and final audio together
+            in one simple book workspace.
           </p>
-
-          <PrivacyNote />
 
           <div className="actions" aria-label="Project actions">
             <button
@@ -149,7 +147,7 @@ export function App() {
               disabled={busy}
               onClick={() => void chooseProject("new")}
             >
-              {busy ? "Opening…" : "New project"}
+              {busy ? "Opening…" : "Create a book"}
             </button>
             <button
               className="secondary-button"
@@ -157,36 +155,34 @@ export function App() {
               disabled={busy}
               onClick={() => void chooseProject("open")}
             >
-              Open project
+              Open a book
             </button>
           </div>
           {error ? <p className="error-note">{error}</p> : null}
         </div>
 
-        <aside className="desk-card" aria-label="What Booth Desk checks">
-          <p className="card-kicker">Built for the handoff</p>
-          <h3>Manuscript → pickups → ACX pack</h3>
+        <aside className="desk-card" aria-label="Your audiobook workflow">
+          <p className="card-kicker">What you can do</p>
+          <h3>From manuscript to finished audio</h3>
           <ol>
             <li>
               <span>01</span>
-              Attach the page and the chapter take.
+              Add your manuscript and recordings.
             </li>
             <li>
               <span>02</span>
-              Find words that do not match the page.
+              Review words, pauses, and pickups.
             </li>
             <li>
               <span>03</span>
-              Check measurable ACX requirements.
+              Check the audio before you share it.
             </li>
           </ol>
           <p className="honesty-copy">
-            Word mismatches and long pauses only. Listen once for acting and noise.
+            You stay in control of every read and every edit.
           </p>
         </aside>
       </section>
-
-      <AppFooter />
     </main>
   );
 }
@@ -406,7 +402,7 @@ function ProjectHome({
       .catch((reason: unknown) => {
         if (!disposed) {
           setIdentityLoaded(true);
-          setNotice(messageFor(reason, "Could not load the local collaborator identity."));
+          setNotice(messageFor(reason, "Could not load your role."));
         }
       });
     return () => {
@@ -430,7 +426,7 @@ function ProjectHome({
         }
         setNotice(
           `${result.chapters.length} ${result.chapters.length === 1 ? "chapter" : "chapters"} imported${result.format ? ` from ${result.format.toUpperCase()}` : ""}. `
-          + `${result.project.glossary?.length ?? 0} glossary candidates need a human check.`,
+          + `${result.project.glossary?.length ?? 0} pronunciation entries are ready to review.`,
         );
       }
     });
@@ -474,7 +470,7 @@ function ProjectHome({
 
   async function loadExample() {
     if (!window.boothDesk || folder === "(browser preview)") {
-      setNotice("The packaged proof fixture is available in the desktop app.");
+      setNotice("Example chapters are available in the desktop app.");
       return;
     }
     await runAction("example", async () => {
@@ -485,7 +481,7 @@ function ProjectHome({
       pendingTranscriptRef.current = { chapterId: result.chapter.id, text: result.transcriptText };
       onChange({ folder: result.folder, project: result.project });
       setSelectedChapterId(result.chapter.id);
-      setNotice("Proof fixture loaded. Click Proof chapter to find the deliberate on → in substitution.");
+      setNotice("Example chapter added. Click Check chapter to see how word review works.");
     });
   }
 
@@ -506,14 +502,14 @@ function ProjectHome({
 
   async function attachDuetTrack(kind: "bed" | "overdub") {
     if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
-      setNotice("Duet track attachment is available in the desktop app after switching to duet mode.");
+      setNotice("Switch to two-person mode before adding both recordings.");
       return;
     }
     await runAction(`duet-${kind}`, async () => {
       const result = await window.boothDesk?.attachDuetTrack({ ...envelope, chapterId: selectedChapter.id, kind });
       if (result) {
         onChange(result);
-        setNotice(`${kind === "bed" ? "N1 bed" : "N2 overdub"} attached at ${result.audioPath}.`);
+        setNotice(`${kind === "bed" ? "Narrator 1" : "Narrator 2"} recording added.`);
       }
     });
   }
@@ -568,21 +564,21 @@ function ProjectHome({
 
   async function runRoomCheck() {
     if (!project.room_test_path || !window.boothDesk || folder === "(browser preview)") {
-      setNotice("Record a room test before measuring it.");
+      setNotice("Record a few seconds of silence before checking the room.");
       return;
     }
     const bridge = window.boothDesk;
     await runAction("room-meter", async () => {
       const metadata = await bridge.audioMetadata({ folder, relativePath: project.room_test_path as string });
       if (!Number.isFinite(metadata.durationSeconds) || metadata.durationSeconds > 60) {
-        throw new Error("Room test audio must be 60 seconds or shorter before it can be measured.");
+        throw new Error("The room recording must be 60 seconds or shorter.");
       }
       const decoded = await bridge.decodeAudio({ folder, relativePath: project.room_test_path as string });
       if (!decoded) {
         return;
       }
       if (!Number.isFinite(decoded.durationSeconds) || decoded.durationSeconds > 60) {
-        throw new Error("Room test audio must be 60 seconds or shorter before it can be measured.");
+        throw new Error("The room recording must be 60 seconds or shorter.");
       }
       let speechRmsDbfs: number | undefined;
       if (selectedChapter?.audio_path) {
@@ -608,7 +604,7 @@ function ProjectHome({
 
   async function runProof(chapter: ChapterFile) {
     if (!chapter.audio_path) {
-      setNotice("Attach the chapter audio before proofing.");
+      setNotice("Add a chapter recording before checking it.");
       return;
     }
     if (chapterText.trim().length === 0) {
@@ -642,7 +638,7 @@ function ProjectHome({
         transcript = local.words;
         setTranscriptText(local.words.map((word) => word.text).join(" "));
       } else {
-        throw new Error("The browser preview cannot run local Whisper. Open the desktop build or paste a transcript.");
+        throw new Error("Audio checking is available in the desktop app. Paste a transcript here to continue.");
       }
       const result = alignTranscript({
         chapterId: chapter.id,
@@ -673,7 +669,7 @@ function ProjectHome({
       const pauseCount = pickups.filter((pickup) => pickup.kind === "pause").length;
       setNotice(
         pickups.length === 0
-          ? "No word mismatches or long pauses found in this transcript. Listen once for acting and noise."
+          ? "No word changes or long pauses found. Listen once for delivery and background noise."
           : `${mismatchCount > 0 ? `${mismatchCount} word ${mismatchCount === 1 ? "mismatch" : "mismatches"}` : "No word mismatches"}`
             + `${pauseCount > 0 ? `; ${pauseCount} long ${pauseCount === 1 ? "pause" : "pauses"}` : ""} found.`,
       );
@@ -689,7 +685,7 @@ function ProjectHome({
       const status = await window.boothDesk?.downloadModel();
       setModelAvailable(Boolean(status?.available));
       setModelProgress(1);
-      setNotice("Whisper is ready. Proof stays on this computer.");
+      setNotice("The speech model is ready.");
     });
   }
 
@@ -702,14 +698,14 @@ function ProjectHome({
       const result = await window.boothDesk?.exportAcx(envelope);
       if (result) {
         setExportResult(result);
-        setNotice(`ACX pack written to ${result.folder}. Review REPORT.txt and listen once.`);
+        setNotice("ACX export is ready. Review the report and listen once.");
       }
     });
   }
 
   async function exportMarkers() {
     if (!selectedChapter || !proof) {
-      setNotice("Run Proof chapter first so there are pickups to export.");
+      setNotice("Check the chapter first so there are review points to export.");
       return;
     }
     if (!window.boothDesk || folder === "(browser preview)") {
@@ -723,7 +719,7 @@ function ProjectHome({
         pickups: proof.pickups.filter((pickup) => pickup.status === "open"),
       });
       if (result) {
-        setNotice(`Audacity and Reaper markers written to ${result.folder}.`);
+        setNotice("Markers are ready to open in your audio editor.");
       }
     });
   }
@@ -779,8 +775,8 @@ function ProjectHome({
             : kind === "glossary"
               ? `Pronunciation clip saved to ${result.path}.`
             : kind === "room"
-              ? `Room test saved to ${result.path}.`
-              : `Chapter WAV saved and attached at ${result.path}.`,
+              ? "Room recording saved."
+              : "Chapter recording saved and attached.",
         );
       }
     });
@@ -788,7 +784,7 @@ function ProjectHome({
 
   async function applyPunchRecordingWav(wavBase64: string, pickup: Pickup): Promise<boolean> {
     if (!window.boothDesk || folder === "(browser preview)" || !selectedChapter) {
-      throw new Error("Punch splicing is available in the desktop app with an attached chapter take.");
+      throw new Error("Add a chapter recording before creating a pickup.");
     }
     return runAction("punch", async () => {
       const result = await window.boothDesk?.applyPunchRecording({
@@ -802,7 +798,7 @@ function ProjectHome({
       });
       if (result) {
         onChange(result);
-        setNotice(`Punch applied to a new edited take at ${result.editedPath}. The raw take remains at ${selectedChapter.raw_audio_path || selectedChapter.audio_path}.`);
+        setNotice("Pickup applied to a new edited take. The original recording is unchanged.");
       }
     });
   }
@@ -855,21 +851,20 @@ function ProjectHome({
         await window.boothDesk.setIdentity(nextIdentity);
       }
       setIdentity(nextIdentity);
-      setNotice("Your local role is saved. It is kept outside the shared project folder.");
+      setNotice("Your role is saved.");
     });
   }
 
   async function shareProject() {
     if (!window.boothDesk || folder === "(browser preview)") {
-      setNotice("Collaborator ZIP export is available in the desktop app.");
+      setNotice("Book sharing is available in the desktop app.");
       return;
     }
     await runAction("share", async () => {
       const result = await window.boothDesk?.shareZip({ ...envelope, lightPack });
       if (result) {
         setNotice(
-          `${lightPack ? "Light " : "Full "}collaborator pack written: ${result.outputPath} `
-          + `(${result.fileCount} files).`,
+          `${lightPack ? "Smaller" : "Full"} shareable copy ready (${result.fileCount} files).`,
         );
       }
     });
@@ -896,9 +891,7 @@ function ProjectHome({
           setProof(null);
         }
       }
-      setNotice(mode === "duet"
-        ? "Duet mode is on: N1 and N2 keep their voices inside every POV."
-        : "Solo mode is on: every script span is assigned to narration and stale seat proof was cleared.");
+      setNotice(mode === "duet" ? "Two-person mode is on." : "Solo mode is on.");
     });
   }
 
@@ -912,19 +905,19 @@ function ProjectHome({
       if (patch.teleprompter_theme !== undefined) {
         setPromptTheme(settings.teleprompter_theme);
       }
-      setNotice("Project settings saved locally.");
+      setNotice("Preferences saved.");
     });
   }
 
   async function shareSeatPack(seat: "N1" | "N2") {
     if (!window.boothDesk || folder === "(browser preview)") {
-      setNotice("Seat-pack export is available in the desktop app.");
+      setNotice("Voice-specific sharing is available in the desktop app.");
       return;
     }
     await runAction(`seat-pack-${seat}`, async () => {
       const result = await window.boothDesk?.shareSeatPack({ ...envelope, seat });
       if (result) {
-        setNotice(`${seat} seat pack written to ${result.outputPath} (${result.fileCount} files).`);
+        setNotice(`${seat === "N1" ? "Narrator 1" : "Narrator 2"} shareable copy ready (${result.fileCount} files).`);
       }
     });
   }
@@ -1017,7 +1010,7 @@ function ProjectHome({
 
   async function saveNote() {
     if (!selectedChapter || !identity) {
-      setNotice("Choose your local identity before adding a chapter note.");
+      setNotice("Choose your role before adding a chapter note.");
       return;
     }
     await runAction("chapter-note", async () => {
@@ -1034,7 +1027,7 @@ function ProjectHome({
 
   async function changeAuthorStatus(status: AuthorStatus) {
     if (!selectedChapter || !identity) {
-      setNotice("Choose an author identity before changing chapter status.");
+      setNotice("Choose an author role before changing chapter status.");
       return;
     }
     await runAction(`status-${status}`, async () => {
@@ -1071,7 +1064,7 @@ function ProjectHome({
 
   async function splitSelectedChapter() {
     if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
-      setNotice("Manual file splitting is available in the desktop app.");
+      setNotice("Chapter editing is available in the desktop app.");
       return;
     }
     await runAction("chapter-split", async () => {
@@ -1085,14 +1078,14 @@ function ProjectHome({
         onChange(result);
         setSelectedChapterId(result.chapter.id);
         setChapterManagerOpen(false);
-        setNotice("Chapter split. Styles and seats were preserved on both sides.");
+        setNotice("Chapter split.");
       }
     });
   }
 
   async function mergeSelectedWithNext() {
     if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
-      setNotice("Manual file merging is available in the desktop app.");
+      setNotice("Chapter editing is available in the desktop app.");
       return;
     }
     const ordered = [...project.chapters].sort((left, right) => left.index - right.index);
@@ -1114,18 +1107,18 @@ function ProjectHome({
         setProof(null);
         setAcxReport(null);
         setChapterManagerOpen(false);
-        setNotice(`Chapters merged. The removed chapter source remains at ${result.preservedSourcePath}.`);
+        setNotice("Chapters merged.");
       }
     });
   }
 
   async function applyChapterSeat() {
     if (!selectedChapter || !window.boothDesk || folder === "(browser preview)") {
-      setNotice("Seat assignment is available in the desktop app.");
+      setNotice("Voice assignment is available in the desktop app.");
       return;
     }
     if (project.mode === "solo" && chapterSeat !== "narration") {
-      setNotice("Solo projects can use only the narration seat. Switch to duet mode first.");
+      setNotice("Switch to two-person mode to assign more than one voice.");
       return;
     }
     await runAction("chapter-seat", async () => {
@@ -1139,7 +1132,7 @@ function ProjectHome({
         setChapterReloadVersion((version) => version + 1);
         setProof(null);
         setAcxReport(null);
-        setNotice(`All spans in ${selectedChapter.title} are now assigned to ${chapterSeat}.`);
+        setNotice(`All sections in ${selectedChapter.title} are assigned to ${chapterSeat}.`);
       }
     });
   }
@@ -1161,7 +1154,7 @@ function ProjectHome({
         setProof(null);
         setAcxReport(null);
       }
-      setNotice(`Span ${index + 1} is assigned to ${seat}.`);
+      setNotice(`Section ${index + 1} is assigned to ${seat}.`);
     });
   }
 
@@ -1194,7 +1187,7 @@ function ProjectHome({
 
   return (
     <main className="app-shell project-shell">
-      <AppHeader eyebrow="Book home" title={project.name}>
+      <AppHeader eyebrow="Your book" title={project.name}>
         <button className="text-button" type="button" disabled={busyAction !== null} onClick={onClose}>
           Close project
         </button>
@@ -1203,11 +1196,10 @@ function ProjectHome({
       <section className="book-home" aria-labelledby="book-home-title">
         <div className="book-home-heading">
           <div>
-            <p className="phase-label">Project folder</p>
+            <p className="phase-label">Book</p>
             <h2 id="book-home-title">
               {activePanel === "chapters" ? "Chapters" : activePanel === "glossary" ? "Glossary" : activePanel === "collaboration" ? "Collaboration" : "Settings"}
             </h2>
-            <p className="folder-path">{folder}</p>
           </div>
           <div className="heading-actions">
             <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setComposerOpen(true)}>
@@ -1235,10 +1227,10 @@ function ProjectHome({
               disabled={busyAction !== null}
               onClick={() => void shareProject()}
             >
-              {busyAction === "share" ? "Preparing ZIP…" : "Share project ZIP"}
+              {busyAction === "share" ? "Preparing…" : "Share book"}
             </button>
             <button className="compact-button" type="button" disabled={busyAction !== null} onClick={() => setRoomTestOpen(true)}>
-              Room test
+              Room check
             </button>
           </div>
         </div>
@@ -1263,12 +1255,12 @@ function ProjectHome({
           <section className="phase-panel room-test-panel" aria-labelledby="room-test-title">
             <header className="panel-heading">
               <div>
-                <p className="card-kicker">Before recording a book</p>
-                <h3 id="room-test-title">Room test</h3>
+                <p className="card-kicker">Before you record</p>
+                <h3 id="room-test-title">Room check</h3>
               </div>
               <button className="table-action" type="button" onClick={() => setRoomTestOpen(false)}>Close</button>
             </header>
-            <p className="panel-honesty">Record 10–20 seconds of intended silence. If the predicted floor fails after the RMS boost, treat the room; no plugin can save a bathroom.</p>
+            <p className="panel-honesty">Record 10–20 seconds of silence to check the room before you begin.</p>
             <RecorderPanel
               label="Room tone recorder"
               disabled={!window.boothDesk || busyAction !== null}
@@ -1341,7 +1333,7 @@ function ProjectHome({
               disabled={busyAction !== null}
               onClick={() => void loadExample()}
             >
-              {busyAction === "example" ? "Loading fixture…" : "Try the proof fixture"}
+              {busyAction === "example" ? "Loading example…" : "Try an example chapter"}
             </button>
           </div>
         ) : (
@@ -1393,7 +1385,7 @@ function ProjectHome({
 
       {exportResult ? (
         <p className="export-summary">
-          Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} · REPORT.txt included
+          Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} ready
         </p>
       ) : null}
 
@@ -1461,7 +1453,7 @@ function ProjectHome({
       {punchPickup ? (
         <div className="modal-backdrop" role="presentation">
           <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="punch-title">
-            <p className="phase-label">One-line punch clip</p>
+            <p className="phase-label">Pickup recording</p>
             <h2 id="punch-title">{punchPickup.expected || "Pickup"}</h2>
             <p className="manager-help">Record the replacement line. Booth Desk saves a separate WAV; the original chapter take remains untouched.</p>
             <RecorderPanel
@@ -1482,9 +1474,9 @@ function ProjectHome({
       {glossaryRecording ? (
         <div className="modal-backdrop" role="presentation">
           <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="glossary-record-title">
-            <p className="phase-label">Pronunciation clip</p>
+            <p className="phase-label">Pronunciation recording</p>
             <h2 id="glossary-record-title">{glossaryRecording.spelling}</h2>
-            <p className="manager-help">Say the spelling naturally for 3–10 seconds. Booth Desk stores your human clip locally; it never generates a voice.</p>
+            <p className="manager-help">Say the word naturally for 3–10 seconds so everyone can hear the intended pronunciation.</p>
             <RecorderPanel
               label={`Pronunciation for ${glossaryRecording.spelling}`}
               disabled={!window.boothDesk || busyAction !== null}
@@ -1500,7 +1492,6 @@ function ProjectHome({
         </div>
       ) : null}
 
-      <footer>Project data is stored in this folder · schema {project.schema}</footer>
     </main>
   );
 }
@@ -1675,7 +1666,7 @@ function Teleprompter({
       return;
     }
     if (!window.boothDesk?.transcribeBuffer) {
-      setLiveError("Live flags are available in the desktop build only.");
+      setLiveError("Word checks are available in the desktop app.");
       setLiveStatus("error");
       return;
     }
@@ -1684,7 +1675,7 @@ function Teleprompter({
     setLiveStatus("starting");
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("This desktop build does not expose a microphone input.");
+        throw new Error("Microphone access is not available in this app window.");
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
@@ -1730,7 +1721,7 @@ function Teleprompter({
       setLiveStatus("listening");
     } catch (reason) {
       stopLiveCapture();
-      setLiveError(messageFor(reason, "Microphone permission or live flags failed."));
+      setLiveError(messageFor(reason, "Microphone access or word checks failed."));
       setLiveStatus("error");
     } finally {
       liveStartingRef.current = false;
@@ -1766,7 +1757,7 @@ function Teleprompter({
       const dimmedState = { ...nextState, enabled: false };
       liveStateRef.current = dimmedState;
       setLiveState(dimmedState);
-      setLiveError("Flags paused — too many false alarms. Undo to try again.");
+      setLiveError("Word checks paused after a few false alarms. Try again when you are ready.");
     }
   }
 
@@ -1807,7 +1798,7 @@ function Teleprompter({
     <div className={`teleprompter-overlay teleprompter-${theme}`}>
       <header className="teleprompter-toolbar">
         <div>
-          <p className="card-kicker">Manual scroll · human voice</p>
+          <p className="card-kicker">Teleprompter</p>
           <h2>{title}</h2>
         </div>
         <div className="teleprompter-controls">
@@ -1819,26 +1810,26 @@ function Teleprompter({
               <option value="cream">Cream</option>
             </select>
           </label>
-          <label className="teleprompter-checkbox" title="Listen-only ASR stays on this computer and is never saved as a recording"><input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} /> Live flags (experimental)</label>
+          <label className="teleprompter-checkbox" title="Get a gentle alert when the words you read may not match the page"><input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} /> Check my words</label>
           <button type="button" onClick={onClose}>Close</button>
         </div>
       </header>
       <div className="teleprompter-honesty">
         {liveState.dimmed
-          ? "Flags paused — too many false alarms."
+          ? "Word checks paused after a few false alarms."
           : liveState.enabled
-            ? `Listen-only ASR is ${liveStatus === "processing" ? "checking a local window" : "active"}; nothing is saved. Manual scrolling remains in control.`
-            : "Flags are off so they do not cry wolf. Turn them on when you trust the script; audio stays local and is not recorded."}
-        {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Undo auto-dim</button> : null}
+            ? `${liveStatus === "processing" ? "Checking your words…" : "Checking your words as you read."} Manual scrolling stays in your hands.`
+            : "Turn on word checks if you would like a little help while reading."}
+        {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
         {liveStatus === "error" && liveError ? <strong className="teleprompter-glossary-hint" role="alert">{liveError}</strong> : null}
         {glossaryHint ? <strong className="teleprompter-glossary-hint" role="status">{glossaryHint}</strong> : null}
       </div>
       {liveFlag ? (
         <div className="teleprompter-live-flag" role="alert">
-          <strong>Possible live mismatch</strong>
+          <strong>Check this line</strong>
           <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
-          <button type="button" onClick={() => decideLiveFlag(true)}>Keep flag</button>
-          <button type="button" onClick={() => decideLiveFlag(false)}>False alarm</button>
+          <button type="button" onClick={() => decideLiveFlag(true)}>Mark as issue</button>
+          <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
         </div>
       ) : null}
       <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
@@ -1964,10 +1955,10 @@ function RecorderPanel({
     setError(null);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("This desktop build does not expose a microphone input.");
+        throw new Error("Microphone access is not available in this app window.");
       }
       if (typeof MediaRecorder === "undefined") {
-        throw new Error("This desktop build does not expose a local recorder.");
+        throw new Error("Recording is not available in this app window.");
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!mountedRef.current) {
@@ -2184,7 +2175,7 @@ function RecorderPanel({
     <section className="recorder-panel" aria-label={label}>
       <div className="recorder-heading">
         <div>
-          <p className="card-kicker">DIY only · local microphone</p>
+          <p className="card-kicker">Recording</p>
           <h4>{label}</h4>
         </div>
         <time>{formatTime(seconds)}</time>
@@ -2204,7 +2195,7 @@ function RecorderPanel({
       </div>
       {status === "review" && pendingUrl ? (
         <div className="recorder-review">
-          <p className="card-kicker">Listen before writing the project</p>
+          <p className="card-kicker">Review your take</p>
           <audio controls preload="metadata" src={pendingUrl} />
           <div className="recorder-review-actions">
             <button type="button" className="primary-button" onClick={() => void confirmTake()}>Use this take</button>
@@ -2213,7 +2204,7 @@ function RecorderPanel({
         </div>
       ) : null}
       <p className="recorder-honesty">
-        No mic access is requested until Record. Stop opens a local review; Booth Desk writes a 44.1 kHz mono WAV only after you confirm. DAW multitrack work stays in Reaper.
+        Listen before saving. You can keep this take or record another one.
       </p>
       {error ? <p className="recorder-error">{error}</p> : null}
     </section>
@@ -2291,7 +2282,7 @@ function ChapterManager({
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="chapter-composer chapter-manager" role="dialog" aria-modal="true" aria-labelledby="manager-title">
-        <p className="phase-label">Manual manuscript controls</p>
+        <p className="phase-label">Edit chapter</p>
         <h2 id="manager-title">{chapter.title}</h2>
         <label htmlFor="manager-title-input">Rename chapter</label>
         <div className="manager-inline">
@@ -2307,7 +2298,7 @@ function ChapterManager({
           readOnly
           onSelect={(event) => onSplitOffset(event.currentTarget.selectionStart ?? 0)}
         />
-        <p className="manager-help">Split offset: {splitOffset} / {text.length}. The operation preserves span styles and seat assignments.</p>
+        <p className="manager-help">Choose where the next chapter should begin.</p>
         <label htmlFor="manager-second-title">New chapter title</label>
         <input id="manager-second-title" value={splitTitle} onChange={(event) => onSplitTitle(event.target.value)} />
         <button type="button" disabled={busyAction !== null || splitOffset <= 0 || splitOffset >= text.length} onClick={onSplit}>
@@ -2315,7 +2306,7 @@ function ChapterManager({
         </button>
 
         <div className="manager-divider" />
-        <label htmlFor="manager-seat">Assign this chapter’s spans to a seat</label>
+        <label htmlFor="manager-seat">Choose who reads this chapter</label>
         <div className="manager-inline">
           <select id="manager-seat" value={seat} onChange={(event) => onSeat(event.target.value as "narration" | "N1" | "N2")}>
             <option value="narration">Narration</option>
@@ -2324,7 +2315,7 @@ function ChapterManager({
           </select>
           <button type="button" disabled={busyAction !== null} onClick={onApplySeat}>Apply seat</button>
         </div>
-        <p className="manager-help">This applies one seat to every span; use the chapter desk for finer span painting. Solo mode persists narration only.</p>
+        <p className="manager-help">Use the chapter desk when different sections need different voices.</p>
 
         <button type="button" disabled={!nextChapter || busyAction !== null} onClick={onMerge}>
           {busyAction === "chapter-merge" ? "Merging…" : nextChapter ? `Merge with “${nextChapter.title}”` : "No following chapter to merge"}
@@ -2368,14 +2359,13 @@ function GlossaryPanel({
     <section className="phase-panel glossary-panel" aria-labelledby="glossary-panel-title">
       <header className="panel-heading">
         <div>
-          <p className="card-kicker">Offline, deterministic draft</p>
-          <h3 id="glossary-panel-title">Pronunciation bible</h3>
+          <p className="card-kicker">Pronunciation</p>
+          <h3 id="glossary-panel-title">Pronunciation guide</h3>
         </div>
         <span className="result-count">{glossary.length} entries</span>
       </header>
       <p className="panel-honesty">
-        We guessed names from capitals and uncommon spellings. Fix this list and record a clip for
-        anything a stranger would misread. An empty glossary is valid.
+        Add names and tricky words so everyone says them the same way.
       </p>
 
       <div className="glossary-add-row">
@@ -2485,14 +2475,13 @@ function SettingsPanel({
     <section className="phase-panel settings-panel" aria-labelledby="settings-title">
       <header className="panel-heading">
         <div>
-          <p className="card-kicker">Local project defaults</p>
-          <h3 id="settings-title">Settings that matter</h3>
+          <p className="card-kicker">Book preferences</p>
+          <h3 id="settings-title">Reading and audio</h3>
         </div>
-        <span className="status-pill attached">Saved in project.json</span>
+        <span className="status-pill attached">Saved</span>
       </header>
       <p className="panel-honesty">
-        These controls change local proofing and booth display behavior. ACX limits remain pinned to the versioned
-        <code> acx_spec.json</code> file.
+        Adjust how chapters are checked and how the teleprompter looks.
       </p>
       <div className="settings-grid">
         <label>
@@ -2502,7 +2491,7 @@ function SettingsPanel({
             <option value="default">Default · balanced</option>
             <option value="aggressive">Aggressive · merge nearby alerts</option>
           </select>
-          <small>Batch proof recall and live precision stay separate. Live flags are optional, local-only, and high-precision.</small>
+          <small>Controls how closely nearby alerts are grouped.</small>
         </label>
         <label>
           Pause threshold (seconds)
@@ -2528,14 +2517,14 @@ function SettingsPanel({
           <small>Manual Space/PageDown scrolling always remains available.</small>
         </label>
         <div className="settings-readonly">
-          <span>Export channels</span>
+          <span>Audio format</span>
           <strong>Mono (ACX default)</strong>
-          <small>Stereo export is intentionally not exposed until every file in a pack can stay stereo.</small>
+          <small>Used for chapter exports.</small>
         </div>
         <div className="settings-readonly">
-          <span>Live flags</span>
-          <strong>Off by default · enable in Teleprompter</strong>
-          <small>When enabled, a rolling microphone window is transcribed locally and discarded; it is never saved as a recording.</small>
+          <span>Word checks</span>
+          <strong>Off by default · turn on in Teleprompter</strong>
+          <small>Get a gentle alert when the words you read may not match the page.</small>
         </div>
       </div>
       <div className="settings-actions">
@@ -2603,20 +2592,19 @@ function CollaborationPanel({
     <section className="phase-panel collaboration-panel" aria-labelledby="collaboration-title">
       <header className="panel-heading">
         <div>
-          <p className="card-kicker">Folder handoff, no account</p>
-          <h3 id="collaboration-title">Author ↔ narrator</h3>
+          <p className="card-kicker">Work together</p>
+          <h3 id="collaboration-title">Author and narrator</h3>
         </div>
-        <span className="status-pill attached">{identity ? `${identity.personName} · ${identity.role}` : "Identity not set"}</span>
+        <span className="status-pill attached">{identity ? `${identity.personName} · ${identity.role}` : "Role not set"}</span>
       </header>
       <p className="panel-honesty">
-        This folder is the collaboration. Roles and work travel in project.json; “who I am” stays
-        only in this app’s local data.
+        Add your role so notes, approvals, and recordings stay clear for everyone.
       </p>
 
       <div className="collaboration-grid">
         <div className="collaboration-card">
-          <h4>Who am I on this computer?</h4>
-          {!identityLoaded ? <p>Loading local identity…</p> : null}
+          <h4>Your role</h4>
+          {!identityLoaded ? <p>Loading…</p> : null}
           <label>Name<input value={identityName} onChange={(event) => onIdentityName(event.target.value)} placeholder="Alex Author" /></label>
           <label>
             Role
@@ -2635,7 +2623,7 @@ function CollaborationPanel({
             </label>
           ) : null}
           <button type="button" disabled={busyAction !== null} onClick={onSaveIdentity}>
-            {busyAction === "identity" ? "Saving…" : "Save local identity"}
+            {busyAction === "identity" ? "Saving…" : "Save role"}
           </button>
           {project.people.length > 0 ? (
             <ul className="people-list">
@@ -2647,7 +2635,7 @@ function CollaborationPanel({
         </div>
 
         <div className="collaboration-card">
-          <h4>Share the project</h4>
+          <h4>Share the book</h4>
           <label>
             Voice mode
             <select value={project.mode} onChange={(event) => onMode(event.target.value as "solo" | "duet")}>
@@ -2657,11 +2645,11 @@ function CollaborationPanel({
           </label>
           <label className="checkbox-label">
             <input type="checkbox" checked={lightPack} onChange={(event) => onLightPack(event.target.checked)} />
-            Light pack: omit generated exports and unreferenced raw takes
+            Smaller copy: leave out exports and unused recordings
           </label>
           <p>Scripts, proof alignment, notes, project roles, and glossary clips stay included.</p>
           <button type="button" disabled={busyAction !== null} onClick={onShare}>
-            {busyAction === "share" ? "Preparing ZIP…" : "Zip project for collaborator"}
+            {busyAction === "share" ? "Preparing…" : "Create shareable copy"}
           </button>
           {project.mode === "duet" ? (
             <div className="status-actions">
@@ -2681,15 +2669,15 @@ function CollaborationPanel({
                   {project.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
                 </select>
               </label>
-              <p>Current author status: <strong>{selected?.author_status.replaceAll("_", " ")}</strong></p>
+              <p>Current status: <strong>{selected ? authorStatusLabel(selected.author_status) : "Draft"}</strong></p>
               <div className="status-actions">
                 {(["needs_pickup", "approved", "ignore_this_flag"] as const).map((status) => (
                   <button key={status} type="button" disabled={!authorCanApprove || busyAction !== null} onClick={() => onStatus(status)}>
-                    {status.replaceAll("_", " ")}
+                    {status === "needs_pickup" ? "Needs pickup" : status === "approved" ? "Approve" : "Ignore"}
                   </button>
                 ))}
               </div>
-              {!authorCanApprove ? <p className="permission-note">Narrators can read author status and notes, but cannot approve the book.</p> : null}
+              {!authorCanApprove ? <p className="permission-note">Narrators can read notes and status, but only authors can approve the book.</p> : null}
               <label>
                 Author note
                 <textarea rows={3} value={chapterNote} onChange={(event) => onChapterNote(event.target.value)} placeholder="That’s Leominster, LEM-ster." />
@@ -2728,9 +2716,9 @@ function ChapterTable({
           <tr>
             <th>#</th>
             <th>Title</th>
-            <th>Est.</th>
-            <th>Proof</th>
-            <th>ACX</th>
+            <th>Time</th>
+            <th>Review</th>
+            <th>Audio check</th>
             <th>Audio</th>
             <th>Author</th>
           </tr>
@@ -2755,7 +2743,7 @@ function ChapterTable({
               </td>
               <td>{chapter.estimated_duration_minutes ? `${chapter.estimated_duration_minutes.toFixed(1)}m` : "—"}</td>
               <td>{chapter.open_pickups === undefined ? "—" : `${chapter.open_pickups} open`}</td>
-              <td>{chapter.acx_traffic_light ? <span className={`traffic-light compact ${chapter.acx_traffic_light}`}>{chapter.acx_traffic_light}</span> : "—"}</td>
+              <td>{chapter.acx_traffic_light ? <span className={`traffic-light compact ${chapter.acx_traffic_light}`}>{checkStatusLabel(chapter.acx_traffic_light)}</span> : "—"}</td>
               <td>
                 <button
                   className="table-action"
@@ -2769,7 +2757,7 @@ function ChapterTable({
                   {chapter.audio_path ? "Replace" : "Attach"}
                 </button>
               </td>
-              <td>{chapter.author_status.replaceAll("_", " ")}</td>
+              <td>{authorStatusLabel(chapter.author_status)}</td>
             </tr>
           ))}
         </tbody>
@@ -2845,14 +2833,14 @@ function ChapterDesk({
     <article className="chapter-desk">
       <header className="chapter-desk-heading">
         <div>
-          <p className="card-kicker">Selected chapter</p>
+          <p className="card-kicker">Chapter</p>
           <h3>{chapter.title}</h3>
         </div>
         <div className="chapter-heading-tools">
           <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
             {chapter.audio_path ? "Audio attached" : "No audio"}
           </span>
-          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Manage script</button>
+          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onManage}>Edit chapter</button>
         </div>
       </header>
 
@@ -2866,26 +2854,25 @@ function ChapterDesk({
       <SpanSeatEditor spans={spans} projectMode={projectMode} disabled={busyAction !== null} onAssign={onAssignSpanSeat} />
 
       <div className="proof-input">
-        <label htmlFor="local-transcript">Local word transcript</label>
+        <label htmlFor="local-transcript">Transcript</label>
         <textarea
           id="local-transcript"
           rows={4}
           value={transcriptText}
           disabled={busyAction !== null}
           onChange={(event) => onTranscriptChange(event.target.value)}
-          placeholder="Leave blank to transcribe locally, or paste the words heard in the take…"
+          placeholder="Paste the words that were read, or leave blank to transcribe…"
         />
         <p>
-          Proof uses local Whisper when its model is installed. A pasted
-          transcript is an offline fixture/development fallback. Nothing is uploaded.
+          We compare this with the manuscript to find word changes and pauses.
         </p>
         {modelAvailable === false ? (
           <div className="model-note">
-            <span>Local Whisper model is not installed.</span>
+            <span>Speech model is not ready yet.</span>
             <button type="button" onClick={onDownloadModel} disabled={busyAction !== null}>
               {busyAction === "model"
                 ? `Downloading ${Math.round(modelProgress * 100)}%…`
-                : "Download locally"}
+                : "Download speech model"}
             </button>
           </div>
         ) : null}
@@ -2906,7 +2893,7 @@ function ChapterDesk({
           disabled={!chapter.audio_path || busyAction !== null}
           onClick={onProof}
         >
-          {busyAction === `proof-${chapter.id}` ? "Proofing…" : "Proof chapter"}
+          {busyAction === `proof-${chapter.id}` ? "Checking…" : "Check chapter"}
         </button>
         <button
           className="secondary-button"
@@ -2914,12 +2901,12 @@ function ChapterDesk({
           disabled={!chapter.audio_path || busyAction !== null}
           onClick={onMeasure}
         >
-          {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check ACX"}
+          {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
         </button>
       </div>
 
       <RecorderPanel
-        label="DIY chapter recorder"
+        label="Record this chapter"
         disabled={!window.boothDesk || busyAction !== null}
         onSave={onSaveRecording}
       />
@@ -2957,8 +2944,8 @@ function SpanSeatEditor({
   }
   return (
     <details className="span-seat-editor">
-      <summary>Assign dialogue / narration seats ({spans.length} spans)</summary>
-      <p>Paint a span by choosing N1 or N2. Solo projects can leave everything as narration.</p>
+      <summary>Choose who reads each section ({spans.length} sections)</summary>
+      <p>Choose a voice for each section of the chapter.</p>
       <ol>
         {spans.map((span, index) => (
           <li key={`${index}-${span.text.slice(0, 12)}`}>
@@ -2967,7 +2954,7 @@ function SpanSeatEditor({
               {span.text || "(line break)"}
             </span>
             <select
-              aria-label={`Seat for span ${index + 1}`}
+              aria-label={`Voice for section ${index + 1}`}
               value={span.seat}
               disabled={disabled}
               onChange={(event) => onAssign(index, event.target.value as "narration" | "N1" | "N2")}
@@ -3003,38 +2990,39 @@ function DuetTracksPanel({
     <section className="duet-tracks-panel" aria-labelledby="duet-tracks-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Phase 5 · async seats</p>
-          <h4 id="duet-tracks-title">Bed + overdub</h4>
+          <p className="card-kicker">Two-person recording</p>
+          <h4 id="duet-tracks-title">Two recordings</h4>
         </div>
-        <span className="result-count">{ready ? "Ready to mix" : "Two tracks needed"}</span>
+        <span className="result-count">{ready ? "Ready" : "Two recordings needed"}</span>
       </div>
       <p className="panel-honesty">
-        N1 is the bed and N2 is the overdub. Booth Desk maps the manuscript seats onto the shared timeline; it does not perform either part.
+        Add both voices to bring a two-person chapter together.
       </p>
       <div className="duet-track-grid">
         <div className="duet-track-card">
-          <strong>N1 bed</strong>
-          <span>{chapter.bed_audio_path ?? "Not attached"}</span>
-          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("bed")}>{chapter.bed_audio_path ? "Replace bed" : "Attach bed"}</button>
+          <strong>Narrator 1</strong>
+          <span>{chapter.bed_audio_path ?? "Not added"}</span>
+          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("bed")}>{chapter.bed_audio_path ? "Replace recording" : "Add recording"}</button>
         </div>
         <div className="duet-track-card">
-          <strong>N2 overdub</strong>
-          <span>{chapter.overdub_audio_path ?? "Not attached"}</span>
-          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("overdub")}>{chapter.overdub_audio_path ? "Replace overdub" : "Attach overdub"}</button>
+          <strong>Narrator 2</strong>
+          <span>{chapter.overdub_audio_path ?? "Not added"}</span>
+          <button type="button" disabled={busyAction !== null} onClick={() => onAttach("overdub")}>{chapter.overdub_audio_path ? "Replace recording" : "Add recording"}</button>
         </div>
       </div>
       <div className="duet-mix-actions">
-        <label>Narration seat
-            <select value={narrationSeat} disabled={busyAction !== null} onChange={(event) => onNarrationSeat(event.target.value as "N1" | "N2")}>
+        <label>
+          Main voice
+          <select value={narrationSeat} disabled={busyAction !== null} onChange={(event) => onNarrationSeat(event.target.value as "N1" | "N2")}>
             <option value="N1">N1</option>
             <option value="N2">N2</option>
           </select>
         </label>
         <button className="primary-button" type="button" disabled={!ready || busyAction !== null} onClick={() => void onMix()}>
-          {busyAction === "duet-mix" ? "Mixing…" : "Mix chapter + stems"}
+          {busyAction === "duet-mix" ? "Mixing…" : "Combine recordings"}
         </button>
       </div>
-      {chapter.duet_mix_path ? <p className="duet-output">Last mix: {chapter.duet_mix_path}<br />N1 stem: {chapter.n1_stem_path}<br />N2 stem: {chapter.n2_stem_path}</p> : null}
+      {chapter.duet_mix_path ? <p className="duet-output">Combined recording ready.</p> : null}
     </section>
   );
 }
@@ -3048,19 +3036,19 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onU
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Word mismatches + long pauses</p>
+          <p className="card-kicker">Review points</p>
           <h4 id="pickup-title">Pickups</h4>
         </div>
         <div className="result-heading-actions">
-          <label className="pickup-seat-filter">Seat
+          <label className="pickup-seat-filter">Voice
             <select value={seatFilter} disabled={busyAction !== null} onChange={(event) => onSeatFilter(event.target.value as "all" | "narration" | "N1" | "N2")}>
-              <option value="all">All</option>
+              <option value="all">All voices</option>
               <option value="narration">Narration</option>
-              <option value="N1">N1</option>
-              <option value="N2">N2</option>
+              <option value="N1">Narrator 1</option>
+              <option value="N2">Narrator 2</option>
             </select>
           </label>
-          <label className="pickup-seat-filter">Show
+          <label className="pickup-seat-filter">Status
             <select value={statusFilter} disabled={busyAction !== null} onChange={(event) => setStatusFilter(event.target.value as "open" | "all")}>
               <option value="open">Open</option>
               <option value="all">All</option>
@@ -3073,8 +3061,8 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onU
       {visiblePickups.length === 0 ? (
         <p className="result-empty">
           {statusFilter === "open" && seatPickups.some((pickup) => pickup.status !== "open")
-            ? "No open pickups in this filter. Switch Show to All to review completed or ignored lines."
-            : "No text mismatches found. Listen once for acting and noise."}
+            ? "No open review points for this voice. Change Status to All to see completed items."
+            : "No review points found. Listen once for delivery and background noise."}
         </p>
       ) : (
         <ul className="pickup-list">
@@ -3082,14 +3070,14 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onU
             <li key={pickup.id} className={`pickup-row ${pickup.status}`}>
               <span className="pickup-actions">
                 <button type="button" disabled={busyAction !== null} onClick={() => onPlay(pickup)}>Play</button>
-                {pickup.status === "open" ? <button type="button" disabled={busyAction !== null} onClick={() => onPunch(pickup)}>Punch</button> : null}
+                {pickup.status === "open" ? <button type="button" disabled={busyAction !== null} onClick={() => onPunch(pickup)}>Record pickup</button> : null}
                 {pickup.status === "open" ? (
                   <>
-                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "done" })}>Done</button>
+                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "done" })}>Resolved</button>
                     <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
                   </>
                 ) : (
-                  <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "open" })}>Reopen</button>
+                  <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "open" })}>Open again</button>
                 )}
               </span>
               <time>{formatTime(pickup.t_start)}</time>
@@ -3098,7 +3086,7 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onU
                 <span className="arrow" aria-hidden="true">→</span>
                 <span className="heard">{pickup.heard || "—"}</span>
               </div>
-              <span className="kind-badge">{pickup.kind}</span>
+              <span className="kind-badge">{pickup.kind === "pause" ? "Pause" : "Word"}</span>
               <details className="pickup-note">
                 <summary>{pickup.note ? "Edit note" : "Note"}</summary>
                 <PickupNoteEditor pickup={pickup} busy={busyAction !== null} onSave={(note) => onUpdate(pickup, { note })} />
@@ -3129,9 +3117,9 @@ function AcxMeter({ report }: { report: AcxReport }) {
     ["Noise floor", "≤ −60 dBFS", formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
     ["Sample rate", "44.1 kHz", `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
     ["Channels", "Mono or stereo", String(report.channels), report.checks.channels],
-    ["Format", "Known local format", report.format.toUpperCase(), report.checks.format],
+    ["Format", "Supported audio file", report.format.toUpperCase(), report.checks.format],
     [
-      "Bitrate / mode",
+      "Bitrate",
       "MP3 ≥ 192 kbps CBR",
       report.format === "mp3"
         ? `${report.bitrate_kbps?.toFixed(0) ?? "?"} kbps ${report.vbr === true ? "VBR" : report.vbr === false ? "CBR" : "mode unknown"}`
@@ -3147,16 +3135,16 @@ function AcxMeter({ report }: { report: AcxReport }) {
     <section className="result-panel" aria-labelledby="acx-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Measured locally</p>
+          <p className="card-kicker">Audio check</p>
           <h4 id="acx-title">ACX check</h4>
         </div>
         <span className={`traffic-light ${report.traffic_light}`}>
-          {report.traffic_light}
+          {checkStatusLabel(report.traffic_light)}
         </span>
       </div>
       <table className="meter-table">
         <thead>
-          <tr><th>Spec</th><th>Required</th><th>Measured</th><th /></tr>
+          <tr><th>Check</th><th>Target</th><th>Result</th><th /></tr>
         </thead>
         <tbody>
           {rows.map(([label, required, measured, status]) => (
@@ -3164,13 +3152,13 @@ function AcxMeter({ report }: { report: AcxReport }) {
               <td>{label}</td>
               <td>{required}</td>
               <td>{measured}</td>
-              <td><span className={`check-dot ${status}`}>{status}</span></td>
+              <td><span className={`check-dot ${status}`}>{checkStatusLabel(status)}</span></td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="meter-honesty">
-        Measurable specs only. ACX can still reject clicks, echo, or a wrong read.
+        These checks cover levels and format. Listen once for clicks and room noise.
       </p>
     </section>
   );
@@ -3181,20 +3169,20 @@ function RoomTestResult({ report }: { report: RoomTestReport }) {
     <section className="result-panel room-result" aria-labelledby="room-result-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Gain budget</p>
-          <h4 id="room-result-title">Room estimate</h4>
+          <p className="card-kicker">Room check</p>
+          <h4 id="room-result-title">Room noise</h4>
         </div>
-        <span className={`traffic-light ${report.status}`}>{report.status}</span>
+        <span className={`traffic-light ${report.status}`}>{checkStatusLabel(report.status)}</span>
       </div>
       <dl className="room-stats">
         <div><dt>Silence recorded</dt><dd>{report.durationSeconds.toFixed(1)} s</dd></div>
-        <div><dt>Noise floor RMS</dt><dd>{formatDb(report.noiseFloorDbfs)}</dd></div>
-        <div><dt>Speech RMS used</dt><dd>{formatDb(report.speechRmsDbfs)}</dd></div>
-        <div><dt>Needed boost</dt><dd>{report.neededBoostDb.toFixed(1)} dB</dd></div>
-        <div><dt>Predicted floor after boost</dt><dd>{formatDb(report.predictedFloorDbfs)}</dd></div>
+        <div><dt>Room noise</dt><dd>{formatDb(report.noiseFloorDbfs)}</dd></div>
+        <div><dt>Voice level</dt><dd>{formatDb(report.speechRmsDbfs)}</dd></div>
+        <div><dt>Boost needed</dt><dd>{report.neededBoostDb.toFixed(1)} dB</dd></div>
+        <div><dt>Noise after boost</dt><dd>{formatDb(report.predictedFloorDbfs)}</dd></div>
       </dl>
       <p className={`room-warning ${report.status}`}>{report.warning}</p>
-      <p className="meter-honesty">This is a room estimate, not a promise that a finished chapter will pass. Listen for HVAC, clicks, and echo.</p>
+      <p className="meter-honesty">Use this as a quick guide before recording. Listen for HVAC, clicks, and echo.</p>
     </section>
   );
 }
@@ -3219,8 +3207,8 @@ function ChapterComposer({
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="chapter-composer" role="dialog" aria-modal="true" aria-labelledby="composer-title">
-        <p className="phase-label">Plain text chapter</p>
-        <h2 id="composer-title">Paste chapter 1</h2>
+        <p className="phase-label">Add a chapter</p>
+        <h2 id="composer-title">Add chapter 1</h2>
         <label htmlFor="chapter-title">Title</label>
         <input id="chapter-title" value={title} onChange={(event) => onTitle(event.target.value)} />
         <label htmlFor="chapter-text">Manuscript</label>
@@ -3261,27 +3249,38 @@ function AppHeader({
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
       </div>
-      <span className="local-badge">Local only</span>
       {children}
     </header>
   );
 }
 
-function PrivacyNote() {
-  return (
-    <div className="privacy-note">
-      <span className="privacy-icon" aria-hidden="true">✓</span>
-      <p>
-        <strong>This app does not upload your book or your voice.</strong>
-        <br />
-        It does not read the book for you.
-      </p>
-    </div>
-  );
+function authorStatusLabel(status: AuthorStatus): string {
+  switch (status) {
+    case "approved":
+      return "Approved";
+    case "needs_pickup":
+      return "Needs pickup";
+    case "ignore_this_flag":
+      return "Ignored";
+    default:
+      return "Draft";
+  }
 }
 
-function AppFooter() {
-  return <footer>Free · MIT licensed · No account · No telemetry</footer>;
+function checkStatusLabel(status: string): string {
+  switch (status) {
+    case "green":
+    case "pass":
+      return "Ready";
+    case "yellow":
+    case "warn":
+      return "Review";
+    case "red":
+    case "fail":
+      return "Needs attention";
+    default:
+      return status;
+  }
 }
 
 function timedTranscript(text: string, durationSeconds: number): TranscriptWord[] {

@@ -18,14 +18,14 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
   const cliPath = findWhisperCli({ resourcesPath, appPath, requireBundled });
   if (!cliPath) {
     throw new Error(
-      "Local Whisper is not installed yet. Add whisper-cli to the Booth Desk bundle, or set WHISPER_CLI_PATH for a development build.",
+      "Speech checking is not ready yet. Reinstall Booth Desk or choose a transcript on the chapter screen.",
     );
   }
 
   const modelPath = await findModel({ userDataPath, resourcesPath, appPath });
   if (!modelPath) {
     throw new Error(
-      "No local Whisper model is available. Download the verified model from Booth Desk's Proof screen; it stays on this computer.",
+      "No speech model is ready yet. Download it from the chapter screen to continue.",
     );
   }
 
