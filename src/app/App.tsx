@@ -2212,7 +2212,7 @@ function Teleprompter({
                 ? "Word checks paused after a few false alarms."
                 : liveState.enabled
                   ? `${liveStatus === "processing" ? "Checking your words…" : "Following your voice and checking each line."} Space and PageDown still move the page.`
-                  : "Start voice follow when you are ready. It listens for your place and possible word changes, but it does not save a recording."}
+                  : "Start narrating when you are ready. Kosmos follows your voice and checks for possible word changes; it does not save a recording."}
               {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
               {liveStatus === "error" && liveError ? <strong role="alert">{liveError}</strong> : null}
               {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
@@ -2328,12 +2328,13 @@ function Teleprompter({
         <footer className="booth-dock">
           {mode === "narrate" ? (
             <button
-              className="primary-button booth-start-button"
+              className={`primary-button booth-start-button ${liveState.enabled ? "booth-stop-button" : "booth-narrate-button"}`}
               type="button"
               disabled={liveState.dimmed || liveStatus === "starting"}
               onClick={() => setLiveEnabled(!liveState.enabled)}
             >
-              {liveState.enabled ? "Stop voice follow" : "Start voice follow"}
+              <span className="booth-start-icon" aria-hidden="true">{liveState.enabled ? "Ⅱ" : "▶"}</span>
+              <span>{liveState.enabled ? "Stop" : "Start narrating"}</span>
             </button>
           ) : (
             <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>

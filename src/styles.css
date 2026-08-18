@@ -3663,6 +3663,36 @@ button {
   min-width: 148px;
 }
 
+.booth-start-icon {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 0.95em;
+  line-height: 1;
+  vertical-align: -0.04em;
+}
+
+.booth-start-button.booth-narrate-button {
+  border-color: #3ea8f5;
+  color: #fff;
+  background: #3ea8f5;
+}
+
+.booth-start-button.booth-narrate-button:hover {
+  border-color: #2d95df;
+  background: #2d95df;
+}
+
+.booth-start-button.booth-stop-button {
+  border-color: #ece9e6;
+  color: #1a1714;
+  background: #f1f0ef;
+}
+
+.booth-start-button.booth-stop-button:hover {
+  border-color: #dedad6;
+  background: #e7e5e3;
+}
+
 .booth-progress-wrap {
   display: grid;
   flex: 1;
