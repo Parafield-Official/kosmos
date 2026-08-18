@@ -2233,18 +2233,6 @@ button {
   scroll-behavior: smooth;
 }
 
-.teleprompter-scroll-focus {
-  background-image: linear-gradient(
-    to bottom,
-    transparent 37.85%,
-    rgba(236, 190, 88, 0.86) 37.85%,
-    rgba(236, 190, 88, 0.86) 38.15%,
-    transparent 38.15%
-  );
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-}
-
 .teleprompter-page {
   width: min(780px, 100% - 48px);
   margin: 0 auto;

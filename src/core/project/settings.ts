@@ -4,8 +4,9 @@ export const DEFAULT_PROJECT_SETTINGS: Readonly<ProjectSettings> = Object.freeze
   proof_sensitivity: "default",
   pause_threshold_seconds: 4,
   acx_target_rms_dbfs: -20,
-  teleprompter_theme: "dark",
-  teleprompter_font_size: 48,
+  teleprompter_theme: "cream",
+  teleprompter_font_size: 28,
+  teleprompter_preset_version: 2,
 });
 
 /** Normalize optional/older project settings without rejecting the project. */
@@ -13,6 +14,9 @@ export function normalizeProjectSettings(value: unknown): ProjectSettings {
   const candidate = value && typeof value === "object"
     ? value as Partial<ProjectSettings>
     : {};
+  const legacyTeleprompterDefaults = candidate.teleprompter_preset_version !== 2
+    && candidate.teleprompter_theme === "dark"
+    && Number(candidate.teleprompter_font_size) === 48;
   return {
     proof_sensitivity: candidate.proof_sensitivity === "conservative"
       || candidate.proof_sensitivity === "aggressive"
@@ -20,11 +24,17 @@ export function normalizeProjectSettings(value: unknown): ProjectSettings {
       : "default",
     pause_threshold_seconds: clampNumber(candidate.pause_threshold_seconds, 2, 12, 4),
     acx_target_rms_dbfs: clampNumber(candidate.acx_target_rms_dbfs, -23, -18, -20),
-    teleprompter_theme: candidate.teleprompter_theme === "sepia"
+    teleprompter_theme: legacyTeleprompterDefaults
+      ? "cream"
+      : candidate.teleprompter_theme === "dark"
+      || candidate.teleprompter_theme === "sepia"
       || candidate.teleprompter_theme === "cream"
       ? candidate.teleprompter_theme
-      : "dark",
-    teleprompter_font_size: Math.round(clampNumber(candidate.teleprompter_font_size, 20, 96, 48)),
+      : "cream",
+    teleprompter_font_size: legacyTeleprompterDefaults
+      ? 28
+      : Math.round(clampNumber(candidate.teleprompter_font_size, 20, 96, 28)),
+    teleprompter_preset_version: 2,
   };
 }
 

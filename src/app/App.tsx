@@ -33,7 +33,6 @@ import {
   createLiveFlagsState,
   dismissLiveFlag,
   filterPromptChapters,
-  isFocusGuideVisible,
   recordLiveFlag,
   promptChapterStatus,
   readingProgress,
@@ -1790,7 +1789,6 @@ function Teleprompter({
   const [liveCursor, setLiveCursor] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
-  const [highlightLine, setHighlightLine] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [materialsTab, setMaterialsTab] = useState<"chapter" | "manuscript" | "voices" | "words" | "notes">("chapter");
   const [chapterFilter, setChapterFilter] = useState("");
@@ -1798,7 +1796,7 @@ function Teleprompter({
   const [materialsOpen, setMaterialsOpen] = useState(true);
   const [mode, setMode] = useState<"narrate" | "proof">("narrate");
   const [readingFont, setReadingFont] = useState<"serif" | "sans" | "hyperlegible">("serif");
-  const [lineSpacing, setLineSpacing] = useState(1.55);
+  const [lineSpacing, setLineSpacing] = useState(1.8);
   const [progress, setProgress] = useState(0);
   const wordCount = useMemo(
     () => (spans.map((span) => span.text).join(" ").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length,
@@ -2231,7 +2229,7 @@ function Teleprompter({
 
             <div
               ref={scrollRef}
-              className={`teleprompter-scroll${isFocusGuideVisible(highlightLine) ? " teleprompter-scroll-focus" : ""}`}
+              className="teleprompter-scroll"
               tabIndex={0}
               onScroll={trackReadingProgress}
             >
@@ -2243,8 +2241,8 @@ function Teleprompter({
                   <p
                     key={line.index}
                     ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
-                    className={`teleprompter-line${highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
-                    aria-current={highlightLine && expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
+                    className={`teleprompter-line${expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
+                    aria-current={expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
                   >
                     {line.segments.map((segment, index) => {
                       const glossaryEntry = segment.glossary_id
@@ -2351,7 +2349,6 @@ function Teleprompter({
             <span>{clampFontSize(fontSize)} pt</span>
             <button type="button" aria-label="Larger type" onClick={() => onFontSize(clampFontSize(fontSize + 4))}>+</button>
           </div>
-          <button type="button" className={highlightLine ? "booth-icon-button active" : "booth-icon-button"} aria-pressed={highlightLine} onClick={() => setHighlightLine((value) => !value)}>Focus line</button>
           <div className="booth-settings-wrap">
             <button type="button" className={settingsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>Reading settings</button>
             {settingsOpen ? (
@@ -2378,10 +2375,6 @@ function Teleprompter({
                     <button key={value} type="button" role="radio" aria-checked={lineSpacing === value} className={lineSpacing === value ? "active" : ""} onClick={() => setLineSpacing(value)}>{value === 1.35 ? "Tight" : value === 1.55 ? "Comfortable" : "Open"}</button>
                   ))}
                 </div>
-                <label className="booth-toggle">
-                  <span><strong>Show the focus line</strong><em>Keep your place while you read; voice follow can still highlight the spoken line.</em></span>
-                  <input type="checkbox" checked={highlightLine} onChange={(event) => setHighlightLine(event.target.checked)} />
-                </label>
                 <label className="booth-toggle">
                   <span><strong>Flag possible word changes</strong><em>Listen-only. The microphone audio is not saved as a take.</em></span>
                   <input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />

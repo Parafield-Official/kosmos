@@ -17,6 +17,8 @@ export interface ProjectSettings {
   acx_target_rms_dbfs: number;
   teleprompter_theme: "dark" | "sepia" | "cream";
   teleprompter_font_size: number;
+  /** Versioned first-run defaults; used to migrate older books once. */
+  teleprompter_preset_version?: 2;
 }
 
 export interface ProjectPerson {
