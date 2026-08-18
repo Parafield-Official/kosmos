@@ -26,6 +26,106 @@
   text-rendering: optimizeLegibility;
 }
 
+.occurrence-panel,
+.comparison-panel {
+  margin-top: 16px;
+}
+
+.occurrence-search {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.occurrence-search input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  padding: 10px 12px;
+  text-transform: none;
+}
+
+.occurrence-list,
+.comparison-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+}
+
+.occurrence-list li,
+.comparison-list li {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto auto 1fr;
+  min-width: 0;
+}
+
+.occurrence-list button,
+.comparison-list button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 9px;
+}
+
+.occurrence-list button:hover,
+.comparison-list button:hover,
+.comparison-list button.active {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.occurrence-list time,
+.comparison-list time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.occurrence-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-list li {
+  grid-template-columns: 1fr auto auto;
+}
+
+.comparison-list li > div {
+  display: grid;
+  gap: 3px;
+}
+
+.comparison-player {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+}
+
+.comparison-player audio {
+  width: 100%;
+}
+
 * {
   box-sizing: border-box;
 }

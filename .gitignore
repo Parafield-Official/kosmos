@@ -18,3 +18,9 @@ vendor/bin/whisper-cli.exe
 vendor/bin/*.dylib
 vendor/bin/*.dll
 vendor/bin/FFMPEG_AUDIT.json
+!vendor/bin/ffmpeg
+!vendor/bin/ffprobe
+!vendor/bin/whisper-cli
+!vendor/bin/*.dylib
+!vendor/bin/FFMPEG_AUDIT.json
+!vendor/bin/WHISPER_AUDIT.json

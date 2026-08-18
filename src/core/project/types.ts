@@ -89,6 +89,8 @@ export interface PunchRecording {
   edited_path?: string;
   t_start?: number;
   t_end?: number;
+  expected?: string;
+  heard?: string;
   created_at: string;
 }
 

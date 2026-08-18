@@ -352,7 +352,7 @@ function validatePunchRecordings(value: unknown, chapterIds: Set<string>): void 
     if (!punch || typeof punch !== "object") {
       throw new Error(`project.json punch ${position + 1} must be an object`);
     }
-    const candidate = punch as Partial<{ id: string; chapter_id: string; path: string; edited_path: string; created_at: string; t_start: number; t_end: number }>;
+    const candidate = punch as Partial<{ id: string; chapter_id: string; path: string; edited_path: string; created_at: string; t_start: number; t_end: number; expected: string; heard: string }>;
     for (const field of ["id", "chapter_id", "path", "created_at"] as const) {
       if (typeof candidate[field] !== "string" || candidate[field].trim().length === 0) {
         throw new Error(`project.json punch ${position + 1} is missing ${field}`);
@@ -378,6 +378,11 @@ function validatePunchRecordings(value: unknown, chapterIds: Set<string>): void 
     }
     if (candidate.t_start !== undefined && candidate.t_end !== undefined && candidate.t_end < candidate.t_start) {
       throw new Error(`project.json punch ${candidate.id} has reversed timing`);
+    }
+    for (const field of ["expected", "heard"] as const) {
+      if (candidate[field] !== undefined && typeof candidate[field] !== "string") {
+        throw new Error(`project.json punch ${candidate.id} has invalid ${field} text`);
+      }
     }
   });
 }

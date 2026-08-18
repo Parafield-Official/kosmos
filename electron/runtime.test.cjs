@@ -3,6 +3,7 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   auditFfmpegBuild,
+  auditWhisperBuild,
   resolveRuntimeBinary,
 } = require("./runtime.cjs");
 
@@ -93,5 +94,21 @@ describe("runtime binary resolution", () => {
       requireBundled: true,
     })).toThrow(/bundled ffmpeg/i);
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("accepts a versioned MIT whisper.cpp runtime with a checksum", () => {
+    expect(auditWhisperBuild({
+      whisperVersion: "whisper.cpp version: 1.9.2",
+      notices: "MIT License\nCopyright (c) 2026 The ggml authors",
+      sha256: "a".repeat(64),
+    })).toMatchObject({ license: "MIT", sha256: "a".repeat(64) });
+  });
+
+  it("rejects an unverified speech runtime", () => {
+    expect(() => auditWhisperBuild({
+      whisperVersion: "not whisper",
+      notices: "MIT License",
+      sha256: "bad",
+    })).toThrow(/Whisper|checksum|version/i);
   });
 });

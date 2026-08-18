@@ -24,8 +24,9 @@ interface BoothDeskBridge {
   saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
+  exportProofReport: (payload: ProjectEnvelope & { chapterId: string; transcript: import("./core/proof/align").TranscriptWord[]; pickups: import("./core/project/types").Pickup[] }) => Promise<ProofReportResult>;
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room" | "glossary"; chapterId?: string; glossaryId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
-  applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
+  applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; expected?: string; heard?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
   mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
   audioUrl: (payload: { folder: string; relativePath: string }) => Promise<string>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
@@ -94,6 +95,11 @@ interface AlignmentFile {
 }
 
 interface MarkerExportResult {
+  folder: string;
+  files: string[];
+}
+
+interface ProofReportResult {
   folder: string;
   files: string[];
 }

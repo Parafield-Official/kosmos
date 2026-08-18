@@ -70,4 +70,24 @@ function auditFfmpegBuild({ ffmpegVersion, ffprobeVersion, notices }) {
   };
 }
 
-module.exports = { auditFfmpegBuild, resolveRuntimeBinary };
+function auditWhisperBuild({ whisperVersion, notices, sha256 }) {
+  const versionText = String(whisperVersion ?? "").trim();
+  const noticeText = String(notices ?? "");
+  const checksum = String(sha256 ?? "").trim().toLowerCase();
+  if (!/^whisper\.cpp\s+version:\s*\S+/imu.test(versionText)) {
+    throw new Error("The staged Whisper executable did not report a valid whisper.cpp version.");
+  }
+  if (!/^MIT License$/imu.test(noticeText)) {
+    throw new Error("The staged Whisper runtime is missing its MIT license notice.");
+  }
+  if (!/^[a-f0-9]{64}$/u.test(checksum)) {
+    throw new Error("The staged Whisper runtime is missing a valid SHA-256 checksum.");
+  }
+  return {
+    license: "MIT",
+    whisperVersion: versionText.split(/\r?\n/u)[0].trim(),
+    sha256: checksum,
+  };
+}
+
+module.exports = { auditFfmpegBuild, auditWhisperBuild, resolveRuntimeBinary };

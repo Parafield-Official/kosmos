@@ -4,6 +4,8 @@ import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
 import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "../core/proof/align";
+import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
+import { findWordOccurrences, type WordOccurrence } from "../core/proof/occurrences";
 import {
   addGlossaryEntry,
   deleteGlossaryEntry,
@@ -270,6 +272,7 @@ function ProjectHome({
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const rangeStopRef = useRef<(() => void) | null>(null);
   const glossaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const glossaryAudioUrlRef = useRef<string | null>(null);
 
@@ -288,6 +291,13 @@ function ProjectHome({
     () => project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null,
     [project.chapters, selectedChapterId],
   );
+  const pickupComparisons = useMemo(() => selectedChapter
+    ? buildPickupComparisons({
+        rawAudioPath: selectedChapter.raw_audio_path,
+        currentAudioPath: selectedChapter.audio_path,
+        punches: (project.punch_recordings ?? []).filter((punch) => punch.chapter_id === selectedChapter.id),
+      })
+    : [], [project.punch_recordings, selectedChapter]);
 
   useEffect(() => {
     if (!selectedChapter && project.chapters.length > 0) {
@@ -816,6 +826,8 @@ function ProjectHome({
         ...envelope,
         chapterId: selectedChapter.id,
         pickupId: pickup.id,
+        expected: pickup.expected,
+        heard: pickup.heard,
         tStart: pickup.t_start,
         tEnd: pickup.t_end,
         trimSilence: true,
@@ -1191,6 +1203,51 @@ function ProjectHome({
     void audioRef.current.play();
   }
 
+  function playRange(start: number, end?: number) {
+    if (!audioRef.current) {
+      return;
+    }
+    rangeStopRef.current?.();
+    audioRef.current.currentTime = Math.max(0, start - 0.5);
+    void audioRef.current.play();
+    if (end !== undefined && Number.isFinite(end) && end > start) {
+      const audio = audioRef.current;
+      const stop = () => {
+        if (audio.currentTime >= end + 0.5) {
+          audio.pause();
+          rangeStopRef.current?.();
+        }
+      };
+      audio.addEventListener("timeupdate", stop);
+      rangeStopRef.current = () => {
+        audio.removeEventListener("timeupdate", stop);
+        rangeStopRef.current = null;
+      };
+    }
+  }
+
+  async function exportProofReport() {
+    if (!selectedChapter || !proof) {
+      setNotice("Check the chapter first so there is a proof report to export.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Proof reports are available in the desktop app.");
+      return;
+    }
+    await runAction("proof-report", async () => {
+      const result = await window.boothDesk?.exportProofReport({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        transcript: proof.transcript,
+        pickups: proof.pickups,
+      });
+      if (result) {
+        setNotice(`Proof report and pickup packet saved to ${result.folder}.`);
+      }
+    });
+  }
+
   async function runAction(name: string, action: () => Promise<void>): Promise<boolean> {
     if (actionLockRef.current) {
       return false;
@@ -1479,11 +1536,15 @@ function ProjectHome({
                 onDownloadModel={() => void downloadWhisperModel()}
                 onProof={() => void runProof(selectedChapter)}
                 onPlayPickup={playPickup}
+                onPlayRange={playRange}
                 onExportMarkers={() => void exportMarkers()}
+                onExportReport={() => void exportProofReport()}
                 onPunchPickup={setPunchPickup}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 pickupSeatFilter={pickupSeatFilter}
                 onPickupSeatFilter={setPickupSeatFilter}
+                comparisonFolder={folder}
+                comparisons={pickupComparisons}
               />
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
@@ -3586,11 +3647,15 @@ function ReviewPage({
   onDownloadModel,
   onProof,
   onPlayPickup,
+  onPlayRange,
   onExportMarkers,
+  onExportReport,
   onPunchPickup,
   onUpdatePickup,
   pickupSeatFilter,
   onPickupSeatFilter,
+  comparisonFolder,
+  comparisons,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -3605,11 +3670,15 @@ function ReviewPage({
   onDownloadModel: () => void;
   onProof: () => void;
   onPlayPickup: (pickup: Pickup) => void;
+  onPlayRange: (start: number, end?: number) => void;
   onExportMarkers: () => void;
+  onExportReport: () => void;
   onPunchPickup: (pickup: Pickup) => void;
   onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
+  comparisonFolder: string;
+  comparisons: PickupComparison[];
 }) {
   return (
     <div className="review-page">
@@ -3663,22 +3732,27 @@ function ReviewPage({
       </article>
 
       {proof ? (
-        <PickupList
-          pickups={proof.pickups}
-          busyAction={busyAction}
-          onPlay={onPlayPickup}
-          onExportMarkers={onExportMarkers}
-          onPunch={onPunchPickup}
-          onUpdate={onUpdatePickup}
-          seatFilter={pickupSeatFilter}
-          onSeatFilter={onPickupSeatFilter}
-        />
+        <>
+          <OccurrenceScanner transcript={proof.transcript} busy={busyAction !== null} onPlay={onPlayRange} />
+          <PickupList
+            pickups={proof.pickups}
+            busyAction={busyAction}
+            onPlay={onPlayPickup}
+            onExportMarkers={onExportMarkers}
+            onExportReport={onExportReport}
+            onPunch={onPunchPickup}
+            onUpdate={onUpdatePickup}
+            seatFilter={pickupSeatFilter}
+            onSeatFilter={onPickupSeatFilter}
+          />
+        </>
       ) : (
         <div className="empty-chapters compact">
           <h3>No review yet</h3>
           <p>Check the chapter after you have a take. Pickups will land here.</p>
         </div>
       )}
+      {comparisons.length > 0 ? <PickupComparisonPanel folder={comparisonFolder} comparisons={comparisons} /> : null}
     </div>
   );
 }
@@ -3853,7 +3927,110 @@ function DuetTracksPanel({
   );
 }
 
-function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+function OccurrenceScanner({ transcript, busy, onPlay }: { transcript: TranscriptWord[]; busy: boolean; onPlay: (start: number, end?: number) => void }) {
+  const [query, setQuery] = useState("");
+  const occurrences = useMemo(() => findWordOccurrences(transcript, query), [transcript, query]);
+  return (
+    <section className="result-panel occurrence-panel" aria-labelledby="occurrence-title">
+      <div className="result-heading">
+        <div>
+          <p className="card-kicker">Across this recording</p>
+          <h4 id="occurrence-title">Find every occurrence</h4>
+        </div>
+        <span className="result-count">{query.trim() ? `${occurrences.length} found` : "Word or phrase"}</span>
+      </div>
+      <label className="occurrence-search">
+        <span>Word or phrase</span>
+        <input value={query} disabled={busy} onChange={(event) => setQuery(event.target.value)} placeholder="Try a name, place, or repeated phrase" />
+      </label>
+      {query.trim() && occurrences.length === 0 ? <p className="result-empty">No matching spoken words were found in this chapter.</p> : null}
+      {occurrences.length > 0 ? (
+        <ol className="occurrence-list">
+          {occurrences.map((occurrence: WordOccurrence, index) => (
+            <li key={`${occurrence.transcriptStart}-${occurrence.transcriptEnd}`}>
+              <button type="button" disabled={busy} onClick={() => onPlay(occurrence.start, occurrence.end)}>Play {index + 1}</button>
+              <time>{formatTime(occurrence.start)}</time>
+              <span>{occurrence.context}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
+  );
+}
+
+function PickupComparisonPanel({ folder, comparisons }: { folder: string; comparisons: PickupComparison[] }) {
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const [active, setActive] = useState<{ comparison: PickupComparison; side: "original" | "replacement" } | null>(null);
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    setSourceUrl(null);
+    setLoadError(null);
+    if (!active || !window.boothDesk || folder === "(browser preview)") {
+      return;
+    }
+    const relativePath = active.side === "original" ? active.comparison.originalPath : active.comparison.replacementPath;
+    void window.boothDesk.audioUrl({ folder, relativePath }).then((url) => {
+      if (!disposed) {
+        setSourceUrl(url);
+      }
+    }).catch((reason: unknown) => {
+      if (!disposed) {
+        setLoadError(messageFor(reason, "Could not load this comparison."));
+      }
+    });
+    return () => { disposed = true; };
+  }, [active, folder]);
+
+  function beginPlayback() {
+    if (!active || !audio.current) {
+      return;
+    }
+    const element = audio.current;
+    element.currentTime = active.side === "original" ? Math.max(0, active.comparison.start - 0.5) : 0;
+    void element.play();
+  }
+
+  function stopOriginalInContext() {
+    if (active?.side === "original" && audio.current && audio.current.currentTime >= active.comparison.end + 0.5) {
+      audio.current.pause();
+    }
+  }
+
+  return (
+    <section className="result-panel comparison-panel" aria-labelledby="comparison-title">
+      <div className="result-heading">
+        <div>
+          <p className="card-kicker">Pickup history</p>
+          <h4 id="comparison-title">Compare original and replacement</h4>
+        </div>
+        <span className="result-count">{comparisons.length} replacement{comparisons.length === 1 ? "" : "s"}</span>
+      </div>
+      <p className="panel-honesty">A plays the untouched take in context. B plays only the replacement you recorded.</p>
+      <ol className="comparison-list">
+        {comparisons.map((comparison, index) => (
+          <li key={comparison.id}>
+            <div><strong>{comparison.expected ? `“${comparison.expected}”` : `Pickup ${index + 1}`}</strong><time>{formatTime(comparison.start)}–{formatTime(comparison.end)}{comparison.heard ? ` · heard “${comparison.heard}”` : ""}</time></div>
+            <button type="button" className={active?.comparison.id === comparison.id && active.side === "original" ? "active" : ""} onClick={() => setActive({ comparison, side: "original" })}>A · Original</button>
+            <button type="button" className={active?.comparison.id === comparison.id && active.side === "replacement" ? "active" : ""} onClick={() => setActive({ comparison, side: "replacement" })}>B · Replacement</button>
+          </li>
+        ))}
+      </ol>
+      {sourceUrl ? (
+        <div className="comparison-player">
+          <strong>{active?.side === "original" ? "A · Original in context" : "B · Replacement pickup"}</strong>
+          <audio ref={audio} controls src={sourceUrl} preload="metadata" onLoadedMetadata={beginPlayback} onTimeUpdate={stopOriginalInContext} />
+        </div>
+      ) : null}
+      {loadError ? <p className="error-note">{loadError}</p> : null}
+    </section>
+  );
+}
+
+function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -3881,6 +4058,7 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onPunch, onU
             </select>
           </label>
           <span className="result-count">{openCount} open</span>
+          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportReport}>{busyAction === "proof-report" ? "Exporting…" : "Export report"}</button>
           <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportMarkers}>Export markers</button>
         </div>
       </div>

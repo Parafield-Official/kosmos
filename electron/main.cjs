@@ -1015,6 +1015,45 @@ async function exportMarkerFiles(folder, project, chapterId, pickups) {
   };
 }
 
+async function exportProofReportFiles(folder, project, chapterId, transcript, pickups) {
+  await assertProjectEnvelope(folder, project);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error("Chapter not found");
+  }
+  const reportCore = loadCoreModule("proof-report");
+  const normalized = normalizeAlignment(
+    { transcript: Array.isArray(transcript) ? transcript : [], pickups: Array.isArray(pickups) ? pickups : [] },
+    chapterId,
+  );
+  let duration;
+  if (chapter.audio_path) {
+    try {
+      duration = (await probeAudio(projectAudioPath(folder, chapter.audio_path))).duration;
+    } catch {
+      duration = undefined;
+    }
+  }
+  const files = reportCore.buildProofReportFiles({
+    chapterIndex: chapter.index,
+    chapterTitle: chapter.title,
+    audioPath: chapter.audio_path,
+    audioDurationSeconds: duration,
+    transcript: normalized.transcript,
+    pickups: normalized.pickups,
+  });
+  const outputFolder = await ensureProjectDirectory(folder, "export/proofing");
+  const baseName = `${String(chapter.index).padStart(2, "0")}_${slugFileName(chapter.title)}`;
+  const outputFiles = [
+    { fileName: `${baseName}_proof_report.md`, contents: files.report },
+    { fileName: `${baseName}_pickup_packet.csv`, contents: files.csv },
+  ];
+  for (const file of outputFiles) {
+    await writeFileAtomic(projectAssetPath(folder, path.relative(folder, path.join(outputFolder, file.fileName))), file.contents, "utf8");
+  }
+  return { folder: outputFolder, files: outputFiles.map((file) => file.fileName) };
+}
+
 async function saveRecordingWav(folder, project, payload) {
   await assertProjectEnvelope(folder, project);
   const kind = payload?.kind;
@@ -1209,6 +1248,8 @@ async function applyPunchRecording(folder, project, payload) {
         id: `punch-${stamp}-${(project.punch_recordings?.length ?? 0) + 1}`,
         chapter_id: chapter.id,
         ...(payload.pickupId ? { pickup_id: payload.pickupId } : {}),
+        ...(typeof payload.expected === "string" ? { expected: payload.expected.slice(0, 1000) } : {}),
+        ...(typeof payload.heard === "string" ? { heard: payload.heard.slice(0, 1000) } : {}),
         path: punchRelative,
         edited_path: editedRelative,
         t_start: punchBounds.start,
@@ -2228,6 +2269,18 @@ ipcMain.handle("project:export-markers", (_event, payload) => {
     throw new Error("Invalid marker export request");
   }
   return exportMarkerFiles(payload.folder, payload.project, payload.chapterId, payload.pickups);
+});
+ipcMain.handle("project:export-proof-report", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid proof report request");
+  }
+  return exportProofReportFiles(
+    payload.folder,
+    payload.project,
+    payload.chapterId,
+    payload.transcript,
+    payload.pickups,
+  );
 });
 ipcMain.handle("recording:save-wav", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
