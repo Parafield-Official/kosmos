@@ -1,4 +1,4 @@
-import type { ChapterNote, Pickup, ProjectFile, AuthorStatus } from "./types";
+import type { ChapterNote, Pickup, ProjectFile, AuthorStatus, PickupStatus } from "./types";
 
 const AUTHOR_ONLY_STATUSES = new Set<AuthorStatus>([
   "needs_pickup",
@@ -88,6 +88,20 @@ export function addPickupNote(pickup: Pickup, note: string): Pickup {
     throw new Error("Pickup note cannot be empty");
   }
   return { ...pickup, note: clean };
+}
+
+export function updatePickup(
+  pickup: Pickup,
+  changes: { status?: PickupStatus; note?: string },
+): Pickup {
+  const next = { ...pickup };
+  if (changes.status) {
+    next.status = changes.status;
+  }
+  if (changes.note !== undefined) {
+    return addPickupNote(next, changes.note);
+  }
+  return next;
 }
 
 function samePerson(left: string, right: string): boolean {

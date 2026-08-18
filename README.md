@@ -14,15 +14,22 @@ human still listens.
 ## Current build
 
 This repository is being built in the phases described in [`docs/SPEC.md`](docs/SPEC.md).
-The current build has the Phase 0 project-folder shell, Journey A, the Phase 2
-ACX master/export core, and the Phase 3 manuscript handoff slice: import TXT,
-Markdown, DOCX (bold/italic/underline/highlight spans), EPUB, or text-layer PDF;
-split/merge/rename chapters; review deterministic glossary candidates; attach
-human pronunciation clips; assign seats; leave author notes and approval
-states; and stream a light or full collaborator ZIP. The master runs gate →
-loudness → true-peak limit → room-tone padding and refuses a take whose noise
-cannot be fixed without damaging the voice. The shipped proof fixture can be
-loaded without a network connection.
+The current build carries the consecutive Phase 0–5 slices: a local project
+folder and Journey A proof flow; ACX measurement, mastering, and named export;
+TXT/Markdown, DOCX (bold/italic/underline/highlight spans), EPUB, and text-layer
+PDF import with split/merge/rename; deterministic glossary candidates with
+human pronunciation clips; author/narrator roles, chapter notes, pickup status
+and notes, and light/full collaborator ZIPs; a styled manual teleprompter,
+DAW marker export, listen-safe DIY recording review, one-line punch splicing,
+and room testing; plus duet seat painting, N1/N2 pickup filters, seat packs,
+bed/overdub mixing, and separate stems. The master runs gate → loudness →
+true-peak limit → room-tone padding and refuses a take whose noise cannot be
+fixed without damaging the voice. The shipped proof fixture can be loaded
+without a network connection.
+
+The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
+flags remain disabled in this pre-release until that path can meet the
+high-precision/auto-dim requirement without crying wolf.
 
 This is a pre-release development build. The source path currently expects a
 local `ffmpeg`; the release pipeline must bundle the LGPL build and

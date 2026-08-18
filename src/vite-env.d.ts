@@ -18,11 +18,12 @@ interface BoothDeskBridge {
   attachAudio: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AudioAttachment | null>;
   attachDuetTrack: (payload: ProjectEnvelope & { chapterId: string; kind: "bed" | "overdub" }) => Promise<DuetTrackAttachment | null>;
   attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
+  relinkGlossary: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
   saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
-  saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room"; chapterId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
+  saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room" | "glossary"; chapterId?: string; glossaryId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
   applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
   mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
   readAudio: (payload: { folder: string; relativePath: string }) => Promise<{ mime: string; base64: string }>;
@@ -95,7 +96,7 @@ interface MarkerExportResult {
 
 interface RecordingSaveResult extends ProjectEnvelope {
   path: string;
-  kind: "chapter" | "punch" | "room";
+  kind: "chapter" | "punch" | "room" | "glossary";
 }
 
 interface PunchSaveResult extends ProjectEnvelope {

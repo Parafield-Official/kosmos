@@ -219,6 +219,73 @@ export function mergeGlossaryEntries(
     );
 }
 
+/** Link glossary spellings to script spans while preserving every character/style. */
+export function linkGlossarySpans(
+  spans: import("../project/types").ScriptSpan[],
+  glossary: GlossaryEntry[],
+): import("../project/types").ScriptSpan[] {
+  // Prefer an explicitly edited/user row when an auto candidate has the same
+  // spelling. Longer phrases still win over their shorter component words.
+  const entries = Array.from(
+    glossary
+      .filter((entry) => entry.spelling.trim().length > 0)
+      .reduce((bySpelling, entry) => {
+        const key = entry.spelling.trim().toLocaleLowerCase("en-US");
+        const previous = bySpelling.get(key);
+        if (!previous || (entry.source === "user" && previous.source !== "user")) {
+          bySpelling.set(key, entry);
+        }
+        return bySpelling;
+      }, new Map<string, GlossaryEntry>())
+      .values(),
+  ).sort((left, right) => right.spelling.trim().length - left.spelling.trim().length);
+  if (entries.length === 0) {
+    return spans.map((span) => ({ ...span, style: [...span.style] }));
+  }
+  return spans.flatMap((span) => linkSpan({ ...span, glossary_id: undefined }, entries));
+}
+
+function linkSpan(
+  span: import("../project/types").ScriptSpan,
+  entries: GlossaryEntry[],
+): import("../project/types").ScriptSpan[] {
+  const matches: Array<{ start: number; end: number; entry: GlossaryEntry }> = [];
+  for (const entry of entries) {
+    const spelling = entry.spelling.trim();
+    const escaped = spelling.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const expression = new RegExp(`(^|[^\\p{L}\\p{N}])(${escaped})(?=$|[^\\p{L}\\p{N}])`, "giu");
+    for (const match of span.text.matchAll(expression)) {
+      const prefixLength = match[1]?.length ?? 0;
+      const start = (match.index ?? 0) + prefixLength;
+      matches.push({ start, end: start + (match[2]?.length ?? 0), entry });
+    }
+  }
+  matches.sort((left, right) => left.start - right.start || (right.end - right.start) - (left.end - left.start));
+  const selected: typeof matches = [];
+  for (const match of matches) {
+    if (selected.some((candidate) => match.start < candidate.end && match.end > candidate.start)) {
+      continue;
+    }
+    selected.push(match);
+  }
+  if (selected.length === 0) {
+    return [{ ...span, style: [...span.style] }];
+  }
+  const output: import("../project/types").ScriptSpan[] = [];
+  let cursor = 0;
+  for (const match of selected) {
+    if (match.start > cursor) {
+      output.push({ ...span, text: span.text.slice(cursor, match.start), style: [...span.style], glossary_id: undefined });
+    }
+    output.push({ ...span, text: span.text.slice(match.start, match.end), style: [...span.style], glossary_id: match.entry.id });
+    cursor = match.end;
+  }
+  if (cursor < span.text.length) {
+    output.push({ ...span, text: span.text.slice(cursor), style: [...span.style], glossary_id: undefined });
+  }
+  return output;
+}
+
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   for (const match of text.matchAll(TOKEN_PATTERN)) {

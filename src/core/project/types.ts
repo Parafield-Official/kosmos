@@ -42,6 +42,8 @@ export interface ChapterFile {
   n1_stem_path?: string;
   n2_stem_path?: string;
   pickups_path?: string;
+  open_pickups?: number;
+  acx_traffic_light?: "green" | "yellow" | "red";
   notes_path?: string;
   word_count?: number;
   estimated_duration_minutes?: number;

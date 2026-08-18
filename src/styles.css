@@ -872,7 +872,7 @@ footer {
 
 .pickup-list li {
   display: grid;
-  grid-template-columns: auto 42px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, auto) 42px minmax(0, 1fr) auto minmax(120px, auto);
   align-items: center;
   gap: 8px;
   padding: 9px 10px;
@@ -880,6 +880,11 @@ footer {
   border-radius: 9px;
   background: #fffdf9;
   font-size: 12px;
+}
+
+.pickup-list li.done,
+.pickup-list li.ignored {
+  opacity: 0.62;
 }
 
 .pickup-list li button {
@@ -961,8 +966,39 @@ footer {
   font-size: 9px;
 }
 
+.pickup-note {
+  min-width: 0;
+}
+
+.pickup-note summary {
+  color: #806e60;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.pickup-note-editor {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.pickup-note-editor input {
+  min-width: 0;
+  width: 150px;
+  padding: 5px 6px;
+  border: 1px solid #d0c4b8;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
 .traffic-light {
   padding: 8px 10px;
+}
+
+.traffic-light.compact {
+  padding: 4px 6px;
+  font-size: 8px;
 }
 
 .traffic-light.green,
@@ -1739,6 +1775,43 @@ footer {
   .welcome-copy h2 {
     font-size: clamp(42px, 10vw, 66px);
   }
+
+  .pickup-list li {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .pickup-actions {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .pickup-list time {
+    order: 2;
+  }
+
+  .pickup-list li > div {
+    flex: 1 1 180px;
+    order: 3;
+  }
+
+  .pickup-list .kind-badge {
+    order: 4;
+  }
+
+  .pickup-note {
+    flex: 1 1 100%;
+    order: 5;
+  }
+
+  .pickup-note-editor {
+    flex-wrap: wrap;
+  }
+
+  .pickup-note-editor input {
+    flex: 1 1 180px;
+    width: auto;
+  }
 }
 
 @media (max-width: 560px) {
@@ -1775,10 +1848,6 @@ footer {
 
   .chapter-desk {
     padding: 17px;
-  }
-
-  .pickup-list li {
-    grid-template-columns: auto 38px minmax(0, 1fr);
   }
 
   .kind-badge {

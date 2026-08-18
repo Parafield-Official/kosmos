@@ -5,6 +5,7 @@ import {
   addPickupNote,
   canApproveChapters,
   setChapterAuthorStatus,
+  updatePickup,
 } from "./collaboration";
 import type { Pickup } from "./types";
 
@@ -83,5 +84,23 @@ describe("folder collaboration roles", () => {
     };
 
     expect(addPickupNote(pickup, "Use the glossary clip.").note).toBe("Use the glossary clip.");
+  });
+
+  it("updates pickup status without losing its timestamp or note", () => {
+    const pickup: Pickup = {
+      id: "pickup-2",
+      chapter_id: "ch01",
+      t_start: 1,
+      t_end: 2,
+      expected: "one",
+      heard: "two",
+      kind: "sub",
+      seat: "N1",
+      status: "open",
+      confidence: 0.8,
+    };
+    const next = updatePickup(pickup, { status: "done", note: "Retake approved." });
+    expect(next).toMatchObject({ id: "pickup-2", status: "done", note: "Retake approved." });
+    expect(pickup.status).toBe("open");
   });
 });

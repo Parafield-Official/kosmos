@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   attachAudio: (payload) => ipcRenderer.invoke("project:attach-audio", payload),
   attachDuetTrack: (payload) => ipcRenderer.invoke("duet:attach-track", payload),
   attachGlossaryClip: (payload) => ipcRenderer.invoke("glossary:attach-clip", payload),
+  relinkGlossary: (payload) => ipcRenderer.invoke("glossary:relink", payload),
   readChapterText: (payload) => ipcRenderer.invoke("project:chapter-text", payload),
   saveAlignment: (payload) => ipcRenderer.invoke("project:save-alignment", payload),
   readAlignment: (payload) => ipcRenderer.invoke("project:read-alignment", payload),

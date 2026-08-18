@@ -10,6 +10,12 @@ const { loadIdentity, saveIdentity } = require("./identity.cjs");
 
 const isDevelopment = !app.isPackaged;
 
+const DEFAULT_SEATS = {
+  narration: { label: "Narration", color: "#888888" },
+  N1: { label: "N1", color: "#c45c26" },
+  N2: { label: "N2", color: "#2c4c7c" },
+};
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1180,
@@ -113,8 +119,34 @@ async function openProjectFolder() {
 
 async function readProjectFolder(folder) {
   const project = JSON.parse(await fs.readFile(path.join(folder, "project.json"), "utf8"));
+  const chapters = await Promise.all((Array.isArray(project.chapters) ? project.chapters : []).map(async (chapter) => {
+    if (!chapter.pickups_path) {
+      return chapter;
+    }
+    try {
+      const alignment = JSON.parse(await fs.readFile(projectAssetPath(folder, chapter.pickups_path), "utf8"));
+      return {
+        ...chapter,
+        open_pickups: Array.isArray(alignment.pickups)
+          ? alignment.pickups.filter((pickup) => pickup?.status === "open").length
+          : 0,
+      };
+    } catch (error) {
+      if (error && (error.code === "ENOENT" || error.name === "SyntaxError")) {
+        return chapter;
+      }
+      throw error;
+    }
+  }));
   const normalized = {
     ...project,
+    mode: project.mode === "duet" ? "duet" : "solo",
+    people: Array.isArray(project.people) ? project.people : [],
+    seats: { ...DEFAULT_SEATS, ...(project.seats ?? {}) },
+    chapters: chapters.map((chapter) => ({
+      ...chapter,
+      author_status: chapter.author_status ?? "draft",
+    })),
     glossary: Array.isArray(project.glossary) ? project.glossary : [],
     chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
     punch_recordings: Array.isArray(project.punch_recordings) ? project.punch_recordings : [],
@@ -263,6 +295,13 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
   );
 
   const firstIndex = nextChapterIndex(project);
+  const existingUserGlossary = (project.glossary ?? []).filter(
+    (entry) => entry.source === "user",
+  );
+  const autoGlossary = glossaryCore.candidatesToGlossary(
+    glossaryCore.extractGlossaryCandidates(imported.text),
+  );
+  const glossary = [...existingUserGlossary, ...autoGlossary];
   const createdChapters = [];
   for (const [offset, section] of sections.entries()) {
     const index = firstIndex + offset;
@@ -285,9 +324,9 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
       section.content_start,
       section.content_end,
     );
-    const spans = styledSpans.length > 0
+    const spans = glossaryCore.linkGlossarySpans(styledSpans.length > 0
       ? styledSpans
-      : [{ text: section.text, seat: "narration", style: [] }];
+      : [{ text: section.text, seat: "narration", style: [] }], glossary);
     await fs.writeFile(
       path.join(folder, chapter.text_path),
       `${JSON.stringify({ schema: 1, spans }, null, 2)}\n`,
@@ -296,16 +335,10 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
     createdChapters.push(chapter);
   }
 
-  const existingUserGlossary = (project.glossary ?? []).filter(
-    (entry) => entry.source === "user",
-  );
-  const autoGlossary = glossaryCore.candidatesToGlossary(
-    glossaryCore.extractGlossaryCandidates(imported.text),
-  );
   const nextProject = {
     ...project,
     chapters: [...(project.chapters ?? []), ...createdChapters].sort((a, b) => a.index - b.index),
-    glossary: [...existingUserGlossary, ...autoGlossary],
+    glossary,
     chapter_notes: Array.isArray(project.chapter_notes) ? project.chapter_notes : [],
     updated_at: new Date().toISOString(),
   };
@@ -653,6 +686,18 @@ async function attachGlossaryClip(folder, project, glossaryId) {
   return { ...saved, sourcePath, clipPath: destinationRelative };
 }
 
+async function relinkGlossary(folder, project) {
+  await assertProjectFolder(folder);
+  const glossaryCore = loadCoreModule("glossary");
+  const glossary = project.glossary ?? [];
+  for (const chapter of project.chapters ?? []) {
+    const document = await readChapterDocument(folder, chapter);
+    const spans = glossaryCore.linkGlossarySpans(document.spans, glossary);
+    await writeChapterDocument(folder, chapter.text_path, { ...document, spans });
+  }
+  return saveProjectFolder(folder, { ...project, updated_at: new Date().toISOString() });
+}
+
 async function readChapterText(folder, project, chapterId) {
   await assertProjectFolder(folder);
   const chapter = project.chapters?.find((candidate) => candidate.id === chapterId);
@@ -686,7 +731,12 @@ async function saveAlignment(folder, project, chapterId, pickups, transcript) {
   const nextProject = {
     ...project,
     chapters: project.chapters.map((candidate) => candidate.id === chapterId
-      ? { ...candidate, pickups_path: relativePath, updated_at: now }
+      ? {
+          ...candidate,
+          pickups_path: relativePath,
+          open_pickups: pickups.filter((pickup) => pickup?.status === "open").length,
+          updated_at: now,
+        }
       : candidate),
     updated_at: now,
   };
@@ -732,8 +782,8 @@ async function exportMarkerFiles(folder, project, chapterId, pickups) {
 async function saveRecordingWav(folder, project, payload) {
   await assertProjectFolder(folder);
   const kind = payload?.kind;
-  if (kind !== "chapter" && kind !== "punch" && kind !== "room") {
-    throw new Error("Recording kind must be chapter, punch, or room");
+  if (kind !== "chapter" && kind !== "punch" && kind !== "room" && kind !== "glossary") {
+    throw new Error("Recording kind must be chapter, punch, room, or glossary");
   }
   if (typeof payload?.wavBase64 !== "string" || payload.wavBase64.length < 44) {
     throw new Error("Recording did not contain a WAV file");
@@ -745,13 +795,21 @@ async function saveRecordingWav(folder, project, payload) {
   const chapter = payload.chapterId
     ? (project.chapters ?? []).find((candidate) => candidate.id === payload.chapterId)
     : null;
-  if (kind !== "room" && !chapter) {
+  const glossaryEntry = payload.glossaryId
+    ? (project.glossary ?? []).find((candidate) => candidate.id === payload.glossaryId)
+    : null;
+  if (kind === "glossary" && !glossaryEntry) {
+    throw new Error("Choose a glossary entry before saving its clip");
+  }
+  if (kind !== "room" && kind !== "glossary" && !chapter) {
     throw new Error("Choose a chapter before saving this recording");
   }
   const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
   let relativePath;
   if (kind === "room") {
     relativePath = `audio/room_test_${stamp}.wav`;
+  } else if (kind === "glossary") {
+    relativePath = `audio/glossary/${slugFileName(glossaryEntry.spelling)}_${stamp}.wav`;
   } else if (kind === "punch") {
     const pickup = typeof payload.pickupId === "string" ? payload.pickupId : "manual";
     relativePath = `audio/pickups/${chapter.id}-${slugFileName(pickup)}-${stamp}.wav`;
@@ -765,6 +823,10 @@ async function saveRecordingWav(folder, project, payload) {
   let nextProject = { ...project, updated_at: now };
   if (kind === "room") {
     nextProject.room_test_path = relativePath;
+  } else if (kind === "glossary") {
+    nextProject.glossary = (project.glossary ?? []).map((entry) => entry.id === glossaryEntry.id
+      ? { ...entry, clip_path: relativePath }
+      : entry);
   } else if (kind === "chapter") {
     nextProject.chapters = project.chapters.map((candidate) => candidate.id === chapter.id
       ? { ...candidate, audio_path: relativePath, updated_at: now }
@@ -1546,6 +1608,12 @@ ipcMain.handle("glossary:attach-clip", (_event, payload) => {
     throw new Error("Invalid glossary clip request");
   }
   return attachGlossaryClip(payload.folder, payload.project, payload.glossaryId);
+});
+ipcMain.handle("glossary:relink", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid glossary relink request");
+  }
+  return relinkGlossary(payload.folder, payload.project);
 });
 ipcMain.handle("project:chapter-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

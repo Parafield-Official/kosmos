@@ -4,6 +4,7 @@ import {
   candidatesToGlossary,
   deleteGlossaryEntry,
   extractGlossaryCandidates,
+  linkGlossarySpans,
   mergeGlossaryEntries,
   renameGlossaryEntry,
 } from "./candidates";
@@ -71,5 +72,27 @@ describe("offline glossary candidates", () => {
 
     glossary = deleteGlossaryEntry(glossary, "user-leominster");
     expect(glossary.some((entry) => entry.id === "user-leominster")).toBe(false);
+  });
+
+  it("links glossary spellings without dropping span styles or punctuation", () => {
+    const linked = linkGlossarySpans(
+      [{ text: "Elena waved.", seat: "N1", style: ["italic"] }],
+      [{ id: "elena", spelling: "Elena", frequency: 1, source: "user" }],
+    );
+    expect(linked).toEqual([
+      { text: "Elena", seat: "N1", style: ["italic"], glossary_id: "elena" },
+      { text: " waved.", seat: "N1", style: ["italic"], glossary_id: undefined },
+    ]);
+  });
+
+  it("prefers a user pronunciation row over a duplicate auto candidate", () => {
+    const linked = linkGlossarySpans(
+      [{ text: "Elena spoke.", seat: "narration", style: [] }],
+      [
+        { id: "auto-elena", spelling: "Elena", frequency: 3, source: "auto" },
+        { id: "user-elena", spelling: "ELENA", frequency: 0, source: "user", respell: "eh-LAY-na" },
+      ],
+    );
+    expect(linked[0].glossary_id).toBe("user-elena");
   });
 });

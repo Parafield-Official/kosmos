@@ -6,6 +6,7 @@ import { alignTranscript, type TranscriptWord } from "../core/proof/align";
 import {
   addGlossaryEntry,
   deleteGlossaryEntry,
+  linkGlossarySpans,
   renameGlossaryEntry,
 } from "../core/glossary/candidates";
 import { addChapter, createEmptyProject } from "../core/project/project";
@@ -13,6 +14,7 @@ import {
   addChapterNote,
   canApproveChapters,
   setChapterAuthorStatus,
+  updatePickup,
 } from "../core/project/collaboration";
 import { assignPickupSeats, assignSpanSeat } from "../core/duet/seats";
 import { buildDuetTimeline } from "../core/duet/timeline";
@@ -206,9 +208,21 @@ function ProjectHome({
   const [roomTestOpen, setRoomTestOpen] = useState(false);
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
+  const [glossaryRecording, setGlossaryRecording] = useState<GlossaryEntry | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const glossaryAudioRef = useRef<HTMLAudioElement | null>(null);
+  const glossaryObjectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (glossaryObjectUrlRef.current) {
+      URL.revokeObjectURL(glossaryObjectUrlRef.current);
+      glossaryObjectUrlRef.current = null;
+    }
+    glossaryAudioRef.current?.pause();
+    glossaryAudioRef.current = null;
+  }, []);
 
   const selectedChapter = useMemo(
     () => project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null,
@@ -471,12 +485,20 @@ function ProjectHome({
         return;
       }
       const samples = float32FromBase64(decoded.pcmBase64);
-      setAcxReport(measurePcm({
+      const report = measurePcm({
         samples,
         sampleRate: decoded.sampleRate,
         channels: decoded.channels,
         format: decoded.format,
-      }));
+      });
+      setAcxReport(report);
+      await persistProject({
+        ...project,
+        chapters: project.chapters.map((candidate) => candidate.id === chapter.id
+          ? { ...candidate, acx_traffic_light: report.traffic_light, updated_at: new Date().toISOString() }
+          : candidate),
+        updated_at: new Date().toISOString(),
+      });
     });
   }
 
@@ -616,7 +638,7 @@ function ProjectHome({
       const result = await window.boothDesk?.exportMarkers({
         ...envelope,
         chapterId: selectedChapter.id,
-        pickups: proof.pickups,
+        pickups: proof.pickups.filter((pickup) => pickup.status === "open"),
       });
       if (result) {
         setNotice(`Audacity and Reaper markers written to ${result.folder}.`);
@@ -624,15 +646,38 @@ function ProjectHome({
     });
   }
 
+  async function updateProofPickup(pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) {
+    if (!selectedChapter || !proof) {
+      return;
+    }
+    await runAction(`pickup-${pickup.id}`, async () => {
+      const pickups = proof.pickups.map((candidate) => candidate.id === pickup.id
+        ? updatePickup(candidate, changes)
+        : candidate);
+      setProof({ ...proof, pickups });
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const saved = await window.boothDesk.saveAlignment({
+          ...envelope,
+          chapterId: selectedChapter.id,
+          pickups,
+          transcript: proof.transcript,
+        });
+        onChange(saved);
+      }
+      setNotice(`Pickup ${changes.status ? changes.status : "note"} saved.`);
+    });
+  }
+
   async function saveRecordedWav(
     wavBase64: string,
-    kind: "chapter" | "punch" | "room" = "chapter",
+    kind: "chapter" | "punch" | "room" | "glossary" = "chapter",
     pickupId?: string,
+    glossaryId?: string,
   ) {
     if (!window.boothDesk || folder === "(browser preview)") {
       throw new Error("Recording save is available in the desktop app.");
     }
-    if (kind !== "room" && !selectedChapter) {
+    if (kind !== "room" && kind !== "glossary" && !selectedChapter) {
       throw new Error("Choose a chapter before recording.");
     }
     return runAction(`recording-${kind}`, async () => {
@@ -640,6 +685,7 @@ function ProjectHome({
         ...envelope,
         kind,
         chapterId: selectedChapter?.id,
+        glossaryId,
         pickupId,
         wavBase64,
       });
@@ -648,6 +694,8 @@ function ProjectHome({
         setNotice(
           kind === "punch"
             ? `Punch clip saved to ${result.path}. The original chapter audio is unchanged.`
+            : kind === "glossary"
+              ? `Pronunciation clip saved to ${result.path}.`
             : kind === "room"
               ? `Room test saved to ${result.path}.`
               : `Chapter WAV saved and attached at ${result.path}.`,
@@ -757,6 +805,19 @@ function ProjectHome({
     });
   }
 
+  async function persistGlossary(glossary: GlossaryEntry[]): Promise<void> {
+    const nextProject = { ...project, glossary, updated_at: new Date().toISOString() };
+    let nextEnvelope: ProjectEnvelope = window.boothDesk && folder !== "(browser preview)"
+      ? await window.boothDesk.saveProject({ folder, project: nextProject })
+      : { folder, project: nextProject };
+    if (window.boothDesk && folder !== "(browser preview)") {
+      nextEnvelope = await window.boothDesk.relinkGlossary(nextEnvelope);
+    } else {
+      setChapterSpans(linkGlossarySpans(chapterSpans, glossary));
+    }
+    onChange(nextEnvelope);
+  }
+
   async function addGlossary() {
     if (glossarySpelling.trim().length === 0) {
       setNotice("Enter a spelling before adding a glossary row.");
@@ -766,7 +827,7 @@ function ProjectHome({
       const glossary = addGlossaryEntry(project.glossary ?? [], glossarySpelling, {
         respell: glossaryRespell,
       });
-      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+      await persistGlossary(glossary);
       setGlossarySpelling("");
       setGlossaryRespell("");
     });
@@ -775,14 +836,14 @@ function ProjectHome({
   async function editGlossary(id: string, spelling: string, respell: string) {
     await runAction(`glossary-${id}`, async () => {
       const glossary = renameGlossaryEntry(project.glossary ?? [], id, spelling, respell);
-      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+      await persistGlossary(glossary);
     });
   }
 
   async function removeGlossary(id: string) {
     await runAction(`glossary-delete-${id}`, async () => {
       const glossary = deleteGlossaryEntry(project.glossary ?? [], id);
-      await persistProject({ ...project, glossary, updated_at: new Date().toISOString() });
+      await persistGlossary(glossary);
     });
   }
 
@@ -800,6 +861,35 @@ function ProjectHome({
         onChange(result);
         setNotice(`Pronunciation clip copied into ${result.clipPath}.`);
       }
+    });
+  }
+
+  async function playGlossaryClip(entry: GlossaryEntry) {
+    if (!entry.clip_path || !window.boothDesk || folder === "(browser preview)") {
+      setNotice(entry.respell ? `${entry.spelling}: ${entry.respell}` : "Record or attach a pronunciation clip first.");
+      return;
+    }
+    await runAction(`glossary-play-${entry.id}`, async () => {
+      const audio = await window.boothDesk?.readAudio({ folder, relativePath: entry.clip_path as string });
+      if (!audio) {
+        return;
+      }
+      if (glossaryObjectUrlRef.current) {
+        URL.revokeObjectURL(glossaryObjectUrlRef.current);
+      }
+      const bytes = base64ToBytes(audio.base64);
+      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+      const url = URL.createObjectURL(new Blob([buffer], { type: audio.mime }));
+      glossaryObjectUrlRef.current = url;
+      const player = new Audio(url);
+      glossaryAudioRef.current = player;
+      player.addEventListener("ended", () => {
+        if (glossaryObjectUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          glossaryObjectUrlRef.current = null;
+        }
+      }, { once: true });
+      await player.play();
     });
   }
 
@@ -1063,6 +1153,8 @@ function ProjectHome({
             onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
             onDelete={(id) => void removeGlossary(id)}
             onAttachClip={(id) => void attachGlossaryClip(id)}
+            onPlayClip={(entry) => void playGlossaryClip(entry)}
+            onRecordClip={setGlossaryRecording}
           />
         ) : activePanel === "collaboration" ? (
           <CollaborationPanel
@@ -1137,6 +1229,7 @@ function ProjectHome({
                 onOpenTeleprompter={() => setTeleprompterOpen(true)}
                 onSaveRecording={(wavBase64) => saveRecordedWav(wavBase64, "chapter")}
                 onPunchPickup={setPunchPickup}
+                onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 pickupSeatFilter={pickupSeatFilter}
                 onPickupSeatFilter={setPickupSeatFilter}
                 spans={chapterSpans}
@@ -1226,6 +1319,27 @@ function ProjectHome({
         </div>
       ) : null}
 
+      {glossaryRecording ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="glossary-record-title">
+            <p className="phase-label">Pronunciation clip</p>
+            <h2 id="glossary-record-title">{glossaryRecording.spelling}</h2>
+            <p className="manager-help">Say the spelling naturally for 3–10 seconds. Booth Desk stores your human clip locally; it never generates a voice.</p>
+            <RecorderPanel
+              label={`Pronunciation for ${glossaryRecording.spelling}`}
+              disabled={!window.boothDesk || busyAction !== null}
+              onSave={async (wav) => {
+                const saved = await saveRecordedWav(wav, "glossary", undefined, glossaryRecording.id);
+                if (saved) {
+                  setGlossaryRecording(null);
+                }
+              }}
+            />
+            <div className="actions"><button className="secondary-button" type="button" onClick={() => setGlossaryRecording(null)}>Cancel</button></div>
+          </section>
+        </div>
+      ) : null}
+
       <footer>Project data is stored in this folder · schema {project.schema}</footer>
     </main>
   );
@@ -1252,7 +1366,7 @@ function Teleprompter({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
-  const [liveFlags, setLiveFlags] = useState(false);
+  const [liveFlags] = useState(false);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1286,14 +1400,14 @@ function Teleprompter({
               <option value="cream">Cream</option>
             </select>
           </label>
-          <label className="teleprompter-checkbox"><input type="checkbox" checked={liveFlags} onChange={(event) => setLiveFlags(event.target.checked)} /> Live flags</label>
+          <label className="teleprompter-checkbox" title="Listen-only ASR flags are not enabled in this build"><input type="checkbox" checked={liveFlags} disabled /> Live flags (experimental)</label>
           <button type="button" onClick={onClose}>Close</button>
         </div>
       </header>
       <div className="teleprompter-honesty">
         {liveFlags
           ? "Live flags are experimental and high-precision only; manual scrolling remains in control."
-          : "Live flags are off. Space/PageDown scrolls; listen to the take for acting, clicks, and room tone."}
+          : "Flags are off in this build so they do not cry wolf. Space/PageDown scrolls; listen to the take for acting, clicks, and room tone."}
       </div>
       <div ref={scrollRef} className="teleprompter-scroll" tabIndex={0}>
         <article className="teleprompter-page" style={{ fontSize: `${clampFontSize(fontSize)}px` }}>
@@ -1686,6 +1800,8 @@ function GlossaryPanel({
   onRename,
   onDelete,
   onAttachClip,
+  onPlayClip,
+  onRecordClip,
 }: {
   glossary: GlossaryEntry[];
   spelling: string;
@@ -1697,6 +1813,8 @@ function GlossaryPanel({
   onRename: (id: string, spelling: string, respell: string) => void;
   onDelete: (id: string) => void;
   onAttachClip: (id: string) => void;
+  onPlayClip: (entry: GlossaryEntry) => void;
+  onRecordClip: (entry: GlossaryEntry) => void;
 }) {
   return (
     <section className="phase-panel glossary-panel" aria-labelledby="glossary-panel-title">
@@ -1741,6 +1859,8 @@ function GlossaryPanel({
                   onRename={onRename}
                   onDelete={onDelete}
                   onAttachClip={onAttachClip}
+                  onPlayClip={onPlayClip}
+                  onRecordClip={onRecordClip}
                 />
               ))}
             </tbody>
@@ -1757,12 +1877,16 @@ function GlossaryRow({
   onRename,
   onDelete,
   onAttachClip,
+  onPlayClip,
+  onRecordClip,
 }: {
   entry: GlossaryEntry;
   busy: boolean;
   onRename: (id: string, spelling: string, respell: string) => void;
   onDelete: (id: string) => void;
   onAttachClip: (id: string) => void;
+  onPlayClip: (entry: GlossaryEntry) => void;
+  onRecordClip: (entry: GlossaryEntry) => void;
 }) {
   const [spelling, setSpelling] = useState(entry.spelling);
   const [respell, setRespell] = useState(entry.respell ?? "");
@@ -1789,6 +1913,8 @@ function GlossaryRow({
         <button type="button" disabled={busy} onClick={() => onAttachClip(entry.id)}>
           {entry.clip_path ? "Replace clip" : "Add clip"}
         </button>
+        <button type="button" disabled={busy || !entry.clip_path} onClick={() => onPlayClip(entry)}>Play</button>
+        <button type="button" disabled={busy} onClick={() => onRecordClip(entry)}>Record clip</button>
         <button type="button" disabled={busy} onClick={() => onDelete(entry.id)}>Delete</button>
       </td>
     </tr>
@@ -1976,6 +2102,8 @@ function ChapterTable({
             <th>#</th>
             <th>Title</th>
             <th>Est.</th>
+            <th>Proof</th>
+            <th>ACX</th>
             <th>Audio</th>
             <th>Author</th>
           </tr>
@@ -1993,6 +2121,8 @@ function ChapterTable({
                 {chapter.duration_warning ? <span className="duration-warning" title={chapter.duration_warning}> · long</span> : null}
               </td>
               <td>{chapter.estimated_duration_minutes ? `${chapter.estimated_duration_minutes.toFixed(1)}m` : "—"}</td>
+              <td>{chapter.open_pickups === undefined ? "—" : `${chapter.open_pickups} open`}</td>
+              <td>{chapter.acx_traffic_light ? <span className={`traffic-light compact ${chapter.acx_traffic_light}`}>{chapter.acx_traffic_light}</span> : "—"}</td>
               <td>
                 <button
                   className="table-action"
@@ -2036,6 +2166,7 @@ function ChapterDesk({
   onOpenTeleprompter,
   onSaveRecording,
   onPunchPickup,
+  onUpdatePickup,
   pickupSeatFilter,
   onPickupSeatFilter,
   spans,
@@ -2066,6 +2197,7 @@ function ChapterDesk({
   onOpenTeleprompter: () => void;
   onSaveRecording: (wavBase64: string) => Promise<unknown>;
   onPunchPickup: (pickup: Pickup) => void;
+  onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
   spans: ScriptSpan[];
@@ -2169,7 +2301,7 @@ function ChapterDesk({
         />
       ) : null}
 
-      {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
+      {proof ? <PickupList pickups={proof.pickups} onPlay={onPlayPickup} onExportMarkers={onExportMarkers} onPunch={onPunchPickup} onUpdate={onUpdatePickup} seatFilter={pickupSeatFilter} onSeatFilter={onPickupSeatFilter} /> : null}
       {acxReport ? <AcxMeter report={acxReport} /> : null}
     </article>
   );
@@ -2268,8 +2400,11 @@ function DuetTracksPanel({
   );
 }
 
-function PickupList({ pickups, onPlay, onExportMarkers, onPunch, seatFilter, onSeatFilter }: { pickups: Pickup[]; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
-  const visiblePickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
+function PickupList({ pickups, onPlay, onExportMarkers, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+  const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
+  const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
+  const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
+  const openCount = seatPickups.filter((pickup) => pickup.status === "open").length;
   return (
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
@@ -2286,19 +2421,37 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, seatFilter, onS
               <option value="N2">N2</option>
             </select>
           </label>
-          <span className="result-count">{visiblePickups.length} open</span>
+          <label className="pickup-seat-filter">Show
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "open" | "all")}>
+              <option value="open">Open</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <span className="result-count">{openCount} open</span>
           <button className="table-action" type="button" onClick={onExportMarkers}>Export markers</button>
         </div>
       </div>
       {visiblePickups.length === 0 ? (
-        <p className="result-empty">No text mismatches found. Listen once for acting and noise.</p>
+        <p className="result-empty">
+          {statusFilter === "open" && seatPickups.some((pickup) => pickup.status !== "open")
+            ? "No open pickups in this filter. Switch Show to All to review completed or ignored lines."
+            : "No text mismatches found. Listen once for acting and noise."}
+        </p>
       ) : (
         <ul className="pickup-list">
           {visiblePickups.map((pickup) => (
-            <li key={pickup.id}>
+            <li key={pickup.id} className={`pickup-row ${pickup.status}`}>
               <span className="pickup-actions">
                 <button type="button" onClick={() => onPlay(pickup)}>Play</button>
-                <button type="button" onClick={() => onPunch(pickup)}>Punch</button>
+                {pickup.status === "open" ? <button type="button" onClick={() => onPunch(pickup)}>Punch</button> : null}
+                {pickup.status === "open" ? (
+                  <>
+                    <button type="button" onClick={() => onUpdate(pickup, { status: "done" })}>Done</button>
+                    <button type="button" onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => onUpdate(pickup, { status: "open" })}>Reopen</button>
+                )}
               </span>
               <time>{formatTime(pickup.t_start)}</time>
               <div>
@@ -2307,11 +2460,26 @@ function PickupList({ pickups, onPlay, onExportMarkers, onPunch, seatFilter, onS
                 <span className="heard">{pickup.heard || "—"}</span>
               </div>
               <span className="kind-badge">{pickup.kind}</span>
+              <details className="pickup-note">
+                <summary>{pickup.note ? "Edit note" : "Note"}</summary>
+                <PickupNoteEditor pickup={pickup} onSave={(note) => onUpdate(pickup, { note })} />
+              </details>
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function PickupNoteEditor({ pickup, onSave }: { pickup: Pickup; onSave: (note: string) => void }) {
+  const [note, setNote] = useState(pickup.note ?? "");
+  useEffect(() => setNote(pickup.note ?? ""), [pickup.id, pickup.note]);
+  return (
+    <div className="pickup-note-editor">
+      <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Human note for the collaborator" />
+      <button type="button" disabled={note.trim().length === 0} onClick={() => onSave(note)}>Save note</button>
+    </div>
   );
 }
 
