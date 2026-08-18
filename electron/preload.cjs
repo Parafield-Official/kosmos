@@ -1,5 +1,12 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const modelProgressListeners = new Set();
+ipcRenderer.on("proof:model-progress", (_event, progress) => {
+  for (const listener of modelProgressListeners) {
+    listener(progress);
+  }
+});
+
 contextBridge.exposeInMainWorld("boothDesk", {
   platform: process.platform,
   desktop: true,
@@ -7,4 +14,18 @@ contextBridge.exposeInMainWorld("boothDesk", {
   openProject: () => ipcRenderer.invoke("project:open"),
   reopenRecentProject: () => ipcRenderer.invoke("project:recent"),
   saveProject: (payload) => ipcRenderer.invoke("project:save", payload),
+  importText: (payload) => ipcRenderer.invoke("project:import-text", payload),
+  pasteText: (payload) => ipcRenderer.invoke("project:paste-text", payload),
+  loadExample: (payload) => ipcRenderer.invoke("project:example", payload),
+  attachAudio: (payload) => ipcRenderer.invoke("project:attach-audio", payload),
+  readChapterText: (payload) => ipcRenderer.invoke("project:chapter-text", payload),
+  readAudio: (payload) => ipcRenderer.invoke("audio:read", payload),
+  decodeAudio: (payload) => ipcRenderer.invoke("audio:decode", payload),
+  transcribe: (payload) => ipcRenderer.invoke("proof:transcribe", payload),
+  modelStatus: () => ipcRenderer.invoke("proof:model-status"),
+  downloadModel: () => ipcRenderer.invoke("proof:download-model"),
+  onModelProgress: (listener) => {
+    modelProgressListeners.add(listener);
+    return () => modelProgressListeners.delete(listener);
+  },
 });

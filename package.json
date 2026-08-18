@@ -5,6 +5,9 @@
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
@@ -15,6 +18,34 @@
     "typecheck": "tsc --noEmit",
     "package:mac": "npm run build && electron-builder --mac",
     "package:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.boothdesk.app",
+    "productName": "Booth Desk",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "acx_spec.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public/examples",
+        "to": "examples"
+      }
+    ],
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.music"
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "react": "^19.2.3",
@@ -34,4 +65,3 @@
     "wait-on": "^9.0.10"
   }
 }
-

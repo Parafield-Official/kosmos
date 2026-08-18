@@ -14,9 +14,10 @@ human still listens.
 ## Current build
 
 This repository is being built in the phases described in [`docs/SPEC.md`](docs/SPEC.md).
-The current Phase 0 build establishes the project-folder format, persistence
-boundary, and tested proof/ACX core contracts. The first runnable vertical
-slice is the next phase.
+The current build has the Phase 0 project-folder shell plus the first Journey A
+slice: paste/import a chapter, attach audio, run the local ACX meter, and proof
+against a local Whisper transcript when the bundled engine/model is available.
+The shipped proof fixture can be loaded without a network connection.
 
 ## Install (release builds)
 
@@ -27,8 +28,10 @@ slice is the next phase.
    choose More info → Run anyway.
 
 The first Proof run downloads the selected Whisper model once, with a progress
-bar. The model stays in Booth Desk's local application-data folder and is not
-uploaded.
+bar and checksum verification. The model stays in Booth Desk's local
+application-data folder and is not uploaded. If a release is opened offline
+before its model has been cached, the bundled proof fixture and pasted local
+transcript path remain available; no cloud fallback is attempted.
 
 ## Journey A (first vertical slice)
 
@@ -36,9 +39,10 @@ The target first-use flow is:
 
 1. File → New Project and choose a folder.
 2. Paste or import one chapter of plain text.
-3. Attach that chapter's WAV or MP3.
-4. Click Proof and review timestamped word mismatches.
-5. Check the ACX traffic light and measured RMS, true peak, noise floor, rate,
+3. Attach that chapter's WAV or MP3 (or choose **Try the proof fixture**).
+4. Click Proof. Booth Desk uses local Whisper when installed; for a fixture or
+   development build you may paste a local transcript instead.
+5. Review timestamped word mismatches and check the ACX traffic light with RMS, true peak, noise floor, rate,
    channels, duration, and room-tone values.
 
 ## Working next to Reaper
@@ -67,6 +71,15 @@ npm run typecheck
 npm run dev
 ```
 
+For contributors testing a locally built whisper.cpp engine, point the desktop
+shell at it without changing the project format:
+
+```sh
+WHISPER_CLI_PATH=/path/to/whisper-cli \
+WHISPER_MODEL_PATH=/path/to/ggml-small.en.bin \
+npm run dev
+```
+
 For a production bundle:
 
 ```sh
@@ -78,4 +91,3 @@ npm run package:win   # on Windows
 ## License
 
 Booth Desk is released under the [MIT License](LICENSE).
-
