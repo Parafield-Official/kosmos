@@ -95,4 +95,22 @@ describe("offline glossary candidates", () => {
     );
     expect(linked[0].glossary_id).toBe("user-elena");
   });
+
+  it("keeps generated IDs unique when different spellings share a slug", () => {
+    const glossary = candidatesToGlossary([
+      { spelling: "A/B", frequency: 1, reasons: ["uncommon"] },
+      { spelling: "A-B", frequency: 1, reasons: ["uncommon"] },
+    ]);
+
+    expect(new Set(glossary.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it("chooses the next available generated user ID after entries have been removed", () => {
+    const first = addGlossaryEntry([], "Elena");
+    const second = addGlossaryEntry(first, "Kael");
+    const remaining = deleteGlossaryEntry(second, first[0].id);
+    const next = addGlossaryEntry(remaining, "Mara");
+
+    expect(new Set(next.map((entry) => entry.id)).size).toBe(next.length);
+  });
 });

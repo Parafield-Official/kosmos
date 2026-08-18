@@ -51,4 +51,17 @@ describe("ACX measurement", () => {
     expect(report.tail_room_tone_is_digital_silence).toBe(true);
     expect(report.checks.tail_room_tone).toBe("fail");
   });
+
+  it("fails meter checks when PCM contains non-finite samples instead of passing NaN comparisons", () => {
+    const report = measurePcm({
+      samples: Float32Array.from([0.1, Number.NaN, 0.1]),
+      sampleRate: 44_100,
+      channels: 1,
+    });
+
+    expect(report.checks.rms).toBe("fail");
+    expect(report.checks.true_peak).toBe("fail");
+    expect(report.checks.noise_floor).toBe("fail");
+    expect(report.traffic_light).toBe("red");
+  });
 });

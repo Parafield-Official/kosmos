@@ -46,26 +46,48 @@ export function decodeWavPcm16(bytes: Uint8Array): DecodedWav {
   let sampleRate = 0;
   let bitsPerSample = 0;
   let audioFormat = 0;
+  let blockAlign = 0;
   let dataOffset = -1;
   let dataLength = 0;
   while (offset + 8 <= bytes.length) {
     const id = readAscii(bytes, offset, 4);
     const length = view.getUint32(offset + 4, true);
     const content = offset + 8;
+    if (length > bytes.length - content) {
+      throw new Error("Truncated WAV chunk");
+    }
+    const nextOffset = content + length + (length % 2);
+    if (nextOffset > bytes.length) {
+      throw new Error("Truncated WAV chunk padding");
+    }
     if (id === "fmt ") {
+      if (length < 16) {
+        throw new Error("WAV fmt chunk is truncated");
+      }
       audioFormat = view.getUint16(content, true);
       channels = view.getUint16(content + 2, true);
       sampleRate = view.getUint32(content + 4, true);
+      blockAlign = view.getUint16(content + 12, true);
       bitsPerSample = view.getUint16(content + 14, true);
     } else if (id === "data") {
       dataOffset = content;
-      dataLength = Math.min(length, bytes.length - content);
+      dataLength = length;
       break;
     }
-    offset = content + length + (length % 2);
+    offset = nextOffset;
   }
-  if (audioFormat !== 1 || bitsPerSample !== 16 || channels <= 0 || sampleRate <= 0 || dataOffset < 0) {
+  if (
+    audioFormat !== 1
+    || bitsPerSample !== 16
+    || channels <= 0
+    || sampleRate <= 0
+    || blockAlign !== channels * 2
+    || dataOffset < 0
+  ) {
     throw new Error("Only 16-bit PCM WAV files are supported");
+  }
+  if (dataLength % blockAlign !== 0) {
+    throw new Error("WAV data chunk is not aligned to a complete PCM frame");
   }
   const count = Math.floor(dataLength / 2);
   const samples = new Float32Array(count);

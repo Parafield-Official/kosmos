@@ -71,9 +71,16 @@ export function recordLiveFlag(
 }
 
 export function dismissLiveFlag(state: LiveFlagsState, id: string): LiveFlagsState {
-  return state.dismissedIds.includes(id)
-    ? state
-    : { ...state, dismissedIds: [...state.dismissedIds, id] };
+  if (state.dismissedIds.includes(id)) {
+    return state;
+  }
+  const falseAlarmCount = state.falseAlarmCount + 1;
+  return {
+    ...state,
+    dismissedIds: [...state.dismissedIds, id],
+    falseAlarmCount,
+    dimmed: state.dimmed || falseAlarmCount >= 3,
+  };
 }
 
 function appendSegment(line: PromptLine, segment: PromptSegment): void {

@@ -24,4 +24,18 @@ describe("local WAV recorder codec", () => {
     bytes[34] = 24;
     expect(() => decodeWavPcm16(bytes)).toThrow(/16-bit PCM/i);
   });
+
+  it("rejects a data chunk whose length is not a complete PCM frame", () => {
+    const bytes = encodeWavPcm16(Float32Array.from([0, 0]), 44_100, 1);
+    new DataView(bytes.buffer).setUint32(40, 3, true);
+
+    expect(() => decodeWavPcm16(bytes)).toThrow(/truncated|frame|aligned|data/i);
+  });
+
+  it("rejects truncated chunks instead of silently decoding the available prefix", () => {
+    const bytes = encodeWavPcm16(Float32Array.from([0, 0]), 44_100, 1);
+    new DataView(bytes.buffer).setUint32(40, 1000, true);
+
+    expect(() => decodeWavPcm16(bytes)).toThrow(/truncated|data/i);
+  });
 });

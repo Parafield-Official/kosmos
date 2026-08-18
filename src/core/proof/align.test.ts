@@ -104,4 +104,19 @@ describe("alignTranscript", () => {
       note: "Dialect is intentional.",
     });
   });
+
+  it("ignores transcript words with invalid timing so pickups never contain NaN timestamps", () => {
+    const result = alignTranscript({
+      chapterId: "ch01",
+      manuscript: "alpha beta",
+      transcript: [
+        { text: "alpha", start: Number.NaN, end: Number.NaN },
+        { text: "beta", start: 1, end: 1.2 },
+      ],
+      durationSeconds: 2,
+    });
+
+    expect(result.transcript_words).toHaveLength(1);
+    expect(result.pickups.every((pickup) => Number.isFinite(pickup.t_start) && Number.isFinite(pickup.t_end))).toBe(true);
+  });
 });

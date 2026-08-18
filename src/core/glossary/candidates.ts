@@ -124,12 +124,23 @@ export function extractGlossaryCandidates(
 
 /** Convert the explainable draft list to the persisted project shape. */
 export function candidatesToGlossary(candidates: GlossaryCandidate[]): GlossaryEntry[] {
-  return candidates.map((candidate) => ({
-    id: `auto-${slug(candidate.spelling)}`,
-    spelling: candidate.spelling,
-    frequency: candidate.frequency,
-    source: "auto",
-  }));
+  const usedIds = new Set<string>();
+  return candidates.map((candidate) => {
+    const baseId = `auto-${slug(candidate.spelling)}`;
+    let id = baseId;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+    return {
+      id,
+      spelling: candidate.spelling,
+      frequency: candidate.frequency,
+      source: "auto",
+    };
+  });
 }
 
 export function addGlossaryEntry(
@@ -141,7 +152,15 @@ export function addGlossaryEntry(
   if (clean.length === 0) {
     throw new Error("Glossary spelling cannot be empty");
   }
-  const id = options.id ?? `user-${slug(clean)}-${glossary.length + 1}`;
+  let id = options.id ?? `user-${slug(clean)}-${glossary.length + 1}`;
+  if (!options.id) {
+    const baseId = id;
+    let suffix = glossary.length + 1;
+    while (glossary.some((entry) => entry.id === id)) {
+      suffix += 1;
+      id = `${baseId}-${suffix}`;
+    }
+  }
   if (glossary.some((entry) => entry.id === id)) {
     throw new Error(`Glossary entry id already exists: ${id}`);
   }

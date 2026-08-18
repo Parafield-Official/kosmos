@@ -157,6 +157,9 @@ function formatStatus(audio: PcmAudio): CheckStatus {
 }
 
 function rangeStatus(value: number, min: number, max: number, edge: number): CheckStatus {
+  if (Number.isNaN(value)) {
+    return "fail";
+  }
   if (value < min || value > max) {
     return "fail";
   }
@@ -172,6 +175,9 @@ function upperBoundStatus(
   edge: number,
   digitalSilenceIsWarning = false,
 ): CheckStatus {
+  if (Number.isNaN(value)) {
+    return "fail";
+  }
   if (digitalSilenceIsWarning && value === -Infinity) {
     return "warn";
   }
@@ -367,4 +373,3 @@ function sliceFrames(
 function isDigitalSilence(sample: number): boolean {
   return Math.abs(sample) <= DIGITAL_SILENCE_EPSILON;
 }
-

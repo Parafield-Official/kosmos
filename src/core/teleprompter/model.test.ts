@@ -50,4 +50,15 @@ describe("teleprompter model", () => {
     state = dismissLiveFlag(state, "a");
     expect(state.dismissedIds).toContain("a");
   });
+
+  it("counts user-dismissed flags toward the three-false-alarm safety limit", () => {
+    let state = { ...createLiveFlagsState(), enabled: true };
+    state = dismissLiveFlag(state, "a");
+    state = dismissLiveFlag(state, "b");
+    state = dismissLiveFlag(state, "c");
+
+    expect(state.dismissedIds).toEqual(["a", "b", "c"]);
+    expect(state.falseAlarmCount).toBe(3);
+    expect(state.dimmed).toBe(true);
+  });
 });

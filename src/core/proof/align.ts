@@ -74,7 +74,13 @@ interface PickupRun {
  */
 export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   const manuscriptTokens = tokenizeManuscript(input.manuscript);
-  const transcriptWords = input.transcript.filter((word) => normalizeToken(word.text).length > 0);
+  const transcriptWords = input.transcript.filter((word) =>
+    typeof word.text === "string"
+    && normalizeToken(word.text).length > 0
+    && Number.isFinite(word.start)
+    && Number.isFinite(word.end)
+    && word.end >= word.start,
+  );
   const transcriptValues = transcriptWords.map((word) => normalizeToken(word.text));
   const manuscriptValues = manuscriptTokens.map((token) => token.value);
   const operations = diffTokens(manuscriptValues, transcriptValues);
@@ -82,6 +88,9 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   let operationIndex = 0;
   let pickupOrdinal = 0;
   let previousTranscript: TranscriptWord | undefined;
+  const durationSeconds = Number.isFinite(input.durationSeconds) && (input.durationSeconds ?? 0) >= 0
+    ? input.durationSeconds as number
+    : inferDuration(transcriptWords);
 
   while (operationIndex < operations.length) {
     const operation = operations[operationIndex];
@@ -113,7 +122,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     const pickup = runToPickup(
       run,
       input.chapterId,
-      input.durationSeconds ?? inferDuration(transcriptWords),
+      durationSeconds,
       input.seat ?? "narration",
       pickupOrdinal,
     );
@@ -135,7 +144,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     operations,
     thresholdSeconds: input.pauseThresholdSeconds ?? 4,
     seat: input.seat ?? "narration",
-    durationSeconds: input.durationSeconds ?? inferDuration(transcriptWords),
+    durationSeconds,
     startOrdinal: pickupOrdinal,
   });
   return {
@@ -269,10 +278,12 @@ function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
     return pickups;
   }
 
+  const mergeWindow = Number.isFinite(windowSeconds) ? Math.max(0, windowSeconds) : 0.4;
+
   const merged: Pickup[] = [];
   for (const pickup of pickups) {
     const previous = merged[merged.length - 1];
-    if (!previous || pickup.t_start - previous.t_end > windowSeconds) {
+    if (!previous || pickup.t_start - previous.t_end > mergeWindow) {
       merged.push(pickup);
       continue;
     }
