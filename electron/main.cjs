@@ -190,8 +190,9 @@ async function openProjectFolder() {
 
   const folder = result.filePaths[0];
   const opened = await readProjectFolder(folder);
+  const refreshed = await refreshGlossaryOnOpen(opened);
   await rememberRecentProject(folder);
-  return opened;
+  return refreshed;
 }
 
 async function readProjectFolder(folder) {
@@ -2180,7 +2181,8 @@ async function reopenRecentProject() {
     return null;
   }
   try {
-    return await readProjectFolder(state.recentProject);
+    const opened = await readProjectFolder(state.recentProject);
+    return await refreshGlossaryOnOpen(opened);
   } catch (error) {
     if (error && error.code === "ENOENT") {
       // A removable drive or deleted folder should not make every launch fail.
@@ -2188,6 +2190,26 @@ async function reopenRecentProject() {
       return null;
     }
     throw error;
+  }
+}
+
+/**
+ * Existing projects may contain suggestions generated before the bundled
+ * pronunciation lexicon was available. Re-run automatic suggestions when a
+ * project opens so users do not have to discover a separate maintenance
+ * button. User-edited rows (respellings, clips, seats, or source=user) are
+ * preserved by replaceAutoGlossaryCandidates(). A migration failure must not
+ * prevent an otherwise valid book from opening.
+ */
+async function refreshGlossaryOnOpen(envelope) {
+  if (!envelope?.folder || !envelope.project?.chapters?.length) {
+    return envelope;
+  }
+  try {
+    return await refreshGlossary(envelope.folder, envelope.project);
+  } catch (error) {
+    console.warn("Could not refresh pronunciation suggestions while opening the project:", error);
+    return envelope;
   }
 }
 
