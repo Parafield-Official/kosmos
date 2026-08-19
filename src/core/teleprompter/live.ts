@@ -194,6 +194,7 @@ function concatLiveQcChunks(chunks: LiveQcChunk[]): Float32Array {
 }
 
 const LIVE_RESYNC_LOOKAHEAD = 8;
+const LIVE_NEAR_JUMP = 3;
 const RECENT_HEARD_LIMIT = 12;
 const OVERLAP_REMATCH_SECONDS = 0.65;
 const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
@@ -274,6 +275,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     }
     if (heard === expected || wordsSimilar(heard, expected)) {
       cursor += 1;
+      pendingResync = undefined;
+      matchedInWindow += 1;
+      continue;
+    }
+
+    const nearJump = !input.flagsEnabled ? findNearJump(heard, input.expected, cursor) : -1;
+    if (nearJump >= 0) {
+      cursor = nearJump + 1;
       pendingResync = undefined;
       matchedInWindow += 1;
       continue;
@@ -714,6 +723,28 @@ export function mergeLivePickup(existing: Pickup[], pickup: Pickup): Pickup[] {
     return existing;
   }
   return [...existing, pickup].sort((left, right) => left.t_start - right.t_start);
+}
+
+function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: number): number {
+  const window = expected.slice(cursor + 1, cursor + 1 + LIVE_NEAR_JUMP);
+  const hits = window.flatMap((candidate, offset) => {
+    const token = normalizeToken(candidate.text);
+    if (!token || (token !== heard && !wordsSimilar(heard, token))) {
+      return [];
+    }
+    return [{ index: cursor + 1 + offset, offset }];
+  });
+  if (hits.length !== 1) {
+    return -1;
+  }
+  const hit = hits[0];
+  if (!hit) {
+    return -1;
+  }
+  if (isContentWord(heard) || hit.offset === 0 || heard.length >= 5) {
+    return hit.index;
+  }
+  return -1;
 }
 
 function hasTwoWordTrailingAnchor(

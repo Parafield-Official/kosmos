@@ -149,8 +149,43 @@ describe("teleprompter live matching", () => {
       flagsEnabled: false,
     });
 
-    expect(first.state.cursor).toBe(0);
+    expect(first.state.cursor).toBe(2);
     expect(second.state.cursor).toBe(3);
+  });
+
+  it("moves gold on a one-word stream hop that lands 1-3 words ahead", () => {
+    const next = matchLiveWindow({
+      chapterId: "ch01",
+      expected,
+      transcript: [{ text: "fox", start: 0.3, end: 0.5, confidence: 0.97 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+    const twoAhead = matchLiveWindow({
+      chapterId: "ch01",
+      expected,
+      transcript: [{ text: "jumped", start: 0.6, end: 0.9, confidence: 0.97 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+
+    expect(next.state.cursor).toBe(2);
+    expect(twoAhead.state.cursor).toBe(3);
+    expect(next.flag).toBeUndefined();
+    expect(twoAhead.flag).toBeUndefined();
+  });
+
+  it("does not jump a lonely the three words ahead", () => {
+    const result = matchLiveWindow({
+      chapterId: "ch01",
+      expected,
+      transcript: [{ text: "the", start: 0.8, end: 1.0, confidence: 0.99 }],
+      state: { cursor: 1, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+
+    expect(result.state.cursor).toBe(1);
+    expect(result.flag).toBeUndefined();
   });
 
   it("resynchronizes when the narrator repeats the next manuscript word", () => {
@@ -174,7 +209,7 @@ describe("teleprompter live matching", () => {
       flagsEnabled: false,
     });
 
-    expect(first.state.cursor).toBe(0);
+    expect(first.state.cursor).toBe(2);
     expect(repeated.state.cursor).toBe(2);
   });
 
