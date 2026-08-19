@@ -126,18 +126,20 @@ export function drainLiveQcBuffer(
   const phraseEnd = phraseStart + LIVE_QC_PHRASE_WORDS;
   const gold = Number.isFinite(goldCursor) ? Math.floor(goldCursor as number) : phraseStart;
   const coveredThrough = buffer.chunks.reduce((maxCursor, chunk) => Math.max(maxCursor, chunk.cursor), phraseStart);
-  const stallSamples = buffer.chunks
-    .filter((chunk) => chunk.cursor === gold)
+  const leftoverSamples = buffer.chunks
+    .filter((chunk) => chunk.cursor === coveredThrough)
     .reduce((count, chunk) => count + chunk.samples.length, 0);
-  const stalledOnWord = gold === coveredThrough && stallSamples >= Math.max(1, Math.floor(sampleRate * LIVE_QC_STALL_SECONDS));
-  if (!force && gold < phraseEnd && !stalledOnWord) {
+  const enoughSpeech = leftoverSamples >= Math.max(1, Math.floor(sampleRate * LIVE_QC_STALL_SECONDS));
+  const stalledOnWord = gold === coveredThrough && enoughSpeech;
+  const goldJumpedPast = gold > coveredThrough && enoughSpeech;
+  if (!force && gold < phraseEnd && !stalledOnWord && !goldJumpedPast) {
     return { buffer };
   }
 
   const take = force
     ? buffer.chunks
-    : stalledOnWord && gold < phraseEnd
-      ? buffer.chunks.filter((chunk) => chunk.cursor <= gold)
+    : (stalledOnWord || goldJumpedPast) && gold < phraseEnd + LIVE_QC_PHRASE_WORDS
+      ? buffer.chunks.filter((chunk) => chunk.cursor <= Math.min(gold, coveredThrough))
       : buffer.chunks.filter((chunk) => chunk.cursor < phraseEnd);
   const keep = force
     ? []

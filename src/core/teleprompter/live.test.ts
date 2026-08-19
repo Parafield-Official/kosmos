@@ -1045,8 +1045,8 @@ describe("background Whisper QC buffering", () => {
       1.25,
     );
 
-    expect(drainLiveQcBuffer(buffer, 4, false, 6).window).toBeUndefined();
-    const final = drainLiveQcBuffer(buffer, 4, true, 6);
+    expect(drainLiveQcBuffer(buffer, 16_000, false, 6).window).toBeUndefined();
+    const final = drainLiveQcBuffer(buffer, 16_000, true, 6);
     expect(final.window).toMatchObject({ cursor: 4, startSeconds: 1.25 });
     expect(Array.from(final.window?.samples ?? [])).toEqual([
       expect.closeTo(0.1, 5),
@@ -1076,5 +1076,16 @@ describe("background Whisper QC buffering", () => {
     expect(stalled.window?.cursor).toBe(68);
     expect(stalled.window?.samples.length).toBe(16_000);
     expect(stalled.buffer.sampleCount).toBe(0);
+  });
+
+  it("still grades the last word when gold jumps past it", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 68, 0);
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.2), 68, 0.5);
+
+    const jumped = drainLiveQcBuffer(buffer, 16_000, false, 70);
+    expect(jumped.window?.cursor).toBe(68);
+    expect(jumped.window?.samples.length).toBe(16_000);
+    expect(jumped.buffer.sampleCount).toBe(0);
   });
 });

@@ -45,7 +45,7 @@ import {
   teleprompterLayout,
   type PromptTheme,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, isStaleLiveFlag, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, isStaleLiveFlag, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -1949,6 +1949,7 @@ function Teleprompter({
   const liveFollowStreamRef = useRef(false);
   const liveWhisperBusyRef = useRef(false);
   const liveQcBufferRef = useRef<LiveQcBuffer>(createLiveQcBuffer());
+  const liveQcFlushTimerRef = useRef<number | null>(null);
   const liveWhisperPromiseRef = useRef<Promise<void> | null>(null);
   const liveFollowPromiseRef = useRef<Promise<void> | null>(null);
   const liveStoppingRef = useRef(false);
@@ -2034,6 +2035,10 @@ function Teleprompter({
     liveSentRef.current = false;
     liveFollowStreamRef.current = false;
     liveWhisperBusyRef.current = false;
+    if (liveQcFlushTimerRef.current !== null) {
+      window.clearInterval(liveQcFlushTimerRef.current);
+      liveQcFlushTimerRef.current = null;
+    }
     liveQcBufferRef.current = createLiveQcBuffer();
     liveWhisperPromiseRef.current = null;
     liveFollowPromiseRef.current = null;
@@ -2462,6 +2467,15 @@ function Teleprompter({
       liveStateRef.current = nextState;
       setLiveState(nextState);
       setLiveStatus("listening");
+      if (liveQcFlushTimerRef.current !== null) {
+        window.clearInterval(liveQcFlushTimerRef.current);
+      }
+      liveQcFlushTimerRef.current = window.setInterval(() => {
+        if (!liveEnabledRef.current || liveStateRef.current.dimmed) {
+          return;
+        }
+        flushLiveQcWindow(liveSampleRateRef.current, liveSessionRef.current);
+      }, Math.round(LIVE_QC_STALL_SECONDS * 1000));
     } catch (reason) {
       stopLiveCaptureImmediately();
       setLiveError(messageFor(reason, "Microphone access or word checks failed."));
