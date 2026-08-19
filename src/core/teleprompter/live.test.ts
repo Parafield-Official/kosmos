@@ -655,6 +655,82 @@ describe("parakeet live stream lines", () => {
     });
   });
 
+  it("does not flag a Whisper word-piece as a narrator swap", () => {
+    const fragment = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "them" },
+        { index: 1, lineIndex: 0, text: "flashing" },
+        { index: 2, lineIndex: 0, text: "white" },
+      ],
+      transcript: [
+        { text: "them", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "hing", start: 0.2, end: 0.5, confidence: 0.99 },
+        { text: "white", start: 0.5, end: 0.8, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(fragment).toBeUndefined();
+
+    const suffix = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "turn" },
+        { index: 1, lineIndex: 0, text: "cartwheels" },
+        { index: 2, lineIndex: 0, text: "over" },
+      ],
+      transcript: [
+        { text: "turn", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "els", start: 0.2, end: 0.45, confidence: 0.99 },
+        { text: "over", start: 0.45, end: 0.7, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(suffix).toBeUndefined();
+  });
+
+  it("still flags a clipped or misspelled content word", () => {
+    const clipped = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "turn" },
+        { index: 1, lineIndex: 0, text: "cartwheels" },
+        { index: 2, lineIndex: 0, text: "over" },
+      ],
+      transcript: [
+        { text: "turn", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "cartwheel", start: 0.2, end: 0.7, confidence: 0.99 },
+        { text: "over", start: 0.7, end: 0.9, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(clipped).toMatchObject({ expected: "cartwheels", heard: "cartwheel", expectedIndex: 1 });
+
+    const misspelled = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "the" },
+        { index: 1, lineIndex: 0, text: "inhabitants" },
+        { index: 2, lineIndex: 0, text: "of" },
+      ],
+      transcript: [
+        { text: "the", start: 0, end: 0.15, confidence: 0.99 },
+        { text: "inhibitants", start: 0.15, end: 0.8, confidence: 0.99 },
+        { text: "of", start: 0.8, end: 0.95, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(misspelled).toMatchObject({ expected: "inhabitants", heard: "inhibitants", expectedIndex: 1 });
+  });
+
   it("does not turn an uncertain short Whisper word into a pickup", () => {
     const flag = liveBackFlag({
       chapterId: "ch1",

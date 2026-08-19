@@ -205,6 +205,7 @@ class PersistentWhisperServer {
       form.append("no_language_probabilities", "true");
       form.append("temperature", "0");
       form.append("temperature_inc", "0");
+      form.append("suppress_nst", "true");
       const response = await this.fetchImpl(this.url("/inference"), {
         method: "POST",
         body: form,
@@ -245,6 +246,7 @@ function buildWhisperServerArgs({ serverPath, modelPath, port, requestPath, thre
     "-bo", "5",
     "-bs", "5",
     "-sow",
+    "-sns",
     "--host", "127.0.0.1",
     "--port", String(port),
     "--request-path", requestPath,
@@ -265,20 +267,26 @@ function normalizeServerResult(result) {
       continue;
     }
     for (const item of segment.words) {
-      const matches = String(item?.word ?? "").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
+      const raw = String(item?.word ?? "");
+      const startsWord = words.length === 0 || /^\s/u.test(raw);
+      const matches = raw.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
       const start = Number(item?.start);
       const end = Number(item?.end);
       if (matches.length === 0 || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
         continue;
       }
-      const confidence = Number(item?.probability);
+      const confidence = Number.isFinite(Number(item?.probability))
+        ? Math.max(0, Math.min(1, Number(item.probability)))
+        : 0;
       for (const text of matches) {
-        words.push({
-          text,
-          start,
-          end,
-          confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.75,
-        });
+        const previous = words.at(-1);
+        if (!startsWord && previous) {
+          previous.text += text;
+          previous.end = Math.max(previous.end, end);
+          previous.confidence = Math.min(previous.confidence, confidence);
+          continue;
+        }
+        words.push({ text, start, end, confidence });
       }
     }
   }

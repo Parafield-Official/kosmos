@@ -19,6 +19,7 @@ describe("persistent Whisper server adapter", () => {
       "-bo", "5",
       "-bs", "5",
       "-sow",
+      "-sns",
       "--host", "127.0.0.1",
       "--port", "43210",
       "--request-path", "/kosmos-live-test",
@@ -46,6 +47,33 @@ describe("persistent Whisper server adapter", () => {
         { text: "the", start: 0.01, end: 0.08, confidence: 0.8 },
         { text: "fox", start: 0.18, end: 0.32, confidence: 0.95 },
       ],
+    });
+  });
+
+  it("glues Whisper subword tokens into one manuscript word", () => {
+    expect(normalizeServerResult({
+      segments: [{
+        words: [
+          { word: " cart", start: 0.2, end: 0.35, probability: 0.96 },
+          { word: "wheels", start: 0.35, end: 0.62, probability: 0.94 },
+          { word: " over", start: 0.62, end: 0.8, probability: 0.99 },
+        ],
+      }],
+    })).toEqual({
+      words: [
+        { text: "cartwheels", start: 0.2, end: 0.62, confidence: 0.94 },
+        { text: "over", start: 0.62, end: 0.8, confidence: 0.99 },
+      ],
+    });
+  });
+
+  it("does not invent confidence when Whisper omitted it", () => {
+    expect(normalizeServerResult({
+      segments: [{
+        words: [{ word: " the", start: 0.01, end: 0.08 }],
+      }],
+    })).toEqual({
+      words: [{ text: "the", start: 0.01, end: 0.08, confidence: 0 }],
     });
   });
 

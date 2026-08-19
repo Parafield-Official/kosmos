@@ -478,6 +478,9 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (!heard || !expected || confidence < confidenceThreshold) {
       continue;
     }
+    if (isWhisperWordPiece(heard, expected)) {
+      continue;
+    }
     const reliableWords = isContentWord(heard) && isContentWord(expected);
     const reliableShortSwap = RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`);
     const anchoredShortChange = hasAnchor && confidence >= Math.max(confidenceThreshold, 0.95);
@@ -518,7 +521,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     const confidence = Number.isFinite(heardWord?.confidence)
       ? Math.min(1, Math.max(0, heardWord?.confidence as number))
       : 0;
-    if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected)) {
+    if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected) && !isWhisperWordPiece(heard, expected)) {
       const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
       if (!input.dismissedIds?.includes(id) && !isStaleLiveFlag(expectedWord.index, input.goldCursor)) {
         return {
@@ -813,6 +816,21 @@ const RELIABLE_SHORT_SWAP_PAIRS = new Set([
 
 function isContentWord(token: string): boolean {
   return token.length >= 4 && !FUNCTION_WORDS.has(token);
+}
+
+function isWhisperWordPiece(heard: string, expected: string): boolean {
+  if (!heard || !expected || heard === expected) {
+    return false;
+  }
+  if (RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`)) {
+    return false;
+  }
+  const shorter = heard.length <= expected.length ? heard : expected;
+  const longer = heard.length <= expected.length ? expected : heard;
+  if (longer.includes(shorter) && (shorter.length <= 4 || longer.length - shorter.length >= 3)) {
+    return true;
+  }
+  return shorter.length <= 4 && longer.length >= shorter.length * 2;
 }
 
 function wordsSimilar(heard: string, expected: string): boolean {
