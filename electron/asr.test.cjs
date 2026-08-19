@@ -35,13 +35,13 @@ describe("local Whisper JSON adapter", () => {
       outputBase: "/tmp/transcript",
       language: "en",
       live: true,
-      threads: 8,
+      threads: 6,
     })).toEqual([
       "-m", "/models/small.en.bin",
       "-f", "/tmp/window.wav",
       "-l", "en",
       "-oj", "-of", "/tmp/transcript", "-np",
-      "-t", "8", "-bs", "1", "-bo", "1", "-fa", "-sow",
+      "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow",
     ]);
   });
 

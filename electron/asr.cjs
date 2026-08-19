@@ -56,7 +56,7 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
       outputBase,
       language: normalizeLanguage(language),
       live,
-      threads: live ? Math.min(8, Math.max(2, os.cpus().length)) : undefined,
+      threads: live ? Math.min(6, Math.max(2, os.cpus().length)) : undefined,
     }), { cwd: temporaryRoot, timeoutMs: WHISPER_TIMEOUT_MS });
     const json = JSON.parse(await fs.readFile(outputPath, "utf8"));
     return {
