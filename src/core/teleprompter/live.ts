@@ -497,8 +497,9 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       continue;
     }
     const reliableWords = isContentWord(heard) && isContentWord(expected);
+    const reliableShortSwap = RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`);
     const anchoredShortChange = hasAnchor && confidence >= Math.max(confidenceThreshold, 0.95);
-    if (!reliableWords && !anchoredShortChange) {
+    if (!reliableWords && !anchoredShortChange && !reliableShortSwap) {
       continue;
     }
     const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
@@ -813,6 +814,7 @@ const RELIABLE_SHORT_SWAP_PAIRS = new Set([
   "a|an", "an|a",
   "in|on", "on|in",
   "of|off", "off|of",
+  "to|on", "on|to",
   "to|too", "too|to",
 ]);
 

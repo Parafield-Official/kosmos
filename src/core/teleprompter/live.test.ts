@@ -620,6 +620,41 @@ describe("parakeet live stream lines", () => {
     });
   });
 
+  it("flags a to → on swap in a real manuscript phrase", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "Urgent" },
+        { index: 1, lineIndex: 0, text: "message" },
+        { index: 2, lineIndex: 0, text: "to" },
+        { index: 3, lineIndex: 0, text: "the" },
+        { index: 4, lineIndex: 0, text: "inhabitants" },
+        { index: 5, lineIndex: 0, text: "of" },
+        { index: 6, lineIndex: 0, text: "this" },
+        { index: 7, lineIndex: 0, text: "town" },
+      ],
+      transcript: [
+        { text: "Urgent", start: 0.0, end: 0.3, confidence: 0.99 },
+        { text: "message", start: 0.3, end: 0.6, confidence: 0.99 },
+        { text: "on", start: 0.6, end: 0.75, confidence: 0.91 },
+        { text: "the", start: 0.75, end: 0.85, confidence: 0.99 },
+        { text: "inhabitants", start: 0.85, end: 1.4, confidence: 0.99 },
+        { text: "of", start: 1.4, end: 1.5, confidence: 0.99 },
+        { text: "this", start: 1.5, end: 1.7, confidence: 0.99 },
+        { text: "town", start: 1.7, end: 2.0, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "to",
+      heard: "on",
+      expectedIndex: 2,
+    });
+  });
+
   it("does not turn an uncertain short Whisper word into a pickup", () => {
     const flag = liveBackFlag({
       chapterId: "ch1",
