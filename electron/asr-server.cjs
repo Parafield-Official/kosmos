@@ -242,8 +242,8 @@ function buildWhisperServerArgs({ serverPath, modelPath, port, requestPath, thre
   const args = [
     "-m", modelPath,
     "-t", String(Number.isFinite(threads) && threads > 0 ? Math.floor(threads) : 4),
-    "-bo", "1",
-    "-bs", "1",
+    "-bo", "5",
+    "-bs", "5",
     "-sow",
     "--host", "127.0.0.1",
     "--port", String(port),

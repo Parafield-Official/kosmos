@@ -6,7 +6,7 @@ const {
 } = require("./asr-server.cjs");
 
 describe("persistent Whisper server adapter", () => {
-  it("binds only to loopback and uses greedy live decoding", () => {
+  it("binds only to loopback and uses official beam-5 QC decoding", () => {
     expect(buildWhisperServerArgs({
       serverPath: "/vendor/bin/whisper-server",
       modelPath: "/models/small.en.bin",
@@ -16,8 +16,8 @@ describe("persistent Whisper server adapter", () => {
     })).toEqual([
       "-m", "/models/small.en.bin",
       "-t", "6",
-      "-bo", "1",
-      "-bs", "1",
+      "-bo", "5",
+      "-bs", "5",
       "-sow",
       "--host", "127.0.0.1",
       "--port", "43210",
