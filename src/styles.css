@@ -1925,6 +1925,135 @@ button {
   line-height: 1.45;
 }
 
+.live-voice-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 22px 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+}
+
+.teleprompter-cream .live-voice-status,
+.teleprompter-sepia .live-voice-status {
+  border-color: var(--line);
+  background: #fffaf5;
+}
+
+.live-voice-status-main,
+.live-voice-status-metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-voice-status-main {
+  min-width: 0;
+}
+
+.live-voice-status-main > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.live-voice-status-main strong {
+  font-size: 11px;
+}
+
+.live-voice-status-main span:not(.live-voice-status-dot) {
+  overflow: hidden;
+  max-width: 430px;
+  color: inherit;
+  opacity: 0.7;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-voice-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #8e8379;
+}
+
+.live-voice-status-listening .live-voice-status-dot {
+  background: #38a169;
+  box-shadow: 0 0 0 3px rgba(56, 161, 105, 0.14);
+}
+
+.live-voice-status-processing .live-voice-status-dot,
+.live-voice-status-starting .live-voice-status-dot {
+  background: #d28a28;
+  animation: live-status-pulse 1s ease-in-out infinite;
+}
+
+.live-voice-status-error .live-voice-status-dot {
+  background: #b34d3c;
+}
+
+.live-voice-status-metrics {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  color: inherit;
+  opacity: 0.72;
+}
+
+.live-model-state {
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.live-model-state.ready {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.live-model-state.missing {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.live-model-state.checking {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.live-mic-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.live-mic-meter i {
+  display: block;
+  width: 36px;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(128, 117, 106, 0.25);
+}
+
+.live-mic-meter b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #38a169;
+  transition: width 120ms linear;
+}
+
+@keyframes live-status-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
 .booth-dock {
   display: flex;
   align-items: center;
@@ -3674,6 +3803,21 @@ button {
 
 .booth-stage-v2 .booth-honesty {
   padding: 10px 22px 12px;
+}
+
+.booth-stage-v2 .live-voice-status {
+  margin-bottom: 10px;
+}
+
+@media (max-width: 980px) {
+  .live-voice-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .live-voice-status-metrics {
+    justify-content: flex-start;
+  }
 }
 
 .booth-stage-v2 .teleprompter-scroll {

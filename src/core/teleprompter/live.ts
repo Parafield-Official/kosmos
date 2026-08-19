@@ -44,6 +44,8 @@ export interface LiveMatchInput {
   dismissedIds?: string[];
 }
 
+const LIVE_RESYNC_LOOKAHEAD = 8;
+
 /**
  * Consume a rolling ASR window without ever moving the prompt backwards.
  * Low-confidence words are observed for de-duplication but do not advance the
@@ -62,7 +64,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     .filter((word) => typeof word.text === "string" && Number.isFinite(word.start) && Number.isFinite(word.end) && word.end >= word.start)
     .sort((left, right) => left.start - right.start);
 
-  for (const word of words) {
+  for (const [wordIndex, word] of words.entries()) {
     if (word.end <= lastHeardEnd + 0.05) {
       continue;
     }
@@ -80,6 +82,29 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       cursor += 1;
       continue;
     }
+
+
+    // Live following should favor keeping the narrator's place over forcing a
+    // perfect word-for-word alignment. Whisper can miss a heading or a short
+    // word in a noisy room, so look a few words ahead and rejoin the script at
+    // the nearest exact word. A short/common word only resynchronizes when the
+    // following transcript word confirms the same position.
+    const lookahead = input.expected.slice(cursor + 1, cursor + 1 + LIVE_RESYNC_LOOKAHEAD);
+    const nextHeard = normalizeToken(words[wordIndex + 1]?.text ?? "");
+    const resyncOffset = lookahead.findIndex((candidate, candidateOffset) => {
+      if (normalizeToken(candidate.text) !== heard) {
+        return false;
+      }
+      if (heard.length >= 4 || !nextHeard) {
+        return true;
+      }
+      return normalizeToken(lookahead[candidateOffset + 1]?.text ?? "") === nextHeard;
+    });
+    if (resyncOffset >= 0) {
+      cursor += resyncOffset + 2;
+      continue;
+    }
+
     const confidence = Number.isFinite(word.confidence) ? Math.min(1, Math.max(0, word.confidence as number)) : 0;
     if (confidence < threshold || heard.length < 2 || expected.length < 2) {
       continue;

@@ -80,4 +80,46 @@ describe("teleprompter live matching", () => {
     });
     expect(repeated.flag).toBeUndefined();
   });
+
+  it("resynchronizes when narration starts after a skipped heading", () => {
+    const headingAndBody: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "Leaflets" },
+      { index: 1, lineIndex: 1, text: "At" },
+      { index: 2, lineIndex: 1, text: "dusk" },
+      { index: 3, lineIndex: 1, text: "they" },
+      { index: 4, lineIndex: 1, text: "pour" },
+    ];
+
+    const result = matchLiveWindow({
+      chapterId: "ch01",
+      expected: headingAndBody,
+      transcript: [
+        { text: "At", start: 0, end: 0.2, confidence: 0.97 },
+        { text: "dusk", start: 0.2, end: 0.5, confidence: 0.98 },
+        { text: "they", start: 0.5, end: 0.8, confidence: 0.98 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+    });
+
+    expect(result.state.cursor).toBe(4);
+    expect(result.flag).toBeUndefined();
+  });
+
+  it("rejoins after Whisper misses a word in the middle of a line", () => {
+    const result = matchLiveWindow({
+      chapterId: "ch01",
+      expected,
+      transcript: [
+        { text: "The", start: 0, end: 0.2, confidence: 0.98 },
+        { text: "jumped", start: 0.3, end: 0.6, confidence: 0.98 },
+        { text: "in", start: 0.7, end: 0.9, confidence: 0.98 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+    });
+
+    expect(result.state.cursor).toBe(4);
+    expect(result.flag).toBeUndefined();
+  });
 });
