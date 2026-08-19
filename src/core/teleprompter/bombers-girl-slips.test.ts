@@ -125,4 +125,24 @@ describe("Bombers + Girl narrator slips", () => {
     expect(flag).toMatchObject({ expected: "at", heard: "in" });
     expect(flag?.expected?.toLocaleLowerCase("en-US")).not.toBe("countless");
   });
+
+  it("does not paint cannot onto an earlier word far behind gold", () => {
+    const at = indexOfPhrase(expected, "countless chevrons of");
+    const flag = liveBackFlag({
+      chapterId: "bombers-girl",
+      expected,
+      transcript: [
+        { text: "and", start: 0, end: 0.15, confidence: 0.99 },
+        { text: "she", start: 0.15, end: 0.3, confidence: 0.99 },
+        { text: "cannot", start: 0.3, end: 0.55, confidence: 0.97 },
+        { text: "sleep", start: 0.55, end: 0.8, confidence: 0.99 },
+      ],
+      state: { cursor: at, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: at + 2,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag?.expected?.toLocaleLowerCase("en-US")).not.toBe("chevrons");
+    expect(flag?.expected?.toLocaleLowerCase("en-US")).not.toBe("countless");
+  });
 });
