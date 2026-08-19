@@ -7,16 +7,40 @@ import {
   dismissLiveFlag,
   filterPromptChapters,
   promptChapterStatus,
+  promptTextTokens,
+  promptWordCount,
   readingProgress,
   recordLiveFlag,
   relevantPromptGlossary,
   remainingReadTimeLabel,
   teleprompterLayout,
+  liveHighlightWordIndex,
   type PromptSegment,
 } from "./model";
 import type { ChapterFile, GlossaryEntry } from "../project/types";
 
 describe("teleprompter model", () => {
+  it("splits manuscript text into exact renderable words without losing punctuation", () => {
+    const tokens = promptTextTokens("Marie-Laure said, ‘don’t stop.’");
+
+    expect(tokens.map((token) => token.text).join("")).toBe("Marie-Laure said, ‘don’t stop.’");
+    expect(tokens.filter((token) => token.isWord).map((token) => token.text)).toEqual([
+      "Marie",
+      "Laure",
+      "said",
+      "don’t",
+      "stop",
+    ]);
+    expect(promptWordCount("Marie-Laure said, ‘don’t stop.’")).toBe(5);
+  });
+
+  it("highlights only the most recently followed word while voice follow is active", () => {
+    expect(liveHighlightWordIndex(0, true)).toBe(-1);
+    expect(liveHighlightWordIndex(1, true)).toBe(0);
+    expect(liveHighlightWordIndex(9, true)).toBe(8);
+    expect(liveHighlightWordIndex(9, false)).toBe(-1);
+  });
+
   it("keeps styles, seats, glossary links, and manual line breaks", () => {
     const spans: PromptSegment[] = [
       { text: "Elena", seat: "N1", style: ["italic"], glossary_id: "elena" },

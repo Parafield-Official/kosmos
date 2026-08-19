@@ -14,7 +14,7 @@ const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
  * model under resources/, while contributors can point the same code at a
  * locally built binary with WHISPER_CLI_PATH and WHISPER_MODEL_PATH.
  */
-async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en", requireBundled = false }) {
+async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en", requireBundled = false, live = false, inputIsPcmWav = false }) {
   const cliPath = findWhisperCli({ resourcesPath, appPath, requireBundled });
   if (!cliPath) {
     throw new Error(
@@ -37,24 +37,27 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
   const outputBase = path.join(temporaryRoot, "transcript");
   const outputPath = `${outputBase}.json`;
   try {
-    const ffmpegPath = resolveRuntimeBinary({
-      name: "ffmpeg",
-      envVar: "FFMPEG_PATH",
-      resourcesPath,
-      appPath,
-      requireBundled,
-    });
-    await run(ffmpegPath, buildPcmConversionArgs(audioPath, convertedPath), {
-      timeoutMs: FFMPEG_CONVERSION_TIMEOUT_MS,
-    });
-    await run(cliPath, [
-      "-m", modelPath,
-      "-f", convertedPath,
-      "-l", normalizeLanguage(language),
-      "-oj",
-      "-of", outputBase,
-      "-np",
-    ], { cwd: temporaryRoot, timeoutMs: WHISPER_TIMEOUT_MS });
+    const whisperInputPath = inputIsPcmWav ? audioPath : convertedPath;
+    if (!inputIsPcmWav) {
+      const ffmpegPath = resolveRuntimeBinary({
+        name: "ffmpeg",
+        envVar: "FFMPEG_PATH",
+        resourcesPath,
+        appPath,
+        requireBundled,
+      });
+      await run(ffmpegPath, buildPcmConversionArgs(audioPath, convertedPath), {
+        timeoutMs: FFMPEG_CONVERSION_TIMEOUT_MS,
+      });
+    }
+    await run(cliPath, buildWhisperArgs({
+      modelPath,
+      inputPath: whisperInputPath,
+      outputBase,
+      language: normalizeLanguage(language),
+      live,
+      threads: live ? Math.min(8, Math.max(2, os.cpus().length)) : undefined,
+    }), { cwd: temporaryRoot, timeoutMs: WHISPER_TIMEOUT_MS });
     const json = JSON.parse(await fs.readFile(outputPath, "utf8"));
     return {
       engine: "whisper.cpp",
@@ -254,6 +257,27 @@ function buildPcmConversionArgs(inputPath, outputPath) {
   ];
 }
 
+function buildWhisperArgs({ modelPath, inputPath, outputBase, language, live = false, threads }) {
+  const args = [
+    "-m", modelPath,
+    "-f", inputPath,
+    "-l", language,
+    "-oj",
+    "-of", outputBase,
+    "-np",
+  ];
+  if (live) {
+    // Listen-only windows value responsiveness over the last few percentage
+    // points of beam-search accuracy. Full chapter Proof keeps Whisper's
+    // default higher-quality decoder settings.
+    if (Number.isFinite(threads) && threads > 0) {
+      args.push("-t", String(Math.floor(threads)));
+    }
+    args.push("-bs", "1", "-bo", "1", "-fa", "-sow");
+  }
+  return args;
+}
+
 function run(command, args, options = {}) {
   return runCommand(command, args, {
     ...options,
@@ -262,4 +286,4 @@ function run(command, args, options = {}) {
   });
 }
 
-module.exports = { buildPcmConversionArgs, parseWhisperTime, transcribeAudio, segmentWords, segmentTokenWords };
+module.exports = { buildPcmConversionArgs, buildWhisperArgs, parseWhisperTime, transcribeAudio, segmentWords, segmentTokenWords };

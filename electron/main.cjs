@@ -1473,6 +1473,8 @@ async function transcribeAudioBuffer(payload) {
       appPath: app.getAppPath(),
       language: payload.language || "en",
       requireBundled: app.isPackaged,
+      live: true,
+      inputIsPcmWav: extension === ".wav",
     });
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);

@@ -34,6 +34,9 @@ import {
   createLiveFlagsState,
   dismissLiveFlag,
   filterPromptChapters,
+  liveHighlightWordIndex,
+  promptTextTokens,
+  promptWordCount,
   recordLiveFlag,
   promptChapterStatus,
   readingProgress,
@@ -1797,14 +1800,23 @@ function Teleprompter({
   onReview: () => void;
   onClose: () => void;
 }) {
+  const LIVE_WINDOW_SECONDS = 2;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
   const expectedWords = useMemo<LiveExpectedWord[]>(() => {
     let index = 0;
     return lines.flatMap((line) => {
-      const words = line.text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
+      const words = promptTextTokens(line.text).filter((token) => token.isWord).map((token) => token.text);
       return words.map((text) => ({ index: index++, lineIndex: line.index, text }));
     });
+  }, [lines]);
+  const lineWordStarts = useMemo(() => {
+    let cursor = 0;
+    return new Map(lines.map((line) => {
+      const start = cursor;
+      cursor += promptWordCount(line.text);
+      return [line.index, start] as const;
+    }));
   }, [lines]);
   const [liveState, setLiveState] = useState(createLiveFlagsState);
   const [liveStatus, setLiveStatus] = useState<"off" | "starting" | "listening" | "processing" | "error">("off");
@@ -1857,6 +1869,7 @@ function Teleprompter({
   const currentChapterStatus = promptChapterStatus(chapter);
   const savedPositionKey = `booth-desk:teleprompter-position:${chapterId}`;
   const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
+  const wordRefs = useRef(new Map<number, HTMLSpanElement>());
   const positionRestoreRef = useRef(false);
   const liveStateRef = useRef(liveState);
   const liveEnabledRef = useRef(false);
@@ -1876,6 +1889,8 @@ function Teleprompter({
   const liveStartingRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
   const liveSessionRef = useRef(0);
+  const liveCursorAnimationRef = useRef<number | null>(null);
+  const liveVisualCursorRef = useRef(0);
 
   useEffect(() => {
     liveStateRef.current = liveState;
@@ -1921,14 +1936,38 @@ function Teleprompter({
     if (!liveState.enabled) {
       return;
     }
-    const container = scrollRef.current;
-    if (!container || expectedWords.length === 0) {
+    const highlightIndex = liveHighlightWordIndex(liveCursor, liveState.enabled);
+    if (highlightIndex < 0) {
       return;
     }
-    const maximum = Math.max(0, container.scrollHeight - container.clientHeight);
-    const followed = Math.min(1, Math.max(0, liveCursor / expectedWords.length));
-    container.scrollTo({ top: maximum * followed, behavior: "smooth" });
+    wordRefs.current.get(highlightIndex)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [expectedWords, liveCursor, liveState.enabled]);
+
+  function animateLiveCursor(nextCursor: number) {
+    const safeNext = Math.min(expectedWords.length, Math.max(0, Math.floor(nextCursor)));
+    if (liveCursorAnimationRef.current !== null) {
+      window.clearInterval(liveCursorAnimationRef.current);
+      liveCursorAnimationRef.current = null;
+    }
+    const current = Math.min(safeNext, Math.max(0, liveVisualCursorRef.current));
+    if (safeNext <= current) {
+      liveVisualCursorRef.current = safeNext;
+      setLiveCursor(safeNext);
+      return;
+    }
+    const delay = Math.max(80, Math.min(140, Math.floor(720 / (safeNext - current))));
+    liveVisualCursorRef.current = current;
+    setLiveCursor(current);
+    liveCursorAnimationRef.current = window.setInterval(() => {
+      const next = Math.min(safeNext, liveVisualCursorRef.current + 1);
+      liveVisualCursorRef.current = next;
+      setLiveCursor(next);
+      if (next >= safeNext && liveCursorAnimationRef.current !== null) {
+        window.clearInterval(liveCursorAnimationRef.current);
+        liveCursorAnimationRef.current = null;
+      }
+    }, delay);
+  }
 
   function stopLiveCapture() {
     liveSessionRef.current += 1;
@@ -1948,15 +1987,26 @@ function Teleprompter({
     liveCapturedSecondsRef.current = 0;
     liveBufferStartSecondsRef.current = 0;
     liveMatchStateRef.current = { ...liveMatchStateRef.current, lastHeardEnd: 0 };
+    if (liveCursorAnimationRef.current !== null) {
+      window.clearInterval(liveCursorAnimationRef.current);
+      liveCursorAnimationRef.current = null;
+    }
+    liveVisualCursorRef.current = liveCursor;
     setLiveSignalLevel(0);
     setLiveStatus("off");
   }
 
-  useEffect(() => () => stopLiveCapture(), []);
+  useEffect(() => () => {
+    if (liveCursorAnimationRef.current !== null) {
+      window.clearInterval(liveCursorAnimationRef.current);
+    }
+    stopLiveCapture();
+  }, []);
 
   useEffect(() => {
     stopLiveCapture();
     liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
+    liveVisualCursorRef.current = 0;
     setLiveFlag(null);
     setLiveCursor(0);
     setLiveError(null);
@@ -2004,7 +2054,7 @@ function Teleprompter({
         dismissedIds: liveDismissedRef.current,
       });
       liveMatchStateRef.current = result.state;
-      setLiveCursor(result.state.cursor);
+      animateLiveCursor(result.state.cursor);
       if (result.flag) {
         setLiveFlag(result.flag);
       }
@@ -2028,7 +2078,7 @@ function Teleprompter({
       }
     } finally {
       liveRequestRef.current = false;
-      if (liveEnabledRef.current && sessionId === liveSessionRef.current && liveSampleCountRef.current >= liveSampleRateRef.current * 3) {
+      if (liveEnabledRef.current && sessionId === liveSessionRef.current && liveSampleCountRef.current >= liveSampleRateRef.current * LIVE_WINDOW_SECONDS) {
         flushLiveWindow();
       }
     }
@@ -2097,6 +2147,7 @@ function Teleprompter({
       liveSessionRef.current += 1;
       const startingCursor = Math.min(expectedWords.length, Math.max(0, Math.floor(progress * expectedWords.length)));
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
+      liveVisualCursorRef.current = startingCursor;
       setLiveCursor(startingCursor);
       liveDismissedRef.current = [];
       setLiveHeardText("");
@@ -2121,7 +2172,7 @@ function Teleprompter({
         liveSamplesRef.current.push(copy);
         liveSampleCountRef.current += copy.length;
         liveCapturedSecondsRef.current += copy.length / liveSampleRateRef.current;
-        if (liveSampleCountRef.current >= liveSampleRateRef.current * 3) {
+        if (liveSampleCountRef.current >= liveSampleRateRef.current * LIVE_WINDOW_SECONDS) {
           flushLiveWindow();
         }
       };
@@ -2207,6 +2258,9 @@ function Teleprompter({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
+
+  const liveWordIndex = liveHighlightWordIndex(liveCursor, liveState.enabled);
+  const liveLineIndex = liveWordIndex >= 0 ? expectedWords[liveWordIndex]?.lineIndex : undefined;
 
   return (
     <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
@@ -2320,50 +2374,69 @@ function Teleprompter({
                 className={`teleprompter-page reading-font-${readingFont}`}
                 style={{ fontSize: `${clampFontSize(fontSize)}px`, lineHeight: lineSpacing }}
               >
-                {lines.map((line) => (
-                  <p
-                    key={line.index}
-                    ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
-                    className={`teleprompter-line${expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? " teleprompter-line-live" : ""}`}
-                    aria-current={expectedWords[liveCursor]?.lineIndex === line.index && liveState.enabled ? "location" : undefined}
-                  >
-                    {line.segments.map((segment, index) => {
-                      const glossaryEntry = segment.glossary_id
-                        ? glossary.find((entry) => entry.id === segment.glossary_id)
-                        : undefined;
-                      return (
-                        <span
-                          key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
-                          className={glossaryEntry ? "prompt-glossary-word" : undefined}
-                          title={glossaryEntry?.respell ?? (glossaryEntry ? "Pronunciation" : undefined)}
-                          role={glossaryEntry ? "button" : undefined}
-                          tabIndex={glossaryEntry ? 0 : undefined}
-                          onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
-                          onKeyDown={glossaryEntry ? (event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              activateGlossary(glossaryEntry);
+                {lines.map((line) => {
+                  let wordIndex = lineWordStarts.get(line.index) ?? 0;
+                  return (
+                    <p
+                      key={line.index}
+                      ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
+                      className={`teleprompter-line${liveLineIndex === line.index ? " teleprompter-line-live" : ""}`}
+                      aria-current={liveLineIndex === line.index ? "location" : undefined}
+                    >
+                      {line.segments.map((segment, index) => {
+                        const glossaryEntry = segment.glossary_id
+                          ? glossary.find((entry) => entry.id === segment.glossary_id)
+                          : undefined;
+                        const segmentTokens = promptTextTokens(segment.text);
+                        return (
+                          <span
+                            key={`${line.index}-${index}-${segment.text.slice(0, 8)}`}
+                            className={glossaryEntry ? "prompt-glossary-word" : undefined}
+                            title={glossaryEntry?.respell ?? (glossaryEntry ? "Pronunciation" : undefined)}
+                            role={glossaryEntry ? "button" : undefined}
+                            tabIndex={glossaryEntry ? 0 : undefined}
+                            onClick={glossaryEntry ? () => activateGlossary(glossaryEntry) : undefined}
+                            onKeyDown={glossaryEntry ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                activateGlossary(glossaryEntry);
+                              }
+                            } : undefined}
+                            style={{
+                              fontWeight: segment.style.includes("bold") ? 700 : undefined,
+                              fontStyle: segment.style.includes("italic") ? "italic" : undefined,
+                              textDecoration: segment.style.includes("underline") ? "underline" : undefined,
+                              background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+                              color: segment.seat === "N1"
+                                ? "#d88a64"
+                                : segment.seat === "N2"
+                                  ? "#82a9d7"
+                                  : segment.dialogue
+                                    ? "#b0834f"
+                                    : undefined,
+                            }}
+                          >{segmentTokens.map((token, tokenIndex) => {
+                            if (!token.isWord) {
+                              return <span key={`${line.index}-${index}-${tokenIndex}`}>{token.text}</span>;
                             }
-                          } : undefined}
-                          style={{
-                            fontWeight: segment.style.includes("bold") ? 700 : undefined,
-                            fontStyle: segment.style.includes("italic") ? "italic" : undefined,
-                            textDecoration: segment.style.includes("underline") ? "underline" : undefined,
-                            background: segment.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
-                            color: segment.seat === "N1"
-                              ? "#d88a64"
-                              : segment.seat === "N2"
-                                ? "#82a9d7"
-                                : segment.dialogue
-                                  ? "#b0834f"
-                                  : undefined,
-                          }}
-                        >{segment.text}</span>
-                      );
-                    })}
-                  </p>
-                ))}
+                            const currentWordIndex = wordIndex;
+                            wordIndex += 1;
+                            const isLiveWord = currentWordIndex === liveWordIndex;
+                            return (
+                              <span
+                                key={`${line.index}-${index}-${tokenIndex}`}
+                                ref={(node) => { if (node) wordRefs.current.set(currentWordIndex, node); else wordRefs.current.delete(currentWordIndex); }}
+                                className={isLiveWord ? "teleprompter-word-live" : undefined}
+                                aria-current={isLiveWord ? "true" : undefined}
+                              >{token.text}</span>
+                            );
+                          })}</span>
+                        );
+                      })}
+                    </p>
+                  );
+                })}
                 <section className="booth-end-card">
                   <strong>Finished this chapter?</strong>
                   <span>Attach the take and check it against the manuscript while the read is still fresh.</span>

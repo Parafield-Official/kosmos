@@ -10,6 +10,13 @@ export interface PromptLine {
   segments: PromptSegment[];
 }
 
+export interface PromptTextToken {
+  text: string;
+  isWord: boolean;
+}
+
+const PROMPT_WORD_PATTERN = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
+
 export interface LiveFlagsState {
   enabled: boolean;
   dimmed: boolean;
@@ -110,6 +117,36 @@ export function readingProgress(scrollTop: number, scrollHeight: number, clientH
     return 1;
   }
   return Math.min(1, Math.max(0, scrollTop / maximum));
+}
+
+/** Split text into renderable pieces while retaining every space and mark. */
+export function promptTextTokens(text: string): PromptTextToken[] {
+  const source = String(text ?? "");
+  const tokens: PromptTextToken[] = [];
+  let offset = 0;
+  for (const match of source.matchAll(PROMPT_WORD_PATTERN)) {
+    const start = match.index ?? offset;
+    if (start > offset) {
+      tokens.push({ text: source.slice(offset, start), isWord: false });
+    }
+    tokens.push({ text: match[0], isWord: true });
+    offset = start + match[0].length;
+  }
+  if (offset < source.length) {
+    tokens.push({ text: source.slice(offset), isWord: false });
+  }
+  return tokens;
+}
+
+export function promptWordCount(text: string): number {
+  return promptTextTokens(text).filter((token) => token.isWord).length;
+}
+
+export function liveHighlightWordIndex(cursor: number, enabled: boolean): number {
+  if (!enabled || !Number.isFinite(cursor) || cursor <= 0) {
+    return -1;
+  }
+  return Math.floor(cursor) - 1;
 }
 
 export function remainingReadTimeLabel(totalMinutes: number, progress: number): string {

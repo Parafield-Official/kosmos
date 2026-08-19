@@ -1,4 +1,4 @@
-const { buildPcmConversionArgs, parseWhisperTime, segmentWords } = require("./asr.cjs");
+const { buildPcmConversionArgs, buildWhisperArgs, parseWhisperTime, segmentWords } = require("./asr.cjs");
 
 describe("local Whisper JSON adapter", () => {
   it("turns segment offsets into deterministic word windows", () => {
@@ -26,6 +26,23 @@ describe("local Whisper JSON adapter", () => {
     expect(parseWhisperTime(undefined, "00:01:02")).toBe(62);
     expect(parseWhisperTime(undefined, "01:02.5")).toBe(62.5);
     expect(parseWhisperTime(undefined, "00:00:01,250")).toBe(1.25);
+  });
+
+  it("uses greedy decoding for low-latency listen-only windows", () => {
+    expect(buildWhisperArgs({
+      modelPath: "/models/small.en.bin",
+      inputPath: "/tmp/window.wav",
+      outputBase: "/tmp/transcript",
+      language: "en",
+      live: true,
+      threads: 8,
+    })).toEqual([
+      "-m", "/models/small.en.bin",
+      "-f", "/tmp/window.wav",
+      "-l", "en",
+      "-oj", "-of", "/tmp/transcript", "-np",
+      "-t", "8", "-bs", "1", "-bo", "1", "-fa", "-sow",
+    ]);
   });
 
   it("uses token-level timestamps when the Whisper JSON includes them", () => {
