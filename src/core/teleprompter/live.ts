@@ -463,13 +463,16 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   }
 
   const originalCursor = Math.max(0, Math.min(input.expected.length, Math.floor(input.state.cursor)));
-  const alignment = alignWhisperWords(words, input.expected, originalCursor);
+  const gold = Number.isFinite(input.goldCursor)
+    ? Math.max(0, Math.floor(input.goldCursor as number))
+    : originalCursor + LIVE_QC_PHRASE_WORDS;
+  const alignment = alignWhisperWords(words, input.expected, originalCursor, gold);
   const confidenceThreshold = Number.isFinite(input.confidenceThreshold)
     ? Math.min(1, Math.max(0, input.confidenceThreshold as number))
     : 0.9;
   const exactAnchors = alignment.pairs.filter((pair) => pair.kind === "exact").length;
   const hasAnchor = exactAnchors > 0;
-  const requireAnchor = input.requireFlagAnchor ?? originalCursor === 0;
+  const requireAnchor = input.requireFlagAnchor ?? true;
 
   for (const pair of alignment.pairs) {
     if (pair.kind === "exact") {
@@ -491,7 +494,10 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (isWhisperWordPiece(heard, expected)) {
       continue;
     }
-    if (!hasAnchor && words.length === 1 && CLOSED_CLASS.has(heard)) {
+    if (pair.expectedIndex >= gold || pair.expectedIndex + LIVE_QC_PHRASE_WORDS < gold) {
+      continue;
+    }
+    if (CLOSED_CLASS.has(heard) && !isReliableShortSwap(expected, heard) && !expected.startsWith(heard) && !expected.endsWith(heard)) {
       continue;
     }
     const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
@@ -530,7 +536,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       : 0;
     if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected) && !isWhisperWordPiece(heard, expected)) {
       const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
-      if (!input.dismissedIds?.includes(id) && !isStaleLiveFlag(expectedWord.index, input.goldCursor)) {
+      if (!input.dismissedIds?.includes(id) && expectedWord.index < gold && expectedWord.index + LIVE_QC_PHRASE_WORDS >= gold && !isStaleLiveFlag(expectedWord.index, input.goldCursor)) {
         return {
           id,
           expected: expectedWord.text,
@@ -557,8 +563,6 @@ interface WhisperAlignment {
   pairs: WhisperAlignmentPair[];
 }
 
-const WHISPER_ALIGNMENT_LOOKBEHIND = 4;
-const WHISPER_ALIGNMENT_LOOKAHEAD = 24;
 const WHISPER_ALIGNMENT_GAP_EXPECTED = -1.25;
 const WHISPER_ALIGNMENT_GAP_HEARD = -2.25;
 const WHISPER_ALIGNMENT_MISMATCH = -2.2;
@@ -569,9 +573,10 @@ function alignWhisperWords(
   words: LiveTranscriptWord[],
   expected: LiveExpectedWord[],
   originalCursor: number,
+  goldCursor: number,
 ): WhisperAlignment {
-  const start = Math.max(0, originalCursor - WHISPER_ALIGNMENT_LOOKBEHIND);
-  const end = Math.min(expected.length, originalCursor + WHISPER_ALIGNMENT_LOOKAHEAD);
+  const end = Math.max(0, Math.min(expected.length, goldCursor));
+  const start = Math.max(0, Math.min(originalCursor, Math.max(0, end - LIVE_QC_PHRASE_WORDS)));
   const expectedSlice = expected.slice(start, end);
   const rows = words.length + 1;
   const columns = expectedSlice.length + 1;

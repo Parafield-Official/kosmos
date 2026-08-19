@@ -1000,6 +1000,113 @@ describe("parakeet live stream lines", () => {
 
     expect(flag).toBeUndefined();
   });
+
+  it("does not let Whisper flag a word gold has not reached yet", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "They" },
+        { index: 1, lineIndex: 0, text: "cross" },
+        { index: 2, lineIndex: 0, text: "the" },
+        { index: 3, lineIndex: 0, text: "Channel" },
+        { index: 4, lineIndex: 0, text: "at" },
+        { index: 5, lineIndex: 0, text: "midnight" },
+      ],
+      transcript: [
+        { text: "They", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "cross", start: 0.2, end: 0.4, confidence: 0.99 },
+        { text: "the", start: 0.4, end: 0.5, confidence: 0.99 },
+        { text: "Channel", start: 0.5, end: 0.8, confidence: 0.99 },
+        { text: "in", start: 0.8, end: 0.95, confidence: 0.94 },
+        { text: "midnight", start: 0.95, end: 1.3, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 4,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toBeUndefined();
+  });
+
+  it("flags the slip only after gold has left that word", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "They" },
+        { index: 1, lineIndex: 0, text: "cross" },
+        { index: 2, lineIndex: 0, text: "the" },
+        { index: 3, lineIndex: 0, text: "Channel" },
+        { index: 4, lineIndex: 0, text: "at" },
+        { index: 5, lineIndex: 0, text: "midnight" },
+      ],
+      transcript: [
+        { text: "They", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "cross", start: 0.2, end: 0.4, confidence: 0.99 },
+        { text: "the", start: 0.4, end: 0.5, confidence: 0.99 },
+        { text: "Channel", start: 0.5, end: 0.8, confidence: 0.99 },
+        { text: "in", start: 0.8, end: 0.95, confidence: 0.94 },
+        { text: "midnight", start: 0.95, end: 1.3, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 6,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toMatchObject({ expected: "at", heard: "in", expectedIndex: 4 });
+  });
+
+  it("does not let Whisper hunt a later page word ahead of gold", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "They" },
+        { index: 1, lineIndex: 0, text: "cross" },
+        { index: 2, lineIndex: 0, text: "countless" },
+        { index: 3, lineIndex: 0, text: "chevrons" },
+        { index: 4, lineIndex: 0, text: "of" },
+        { index: 5, lineIndex: 0, text: "whitecaps" },
+      ],
+      transcript: [
+        { text: "They", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "cross", start: 0.2, end: 0.45, confidence: 0.99 },
+        { text: "the", start: 0.45, end: 0.6, confidence: 0.99 },
+        { text: "Channel", start: 0.6, end: 0.95, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 2,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toBeUndefined();
+  });
+
+  it("does not pair a leftover you with hotels gold already passed", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "shops" },
+        { index: 1, lineIndex: 0, text: "and" },
+        { index: 2, lineIndex: 0, text: "hotels" },
+        { index: 3, lineIndex: 0, text: "within" },
+        { index: 4, lineIndex: 0, text: "its" },
+        { index: 5, lineIndex: 0, text: "walls" },
+      ],
+      transcript: [
+        { text: "shops", start: 0, end: 0.25, confidence: 0.99 },
+        { text: "and", start: 0.25, end: 0.35, confidence: 0.99 },
+        { text: "hotels", start: 0.35, end: 0.6, confidence: 0.99 },
+        { text: "within", start: 0.6, end: 0.8, confidence: 0.99 },
+        { text: "its", start: 0.8, end: 0.95, confidence: 0.99 },
+        { text: "walls", start: 0.95, end: 1.2, confidence: 0.99 },
+        { text: "you", start: 1.2, end: 1.35, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 6,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toBeUndefined();
+  });
 });
 
 describe("background Whisper QC buffering", () => {
