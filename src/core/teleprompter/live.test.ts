@@ -895,6 +895,62 @@ describe("parakeet live stream lines", () => {
     expect(north).toMatchObject({ expected: "north", heard: "south", expectedIndex: 1 });
   });
 
+  it("flags any real English swap, including short pronouns and verbs", () => {
+    const himHer = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "told" },
+        { index: 1, lineIndex: 0, text: "him" },
+        { index: 2, lineIndex: 0, text: "later" },
+      ],
+      transcript: [
+        { text: "told", start: 0, end: 0.25, confidence: 0.99 },
+        { text: "her", start: 0.25, end: 0.4, confidence: 0.94 },
+        { text: "later", start: 0.4, end: 0.7, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(himHer).toMatchObject({ expected: "him", heard: "her", expectedIndex: 1 });
+
+    const wasIs = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "she" },
+        { index: 1, lineIndex: 0, text: "was" },
+        { index: 2, lineIndex: 0, text: "ready" },
+      ],
+      transcript: [
+        { text: "she", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "is", start: 0.2, end: 0.32, confidence: 0.93 },
+        { text: "ready", start: 0.32, end: 0.6, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(wasIs).toMatchObject({ expected: "was", heard: "is", expectedIndex: 1 });
+
+    const thereThe = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "wait" },
+        { index: 1, lineIndex: 0, text: "there" },
+        { index: 2, lineIndex: 0, text: "now" },
+      ],
+      transcript: [
+        { text: "wait", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "the", start: 0.2, end: 0.35, confidence: 0.94 },
+        { text: "now", start: 0.35, end: 0.55, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(thereThe).toMatchObject({ expected: "there", heard: "the", expectedIndex: 1 });
+  });
+
   it("does not turn an uncertain short Whisper word into a pickup", () => {
     const flag = liveBackFlag({
       chapterId: "ch1",

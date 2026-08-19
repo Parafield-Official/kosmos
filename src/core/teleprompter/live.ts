@@ -489,10 +489,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (isWhisperWordPiece(heard, expected)) {
       continue;
     }
-    const reliableWords = isContentWord(heard) && isContentWord(expected);
-    const reliableShortSwap = isReliableShortSwap(expected, heard);
-    const anchoredShortChange = hasAnchor && confidence >= Math.max(confidenceThreshold, 0.95);
-    if (!reliableWords && !anchoredShortChange && !reliableShortSwap) {
+    if (!hasAnchor && words.length === 1 && CLOSED_CLASS.has(heard)) {
       continue;
     }
     const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
@@ -815,13 +812,24 @@ const FUNCTION_WORDS = new Set([
 
 const DETERMINERS = new Set(["a", "an", "the", "this", "that", "these", "those"]);
 const PREPOSITIONS = new Set(["at", "by", "for", "from", "in", "into", "of", "off", "on", "onto", "to", "too"]);
+const PRONOUNS = new Set([
+  "he", "her", "hers", "him", "his", "i", "it", "its", "me", "my", "mine",
+  "our", "ours", "she", "their", "theirs", "them", "they", "us", "we", "you", "your", "yours",
+]);
+const AUXILIARIES = new Set([
+  "am", "are", "be", "been", "being", "did", "do", "does", "had", "has", "have",
+  "is", "was", "were",
+]);
+const CLOSED_CLASS = new Set([...DETERMINERS, ...PREPOSITIONS, ...PRONOUNS, ...AUXILIARIES]);
 
 function isReliableShortSwap(expected: string, heard: string): boolean {
   if (!expected || !heard || expected === heard) {
     return false;
   }
   return (DETERMINERS.has(expected) && DETERMINERS.has(heard))
-    || (PREPOSITIONS.has(expected) && PREPOSITIONS.has(heard));
+    || (PREPOSITIONS.has(expected) && PREPOSITIONS.has(heard))
+    || (PRONOUNS.has(expected) && PRONOUNS.has(heard))
+    || (AUXILIARIES.has(expected) && AUXILIARIES.has(heard));
 }
 
 function isContentWord(token: string): boolean {
@@ -832,15 +840,25 @@ function isWhisperWordPiece(heard: string, expected: string): boolean {
   if (!heard || !expected || heard === expected) {
     return false;
   }
-  if (isReliableShortSwap(expected, heard) || isInflectionSlip(heard, expected)) {
+  if (isReliableShortSwap(expected, heard) || isInflectionSlip(heard, expected) || isOnsetClip(heard, expected)) {
     return false;
   }
   const shorter = heard.length <= expected.length ? heard : expected;
   const longer = heard.length <= expected.length ? expected : heard;
-  if (longer.includes(shorter) && (shorter.length <= 4 || longer.length - shorter.length >= 3)) {
-    return true;
+  if (CLOSED_CLASS.has(shorter)) {
+    return false;
   }
-  return shorter.length <= 4 && longer.length >= shorter.length * 2;
+  return longer.includes(shorter) && shorter !== longer;
+}
+
+function isOnsetClip(heard: string, expected: string): boolean {
+  if (!heard || !expected || heard === expected) {
+    return false;
+  }
+  const shorter = heard.length <= expected.length ? heard : expected;
+  const longer = heard.length <= expected.length ? expected : heard;
+  const dropped = longer.slice(0, longer.length - shorter.length);
+  return longer.endsWith(shorter) && dropped.length > 0 && dropped.length <= 2;
 }
 
 function isInflectionSlip(heard: string, expected: string): boolean {
