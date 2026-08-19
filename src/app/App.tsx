@@ -2288,6 +2288,7 @@ function Teleprompter({
         })),
         state: { cursor, lastHeardEnd: 0 },
         flagsEnabled: true,
+        goldCursor: liveMatchStateRef.current.cursor,
         confidenceThreshold: 0.9,
         dismissedIds: liveDismissedRef.current,
       });

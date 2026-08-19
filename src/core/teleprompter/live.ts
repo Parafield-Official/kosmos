@@ -52,6 +52,7 @@ export interface LiveMatchInput {
   dismissedIds?: string[];
   flagShortWords?: boolean;
   requireFlagAnchor?: boolean;
+  goldCursor?: number;
 }
 
 export const LIVE_CONTEXT_SECONDS = 1.6;
@@ -63,6 +64,7 @@ export const LIVE_OVERLAP_SECONDS = 1.05;
 export const LIVE_UNSTABLE_TAIL_SECONDS = 0.32;
 export const LIVE_QC_CONTEXT_SECONDS = 2;
 export const LIVE_QC_OVERLAP_SECONDS = 0.8;
+export const LIVE_QC_RECENT_WORDS = 12;
 
 export interface LiveQcBuffer {
   chunks: LiveQcChunk[];
@@ -283,6 +285,12 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     const nearJump = !input.flagsEnabled ? findNearJump(heard, input.expected, cursor) : -1;
     if (nearJump >= 0) {
       cursor = nearJump + 1;
+      pendingResync = undefined;
+      matchedInWindow += 1;
+      continue;
+    }
+    if (!input.flagsEnabled && RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`)) {
+      cursor += 1;
       pendingResync = undefined;
       matchedInWindow += 1;
       continue;
@@ -509,6 +517,9 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (requireAnchor && !hasAnchor) {
       continue;
     }
+    if (isStaleLiveFlag(pair.expectedIndex, input.goldCursor)) {
+      continue;
+    }
     return {
       id,
       expected: expectedWord.text,
@@ -535,7 +546,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       : 0;
     if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected)) {
       const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
-      if (!input.dismissedIds?.includes(id)) {
+      if (!input.dismissedIds?.includes(id) && !isStaleLiveFlag(expectedWord.index, input.goldCursor)) {
         return {
           id,
           expected: expectedWord.text,
@@ -726,6 +737,13 @@ export function mergeLivePickup(existing: Pickup[], pickup: Pickup): Pickup[] {
   return [...existing, pickup].sort((left, right) => left.t_start - right.t_start);
 }
 
+function isStaleLiveFlag(expectedIndex: number, goldCursor?: number): boolean {
+  if (!Number.isFinite(goldCursor)) {
+    return false;
+  }
+  return expectedIndex + LIVE_QC_RECENT_WORDS < Math.floor(goldCursor as number);
+}
+
 function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: number): number {
   const window = expected.slice(cursor + 1, cursor + 1 + LIVE_NEAR_JUMP);
   const hits = window.flatMap((candidate, offset) => {
@@ -812,6 +830,7 @@ const FUNCTION_WORDS = new Set([
 
 const RELIABLE_SHORT_SWAP_PAIRS = new Set([
   "a|an", "an|a",
+  "a|the", "the|a",
   "in|on", "on|in",
   "of|off", "off|of",
   "to|on", "on|to",
