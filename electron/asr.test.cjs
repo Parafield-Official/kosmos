@@ -45,7 +45,7 @@ describe("local Whisper JSON adapter", () => {
       "-f", "/tmp/window.wav",
       "-l", "en",
       "-oj", "-of", "/tmp/transcript", "-np",
-      "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow", "-sns", "-ac", "768",
+      "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow",
     ]);
   });
 

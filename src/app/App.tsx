@@ -45,7 +45,7 @@ import {
   teleprompterLayout,
   type PromptTheme,
 } from "../core/teleprompter/model";
-import { matchLiveWindow, liveBackFlag, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -1948,8 +1948,10 @@ function Teleprompter({
   const liveSentRef = useRef(false);
   const liveFollowStreamRef = useRef(false);
   const liveWhisperBusyRef = useRef(false);
-  const liveQcSamplesRef = useRef<Float32Array[]>([]);
-  const liveQcCountRef = useRef(0);
+  const liveQcBufferRef = useRef<LiveQcBuffer>(createLiveQcBuffer());
+  const liveWhisperPromiseRef = useRef<Promise<void> | null>(null);
+  const liveFollowPromiseRef = useRef<Promise<void> | null>(null);
+  const liveStoppingRef = useRef(false);
   const liveCursorAnimationRef = useRef<number | null>(null);
   const liveVisualCursorRef = useRef(0);
 
@@ -2010,10 +2012,7 @@ function Teleprompter({
     setLiveCursor(safeNext);
   }
 
-  function stopLiveCapture() {
-    liveSessionRef.current += 1;
-    liveEnabledRef.current = false;
-    void window.boothDesk?.stopLiveTranscription?.();
+  function disconnectLiveInput() {
     liveProcessorRef.current?.disconnect();
     liveSourceRef.current?.disconnect();
     liveGainRef.current?.disconnect();
@@ -2024,6 +2023,9 @@ function Teleprompter({
     liveStreamRef.current = null;
     void liveContextRef.current?.close();
     liveContextRef.current = null;
+  }
+
+  function resetLiveCaptureState() {
     liveSamplesRef.current = [];
     liveSampleCountRef.current = 0;
     liveCapturedSecondsRef.current = 0;
@@ -2031,8 +2033,9 @@ function Teleprompter({
     liveSentRef.current = false;
     liveFollowStreamRef.current = false;
     liveWhisperBusyRef.current = false;
-    liveQcSamplesRef.current = [];
-    liveQcCountRef.current = 0;
+    liveQcBufferRef.current = createLiveQcBuffer();
+    liveWhisperPromiseRef.current = null;
+    liveFollowPromiseRef.current = null;
     liveMatchStateRef.current = { ...liveMatchStateRef.current, lastHeardEnd: 0 };
     if (liveCursorAnimationRef.current !== null) {
       window.clearInterval(liveCursorAnimationRef.current);
@@ -2043,15 +2046,69 @@ function Teleprompter({
     setLiveStatus("off");
   }
 
+  function stopLiveCaptureImmediately() {
+    liveStoppingRef.current = true;
+    liveSessionRef.current += 1;
+    liveEnabledRef.current = false;
+    disconnectLiveInput();
+    void window.boothDesk?.stopLiveTranscription?.();
+    resetLiveCaptureState();
+    liveStoppingRef.current = false;
+  }
+
+  async function stopLiveCapture({ flushQc = false } = {}) {
+    if (liveStoppingRef.current) {
+      return;
+    }
+    if (!flushQc || !liveEnabledRef.current || !liveFollowStreamRef.current) {
+      stopLiveCaptureImmediately();
+      return;
+    }
+
+    liveStoppingRef.current = true;
+    const sessionId = liveSessionRef.current;
+    disconnectLiveInput();
+    setLiveStatus("processing");
+    try {
+      await liveFollowPromiseRef.current;
+      if (liveSampleCountRef.current > 0) {
+        const pending = new Float32Array(liveSampleCountRef.current);
+        let offset = 0;
+        for (const chunk of liveSamplesRef.current) {
+          pending.set(chunk, offset);
+          offset += chunk.length;
+        }
+        liveQcBufferRef.current = appendLiveQcSamples(
+          liveQcBufferRef.current,
+          pending,
+          liveMatchStateRef.current.cursor,
+          Math.max(0, liveCapturedSecondsRef.current - pending.length / liveSampleRateRef.current),
+        );
+        liveSamplesRef.current = [];
+        liveSampleCountRef.current = 0;
+      }
+      await liveWhisperPromiseRef.current;
+      flushLiveQcWindow(liveSampleRateRef.current, sessionId, true);
+      await liveWhisperPromiseRef.current;
+    } catch {
+      // Stopping should never strand the narrator behind a QC failure.
+    }
+    liveSessionRef.current += 1;
+    liveEnabledRef.current = false;
+    await window.boothDesk?.stopLiveTranscription?.();
+    resetLiveCaptureState();
+    liveStoppingRef.current = false;
+  }
+
   useEffect(() => () => {
     if (liveCursorAnimationRef.current !== null) {
       window.clearInterval(liveCursorAnimationRef.current);
     }
-    stopLiveCapture();
+    stopLiveCaptureImmediately();
   }, []);
 
   useEffect(() => {
-    stopLiveCapture();
+    stopLiveCaptureImmediately();
     liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
     liveVisualCursorRef.current = 0;
     setLiveFlag(null);
@@ -2072,7 +2129,7 @@ function Teleprompter({
       return;
     }
     liveRequestRef.current = true;
-    setLiveStatus("processing");
+    setLiveStatus(liveRequestStatus(liveFollowStreamRef.current));
     const startedAt = performance.now();
     try {
       const mono = resamplePcmToMono(samples, sampleRate, 16_000);
@@ -2102,6 +2159,7 @@ function Teleprompter({
             })),
             startSeconds + samples.length / sampleRate,
           );
+      const cursorBeforeAudio = liveMatchStateRef.current.cursor;
       const result = matchLiveWindow({
         chapterId,
         expected: expectedWords,
@@ -2127,7 +2185,7 @@ function Teleprompter({
       setLiveStatus("listening");
       setLiveError(null);
       if (liveFollowStreamRef.current) {
-        queueWhisperQc(samples, sampleRate, sessionId);
+        queueWhisperQc(samples, sampleRate, sessionId, cursorBeforeAudio, startSeconds);
       }
     } catch (reason) {
       const message = messageFor(reason, "Live flags could not transcribe this microphone window.");
@@ -2140,31 +2198,67 @@ function Teleprompter({
       }
     } finally {
       liveRequestRef.current = false;
-      if (liveEnabledRef.current && sessionId === liveSessionRef.current && shouldFlushLiveBuffer()) {
+      if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && shouldFlushLiveBuffer()) {
         flushLiveWindow();
       }
     }
   }
 
-  function queueWhisperQc(samples: Float32Array, sampleRate: number, sessionId: number) {
-    liveQcSamplesRef.current.push(samples);
-    liveQcCountRef.current += samples.length;
-    if (liveWhisperBusyRef.current || liveQcCountRef.current < sampleRate * LIVE_CONTEXT_SECONDS) {
+  function queueWhisperQc(
+    samples: Float32Array,
+    sampleRate: number,
+    sessionId: number,
+    cursorBeforeAudio: number,
+    startSeconds: number,
+  ) {
+    if (liveStateRef.current.dimmed) {
+      liveQcBufferRef.current = createLiveQcBuffer();
       return;
     }
-    const pcm = new Float32Array(liveQcCountRef.current);
-    let offset = 0;
-    for (const chunk of liveQcSamplesRef.current) {
-      pcm.set(chunk, offset);
-      offset += chunk.length;
-    }
-    liveQcSamplesRef.current = [];
-    liveQcCountRef.current = 0;
-    liveWhisperBusyRef.current = true;
-    void transcribeWhisperQc(pcm, sampleRate, sessionId);
+    liveQcBufferRef.current = appendLiveQcSamples(
+      liveQcBufferRef.current,
+      samples,
+      cursorBeforeAudio,
+      startSeconds,
+    );
+    flushLiveQcWindow(sampleRate, sessionId);
   }
 
-  async function transcribeWhisperQc(samples: Float32Array, sampleRate: number, sessionId: number) {
+  function flushLiveQcWindow(sampleRate: number, sessionId: number, force = false) {
+    if (liveWhisperBusyRef.current || liveStateRef.current.dimmed) {
+      return;
+    }
+    const drained = drainLiveQcBuffer(liveQcBufferRef.current, sampleRate, force);
+    liveQcBufferRef.current = drained.buffer;
+    if (!drained.window) {
+      return;
+    }
+    if (!pcmHasSpeech(drained.window.samples)) {
+      return;
+    }
+    liveWhisperBusyRef.current = true;
+    const promise = transcribeWhisperQc(
+      drained.window.samples,
+      sampleRate,
+      sessionId,
+      drained.window.cursor,
+      drained.window.startSeconds,
+    );
+    liveWhisperPromiseRef.current = promise;
+    void promise.finally(() => {
+      if (liveWhisperPromiseRef.current === promise) {
+        liveWhisperPromiseRef.current = null;
+      }
+    });
+  }
+
+  async function transcribeWhisperQc(
+    samples: Float32Array,
+    sampleRate: number,
+    sessionId: number,
+    cursor: number,
+    startSeconds: number,
+  ) {
     const bridge = window.boothDesk;
     try {
       if (!bridge?.transcribeBuffer || !liveEnabledRef.current || sessionId !== liveSessionRef.current) {
@@ -2181,14 +2275,18 @@ function Teleprompter({
         20_000,
         "Speech check took too long. Try a quieter room or stop and start again.",
       );
-      if (!liveEnabledRef.current || sessionId !== liveSessionRef.current) {
+      if (!liveEnabledRef.current || sessionId !== liveSessionRef.current || liveStateRef.current.dimmed) {
         return;
       }
       const flag = liveBackFlag({
         chapterId,
         expected: expectedWords,
-        transcript: dropUnstableLiveTail(transcription.words, samples.length / sampleRate),
-        state: liveMatchStateRef.current,
+        transcript: transcription.words.map((word) => ({
+          ...word,
+          start: word.start + startSeconds,
+          end: word.end + startSeconds,
+        })),
+        state: { cursor, lastHeardEnd: 0 },
         flagsEnabled: true,
         confidenceThreshold: 0.9,
         dismissedIds: liveDismissedRef.current,
@@ -2201,6 +2299,9 @@ function Teleprompter({
       // Back-check is optional. Follow must keep moving.
     } finally {
       liveWhisperBusyRef.current = false;
+      if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && !liveStateRef.current.dimmed) {
+        flushLiveQcWindow(sampleRate, sessionId);
+      }
     }
   }
 
@@ -2234,7 +2335,14 @@ function Teleprompter({
       liveSamplesRef.current = [];
       liveSampleCountRef.current = 0;
       liveSentRef.current = true;
-      void transcribeLiveWindow(samples, sampleRate, 0, liveSessionRef.current);
+      const startSeconds = Math.max(0, liveCapturedSecondsRef.current - samples.length / sampleRate);
+      const promise = transcribeLiveWindow(samples, sampleRate, startSeconds, liveSessionRef.current);
+      liveFollowPromiseRef.current = promise;
+      void promise.finally(() => {
+        if (liveFollowPromiseRef.current === promise) {
+          liveFollowPromiseRef.current = null;
+        }
+      });
       return;
     }
     const overlapSamples = Math.min(samples.length, Math.round(sampleRate * LIVE_OVERLAP_SECONDS));
@@ -2259,7 +2367,7 @@ function Teleprompter({
   }
 
   async function startLiveCapture() {
-    if (liveStartingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
+    if (liveStartingRef.current || liveStoppingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
       return;
     }
     if (!window.boothDesk?.transcribeBuffer) {
@@ -2304,6 +2412,9 @@ function Teleprompter({
       liveCapturedSecondsRef.current = 0;
       liveBufferStartSecondsRef.current = 0;
       liveSentRef.current = false;
+      liveQcBufferRef.current = createLiveQcBuffer();
+      liveWhisperPromiseRef.current = null;
+      liveFollowPromiseRef.current = null;
       liveSessionRef.current += 1;
       const startingCursor = Math.min(expectedWords.length, Math.max(0, Math.floor(progress * expectedWords.length)));
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
@@ -2345,7 +2456,7 @@ function Teleprompter({
       setLiveState(nextState);
       setLiveStatus("listening");
     } catch (reason) {
-      stopLiveCapture();
+      stopLiveCaptureImmediately();
       setLiveError(messageFor(reason, "Microphone access or word checks failed."));
       setLiveStatus("error");
     } finally {
@@ -2358,7 +2469,7 @@ function Teleprompter({
       void startLiveCapture();
       return;
     }
-    stopLiveCapture();
+    void stopLiveCapture({ flushQc: true });
     const nextState = { ...liveStateRef.current, enabled: false };
     liveStateRef.current = nextState;
     setLiveState(nextState);
@@ -2381,11 +2492,9 @@ function Teleprompter({
       onIgnoreLivePickup(current.id);
     }
     if (nextState.dimmed) {
-      stopLiveCapture();
-      const dimmedState = { ...nextState, enabled: false };
-      liveStateRef.current = dimmedState;
-      setLiveState(dimmedState);
-      setLiveError("Word checks paused after a few false alarms. Try again when you are ready.");
+      liveStateRef.current = nextState;
+      setLiveState(nextState);
+      setLiveError("Word checks paused after false alarms; voice follow is still running.");
     }
   }
 
@@ -2652,7 +2761,7 @@ function Teleprompter({
             <button
               className={`primary-button booth-start-button ${liveState.enabled ? "booth-stop-button" : "booth-narrate-button"}`}
               type="button"
-              disabled={liveState.dimmed || liveStatus === "starting"}
+              disabled={liveStatus === "starting"}
               onClick={() => setLiveEnabled(!liveState.enabled)}
             >
               <span className="booth-start-icon" aria-hidden="true">{liveState.enabled ? "Ⅱ" : "▶"}</span>
@@ -2700,7 +2809,7 @@ function Teleprompter({
                 </div>
                 <label className="booth-toggle">
                   <span><strong>Flag possible word changes</strong><em>Listen-only. The microphone audio is not saved as a take.</em></span>
-                  <input type="checkbox" checked={liveState.enabled} disabled={liveState.dimmed || liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
+                  <input type="checkbox" checked={liveState.enabled} disabled={liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
                 </label>
               </div>
             ) : null}

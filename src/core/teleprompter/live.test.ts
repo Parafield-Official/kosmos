@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
 
 const expected: LiveExpectedWord[] = [
   { index: 0, lineIndex: 0, text: "The" },
@@ -126,6 +126,88 @@ describe("teleprompter live matching", () => {
     expect(result.flag).toBeUndefined();
   });
 
+  it("resynchronizes a skipped heading when Parakeet delivers one word per hop", () => {
+    const headingAndBody: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "Leaflets" },
+      { index: 1, lineIndex: 1, text: "At" },
+      { index: 2, lineIndex: 1, text: "dusk" },
+      { index: 3, lineIndex: 1, text: "they" },
+      { index: 4, lineIndex: 1, text: "pour" },
+    ];
+    const first = matchLiveWindow({
+      chapterId: "ch01",
+      expected: headingAndBody,
+      transcript: [{ text: "At", start: 0.1, end: 0.2, confidence: 0.98 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+    const second = matchLiveWindow({
+      chapterId: "ch01",
+      expected: headingAndBody,
+      transcript: [{ text: "dusk", start: 0.25, end: 0.45, confidence: 0.98 }],
+      state: first.state,
+      flagsEnabled: false,
+    });
+
+    expect(first.state.cursor).toBe(0);
+    expect(second.state.cursor).toBe(3);
+  });
+
+  it("resynchronizes when the narrator repeats the next manuscript word", () => {
+    const passage: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "rampars" },
+      { index: 1, lineIndex: 0, text: "turn" },
+      { index: 2, lineIndex: 0, text: "cartwheels" },
+    ];
+    const first = matchLiveWindow({
+      chapterId: "ch01",
+      expected: passage,
+      transcript: [{ text: "turn", start: 0.1, end: 0.3, confidence: 0.98 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+    const repeated = matchLiveWindow({
+      chapterId: "ch01",
+      expected: passage,
+      transcript: [{ text: "turn", start: 0.6, end: 0.8, confidence: 0.98 }],
+      state: first.state,
+      flagsEnabled: false,
+    });
+
+    expect(first.state.cursor).toBe(0);
+    expect(repeated.state.cursor).toBe(2);
+  });
+
+  it("rejoins immediately on a distinctive word after Parakeet hears a mistake", () => {
+    const passage: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "houses" },
+      { index: 1, lineIndex: 0, text: "Entire" },
+      { index: 2, lineIndex: 0, text: "streets" },
+      { index: 3, lineIndex: 0, text: "swirl" },
+      { index: 4, lineIndex: 0, text: "with" },
+      { index: 5, lineIndex: 0, text: "them" },
+      { index: 6, lineIndex: 0, text: "flashing" },
+      { index: 7, lineIndex: 0, text: "white" },
+      { index: 8, lineIndex: 0, text: "against" },
+    ];
+    const mistaken = matchLiveWindow({
+      chapterId: "ch01",
+      expected: passage,
+      transcript: [{ text: "ashing", start: 0.1, end: 0.35, confidence: 0.98 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+    });
+    const rejoined = matchLiveWindow({
+      chapterId: "ch01",
+      expected: passage,
+      transcript: [{ text: "white", start: 0.4, end: 0.62, confidence: 0.98 }],
+      state: mistaken.state,
+      flagsEnabled: false,
+    });
+
+    expect(rejoined.state.cursor).toBe(8);
+  });
+
   it("rejoins after Whisper misses a word in the middle of a line", () => {
     const result = matchLiveWindow({
       chapterId: "ch01",
@@ -222,6 +304,11 @@ describe("teleprompter live matching", () => {
 });
 
 describe("live follow helpers", () => {
+  it("keeps the visible status stable during streaming hops", () => {
+    expect(liveRequestStatus(true)).toBe("listening");
+    expect(liveRequestStatus(false)).toBe("processing");
+  });
+
   it("treats near-silence as no speech and a spoken window as speech", () => {
     expect(pcmHasSpeech(new Float32Array(1600))).toBe(false);
     const spoken = new Float32Array(1600);
@@ -254,6 +341,16 @@ describe("live follow helpers", () => {
     expect(checking.title).toBe("Checking");
     expect(checking.detail).toBe("yard today");
     expect(checking.detail.split(" ").length).toBeLessThanOrEqual(2);
+
+    const followOnly = liveVoiceStatusCopy({
+      status: "listening",
+      enabled: true,
+      dimmed: true,
+      error: "Word checks paused after false alarms.",
+      heardText: "",
+    });
+    expect(followOnly.title).toBe("Following");
+    expect(followOnly.detail).toMatch(/voice follow is still running/i);
   });
 
   it("drops only the unfinished tail of a live window", () => {
@@ -317,7 +414,7 @@ describe("parakeet live stream lines", () => {
   });
 
   it("lets Whisper flag a swap without moving the gold cursor", () => {
-    const state = { cursor: 2, lastHeardEnd: 0 };
+    const state = { cursor: 2, lastHeardEnd: 12.4 };
     const flag = liveBackFlag({
       chapterId: "ch1",
       expected,
@@ -328,5 +425,289 @@ describe("parakeet live stream lines", () => {
     });
     expect(flag).toMatchObject({ expected: "jumped", heard: "hopped", expectedIndex: 2 });
     expect(state.cursor).toBe(2);
+    expect(state.lastHeardEnd).toBe(12.4);
+  });
+
+  it("anchors a delayed Whisper result to the nearby manuscript word", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "Depart" },
+        { index: 1, lineIndex: 0, text: "immediately" },
+        { index: 2, lineIndex: 0, text: "to" },
+        { index: 3, lineIndex: 0, text: "open" },
+        { index: 4, lineIndex: 0, text: "country" },
+        { index: 5, lineIndex: 0, text: "The" },
+        { index: 6, lineIndex: 0, text: "tide" },
+      ],
+      transcript: [
+        { text: "countries", start: 0.1, end: 0.34, confidence: 0.99 },
+        { text: "the", start: 0.4, end: 0.52, confidence: 0.98 },
+        { text: "tide", start: 0.55, end: 0.72, confidence: 0.98 },
+      ],
+      state: { cursor: 1, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "country",
+      heard: "countries",
+      expectedIndex: 4,
+    });
+  });
+
+  it("aligns the screenshot mistake to flashing instead of the stale houses checkpoint", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "houses" },
+        { index: 1, lineIndex: 0, text: "Entire" },
+        { index: 2, lineIndex: 0, text: "streets" },
+        { index: 3, lineIndex: 0, text: "swirl" },
+        { index: 4, lineIndex: 0, text: "with" },
+        { index: 5, lineIndex: 0, text: "them" },
+        { index: 6, lineIndex: 0, text: "flashing" },
+        { index: 7, lineIndex: 0, text: "white" },
+        { index: 8, lineIndex: 0, text: "against" },
+        { index: 9, lineIndex: 0, text: "the" },
+        { index: 10, lineIndex: 0, text: "cob" },
+        { index: 11, lineIndex: 0, text: "bles" },
+      ],
+      transcript: [
+        { text: "ashing", start: 0.1, end: 0.35, confidence: 0.99 },
+        { text: "white", start: 0.4, end: 0.62, confidence: 0.99 },
+        { text: "against", start: 0.66, end: 0.96, confidence: 0.99 },
+        { text: "the", start: 1, end: 1.1, confidence: 0.99 },
+        { text: "cob", start: 1.14, end: 1.35, confidence: 0.99 },
+        { text: "bles", start: 1.36, end: 1.58, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "flashing",
+      heard: "ashing",
+      expectedIndex: 6,
+    });
+  });
+
+  it("uses phrase alignment when Whisper omits words before a substitution", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "houses" },
+        { index: 1, lineIndex: 0, text: "Entire" },
+        { index: 2, lineIndex: 0, text: "streets" },
+        { index: 3, lineIndex: 0, text: "swirl" },
+        { index: 4, lineIndex: 0, text: "with" },
+        { index: 5, lineIndex: 0, text: "them" },
+        { index: 6, lineIndex: 0, text: "flashing" },
+        { index: 7, lineIndex: 0, text: "white" },
+        { index: 8, lineIndex: 0, text: "against" },
+      ],
+      transcript: [
+        { text: "houses", start: 0.1, end: 0.3, confidence: 0.99 },
+        { text: "Entire", start: 0.32, end: 0.56, confidence: 0.99 },
+        { text: "streets", start: 0.58, end: 0.8, confidence: 0.99 },
+        { text: "ashing", start: 0.84, end: 1.08, confidence: 0.99 },
+        { text: "white", start: 1.1, end: 1.3, confidence: 0.99 },
+        { text: "against", start: 1.34, end: 1.6, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "flashing",
+      heard: "ashing",
+      expectedIndex: 6,
+    });
+  });
+
+  it("flags an anchored short-word change outside the small homophone list", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "The" },
+        { index: 1, lineIndex: 0, text: "narrator" },
+        { index: 2, lineIndex: 0, text: "was" },
+        { index: 3, lineIndex: 0, text: "ready" },
+      ],
+      transcript: [
+        { text: "narrator", start: 0.1, end: 0.44, confidence: 0.99 },
+        { text: "is", start: 0.46, end: 0.55, confidence: 0.99 },
+        { text: "ready", start: 0.58, end: 0.82, confidence: 0.99 },
+      ],
+      state: { cursor: 1, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "was",
+      heard: "is",
+      expectedIndex: 2,
+    });
+  });
+
+  it("lets Whisper flag a high-confidence function-word swap such as on to in", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "The" },
+        { index: 1, lineIndex: 0, text: "fox" },
+        { index: 2, lineIndex: 0, text: "jumped" },
+        { index: 3, lineIndex: 0, text: "on" },
+        { index: 4, lineIndex: 0, text: "the" },
+        { index: 5, lineIndex: 0, text: "mat" },
+      ],
+      transcript: [
+        { text: "the", start: 0.01, end: 0.08, confidence: 0.57 },
+        { text: "fox", start: 0.18, end: 0.32, confidence: 0.77 },
+        { text: "jumped", start: 0.32, end: 0.65, confidence: 0.998 },
+        { text: "in", start: 0.65, end: 0.68, confidence: 0.995 },
+        { text: "the", start: 0.78, end: 0.92, confidence: 0.997 },
+        { text: "mat", start: 0.92, end: 1.08, confidence: 0.996 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({
+      expected: "on",
+      heard: "in",
+      expectedIndex: 3,
+    });
+  });
+
+  it("does not turn an uncertain short Whisper word into a pickup", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [{ index: 0, lineIndex: 0, text: "on" }],
+      transcript: [{ text: "in", start: 0.1, end: 0.2, confidence: 0.94 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toBeUndefined();
+  });
+
+  it("does not turn a hallucinated you into a substitution for the manuscript", () => {
+    const expected = [
+      { index: 0, lineIndex: 0, text: "the" },
+      { index: 1, lineIndex: 0, text: "cartwheels" },
+      { index: 2, lineIndex: 0, text: "rampars" },
+    ];
+    for (const cursor of [0, 1, 2]) {
+      const flag = liveBackFlag({
+        chapterId: "ch1",
+        expected,
+        transcript: [{ text: "you", start: 0.1, end: 0.25, confidence: 0.99 }],
+        state: { cursor, lastHeardEnd: 0 },
+        flagsEnabled: true,
+        confidenceThreshold: 0.9,
+      });
+
+      expect(flag).toBeUndefined();
+    }
+  });
+
+  it("does not flag an unanchored first-word guess before a skipped heading resyncs", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "Leaflets" },
+        { index: 1, lineIndex: 1, text: "At" },
+        { index: 2, lineIndex: 1, text: "dusk" },
+      ],
+      transcript: [{ text: "watching", start: 0.1, end: 0.5, confidence: 0.99 }],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toBeUndefined();
+  });
+});
+
+describe("background Whisper QC buffering", () => {
+  it("waits for the earlier two-second Whisper context before checking", () => {
+    let buffer = appendLiveQcSamples(
+      createLiveQcBuffer(),
+      new Float32Array(19),
+      3,
+      1,
+    );
+    expect(drainLiveQcBuffer(buffer, 10).window).toBeUndefined();
+
+    buffer = appendLiveQcSamples(buffer, new Float32Array(1), 4, 2.9);
+    expect(drainLiveQcBuffer(buffer, 10).window?.samples.length).toBe(20);
+  });
+
+  it("keeps Whisper's rolling overlap and anchors it to the retained audio", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.1, 0.2]), 7, 2.5);
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.3, 0.4]), 9, 3.5);
+
+    const drained = drainLiveQcBuffer(buffer, 2);
+    expect(drained.window).toMatchObject({ cursor: 7 });
+    expect(drained.window?.startSeconds).toBeCloseTo(2.5, 5);
+    expect(Array.from(drained.window?.samples ?? [])).toEqual([
+      expect.closeTo(0.1, 5),
+      expect.closeTo(0.2, 5),
+      expect.closeTo(0.3, 5),
+      expect.closeTo(0.4, 5),
+    ]);
+    expect(drained.buffer.sampleCount).toBe(2);
+
+    const nextBuffer = appendLiveQcSamples(
+      drained.buffer,
+      new Float32Array([0.5, 0.6]),
+      11,
+      4.5,
+    );
+    const next = drainLiveQcBuffer(nextBuffer, 2);
+    expect(next.window?.cursor).toBe(9);
+    expect(next.window?.startSeconds).toBeCloseTo(3.5, 5);
+    expect(Array.from(next.window?.samples ?? [])).toEqual([
+      expect.closeTo(0.3, 5),
+      expect.closeTo(0.4, 5),
+      expect.closeTo(0.5, 5),
+      expect.closeTo(0.6, 5),
+    ]);
+  });
+
+  it("keeps a short final window until stop forces a background check", () => {
+    const buffer = appendLiveQcSamples(
+      createLiveQcBuffer(),
+      new Float32Array([0.1, 0.2, 0.3]),
+      4,
+      1.25,
+    );
+
+    expect(drainLiveQcBuffer(buffer, 4).window).toBeUndefined();
+    const final = drainLiveQcBuffer(buffer, 4, true);
+    expect(final.window).toMatchObject({ cursor: 4, startSeconds: 1.25 });
+    expect(Array.from(final.window?.samples ?? [])).toEqual([
+      expect.closeTo(0.1, 5),
+      expect.closeTo(0.2, 5),
+      expect.closeTo(0.3, 5),
+    ]);
+  });
+
+  it("does not replay overlap at stop when no new QC audio arrived", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.1, 0.2]), 7, 2.5);
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.3, 0.4]), 9, 3.5);
+    const drained = drainLiveQcBuffer(buffer, 2);
+
+    expect(drained.window).toBeDefined();
+    expect(drainLiveQcBuffer(drained.buffer, 2, true).window).toBeUndefined();
   });
 });

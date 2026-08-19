@@ -297,7 +297,7 @@ function buildWhisperArgs({ modelPath, inputPath, outputBase, language, live = f
     if (Number.isFinite(threads) && threads > 0) {
       args.push("-t", String(Math.floor(threads)));
     }
-    args.push("-bs", "1", "-bo", "1", "-fa", "-sow", "-sns", "-ac", "768");
+    args.push("-bs", "1", "-bo", "1", "-fa", "-sow");
   }
   return args;
 }

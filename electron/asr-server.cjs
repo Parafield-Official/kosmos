@@ -245,8 +245,6 @@ function buildWhisperServerArgs({ serverPath, modelPath, port, requestPath, thre
     "-bo", "1",
     "-bs", "1",
     "-sow",
-    "-sns",
-    "-ac", "768",
     "--host", "127.0.0.1",
     "--port", String(port),
     "--request-path", requestPath,

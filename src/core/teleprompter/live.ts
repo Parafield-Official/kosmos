@@ -23,6 +23,7 @@ export interface LiveMatchState {
   cursor: number;
   lastHeardEnd: number;
   recentHeard?: LiveHeardToken[];
+  pendingResync?: { text: string; expectedIndex: number };
 }
 
 export interface LiveMismatch {
@@ -49,6 +50,8 @@ export interface LiveMatchInput {
   flagsEnabled: boolean;
   confidenceThreshold?: number;
   dismissedIds?: string[];
+  flagShortWords?: boolean;
+  requireFlagAnchor?: boolean;
 }
 
 export const LIVE_CONTEXT_SECONDS = 1.6;
@@ -58,6 +61,137 @@ export const LIVE_MIN_SPEECH_SECONDS = 0.9;
 export const LIVE_SPEECH_RMS = 0.01;
 export const LIVE_OVERLAP_SECONDS = 1.05;
 export const LIVE_UNSTABLE_TAIL_SECONDS = 0.32;
+export const LIVE_QC_CONTEXT_SECONDS = 2;
+export const LIVE_QC_OVERLAP_SECONDS = 0.8;
+
+export interface LiveQcBuffer {
+  chunks: LiveQcChunk[];
+  sampleCount: number;
+  pendingSampleCount: number;
+  cursor: number;
+}
+
+interface LiveQcChunk {
+  samples: Float32Array;
+  cursor: number;
+  startSeconds: number;
+}
+
+export interface LiveQcWindow {
+  samples: Float32Array;
+  cursor: number;
+  startSeconds: number;
+}
+
+export function createLiveQcBuffer(): LiveQcBuffer {
+  return { chunks: [], sampleCount: 0, pendingSampleCount: 0, cursor: 0 };
+}
+
+export function appendLiveQcSamples(
+  buffer: LiveQcBuffer,
+  samples: Float32Array,
+  cursor: number,
+  startSeconds = 0,
+): LiveQcBuffer {
+  if (samples.length === 0) {
+    return buffer;
+  }
+  return {
+    chunks: [...buffer.chunks, {
+      samples,
+      cursor: Math.max(0, Math.floor(cursor)),
+      startSeconds: Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0,
+    }],
+    sampleCount: buffer.sampleCount + samples.length,
+    pendingSampleCount: buffer.pendingSampleCount + samples.length,
+    cursor: buffer.sampleCount === 0 ? Math.max(0, Math.floor(cursor)) : buffer.cursor,
+  };
+}
+
+export function drainLiveQcBuffer(
+  buffer: LiveQcBuffer,
+  sampleRate: number,
+  force = false,
+): { buffer: LiveQcBuffer; window?: LiveQcWindow } {
+  const minimumSamples = Math.max(1, Math.floor(sampleRate * (
+    force ? LIVE_UNSTABLE_TAIL_SECONDS : LIVE_QC_CONTEXT_SECONDS
+  )));
+  const enoughAudio = force
+    ? buffer.pendingSampleCount >= minimumSamples
+    : buffer.sampleCount >= minimumSamples;
+  if (!enoughAudio || buffer.sampleCount === 0) {
+    return { buffer };
+  }
+
+  const windowSamples = force
+    ? Math.min(buffer.sampleCount, Math.floor(sampleRate * LIVE_QC_CONTEXT_SECONDS))
+    : Math.floor(sampleRate * LIVE_QC_CONTEXT_SECONDS);
+  const windowChunks = tailLiveQcChunks(buffer.chunks, windowSamples, sampleRate);
+  const samples = concatLiveQcChunks(windowChunks);
+  if (samples.length === 0) {
+    return { buffer };
+  }
+  if (force) {
+    return {
+      buffer: createLiveQcBuffer(),
+      window: {
+        samples,
+        cursor: windowChunks[0]?.cursor ?? buffer.cursor,
+        startSeconds: windowChunks[0]?.startSeconds ?? 0,
+      },
+    };
+  }
+
+  const overlapSamples = Math.min(samples.length, Math.max(1, Math.round(sampleRate * LIVE_QC_OVERLAP_SECONDS)));
+  const retainedChunks = tailLiveQcChunks(windowChunks, overlapSamples, sampleRate);
+  return {
+    buffer: {
+      chunks: retainedChunks,
+      sampleCount: retainedChunks.reduce((count, chunk) => count + chunk.samples.length, 0),
+      pendingSampleCount: 0,
+      cursor: retainedChunks[0]?.cursor ?? buffer.cursor,
+    },
+    window: {
+      samples,
+      cursor: windowChunks[0]?.cursor ?? buffer.cursor,
+      startSeconds: windowChunks[0]?.startSeconds ?? 0,
+    },
+  };
+}
+
+function tailLiveQcChunks(chunks: LiveQcChunk[], sampleCount: number, sampleRate: number): LiveQcChunk[] {
+  if (sampleCount <= 0 || chunks.length === 0) {
+    return [];
+  }
+  const retained: LiveQcChunk[] = [];
+  let remaining = sampleCount;
+  for (let index = chunks.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const chunk = chunks[index];
+    const take = Math.min(remaining, chunk.samples.length);
+    const skippedSamples = chunk.samples.length - take;
+    const samples = take === chunk.samples.length
+      ? chunk.samples
+      : chunk.samples.slice(skippedSamples);
+    retained.unshift({
+      samples,
+      cursor: chunk.cursor,
+      startSeconds: chunk.startSeconds + skippedSamples / Math.max(1, sampleRate),
+    });
+    remaining -= take;
+  }
+  return retained;
+}
+
+function concatLiveQcChunks(chunks: LiveQcChunk[]): Float32Array {
+  const sampleCount = chunks.reduce((count, chunk) => count + chunk.samples.length, 0);
+  const samples = new Float32Array(sampleCount);
+  let offset = 0;
+  for (const chunk of chunks) {
+    samples.set(chunk.samples, offset);
+    offset += chunk.samples.length;
+  }
+  return samples;
+}
 
 const LIVE_RESYNC_LOOKAHEAD = 8;
 const RECENT_HEARD_LIMIT = 12;
@@ -107,6 +241,8 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     ? Math.min(1, Math.max(0, input.confidenceThreshold as number))
     : 0.9;
   const dismissedIds = new Set(input.dismissedIds ?? []);
+  let pendingResync = input.state.pendingResync;
+  let matchedInWindow = 0;
   let flag: LiveMismatch | undefined;
 
   const words = usableLiveWords(input.transcript);
@@ -116,10 +252,11 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!heard) {
       continue;
     }
-    if (word.end <= lastHeardEnd + 0.05) {
+    if (word.end <= lastHeardEnd) {
       continue;
     }
-    if (isRecentHeardDuplicate(recentHeard, heard, word.end)) {
+    const confirmsRepeatedResync = pendingResync?.text === heard;
+    if (isRecentHeardDuplicate(recentHeard, heard, word.end) && !confirmsRepeatedResync) {
       lastHeardEnd = Math.max(lastHeardEnd, word.end);
       continue;
     }
@@ -137,6 +274,8 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     }
     if (heard === expected || wordsSimilar(heard, expected)) {
       cursor += 1;
+      pendingResync = undefined;
+      matchedInWindow += 1;
       continue;
     }
 
@@ -149,6 +288,8 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       ));
       if (resyncOffset >= 0) {
         cursor += resyncOffset + 3;
+        pendingResync = undefined;
+        matchedInWindow += 2;
         const confirmed = words[wordIndex + 1];
         if (confirmed) {
           lastHeardEnd = Math.max(lastHeardEnd, confirmed.end);
@@ -158,17 +299,48 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       }
     }
 
-    if (lookahead.some((candidate) => normalizeToken(candidate.text) === heard)) {
+    const lookaheadOffset = lookahead.findIndex((candidate) => normalizeToken(candidate.text) === heard);
+    if (lookaheadOffset >= 0) {
+      const expectedIndex = cursor + lookaheadOffset + 1;
+      const confidence = Number.isFinite(word.confidence) ? Math.min(1, Math.max(0, word.confidence as number)) : 0;
+      const isDistinctiveResync = !input.flagsEnabled
+        && confidence >= Math.max(threshold, 0.8)
+        && heard.length >= 5
+        && isContentWord(heard)
+        && lookahead.filter((candidate) => normalizeToken(candidate.text) === heard).length === 1;
+      if (isDistinctiveResync) {
+        cursor = expectedIndex + 1;
+        pendingResync = undefined;
+        matchedInWindow += 1;
+        continue;
+      }
+      const confirmsPending = pendingResync != null && (
+        expectedIndex === pendingResync.expectedIndex + 1
+        || (expectedIndex === pendingResync.expectedIndex && heard === pendingResync.text)
+      );
+      if (confirmsPending) {
+        cursor = expectedIndex + 1;
+        pendingResync = undefined;
+        matchedInWindow += 1;
+      } else {
+        pendingResync = { text: heard, expectedIndex };
+      }
       continue;
     }
+    pendingResync = undefined;
 
     const confidence = Number.isFinite(word.confidence) ? Math.min(1, Math.max(0, word.confidence as number)) : 0;
-    if (confidence < threshold || !isContentWord(heard) || !isContentWord(expected)) {
+    const reliableShortSwap = input.flagShortWords
+      && confidence >= Math.max(threshold, 0.95)
+      && RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`);
+    if (confidence < threshold || (!reliableShortSwap && (!isContentWord(heard) || !isContentWord(expected)))) {
       continue;
     }
 
     const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
-    if (input.flagsEnabled && !flag && !dismissedIds.has(id)) {
+    const hasFlagAnchor = matchedInWindow > 0
+      || hasTwoWordTrailingAnchor(words, wordIndex, input.expected, cursor);
+    if (input.flagsEnabled && !flag && !dismissedIds.has(id) && (!input.requireFlagAnchor || hasFlagAnchor)) {
       flag = {
         id,
         expected: expectedWord.text,
@@ -181,6 +353,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       };
     }
     cursor += 1;
+    matchedInWindow += 1;
   }
 
   return {
@@ -188,6 +361,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       cursor,
       lastHeardEnd,
       recentHeard: recentHeard.slice(-RECENT_HEARD_LIMIT),
+      ...(pendingResync ? { pendingResync } : {}),
     },
     flag,
   };
@@ -218,6 +392,10 @@ export function pcmHasSpeech(samples: ArrayLike<number>, threshold = LIVE_SPEECH
   return Math.sqrt(sumSquares / count) >= threshold;
 }
 
+export function liveRequestStatus(streaming: boolean): "listening" | "processing" {
+  return streaming ? "listening" : "processing";
+}
+
 export function liveVoiceStatusCopy(input: {
   status: "off" | "starting" | "listening" | "processing" | "error";
   enabled: boolean;
@@ -226,7 +404,9 @@ export function liveVoiceStatusCopy(input: {
   heardText: string;
 }): { title: string; detail: string } {
   if (input.dimmed) {
-    return { title: "Paused", detail: input.error ?? "" };
+    return input.enabled
+      ? { title: "Following", detail: "Word checks paused; voice follow is still running." }
+      : { title: "Paused", detail: input.error ?? "" };
   }
   if (input.status === "error") {
     return { title: "Needs attention", detail: input.error ?? "" };
@@ -274,9 +454,204 @@ export function liveFlagChipCopy(flag: { expected: string; heard: string }): str
   return `${flag.expected} → ${flag.heard}`;
 }
 
-/** Whisper QC: mark a swap. Never move the gold cursor. */
+/** Whisper QC: mark a swap. Never move the gold cursor or use the stream clock. */
 export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
-  return matchLiveWindow({ ...input, flagsEnabled: true }).flag;
+  const words = usableLiveWords(input.transcript);
+  if (words.length === 0 || input.expected.length === 0) {
+    return undefined;
+  }
+
+  const originalCursor = Math.max(0, Math.min(input.expected.length, Math.floor(input.state.cursor)));
+  const alignment = alignWhisperWords(words, input.expected, originalCursor);
+  const confidenceThreshold = Number.isFinite(input.confidenceThreshold)
+    ? Math.min(1, Math.max(0, input.confidenceThreshold as number))
+    : 0.9;
+  const exactAnchors = alignment.pairs.filter((pair) => pair.kind === "exact").length;
+  const hasAnchor = exactAnchors > 0;
+  const requireAnchor = input.requireFlagAnchor ?? originalCursor === 0;
+
+  for (const pair of alignment.pairs) {
+    if (pair.kind === "exact") {
+      continue;
+    }
+    const heardWord = words[pair.heardIndex];
+    const expectedWord = input.expected[pair.expectedIndex];
+    if (!heardWord || !expectedWord) {
+      continue;
+    }
+    const heard = normalizeToken(heardWord.text);
+    const expected = normalizeToken(expectedWord.text);
+    const confidence = Number.isFinite(heardWord.confidence)
+      ? Math.min(1, Math.max(0, heardWord.confidence as number))
+      : 0;
+    if (!heard || !expected || confidence < confidenceThreshold) {
+      continue;
+    }
+    const reliableWords = isContentWord(heard) && isContentWord(expected);
+    const anchoredShortChange = hasAnchor && confidence >= Math.max(confidenceThreshold, 0.95);
+    if (!reliableWords && !anchoredShortChange) {
+      continue;
+    }
+    const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
+    if (input.dismissedIds?.includes(id)) {
+      continue;
+    }
+    if (requireAnchor && !hasAnchor) {
+      continue;
+    }
+    return {
+      id,
+      expected: expectedWord.text,
+      heard: heardWord.text,
+      expectedIndex: expectedWord.index,
+      lineIndex: expectedWord.lineIndex,
+      start: Math.max(0, heardWord.start),
+      end: Math.max(Math.max(0, heardWord.start), heardWord.end),
+      confidence,
+    };
+  }
+
+  // A one-word, already-positioned check is the only case where there is no
+  // surrounding phrase to anchor against. Keep the old useful behavior for a
+  // mid-read content-word substitution, while never turning a first-word
+  // Whisper hallucination into a pickup.
+  if (!hasAnchor && words.length === 1 && originalCursor > 0) {
+    const heardWord = words[0];
+    const expectedWord = input.expected[originalCursor];
+    const heard = normalizeToken(heardWord?.text ?? "");
+    const expected = normalizeToken(expectedWord?.text ?? "");
+    const confidence = Number.isFinite(heardWord?.confidence)
+      ? Math.min(1, Math.max(0, heardWord?.confidence as number))
+      : 0;
+    if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected)) {
+      const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
+      if (!input.dismissedIds?.includes(id)) {
+        return {
+          id,
+          expected: expectedWord.text,
+          heard: heardWord.text,
+          expectedIndex: expectedWord.index,
+          lineIndex: expectedWord.lineIndex,
+          start: Math.max(0, heardWord.start),
+          end: Math.max(Math.max(0, heardWord.start), heardWord.end),
+          confidence,
+        };
+      }
+    }
+  }
+  return undefined;
+}
+
+interface WhisperAlignmentPair {
+  heardIndex: number;
+  expectedIndex: number;
+  kind: "exact" | "similar" | "mismatch";
+}
+
+interface WhisperAlignment {
+  pairs: WhisperAlignmentPair[];
+}
+
+const WHISPER_ALIGNMENT_LOOKBEHIND = 4;
+const WHISPER_ALIGNMENT_LOOKAHEAD = 24;
+const WHISPER_ALIGNMENT_GAP_EXPECTED = -1.25;
+const WHISPER_ALIGNMENT_GAP_HEARD = -2.25;
+const WHISPER_ALIGNMENT_MISMATCH = -2.2;
+const WHISPER_ALIGNMENT_SIMILAR = 2.6;
+const WHISPER_ALIGNMENT_EXACT = 4;
+
+function alignWhisperWords(
+  words: LiveTranscriptWord[],
+  expected: LiveExpectedWord[],
+  originalCursor: number,
+): WhisperAlignment {
+  const start = Math.max(0, originalCursor - WHISPER_ALIGNMENT_LOOKBEHIND);
+  const end = Math.min(expected.length, originalCursor + WHISPER_ALIGNMENT_LOOKAHEAD);
+  const expectedSlice = expected.slice(start, end);
+  const rows = words.length + 1;
+  const columns = expectedSlice.length + 1;
+  const scores = Array.from({ length: rows }, () => new Array<number>(columns).fill(Number.NEGATIVE_INFINITY));
+  const previous = Array.from({ length: rows }, () => new Array<"diag" | "up" | "left" | null>(columns).fill(null));
+  scores[0]![0] = 0;
+  // The rolling Whisper window may begin in the middle of the phrase. Do not
+  // force its first token to match the cursor checkpoint; use the best local
+  // sequence inside the nearby manuscript slice instead.
+  for (let column = 1; column < columns; column += 1) {
+    scores[0]![column] = 0;
+    previous[0]![column] = "left";
+  }
+  for (let row = 1; row < rows; row += 1) {
+    scores[row]![0] = (scores[row - 1]?.[0] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_HEARD;
+    previous[row]![0] = "up";
+  }
+
+  for (let row = 1; row < rows; row += 1) {
+    for (let column = 1; column < columns; column += 1) {
+      const heard = normalizeToken(words[row - 1]?.text ?? "");
+      const manuscript = normalizeToken(expectedSlice[column - 1]?.text ?? "");
+      const similarity = tokenSimilarity(heard, manuscript);
+      const diagonal = (scores[row - 1]?.[column - 1] ?? Number.NEGATIVE_INFINITY)
+        + (heard === manuscript ? WHISPER_ALIGNMENT_EXACT : similarity >= 0.45 ? WHISPER_ALIGNMENT_SIMILAR : WHISPER_ALIGNMENT_MISMATCH);
+      const up = (scores[row - 1]?.[column] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_HEARD;
+      const left = (scores[row]?.[column - 1] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_EXPECTED;
+      if (diagonal >= up && diagonal >= left) {
+        scores[row]![column] = diagonal;
+        previous[row]![column] = "diag";
+      } else if (up >= left) {
+        scores[row]![column] = up;
+        previous[row]![column] = "up";
+      } else {
+        scores[row]![column] = left;
+        previous[row]![column] = "left";
+      }
+    }
+  }
+
+  let bestColumn = 0;
+  for (let column = 1; column < columns; column += 1) {
+    if ((scores[rows - 1]?.[column] ?? Number.NEGATIVE_INFINITY) > (scores[rows - 1]?.[bestColumn] ?? Number.NEGATIVE_INFINITY)) {
+      bestColumn = column;
+    }
+  }
+
+  const pairs: WhisperAlignmentPair[] = [];
+  let row = rows - 1;
+  let column = bestColumn;
+  while (row > 0 || column > 0) {
+    const direction = previous[row]?.[column];
+    if (direction === "diag") {
+      const heard = normalizeToken(words[row - 1]?.text ?? "");
+      const manuscript = normalizeToken(expectedSlice[column - 1]?.text ?? "");
+      const similarity = tokenSimilarity(heard, manuscript);
+      pairs.unshift({
+        heardIndex: row - 1,
+        expectedIndex: start + column - 1,
+        kind: heard === manuscript ? "exact" : similarity >= 0.45 ? "similar" : "mismatch",
+      });
+      row -= 1;
+      column -= 1;
+    } else if (direction === "up") {
+      row -= 1;
+    } else if (direction === "left") {
+      column -= 1;
+    } else {
+      break;
+    }
+  }
+  return { pairs };
+}
+
+function tokenSimilarity(heardText: string, expectedText: string): number {
+  const heard = normalizeToken(heardText);
+  const expected = normalizeToken(expectedText);
+  if (!heard || !expected) {
+    return 0;
+  }
+  if (heard === expected) {
+    return 1;
+  }
+  const distance = editDistance(heard, expected);
+  return 1 - distance / Math.max(heard.length, expected.length);
 }
 
 export function parseParakeetLiveLine(line: string): LiveTranscriptWord[] {
@@ -341,6 +716,26 @@ export function mergeLivePickup(existing: Pickup[], pickup: Pickup): Pickup[] {
   return [...existing, pickup].sort((left, right) => left.t_start - right.t_start);
 }
 
+function hasTwoWordTrailingAnchor(
+  words: LiveTranscriptWord[],
+  wordIndex: number,
+  expected: LiveExpectedWord[],
+  cursor: number,
+): boolean {
+  const firstHeard = normalizeToken(words[wordIndex + 1]?.text ?? "");
+  const secondHeard = normalizeToken(words[wordIndex + 2]?.text ?? "");
+  const firstExpected = normalizeToken(expected[cursor + 1]?.text ?? "");
+  const secondExpected = normalizeToken(expected[cursor + 2]?.text ?? "");
+  return Boolean(
+    firstHeard
+      && secondHeard
+      && firstExpected
+      && secondExpected
+      && (firstHeard === firstExpected || wordsSimilar(firstHeard, firstExpected))
+      && (secondHeard === secondExpected || wordsSimilar(secondHeard, secondExpected)),
+  );
+}
+
 function usableLiveWords(transcript: LiveTranscriptWord[]): LiveTranscriptWord[] {
   const words = transcript
     .filter((word) => typeof word.text === "string" && Number.isFinite(word.start) && Number.isFinite(word.end) && word.end >= word.start)
@@ -381,6 +776,13 @@ function rememberHeard(recentHeard: LiveHeardToken[], text: string, end: number)
 const FUNCTION_WORDS = new Set([
   "a", "an", "and", "as", "at", "be", "but", "by", "for", "from", "i",
   "in", "is", "it", "of", "on", "or", "the", "to", "we", "you",
+]);
+
+const RELIABLE_SHORT_SWAP_PAIRS = new Set([
+  "a|an", "an|a",
+  "in|on", "on|in",
+  "of|off", "off|of",
+  "to|too", "too|to",
 ]);
 
 function isContentWord(token: string): boolean {
