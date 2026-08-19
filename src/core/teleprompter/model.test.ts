@@ -15,6 +15,7 @@ import {
   remainingReadTimeLabel,
   teleprompterLayout,
   liveHighlightWordIndex,
+  liveCursorForVisibleLine,
   type PromptSegment,
 } from "./model";
 import type { ChapterFile, GlossaryEntry } from "../project/types";
@@ -183,6 +184,18 @@ describe("teleprompter model", () => {
     expect(remainingReadTimeLabel(12, 0.25)).toBe("9m left");
     expect(remainingReadTimeLabel(1, 0.7)).toBe("Under a minute");
     expect(remainingReadTimeLabel(12, 1)).toBe("Chapter complete");
+  });
+
+  it("starts gold on the first visible line, not a percent through the chapter", () => {
+    const lines = [
+      { top: 0, height: 80, wordStart: 0 },
+      { top: 80, height: 80, wordStart: 12 },
+      { top: 160, height: 80, wordStart: 40 },
+      { top: 240, height: 80, wordStart: 90 },
+    ];
+    expect(liveCursorForVisibleLine(0, lines)).toBe(0);
+    expect(liveCursorForVisibleLine(170, lines)).toBe(40);
+    expect(liveCursorForVisibleLine(250, lines)).toBe(90);
   });
 
   it("keeps the teleprompter in the current app view and frees reading space", () => {

@@ -43,6 +43,7 @@ import {
   relevantPromptGlossary,
   remainingReadTimeLabel,
   teleprompterLayout,
+  liveCursorForVisibleLine,
   type PromptTheme,
 } from "../core/teleprompter/model";
 import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, isStaleLiveFlag, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
@@ -1996,6 +1997,25 @@ function Teleprompter({
     }
   }
 
+  function visibleLiveCursor() {
+    const container = scrollRef.current;
+    const fallback = Math.min(expectedWords.length, Math.max(0, Math.floor(progress * expectedWords.length)));
+    if (!container) {
+      return fallback;
+    }
+    const box = container.getBoundingClientRect();
+    const measured = lines.map((line) => {
+      const node = lineRefs.current.get(line.index);
+      const rect = node?.getBoundingClientRect();
+      return {
+        top: rect ? rect.top - box.top + container.scrollTop : Number.POSITIVE_INFINITY,
+        height: rect?.height ?? 0,
+        wordStart: lineWordStarts.get(line.index) ?? 0,
+      };
+    });
+    return Math.min(expectedWords.length, liveCursorForVisibleLine(container.scrollTop, measured));
+  }
+
   useEffect(() => {
     if (!liveState.enabled) {
       return;
@@ -2004,7 +2024,17 @@ function Teleprompter({
     if (highlightIndex < 0) {
       return;
     }
-    wordRefs.current.get(highlightIndex)?.scrollIntoView({ block: "center", behavior: "auto" });
+    const node = wordRefs.current.get(highlightIndex);
+    const container = scrollRef.current;
+    if (!node || !container) {
+      return;
+    }
+    const nodeRect = node.getBoundingClientRect();
+    const box = container.getBoundingClientRect();
+    if (nodeRect.top >= box.top + 48 && nodeRect.bottom <= box.bottom - 48) {
+      return;
+    }
+    container.scrollTop += nodeRect.top - box.top - box.height / 2 + nodeRect.height / 2;
   }, [expectedWords, liveCursor, liveState.enabled]);
 
   function commitLiveCursor(nextCursor: number) {
@@ -2428,7 +2458,7 @@ function Teleprompter({
       liveWhisperPromiseRef.current = null;
       liveFollowPromiseRef.current = null;
       liveSessionRef.current += 1;
-      const startingCursor = Math.min(expectedWords.length, Math.max(0, Math.floor(progress * expectedWords.length)));
+      const startingCursor = visibleLiveCursor();
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
       liveVisualCursorRef.current = startingCursor;
       setLiveCursor(startingCursor);

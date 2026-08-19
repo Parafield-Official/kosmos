@@ -119,6 +119,15 @@ export function readingProgress(scrollTop: number, scrollHeight: number, clientH
   return Math.min(1, Math.max(0, scrollTop / maximum));
 }
 
+export function liveCursorForVisibleLine(
+  scrollTop: number,
+  lines: Array<{ top: number; height: number; wordStart: number }>,
+): number {
+  const visibleTop = Math.max(0, scrollTop);
+  const visible = lines.find((line) => line.top + Math.max(1, line.height) > visibleTop + 8);
+  return Math.max(0, visible?.wordStart ?? lines[0]?.wordStart ?? 0);
+}
+
 /** Split text into renderable pieces while retaining every space and mark. */
 export function promptTextTokens(text: string): PromptTextToken[] {
   const source = String(text ?? "");
