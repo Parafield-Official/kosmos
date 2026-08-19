@@ -4,6 +4,7 @@ const path = require("node:path");
 const {
   auditFfmpegBuild,
   auditWhisperBuild,
+  auditWhisperServerBuild,
   resolveRuntimeBinary,
 } = require("./runtime.cjs");
 
@@ -110,5 +111,12 @@ describe("runtime binary resolution", () => {
       notices: "MIT License",
       sha256: "bad",
     })).toThrow(/Whisper|checksum|version/i);
+  });
+
+  it("audits the persistent Whisper server help output and checksum", () => {
+    expect(auditWhisperServerBuild({
+      help: "usage: whisper-server [options]",
+      sha256: "b".repeat(64),
+    })).toEqual({ license: "MIT", sha256: "b".repeat(64) });
   });
 });

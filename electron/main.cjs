@@ -4,7 +4,8 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
-const { transcribeAudio } = require("./asr.cjs");
+const { findModel, transcribeAudio } = require("./asr.cjs");
+const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
@@ -63,6 +64,7 @@ const MAX_ROOM_TEST_SECONDS = 60;
 const MAX_MANUSCRIPT_BYTES = 200_000_000;
 const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
 let pronunciationLexicon = null;
+const liveAsrServer = new PersistentWhisperServer();
 
 // Kosmos is a product rename, not a data migration. Keep the established
 // application-data folder so existing model caches, identities, and recent
@@ -1462,6 +1464,36 @@ async function audioMetadata(folder, relativePath) {
 
 async function transcribeAudioBuffer(payload) {
   const { bytes, extension } = decodeLiveAudioPayload(payload);
+  const language = payload.language || "en";
+  if (extension === ".wav") {
+    try {
+      const modelPath = await findModel({
+        userDataPath: app.getPath("userData"),
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      });
+      if (modelPath) {
+        const serverPath = resolveRuntimeBinary({
+          name: "whisper-server",
+          envVar: "WHISPER_SERVER_PATH",
+          resourcesPath: process.resourcesPath,
+          appPath: app.getAppPath(),
+          requireBundled: app.isPackaged,
+        });
+        return await liveAsrServer.transcribe({
+          serverPath,
+          modelPath,
+          wavBytes: bytes,
+          language,
+          threads: Math.min(6, Math.max(2, os.cpus().length)),
+        });
+      }
+    } catch (error) {
+      // Keep the original one-shot path as a safety net for source builds,
+      // older installers, and machines where Metal/loopback is unavailable.
+      console.warn(`Persistent Whisper server unavailable; using CLI fallback: ${error?.message ?? error}`);
+    }
+  }
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "booth-live-asr-"));
   const inputPath = path.join(temporaryRoot, `window${extension}`);
   try {
@@ -1471,7 +1503,7 @@ async function transcribeAudioBuffer(payload) {
       userDataPath: app.getPath("userData"),
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
-      language: payload.language || "en",
+      language,
       requireBundled: app.isPackaged,
       live: true,
       inputIsPcmWav: extension === ".wav",
@@ -1479,6 +1511,29 @@ async function transcribeAudioBuffer(payload) {
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+async function warmLiveTranscription() {
+  const modelPath = await findModel({
+    userDataPath: app.getPath("userData"),
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
+  if (!modelPath) {
+    throw new Error("No speech model is ready yet.");
+  }
+  const serverPath = resolveRuntimeBinary({
+    name: "whisper-server",
+    envVar: "WHISPER_SERVER_PATH",
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    requireBundled: app.isPackaged,
+  });
+  return liveAsrServer.warm({
+    serverPath,
+    modelPath,
+    threads: Math.min(6, Math.max(2, os.cpus().length)),
+  });
 }
 
 async function measureAudioFile(folder, relativePath, options = {}) {
@@ -2471,6 +2526,21 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
     requireBundled: app.isPackaged,
   });
 });
+ipcMain.handle("proof:start-live", async () => {
+  try {
+    return await warmLiveTranscription();
+  } catch (error) {
+    // Starting narration must remain usable with the existing CLI fallback.
+    // The first live window will retry the persistent server path and then
+    // fall back again if this machine has no server runtime.
+    console.warn(`Persistent Whisper warm-up skipped: ${error?.message ?? error}`);
+    return { persistent: false, acceleration: "CLI fallback" };
+  }
+});
+ipcMain.handle("proof:stop-live", () => {
+  liveAsrServer.stop();
+  return { stopped: true };
+});
 ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
   if (!payload?.audioBase64 || !payload?.mimeType) {
     throw new Error("Invalid listen-only transcription request");
@@ -2538,6 +2608,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on("before-quit", () => {
+  liveAsrServer.stop();
 });
 
 app.on("window-all-closed", () => {

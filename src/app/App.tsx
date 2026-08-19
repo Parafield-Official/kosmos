@@ -1972,6 +1972,7 @@ function Teleprompter({
   function stopLiveCapture() {
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
+    void window.boothDesk?.stopLiveTranscription?.();
     liveProcessorRef.current?.disconnect();
     liveSourceRef.current?.disconnect();
     liveGainRef.current?.disconnect();
@@ -2125,6 +2126,10 @@ function Teleprompter({
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Microphone access is not available in this app window.");
       }
+      // Load the persistent local recognizer while the button visibly says
+      // "Starting". Subsequent microphone windows reuse that loaded model;
+      // the main process releases it when this session stops.
+      await window.boothDesk.startLiveTranscription();
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
@@ -2641,7 +2646,7 @@ function LiveVoiceStatus({
     : status === "error"
       ? "Voice follow needs attention"
       : status === "starting"
-        ? "Starting microphone…"
+        ? "Loading local speech model…"
         : status === "processing"
           ? "Whisper is checking the last few seconds…"
           : enabled

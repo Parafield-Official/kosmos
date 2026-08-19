@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { auditFfmpegBuild, auditWhisperBuild } = require("../electron/runtime.cjs");
+const { auditFfmpegBuild, auditWhisperBuild, auditWhisperServerBuild } = require("../electron/runtime.cjs");
 
 const root = path.resolve(__dirname, "..");
 const binDir = path.join(root, "vendor", "bin");
@@ -13,6 +13,7 @@ const ffmpegPath = path.join(binDir, `ffmpeg${extension}`);
 const ffprobePath = path.join(binDir, `ffprobe${extension}`);
 const noticesPath = path.join(binDir, "FFMPEG_LICENSE.txt");
 const whisperPath = path.join(binDir, `whisper-cli${extension}`);
+const whisperServerPath = path.join(binDir, `whisper-server${extension}`);
 const whisperNoticesPath = path.join(binDir, "WHISPER_LICENSE.txt");
 
 function version(executable, args = ["-version"]) {
@@ -29,7 +30,7 @@ for (const candidate of [ffmpegPath, ffprobePath, noticesPath]) {
   }
 }
 
-for (const candidate of [whisperPath, whisperNoticesPath]) {
+for (const candidate of [whisperPath, whisperServerPath, whisperNoticesPath]) {
   if (!fs.existsSync(candidate)) {
     throw new Error(`Missing release speech asset: ${path.relative(root, candidate)}`);
   }
@@ -48,10 +49,20 @@ const whisperAudit = auditWhisperBuild({
   notices: fs.readFileSync(whisperNoticesPath, "utf8"),
   sha256: crypto.createHash("sha256").update(whisperBytes).digest("hex"),
 });
+const whisperServerBytes = fs.readFileSync(whisperServerPath);
+const whisperServerAudit = auditWhisperServerBuild({
+  help: version(whisperServerPath, ["--help"]),
+  sha256: crypto.createHash("sha256").update(whisperServerBytes).digest("hex"),
+});
 fs.writeFileSync(
   path.join(binDir, "WHISPER_AUDIT.json"),
-  `${JSON.stringify({ ...whisperAudit, sourceCommit: "4834a2327d008ace3ec5a9ed00f51454bcabbc1c" }, null, 2)}\n`,
+  `${JSON.stringify({
+    ...whisperAudit,
+    server: whisperServerAudit,
+    sourceCommit: "4834a2327d008ace3ec5a9ed00f51454bcabbc1c",
+  }, null, 2)}\n`,
   "utf8",
 );
 process.stdout.write(`Audited ${audit.ffmpegVersion}; ${audit.license}; GPL=${audit.gplEnabled}; non-free=${audit.nonfreeEnabled}\n`);
 process.stdout.write(`Audited ${whisperAudit.whisperVersion}; ${whisperAudit.license}; ${whisperAudit.sha256}\n`);
+process.stdout.write(`Audited persistent Whisper server; ${whisperServerAudit.license}; ${whisperServerAudit.sha256}\n`);

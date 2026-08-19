@@ -286,4 +286,12 @@ function run(command, args, options = {}) {
   });
 }
 
-module.exports = { buildPcmConversionArgs, buildWhisperArgs, parseWhisperTime, transcribeAudio, segmentWords, segmentTokenWords };
+module.exports = {
+  buildPcmConversionArgs,
+  buildWhisperArgs,
+  findModel,
+  parseWhisperTime,
+  transcribeAudio,
+  segmentWords,
+  segmentTokenWords,
+};

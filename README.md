@@ -29,9 +29,11 @@ without a network connection. Project settings expose batch proof sensitivity,
 the long-pause threshold, ACX target RMS, and teleprompter display defaults;
 the versioned ACX pass limits themselves remain pinned in `acx_spec.json`.
 
-The teleprompter is deliberately manual-scroll-first. Listen-only ASR live
-flags remain disabled in this pre-release until that path can meet the
-high-precision/auto-dim requirement without crying wolf.
+The teleprompter can follow narration locally with word-level highlighting.
+Kosmos warms a persistent whisper.cpp recognizer when voice follow starts,
+shows its check count and latency, and stops the recognizer when narration
+stops. Full-chapter Proof keeps the higher-quality one-shot decoder; the live
+path is a listen-only guide and never saves microphone audio.
 
 Rich manuscript imports use Microsoft's offline [MarkItDown](https://github.com/microsoft/markitdown)
 helper in release installers, with the built-in Kosmos parser as a safe
@@ -51,8 +53,9 @@ development.
 3. Windows: run the installer. If SmartScreen appears for an unsigned build,
    choose More info → Run anyway.
 
-Whisper and the checksum-verified `small.en` model are already included in the
-installer. Proof works offline immediately after installation: there is no
+Whisper CLI, the persistent Whisper server, and the checksum-verified
+`small.en` model are already included in the installer. Proof and listen-only
+voice follow work offline immediately after installation: there is no
 model download, account, Python setup, or cloud fallback.
 
 ## Journey A (first vertical slice)
@@ -98,6 +101,7 @@ shell at it without changing the project format:
 
 ```sh
 WHISPER_CLI_PATH=/path/to/whisper-cli \
+WHISPER_SERVER_PATH=/path/to/whisper-server \
 WHISPER_MODEL_PATH=/path/to/ggml-small.en.bin \
 npm run dev
 ```

@@ -161,11 +161,14 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
-            -DWHISPER_BUILD_SERVER=OFF
+            -DWHISPER_BUILD_SERVER=ON
           cmake --build "$RUNNER_TEMP/whisper-build" --config Release --parallel 2
           whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -name whisper-cli -perm -111 | head -n 1)"
+          whisper_server="$(find "$RUNNER_TEMP/whisper-build" -type f -name whisper-server -perm -111 | head -n 1)"
           test -n "$whisper_cli"
+          test -n "$whisper_server"
           cp "$whisper_cli" vendor/bin/whisper-cli
+          cp "$whisper_server" vendor/bin/whisper-server
           chmod +x vendor/bin/*
           printf '%s\n' \
             'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
@@ -206,11 +209,14 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
-            -DWHISPER_BUILD_SERVER=OFF
+            -DWHISPER_BUILD_SERVER=ON
           cmake --build "$RUNNER_TEMP/whisper-build" --config Release --parallel 2
           whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
+          whisper_server="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-server.exe' | head -n 1)"
           test -n "$whisper_cli"
+          test -n "$whisper_server"
           cp "$whisper_cli" vendor/bin/whisper-cli.exe
+          cp "$whisper_server" vendor/bin/whisper-server.exe
           # Static builds normally need no whisper DLLs, but retain any
           # toolchain-side DLLs emitted by the selected Windows generator.
           find "$RUNNER_TEMP/whisper-build" -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
@@ -227,16 +233,20 @@ jobs:
             test -x vendor/bin/ffmpeg
             test -x vendor/bin/ffprobe
             test -x vendor/bin/whisper-cli
+            test -x vendor/bin/whisper-server
             vendor/bin/ffmpeg -version >/dev/null
             vendor/bin/ffprobe -version >/dev/null
             vendor/bin/whisper-cli --version >/dev/null
+            vendor/bin/whisper-server --help >/dev/null 2>&1
           else
             test -f vendor/bin/ffmpeg.exe
             test -f vendor/bin/ffprobe.exe
             test -f vendor/bin/whisper-cli.exe
+            test -f vendor/bin/whisper-server.exe
             vendor/bin/ffmpeg.exe -version >/dev/null
             vendor/bin/ffprobe.exe -version >/dev/null
             vendor/bin/whisper-cli.exe --version >/dev/null
+            vendor/bin/whisper-server.exe --help >/dev/null 2>&1
           fi
           if [ "${{ matrix.target }}" = "mac" ]; then
             test -x vendor/bin/markitdown

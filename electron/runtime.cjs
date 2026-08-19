@@ -90,4 +90,16 @@ function auditWhisperBuild({ whisperVersion, notices, sha256 }) {
   };
 }
 
-module.exports = { auditFfmpegBuild, auditWhisperBuild, resolveRuntimeBinary };
+function auditWhisperServerBuild({ help, sha256 }) {
+  const helpText = String(help ?? "");
+  const checksum = String(sha256 ?? "").trim().toLowerCase();
+  if (!/usage:\s+.*whisper-server(?:\.exe)?\s+\[options\]/iu.test(helpText)) {
+    throw new Error("The staged persistent Whisper server did not report valid help output.");
+  }
+  if (!/^[a-f0-9]{64}$/u.test(checksum)) {
+    throw new Error("The staged persistent Whisper server is missing a valid SHA-256 checksum.");
+  }
+  return { license: "MIT", sha256: checksum };
+}
+
+module.exports = { auditFfmpegBuild, auditWhisperBuild, auditWhisperServerBuild, resolveRuntimeBinary };

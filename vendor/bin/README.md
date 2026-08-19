@@ -1,7 +1,10 @@
 # Release runtime assets
 
 Release builds use the platform-specific `ffmpeg`, `ffprobe`, `whisper-cli`,
-and `markitdown` helpers in this directory. The macOS arm64 runtime is staged
+`whisper-server`, and `markitdown` helpers in this directory. `whisper-server`
+is used only for short, listen-only narration windows so the small.en model
+stays loaded while the narrator is speaking; Kosmos stops it when narration
+stops and also has a 30-second idle safety timeout. The macOS arm64 runtime is staged
 for the private release repository so a clean clone can build and test the
 same proof workflow. A source checkout may still override them with
 `FFMPEG_PATH`, `FFPROBE_PATH`, `WHISPER_CLI_PATH`, and `MARKITDOWN_PATH`.
@@ -20,8 +23,9 @@ installer.
 
 The release maintainer must stage an FFmpeg build audited as LGPL-compatible,
 the matching dynamic libraries/notices, and the pinned whisper.cpp build
-notice before publishing an installer. `WHISPER_AUDIT.json` records the
-whisper.cpp source commit used for the staged executable.
+notice before publishing an installer. Both Whisper executables are static
+builds from the same pinned source commit. `WHISPER_AUDIT.json` records the
+whisper.cpp source commit used for the staged CLI executable.
 
 See `.github/workflows/release.yml` for the reproducible packaging steps and
 the upstream licenses that must travel with a distributed build.
