@@ -731,6 +731,96 @@ describe("parakeet live stream lines", () => {
     expect(misspelled).toMatchObject({ expected: "inhabitants", heard: "inhibitants", expectedIndex: 1 });
   });
 
+  it("flags the narrator slips people actually make mid-sentence", () => {
+    const thisTown = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "of" },
+        { index: 1, lineIndex: 0, text: "this" },
+        { index: 2, lineIndex: 0, text: "town" },
+      ],
+      transcript: [
+        { text: "of", start: 0, end: 0.15, confidence: 0.99 },
+        { text: "the", start: 0.15, end: 0.28, confidence: 0.94 },
+        { text: "town", start: 0.28, end: 0.55, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(thisTown).toMatchObject({ expected: "this", heard: "the", expectedIndex: 1 });
+
+    const climb = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "The" },
+        { index: 1, lineIndex: 0, text: "tide" },
+        { index: 2, lineIndex: 0, text: "climbs" },
+      ],
+      transcript: [
+        { text: "The", start: 0, end: 0.15, confidence: 0.99 },
+        { text: "tide", start: 0.15, end: 0.4, confidence: 0.99 },
+        { text: "climb", start: 0.4, end: 0.7, confidence: 0.97 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(climb).toMatchObject({ expected: "climbs", heard: "climb", expectedIndex: 2 });
+
+    const rooftop = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "over" },
+        { index: 1, lineIndex: 0, text: "rooftops" },
+      ],
+      transcript: [
+        { text: "over", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "rooftop", start: 0.2, end: 0.6, confidence: 0.98 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(rooftop).toMatchObject({ expected: "rooftops", heard: "rooftop", expectedIndex: 1 });
+
+    const east = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "to" },
+        { index: 1, lineIndex: 0, text: "the" },
+        { index: 2, lineIndex: 0, text: "east" },
+      ],
+      transcript: [
+        { text: "to", start: 0, end: 0.12, confidence: 0.99 },
+        { text: "the", start: 0.12, end: 0.22, confidence: 0.99 },
+        { text: "west", start: 0.22, end: 0.5, confidence: 0.96 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(east).toMatchObject({ expected: "east", heard: "west", expectedIndex: 2 });
+
+    const hotel = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "beachfront" },
+        { index: 1, lineIndex: 0, text: "hotels" },
+        { index: 2, lineIndex: 0, text: "to" },
+      ],
+      transcript: [
+        { text: "beachfront", start: 0, end: 0.45, confidence: 0.99 },
+        { text: "hotel", start: 0.45, end: 0.75, confidence: 0.97 },
+        { text: "to", start: 0.75, end: 0.9, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(hotel).toMatchObject({ expected: "hotels", heard: "hotel", expectedIndex: 1 });
+  });
+
   it("does not turn an uncertain short Whisper word into a pickup", () => {
     const flag = liveBackFlag({
       chapterId: "ch1",
@@ -843,5 +933,18 @@ describe("background Whisper QC buffering", () => {
 
     expect(drained.window).toBeDefined();
     expect(drainLiveQcBuffer(drained.buffer, 16_000, true, 16).window).toBeUndefined();
+  });
+
+  it("hands Whisper the stalled word so a last-word slip is not cut off", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 68, 0);
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.2), 68, 0.5);
+
+    expect(drainLiveQcBuffer(buffer, 16_000, false, 60).window).toBeUndefined();
+
+    const stalled = drainLiveQcBuffer(buffer, 16_000, false, 68);
+    expect(stalled.window?.cursor).toBe(68);
+    expect(stalled.window?.samples.length).toBe(16_000);
+    expect(stalled.buffer.sampleCount).toBe(0);
   });
 });

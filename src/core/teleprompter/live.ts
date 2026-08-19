@@ -66,6 +66,7 @@ export const LIVE_QC_CONTEXT_SECONDS = 2;
 export const LIVE_QC_OVERLAP_SECONDS = 0.8;
 export const LIVE_QC_RECENT_WORDS = 12;
 export const LIVE_QC_PHRASE_WORDS = 8;
+export const LIVE_QC_STALL_SECONDS = 0.5;
 
 export interface LiveQcBuffer {
   chunks: LiveQcChunk[];
@@ -124,16 +125,23 @@ export function drainLiveQcBuffer(
   const phraseStart = buffer.cursor;
   const phraseEnd = phraseStart + LIVE_QC_PHRASE_WORDS;
   const gold = Number.isFinite(goldCursor) ? Math.floor(goldCursor as number) : phraseStart;
-  if (!force && gold < phraseEnd) {
+  const coveredThrough = buffer.chunks.reduce((maxCursor, chunk) => Math.max(maxCursor, chunk.cursor), phraseStart);
+  const stallSamples = buffer.chunks
+    .filter((chunk) => chunk.cursor === gold)
+    .reduce((count, chunk) => count + chunk.samples.length, 0);
+  const stalledOnWord = gold === coveredThrough && stallSamples >= Math.max(1, Math.floor(sampleRate * LIVE_QC_STALL_SECONDS));
+  if (!force && gold < phraseEnd && !stalledOnWord) {
     return { buffer };
   }
 
   const take = force
     ? buffer.chunks
-    : buffer.chunks.filter((chunk) => chunk.cursor < phraseEnd);
+    : stalledOnWord && gold < phraseEnd
+      ? buffer.chunks.filter((chunk) => chunk.cursor <= gold)
+      : buffer.chunks.filter((chunk) => chunk.cursor < phraseEnd);
   const keep = force
     ? []
-    : buffer.chunks.filter((chunk) => chunk.cursor >= phraseEnd);
+    : buffer.chunks.filter((chunk) => !take.includes(chunk));
   if (take.length === 0) {
     return { buffer };
   }
@@ -808,10 +816,14 @@ const FUNCTION_WORDS = new Set([
 const RELIABLE_SHORT_SWAP_PAIRS = new Set([
   "a|an", "an|a",
   "a|the", "the|a",
+  "this|the", "the|this",
+  "that|the", "the|that",
+  "this|that", "that|this",
   "in|on", "on|in",
   "of|off", "off|of",
   "to|on", "on|to",
   "to|too", "too|to",
+  "east|west", "west|east",
 ]);
 
 function isContentWord(token: string): boolean {
