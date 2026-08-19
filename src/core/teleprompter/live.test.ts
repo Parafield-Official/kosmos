@@ -821,6 +821,80 @@ describe("parakeet live stream lines", () => {
     expect(hotel).toMatchObject({ expected: "hotels", heard: "hotel", expectedIndex: 1 });
   });
 
+  it("flags determiner, preposition, and inflection slips on unseen book text", () => {
+    const theseThe = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "open" },
+        { index: 1, lineIndex: 0, text: "these" },
+        { index: 2, lineIndex: 0, text: "gates" },
+      ],
+      transcript: [
+        { text: "open", start: 0, end: 0.25, confidence: 0.99 },
+        { text: "the", start: 0.25, end: 0.38, confidence: 0.93 },
+        { text: "gates", start: 0.38, end: 0.7, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(theseThe).toMatchObject({ expected: "these", heard: "the", expectedIndex: 1 });
+
+    const atOn = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "stood" },
+        { index: 1, lineIndex: 0, text: "at" },
+        { index: 2, lineIndex: 0, text: "dawn" },
+      ],
+      transcript: [
+        { text: "stood", start: 0, end: 0.3, confidence: 0.99 },
+        { text: "on", start: 0.3, end: 0.42, confidence: 0.94 },
+        { text: "dawn", start: 0.42, end: 0.7, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(atOn).toMatchObject({ expected: "at", heard: "on", expectedIndex: 1 });
+
+    const walks = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "she" },
+        { index: 1, lineIndex: 0, text: "walks" },
+        { index: 2, lineIndex: 0, text: "home" },
+      ],
+      transcript: [
+        { text: "she", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "walk", start: 0.2, end: 0.45, confidence: 0.97 },
+        { text: "home", start: 0.45, end: 0.7, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(walks).toMatchObject({ expected: "walks", heard: "walk", expectedIndex: 1 });
+
+    const north = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "facing" },
+        { index: 1, lineIndex: 0, text: "north" },
+        { index: 2, lineIndex: 0, text: "now" },
+      ],
+      transcript: [
+        { text: "facing", start: 0, end: 0.35, confidence: 0.99 },
+        { text: "south", start: 0.35, end: 0.65, confidence: 0.96 },
+        { text: "now", start: 0.65, end: 0.85, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(north).toMatchObject({ expected: "north", heard: "south", expectedIndex: 1 });
+  });
+
   it("does not turn an uncertain short Whisper word into a pickup", () => {
     const flag = liveBackFlag({
       chapterId: "ch1",

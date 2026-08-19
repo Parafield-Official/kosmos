@@ -271,7 +271,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       matchedInWindow += 1;
       continue;
     }
-    if (!input.flagsEnabled && RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`)) {
+    if (!input.flagsEnabled && isReliableShortSwap(expected, heard)) {
       cursor += 1;
       pendingResync = undefined;
       matchedInWindow += 1;
@@ -331,7 +331,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     const confidence = Number.isFinite(word.confidence) ? Math.min(1, Math.max(0, word.confidence as number)) : 0;
     const reliableShortSwap = input.flagShortWords
       && confidence >= Math.max(threshold, 0.95)
-      && RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`);
+      && isReliableShortSwap(expected, heard);
     if (confidence < threshold || (!reliableShortSwap && (!isContentWord(heard) || !isContentWord(expected)))) {
       continue;
     }
@@ -490,7 +490,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       continue;
     }
     const reliableWords = isContentWord(heard) && isContentWord(expected);
-    const reliableShortSwap = RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`);
+    const reliableShortSwap = isReliableShortSwap(expected, heard);
     const anchoredShortChange = hasAnchor && confidence >= Math.max(confidenceThreshold, 0.95);
     if (!reliableWords && !anchoredShortChange && !reliableShortSwap) {
       continue;
@@ -813,18 +813,16 @@ const FUNCTION_WORDS = new Set([
   "in", "is", "it", "of", "on", "or", "the", "to", "we", "you",
 ]);
 
-const RELIABLE_SHORT_SWAP_PAIRS = new Set([
-  "a|an", "an|a",
-  "a|the", "the|a",
-  "this|the", "the|this",
-  "that|the", "the|that",
-  "this|that", "that|this",
-  "in|on", "on|in",
-  "of|off", "off|of",
-  "to|on", "on|to",
-  "to|too", "too|to",
-  "east|west", "west|east",
-]);
+const DETERMINERS = new Set(["a", "an", "the", "this", "that", "these", "those"]);
+const PREPOSITIONS = new Set(["at", "by", "for", "from", "in", "into", "of", "off", "on", "onto", "to", "too"]);
+
+function isReliableShortSwap(expected: string, heard: string): boolean {
+  if (!expected || !heard || expected === heard) {
+    return false;
+  }
+  return (DETERMINERS.has(expected) && DETERMINERS.has(heard))
+    || (PREPOSITIONS.has(expected) && PREPOSITIONS.has(heard));
+}
 
 function isContentWord(token: string): boolean {
   return token.length >= 4 && !FUNCTION_WORDS.has(token);
@@ -834,7 +832,7 @@ function isWhisperWordPiece(heard: string, expected: string): boolean {
   if (!heard || !expected || heard === expected) {
     return false;
   }
-  if (RELIABLE_SHORT_SWAP_PAIRS.has(`${expected}|${heard}`)) {
+  if (isReliableShortSwap(expected, heard) || isInflectionSlip(heard, expected)) {
     return false;
   }
   const shorter = heard.length <= expected.length ? heard : expected;
@@ -843,6 +841,18 @@ function isWhisperWordPiece(heard: string, expected: string): boolean {
     return true;
   }
   return shorter.length <= 4 && longer.length >= shorter.length * 2;
+}
+
+function isInflectionSlip(heard: string, expected: string): boolean {
+  if (!heard || !expected || heard === expected) {
+    return false;
+  }
+  const shorter = heard.length <= expected.length ? heard : expected;
+  const longer = heard.length <= expected.length ? expected : heard;
+  if (shorter.length < 3) {
+    return false;
+  }
+  return ["s", "es", "ed", "ing", "er", "est"].some((suffix) => longer === `${shorter}${suffix}`);
 }
 
 function wordsSimilar(heard: string, expected: string): boolean {
