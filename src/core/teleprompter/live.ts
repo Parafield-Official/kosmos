@@ -711,7 +711,7 @@ export function mergeLivePickup(existing: Pickup[], pickup: Pickup): Pickup[] {
   return [...existing, pickup].sort((left, right) => left.t_start - right.t_start);
 }
 
-function isStaleLiveFlag(expectedIndex: number, goldCursor?: number): boolean {
+export function isStaleLiveFlag(expectedIndex: number, goldCursor?: number): boolean {
   if (!Number.isFinite(goldCursor)) {
     return false;
   }

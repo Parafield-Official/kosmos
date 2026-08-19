@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { liveBackFlag, matchLiveWindow, type LiveExpectedWord, type LiveMatchState } from "./live";
+import { liveBackFlag, matchLiveWindow, isStaleLiveFlag, type LiveExpectedWord, type LiveMatchState } from "./live";
 import { promptTextTokens } from "./model";
 
 const LEAFLETS = [
@@ -152,5 +152,7 @@ describe("leaflets follow + whisper QC", () => {
       confidenceThreshold: 0.9,
     });
     expect(stale).toBeUndefined();
+    expect(isStaleLiveFlag(duskIndex, sayIndex)).toBe(true);
+    expect(isStaleLiveFlag(toIndex, sayIndex)).toBe(false);
   });
 });

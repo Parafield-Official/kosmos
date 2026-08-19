@@ -45,7 +45,7 @@ import {
   teleprompterLayout,
   type PromptTheme,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, isStaleLiveFlag, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -2010,6 +2010,7 @@ function Teleprompter({
     const safeNext = Math.min(expectedWords.length, Math.max(0, Math.floor(nextCursor)));
     liveVisualCursorRef.current = safeNext;
     setLiveCursor(safeNext);
+    setLiveFlag((flag) => (flag && isStaleLiveFlag(flag.expectedIndex, safeNext) ? null : flag));
   }
 
   function disconnectLiveInput() {
