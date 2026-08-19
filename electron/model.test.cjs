@@ -2,7 +2,7 @@ const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const os = require("node:os");
 const path = require("node:path");
-const { MODEL, modelStatus, modelStatusForFile } = require("./model.cjs");
+const { MODEL, LIVE_MODEL, MODELS, modelStatus, modelStatusForFile } = require("./model.cjs");
 
 describe("local Whisper model cache", () => {
   it("reports a cached model without contacting the network", async () => {
@@ -87,5 +87,15 @@ describe("local Whisper model cache", () => {
     } finally {
       await fs.rm(folder, { recursive: true, force: true });
     }
+  });
+
+  it("lists Whisper and the live follow model for one-click install", () => {
+    expect(MODELS.map((model) => model.fileName)).toEqual([
+      "ggml-small.en.bin",
+      "realtime_eou_120m-v1-f16.gguf",
+    ]);
+    expect(LIVE_MODEL.id).toBe("parakeet-eou-120m");
+    expect(LIVE_MODEL.sha256).toBe("d1a2b12f12b8a096a57499c9111ed13b442a2b786e17a292c168be45088f0edc");
+    expect(LIVE_MODEL.url).toMatch(/^https:\/\/huggingface\.co\//);
   });
 });

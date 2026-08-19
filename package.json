@@ -47,7 +47,7 @@
       {
         "from": "vendor/models",
         "to": "models",
-        "filter": ["ggml-small.en.bin"]
+        "filter": ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf"]
       },
       {
         "from": "vendor/cmudict",

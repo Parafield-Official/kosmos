@@ -4,8 +4,9 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
-const { findModel, transcribeAudio } = require("./asr.cjs");
+const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
 const { PersistentWhisperServer } = require("./asr-server.cjs");
+const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
@@ -65,6 +66,7 @@ const MAX_MANUSCRIPT_BYTES = 200_000_000;
 const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
 let pronunciationLexicon = null;
 const liveAsrServer = new PersistentWhisperServer();
+const liveFollowServer = new PersistentParakeetServer();
 
 // Kosmos is a product rename, not a data migration. Keep the established
 // application-data folder so existing model caches, identities, and recent
@@ -1467,6 +1469,14 @@ async function transcribeAudioBuffer(payload) {
   const language = payload.language || "en";
   if (extension === ".wav") {
     try {
+      const follow = await transcribeLiveFollowWindow(bytes);
+      if (follow) {
+        return follow;
+      }
+    } catch (error) {
+      console.warn(`Live follow model unavailable; using Whisper: ${error?.message ?? error}`);
+    }
+    try {
       const modelPath = await findModel({
         userDataPath: app.getPath("userData"),
         resourcesPath: process.resourcesPath,
@@ -1489,8 +1499,6 @@ async function transcribeAudioBuffer(payload) {
         });
       }
     } catch (error) {
-      // Keep the original one-shot path as a safety net for source builds,
-      // older installers, and machines where Metal/loopback is unavailable.
       console.warn(`Persistent Whisper server unavailable; using CLI fallback: ${error?.message ?? error}`);
     }
   }
@@ -1513,7 +1521,52 @@ async function transcribeAudioBuffer(payload) {
   }
 }
 
+async function transcribeLiveFollowWindow(wavBytes) {
+  const modelPath = await findLiveModel({
+    userDataPath: app.getPath("userData"),
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
+  if (!modelPath) {
+    return null;
+  }
+  const serverPath = resolveRuntimeBinary({
+    name: "parakeet-server",
+    envVar: "PARAKEET_SERVER_PATH",
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+    requireBundled: false,
+  });
+  return liveFollowServer.transcribe({
+    serverPath,
+    modelPath,
+    wavBytes,
+  });
+}
+
 async function warmLiveTranscription() {
+  try {
+    const liveModelPath = await findLiveModel({
+      userDataPath: app.getPath("userData"),
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    });
+    if (liveModelPath) {
+      const serverPath = resolveRuntimeBinary({
+        name: "parakeet-server",
+        envVar: "PARAKEET_SERVER_PATH",
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        requireBundled: false,
+      });
+      return await liveFollowServer.warm({
+        serverPath,
+        modelPath: liveModelPath,
+      });
+    }
+  } catch (error) {
+    console.warn(`Live follow warm-up skipped: ${error?.message ?? error}`);
+  }
   const modelPath = await findModel({
     userDataPath: app.getPath("userData"),
     resourcesPath: process.resourcesPath,
@@ -2538,6 +2591,7 @@ ipcMain.handle("proof:start-live", async () => {
   }
 });
 ipcMain.handle("proof:stop-live", () => {
+  liveFollowServer.stop();
   liveAsrServer.stop();
   return { stopped: true };
 });
@@ -2611,6 +2665,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  liveFollowServer.stop();
   liveAsrServer.stop();
 });
 

@@ -14,6 +14,15 @@ const MODEL = {
   sha1: "db8a495a91d927739e50b3fc1cc4c6b8f6c2d022",
 };
 
+const LIVE_MODEL = {
+  id: "parakeet-eou-120m",
+  fileName: "realtime_eou_120m-v1-f16.gguf",
+  url: "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/realtime_eou_120m-v1-f16.gguf",
+  sha256: "d1a2b12f12b8a096a57499c9111ed13b442a2b786e17a292c168be45088f0edc",
+};
+
+const MODELS = [MODEL, LIVE_MODEL];
+
 const MODEL_MARKER_SUFFIX = ".sha1";
 const MODEL_DOWNLOAD_TIMEOUT_MS = 30_000;
 const MAX_MODEL_BYTES = 1_000_000_000;
@@ -53,7 +62,7 @@ async function modelStatusForFile(modelPath, expectedSha1 = MODEL.sha1) {
     if (cached) {
       return cached;
     }
-    const digest = stat.size > 0 ? await sha1(modelPath) : "";
+    const digest = stat.size > 0 ? await fileDigest(modelPath, expectedSha1.length === 64 ? "sha256" : "sha1") : "";
     const status = {
       id: MODEL.id,
       path: modelPath,
@@ -77,21 +86,32 @@ async function modelStatusForFile(modelPath, expectedSha1 = MODEL.sha1) {
 }
 
 async function downloadModel(userDataPath, onProgress) {
-  const destination = path.join(userDataPath, "models", MODEL.fileName);
-  const active = inFlightDownloads.get(destination);
-  if (active) {
-    return active;
+  for (const spec of MODELS) {
+    const destination = path.join(userDataPath, "models", spec.fileName);
+    const active = inFlightDownloads.get(destination);
+    if (active) {
+      await active;
+      continue;
+    }
+    const task = downloadVerifiedModel(spec, destination, onProgress);
+    inFlightDownloads.set(destination, task);
+    try {
+      await task;
+    } finally {
+      inFlightDownloads.delete(destination);
+    }
   }
-  const task = downloadVerifiedModel(userDataPath, destination, onProgress);
-  inFlightDownloads.set(destination, task);
-  try {
-    return await task;
-  } finally {
-    inFlightDownloads.delete(destination);
-  }
+  return modelStatus(userDataPath);
 }
 
-async function downloadVerifiedModel(userDataPath, destination, onProgress) {
+async function downloadVerifiedModel(spec, destination, onProgress) {
+  const expected = spec.sha256 || spec.sha1;
+  const algorithm = spec.sha256 ? "sha256" : "sha1";
+  const existing = await modelStatusForFile(destination, expected);
+  if (existing.available) {
+    await writeFileAtomic(`${destination}${MODEL_MARKER_SUFFIX}`, `${expected}\n`, "utf8");
+    return existing;
+  }
   const partial = `${destination}.part`;
   const marker = `${destination}${MODEL_MARKER_SUFFIX}`;
   const destinationBackup = `${destination}.backup-${process.pid}-${crypto.randomUUID()}`;
@@ -105,10 +125,10 @@ async function downloadVerifiedModel(userDataPath, destination, onProgress) {
   await fsp.rm(partial, { force: true });
 
   try {
-    await download(MODEL.url, partial, onProgress);
-    const digest = await sha1(partial);
-    if (digest !== MODEL.sha1) {
-      throw new Error("The Whisper model checksum did not match; the partial download was removed.");
+    await download(spec.url, partial, onProgress);
+    const digest = await fileDigest(partial, algorithm);
+    if (digest !== expected) {
+      throw new Error("The speech model checksum did not match; the partial download was removed.");
     }
     // Keep both old files aside until the replacement and its marker are in
     // place. A disk-full error while writing the marker must not turn a
@@ -178,7 +198,16 @@ async function downloadVerifiedModel(userDataPath, destination, onProgress) {
       await fsp.rm(markerBackup, { force: true }).catch(() => undefined);
     }
   }
-  return modelStatus(userDataPath);
+}
+
+function fileDigest(filePath, algorithm = "sha1") {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash(algorithm);
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.once("error", reject);
+    stream.once("end", () => resolve(hash.digest("hex")));
+  });
 }
 
 function download(url, destination, onProgress, redirectCount = 0) {
@@ -267,14 +296,4 @@ function download(url, destination, onProgress, redirectCount = 0) {
   });
 }
 
-function sha1(filePath) {
-  return new Promise((resolve, reject) => {
-    const hash = crypto.createHash("sha1");
-    const stream = fs.createReadStream(filePath);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.once("error", reject);
-    stream.once("end", () => resolve(hash.digest("hex")));
-  });
-}
-
-module.exports = { MODEL, modelStatus, modelStatusForFile, downloadModel };
+module.exports = { MODEL, LIVE_MODEL, MODELS, modelStatus, modelStatusForFile, downloadModel };

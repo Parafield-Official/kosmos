@@ -19,6 +19,8 @@ describe("persistent Whisper server adapter", () => {
       "-bo", "1",
       "-bs", "1",
       "-sow",
+      "-sns",
+      "-ac", "768",
       "--host", "127.0.0.1",
       "--port", "43210",
       "--request-path", "/kosmos-live-test",

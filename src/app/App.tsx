@@ -45,7 +45,7 @@ import {
   teleprompterLayout,
   type PromptTheme,
 } from "../core/teleprompter/model";
-import { matchLiveWindow, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
+import { matchLiveWindow, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -246,6 +246,7 @@ function ProjectHome({
   const [pastedText, setPastedText] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [proof, setProof] = useState<ProofResult | null>(null);
+  const proofRef = useRef<ProofResult | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -373,6 +374,10 @@ function ProjectHome({
       disposed = true;
     };
   }, [selectedChapter?.id, folder, chapterReloadVersion]);
+
+  useEffect(() => {
+    proofRef.current = proof;
+  }, [proof]);
 
   useEffect(() => {
     setChapterManagerOpen(false);
@@ -801,6 +806,52 @@ function ProjectHome({
         onChange(saved);
       }
       setNotice(`Pickup ${changes.status ? changes.status : "note"} saved.`);
+    });
+  }
+
+  async function persistAlignment(chapterId: string, next: ProofResult) {
+    proofRef.current = next;
+    setProof(next);
+    if (!window.boothDesk || folder === "(browser preview)") {
+      return;
+    }
+    const saved = await window.boothDesk.saveAlignment({
+      ...envelope,
+      chapterId,
+      pickups: next.pickups,
+      transcript: next.transcript,
+    });
+    onChange(saved);
+  }
+
+  async function fileLivePickup(pickup: Pickup) {
+    if (!selectedChapter || pickup.chapter_id !== selectedChapter.id) {
+      return;
+    }
+    const current = proofRef.current;
+    const pickups = mergeLivePickup(current?.pickups ?? [], pickup);
+    if (pickups === current?.pickups) {
+      return;
+    }
+    await persistAlignment(selectedChapter.id, {
+      pickups,
+      transcript: current?.transcript ?? [],
+    });
+  }
+
+  async function ignoreLivePickup(pickupId: string) {
+    if (!selectedChapter) {
+      return;
+    }
+    const current = proofRef.current;
+    if (!current?.pickups.some((pickup) => pickup.id === pickupId)) {
+      return;
+    }
+    await persistAlignment(selectedChapter.id, {
+      ...current,
+      pickups: current.pickups.map((pickup) => pickup.id === pickupId
+        ? updatePickup(pickup, { status: "ignored" })
+        : pickup),
     });
   }
 
@@ -1379,6 +1430,8 @@ function ProjectHome({
           });
         }
       }}
+      onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
+      onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
     />
   ) : null;
 
@@ -1772,6 +1825,8 @@ function Teleprompter({
   onCheckAudio,
   onReview,
   onClose,
+  onFileLivePickup,
+  onIgnoreLivePickup,
 }: {
   projectName: string;
   chapter: ChapterFile;
@@ -1799,8 +1854,9 @@ function Teleprompter({
   onCheckAudio: (chapterId: string) => void;
   onReview: () => void;
   onClose: () => void;
+  onFileLivePickup: (pickup: Pickup) => void;
+  onIgnoreLivePickup: (pickupId: string) => void;
 }) {
-  const LIVE_WINDOW_SECONDS = 2;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
   const expectedWords = useMemo<LiveExpectedWord[]>(() => {
@@ -1889,6 +1945,7 @@ function Teleprompter({
   const liveStartingRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
   const liveSessionRef = useRef(0);
+  const liveSentRef = useRef(false);
   const liveCursorAnimationRef = useRef<number | null>(null);
   const liveVisualCursorRef = useRef(0);
 
@@ -1940,33 +1997,13 @@ function Teleprompter({
     if (highlightIndex < 0) {
       return;
     }
-    wordRefs.current.get(highlightIndex)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    wordRefs.current.get(highlightIndex)?.scrollIntoView({ block: "center", behavior: "auto" });
   }, [expectedWords, liveCursor, liveState.enabled]);
 
-  function animateLiveCursor(nextCursor: number) {
+  function commitLiveCursor(nextCursor: number) {
     const safeNext = Math.min(expectedWords.length, Math.max(0, Math.floor(nextCursor)));
-    if (liveCursorAnimationRef.current !== null) {
-      window.clearInterval(liveCursorAnimationRef.current);
-      liveCursorAnimationRef.current = null;
-    }
-    const current = Math.min(safeNext, Math.max(0, liveVisualCursorRef.current));
-    if (safeNext <= current) {
-      liveVisualCursorRef.current = safeNext;
-      setLiveCursor(safeNext);
-      return;
-    }
-    const delay = Math.max(80, Math.min(140, Math.floor(720 / (safeNext - current))));
-    liveVisualCursorRef.current = current;
-    setLiveCursor(current);
-    liveCursorAnimationRef.current = window.setInterval(() => {
-      const next = Math.min(safeNext, liveVisualCursorRef.current + 1);
-      liveVisualCursorRef.current = next;
-      setLiveCursor(next);
-      if (next >= safeNext && liveCursorAnimationRef.current !== null) {
-        window.clearInterval(liveCursorAnimationRef.current);
-        liveCursorAnimationRef.current = null;
-      }
-    }, delay);
+    liveVisualCursorRef.current = safeNext;
+    setLiveCursor(safeNext);
   }
 
   function stopLiveCapture() {
@@ -1987,6 +2024,7 @@ function Teleprompter({
     liveSampleCountRef.current = 0;
     liveCapturedSecondsRef.current = 0;
     liveBufferStartSecondsRef.current = 0;
+    liveSentRef.current = false;
     liveMatchStateRef.current = { ...liveMatchStateRef.current, lastHeardEnd: 0 };
     if (liveCursorAnimationRef.current !== null) {
       window.clearInterval(liveCursorAnimationRef.current);
@@ -2019,7 +2057,7 @@ function Teleprompter({
 
   async function transcribeLiveWindow(samples: Float32Array, sampleRate: number, startSeconds: number, sessionId: number) {
     const bridge = window.boothDesk;
-    if (!bridge?.transcribeBuffer || !liveEnabledRef.current || sessionId !== liveSessionRef.current || samples.length < Math.floor(sampleRate)) {
+    if (!bridge?.transcribeBuffer || !liveEnabledRef.current || sessionId !== liveSessionRef.current || samples.length < Math.floor(sampleRate * LIVE_MIN_SPEECH_SECONDS)) {
       return;
     }
     liveRequestRef.current = true;
@@ -2035,16 +2073,19 @@ function Teleprompter({
           language: "en",
         }),
         20_000,
-        "Whisper took too long to answer. Try a quieter room or stop and start voice follow again.",
+        "Speech check took too long. Try a quieter room or stop and start again.",
       );
       if (!liveEnabledRef.current || sessionId !== liveSessionRef.current) {
         return;
       }
-      const transcriptWords = transcription.words.map((word) => ({
-        ...word,
-        start: word.start + startSeconds,
-        end: word.end + startSeconds,
-      }));
+      const transcriptWords = dropUnstableLiveTail(
+        transcription.words.map((word) => ({
+          ...word,
+          start: word.start + startSeconds,
+          end: word.end + startSeconds,
+        })),
+        startSeconds + samples.length / sampleRate,
+      );
       const result = matchLiveWindow({
         chapterId,
         expected: expectedWords,
@@ -2055,16 +2096,17 @@ function Teleprompter({
         dismissedIds: liveDismissedRef.current,
       });
       liveMatchStateRef.current = result.state;
-      animateLiveCursor(result.state.cursor);
+      commitLiveCursor(result.state.cursor);
       if (result.flag) {
         setLiveFlag(result.flag);
+        onFileLivePickup(pickupFromLiveFlag(result.flag, chapterId));
       }
       setLiveCheckCount((count) => count + 1);
       setLiveLatencyMs(Math.round(performance.now() - startedAt));
       setLiveHeardText(
         transcriptWords.length > 0
           ? transcriptWords.slice(-5).map((word) => word.text).join(" ")
-          : "No clear words heard in this window",
+          : "",
       );
       setLiveStatus("listening");
       setLiveError(null);
@@ -2079,14 +2121,23 @@ function Teleprompter({
       }
     } finally {
       liveRequestRef.current = false;
-      if (liveEnabledRef.current && sessionId === liveSessionRef.current && liveSampleCountRef.current >= liveSampleRateRef.current * LIVE_WINDOW_SECONDS) {
+      if (liveEnabledRef.current && sessionId === liveSessionRef.current && shouldFlushLiveBuffer()) {
         flushLiveWindow();
       }
     }
   }
 
+  function shouldFlushLiveBuffer() {
+    const sampleRate = liveSampleRateRef.current;
+    const count = liveSampleCountRef.current;
+    if (count < sampleRate * LIVE_MIN_SPEECH_SECONDS) {
+      return false;
+    }
+    return !liveSentRef.current || count >= sampleRate * LIVE_CONTEXT_SECONDS;
+  }
+
   function flushLiveWindow() {
-    if (liveRequestRef.current || liveSampleCountRef.current < liveSampleRateRef.current) {
+    if (liveRequestRef.current || liveSampleCountRef.current < liveSampleRateRef.current * LIVE_MIN_SPEECH_SECONDS) {
       return;
     }
     const samples = new Float32Array(liveSampleCountRef.current);
@@ -2096,13 +2147,25 @@ function Teleprompter({
       offset += chunk.length;
     }
     const sampleRate = liveSampleRateRef.current;
-    const startSeconds = liveBufferStartSecondsRef.current;
-    const overlapSamples = Math.min(samples.length, Math.round(sampleRate * 0.8));
+    const overlapSamples = Math.min(samples.length, Math.round(sampleRate * LIVE_OVERLAP_SECONDS));
     const overlap = samples.slice(samples.length - overlapSamples);
-    liveSamplesRef.current = overlap.length > 0 ? [overlap] : [];
-    liveSampleCountRef.current = overlap.length;
-    liveBufferStartSecondsRef.current = Math.max(0, liveCapturedSecondsRef.current - overlap.length / sampleRate);
-    void transcribeLiveWindow(samples, sampleRate, startSeconds, liveSessionRef.current);
+    const keepOverlap = () => {
+      liveSamplesRef.current = overlap.length > 0 ? [overlap] : [];
+      liveSampleCountRef.current = overlap.length;
+      liveBufferStartSecondsRef.current = Math.max(0, liveCapturedSecondsRef.current - overlap.length / sampleRate);
+    };
+    if (!pcmHasSpeech(samples)) {
+      if (samples.length >= Math.round(sampleRate * LIVE_CONTEXT_SECONDS)) {
+        keepOverlap();
+      }
+      return;
+    }
+    const contextSamples = Math.min(samples.length, Math.round(sampleRate * LIVE_CONTEXT_SECONDS));
+    const windowSamples = samples.subarray(samples.length - contextSamples);
+    const startSeconds = Math.max(0, liveCapturedSecondsRef.current - windowSamples.length / sampleRate);
+    keepOverlap();
+    liveSentRef.current = true;
+    void transcribeLiveWindow(windowSamples, sampleRate, startSeconds, liveSessionRef.current);
   }
 
   async function startLiveCapture() {
@@ -2149,6 +2212,7 @@ function Teleprompter({
       liveSampleCountRef.current = 0;
       liveCapturedSecondsRef.current = 0;
       liveBufferStartSecondsRef.current = 0;
+      liveSentRef.current = false;
       liveSessionRef.current += 1;
       const startingCursor = Math.min(expectedWords.length, Math.max(0, Math.floor(progress * expectedWords.length)));
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
@@ -2177,7 +2241,7 @@ function Teleprompter({
         liveSamplesRef.current.push(copy);
         liveSampleCountRef.current += copy.length;
         liveCapturedSecondsRef.current += copy.length / liveSampleRateRef.current;
-        if (liveSampleCountRef.current >= liveSampleRateRef.current * LIVE_WINDOW_SECONDS) {
+        if (shouldFlushLiveBuffer()) {
           flushLiveWindow();
         }
       };
@@ -2222,6 +2286,9 @@ function Teleprompter({
     liveStateRef.current = nextState;
     setLiveState(nextState);
     setLiveFlag(null);
+    if (!isTrueMismatch) {
+      onIgnoreLivePickup(current.id);
+    }
     if (nextState.dimmed) {
       stopLiveCapture();
       const dimmedState = { ...nextState, enabled: false };
@@ -2360,15 +2427,6 @@ function Teleprompter({
               totalWords={expectedWords.length}
             />
 
-            {liveFlag ? (
-              <div className="teleprompter-live-flag" role="alert">
-                <strong>Check this line</strong>
-                <span>Expected “{liveFlag.expected}”, heard “{liveFlag.heard}”.</span>
-                <button type="button" onClick={() => decideLiveFlag(true)}>Keep for review</button>
-                <button type="button" onClick={() => decideLiveFlag(false)}>Dismiss</button>
-              </div>
-            ) : null}
-
             <div
               ref={scrollRef}
               className="teleprompter-scroll"
@@ -2427,14 +2485,26 @@ function Teleprompter({
                             }
                             const currentWordIndex = wordIndex;
                             wordIndex += 1;
-                            const isLiveWord = currentWordIndex === liveWordIndex;
+                            const mark = liveWordMark(currentWordIndex, liveWordIndex, liveFlag?.expectedIndex);
+                            const wordClass = [
+                              mark.follow ? "teleprompter-word-live" : "",
+                              mark.flag ? "teleprompter-word-flag" : "",
+                            ].filter(Boolean).join(" ") || undefined;
                             return (
                               <span
                                 key={`${line.index}-${index}-${tokenIndex}`}
                                 ref={(node) => { if (node) wordRefs.current.set(currentWordIndex, node); else wordRefs.current.delete(currentWordIndex); }}
-                                className={isLiveWord ? "teleprompter-word-live" : undefined}
-                                aria-current={isLiveWord ? "true" : undefined}
-                              >{token.text}</span>
+                                className={wordClass}
+                                aria-current={mark.follow ? "true" : undefined}
+                              >
+                                {token.text}
+                                {mark.flag && liveFlag ? (
+                                  <span className="teleprompter-word-flag-chip" role="alert" onClick={(event) => event.stopPropagation()}>
+                                    <span>{liveFlagChipCopy(liveFlag)}</span>
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); decideLiveFlag(false); }}>Dismiss</button>
+                                  </span>
+                                ) : null}
+                              </span>
                             );
                           })}</span>
                         );
@@ -2612,17 +2682,12 @@ function Teleprompter({
 }
 
 function LiveVoiceStatus({
-  modelAvailable,
   status,
   enabled,
   dimmed,
   error,
   heardText,
-  checkCount,
-  latencyMs,
   signalLevel,
-  cursor,
-  totalWords,
 }: {
   modelAvailable: boolean | null;
   status: "off" | "starting" | "listening" | "processing" | "error";
@@ -2636,53 +2701,20 @@ function LiveVoiceStatus({
   cursor: number;
   totalWords: number;
 }) {
-  const modelLabel = modelAvailable === true
-    ? "Whisper ready"
-    : modelAvailable === false
-      ? "Whisper not ready"
-      : "Checking Whisper…";
-  const activityLabel = dimmed
-    ? "Voice follow paused"
-    : status === "error"
-      ? "Voice follow needs attention"
-      : status === "starting"
-        ? "Loading local speech model…"
-        : status === "processing"
-          ? "Whisper is checking the last few seconds…"
-          : enabled
-            ? "Listening for your voice"
-            : "Voice follow is off";
-  const detail = error
-    || (enabled && heardText
-      ? `Heard: “${heardText}”`
-      : enabled
-        ? "Read the highlighted words out loud."
-        : "Start it to move the page with your voice.");
+  const copy = liveVoiceStatusCopy({ status, enabled, dimmed, error, heardText });
 
   return (
     <div className={`live-voice-status live-voice-status-${status}`} role="status" aria-live="polite">
       <div className="live-voice-status-main">
         <span className="live-voice-status-dot" aria-hidden="true" />
-        <div>
-          <strong>{activityLabel}</strong>
-          <span>{detail}</span>
-        </div>
+        <strong>{copy.title}</strong>
+        {copy.detail ? <span>{copy.detail}</span> : null}
       </div>
-      <div className="live-voice-status-metrics">
-        <span className={`live-model-state ${modelAvailable === true ? "ready" : modelAvailable === false ? "missing" : "checking"}`}>
-          {modelLabel}
+      {enabled ? (
+        <span className="live-mic-meter" aria-label={`Microphone level ${Math.round(signalLevel * 100)} percent`}>
+          <i><b style={{ width: `${Math.round(signalLevel * 100)}%` }} /></i>
         </span>
-        {enabled ? (
-          <>
-            <span className="live-mic-meter" aria-label={`Microphone level ${Math.round(signalLevel * 100)} percent`}>
-              Mic
-              <i><b style={{ width: `${Math.round(signalLevel * 100)}%` }} /></i>
-            </span>
-            <span>{checkCount} check{checkCount === 1 ? "" : "s"}{latencyMs !== null ? ` · ${latencyMs} ms` : ""}</span>
-            <span>{Math.min(cursor, totalWords)} / {totalWords} words followed</span>
-          </>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }

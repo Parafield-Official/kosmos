@@ -2,7 +2,7 @@ const crypto = require("node:crypto");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 
-const DEFAULT_IDLE_TIMEOUT_MS = 30_000;
+const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const STARTUP_TIMEOUT_MS = 45_000;
 const HEALTH_POLL_MS = 100;
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -245,6 +245,8 @@ function buildWhisperServerArgs({ serverPath, modelPath, port, requestPath, thre
     "-bo", "1",
     "-bs", "1",
     "-sow",
+    "-sns",
+    "-ac", "768",
     "--host", "127.0.0.1",
     "--port", String(port),
     "--request-path", requestPath,

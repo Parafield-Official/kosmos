@@ -7,13 +7,13 @@ describe("packaged renderer configuration", () => {
     expect((viteConfig as { base?: string }).base).toBe("./");
   });
 
-  it("packages the verified Whisper model for zero-setup speech checking", () => {
+  it("packages the verified Whisper model and the live follow model for zero-setup speech checking", () => {
     expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
     expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
     expect(packageJson.build.extraResources).toContainEqual({
       from: "vendor/models",
       to: "models",
-      filter: ["ggml-small.en.bin"],
+      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf"],
     });
   });
 

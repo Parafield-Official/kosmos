@@ -5,6 +5,7 @@ const { spawnSync } = require("node:child_process");
 const { runCommand } = require("./process.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { modelStatus, modelStatusForFile } = require("./model.cjs");
+const { LIVE_MODEL } = require("./model.cjs");
 
 const FFMPEG_CONVERSION_TIMEOUT_MS = 30 * 60 * 1000;
 const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
@@ -136,6 +137,29 @@ async function findModel({ userDataPath, resourcesPath, appPath }) {
       return candidate;
     } catch {
       // Try the next local cache location.
+    }
+  }
+  return null;
+}
+
+async function findLiveModel({ userDataPath, resourcesPath, appPath }) {
+  const fileName = LIVE_MODEL.fileName;
+  const candidates = [
+    process.env.PARAKEET_MODEL_PATH,
+    userDataPath && path.join(userDataPath, "models", fileName),
+    resourcesPath && path.join(resourcesPath, "models", fileName),
+    appPath && path.join(appPath, "models", fileName),
+    appPath && path.join(appPath, "vendor", "models", fileName),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const status = await modelStatusForFile(candidate, LIVE_MODEL.sha256);
+      if (status.available) {
+        return candidate;
+      }
+    } catch {
+      // Try the next cache location.
     }
   }
   return null;
@@ -273,7 +297,7 @@ function buildWhisperArgs({ modelPath, inputPath, outputBase, language, live = f
     if (Number.isFinite(threads) && threads > 0) {
       args.push("-t", String(Math.floor(threads)));
     }
-    args.push("-bs", "1", "-bo", "1", "-fa", "-sow");
+    args.push("-bs", "1", "-bo", "1", "-fa", "-sow", "-sns", "-ac", "768");
   }
   return args;
 }
@@ -290,6 +314,7 @@ module.exports = {
   buildPcmConversionArgs,
   buildWhisperArgs,
   findModel,
+  findLiveModel,
   parseWhisperTime,
   transcribeAudio,
   segmentWords,

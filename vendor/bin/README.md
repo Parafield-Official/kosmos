@@ -7,7 +7,10 @@ stays loaded while the narrator is speaking; Kosmos stops it when narration
 stops and also has a 30-second idle safety timeout. The macOS arm64 runtime is staged
 for the private release repository so a clean clone can build and test the
 same proof workflow. A source checkout may still override them with
-`FFMPEG_PATH`, `FFPROBE_PATH`, `WHISPER_CLI_PATH`, and `MARKITDOWN_PATH`.
+`MARKITDOWN_PATH`, `WHISPER_SERVER_PATH`, and `PARAKEET_SERVER_PATH`.
+
+Live follow prefers `parakeet-server` plus the 120M GGUF. Whisper remains
+Proof and the live fallback. `parakeet-cli --stream` is not used.
 
 `markitdown` is Microsoft's plugin-free, offline document converter. Release
 CI builds it from `scripts/markitdown_cli.py` with the pinned DOCX/PDF extras

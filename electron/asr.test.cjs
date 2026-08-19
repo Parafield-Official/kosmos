@@ -1,4 +1,8 @@
-const { buildPcmConversionArgs, buildWhisperArgs, parseWhisperTime, segmentWords } = require("./asr.cjs");
+const { buildPcmConversionArgs, buildWhisperArgs, findLiveModel, parseWhisperTime, segmentWords } = require("./asr.cjs");
+const { LIVE_MODEL } = require("./model.cjs");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
 
 describe("local Whisper JSON adapter", () => {
   it("turns segment offsets into deterministic word windows", () => {
@@ -41,7 +45,7 @@ describe("local Whisper JSON adapter", () => {
       "-f", "/tmp/window.wav",
       "-l", "en",
       "-oj", "-of", "/tmp/transcript", "-np",
-      "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow",
+      "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow", "-sns", "-ac", "768",
     ]);
   });
 
@@ -74,5 +78,19 @@ describe("local Whisper JSON adapter", () => {
 
   it("rejects malformed Whisper JSON instead of iterating an object as segments", () => {
     expect(() => segmentWords({ text: "not an array" })).toThrow(/transcription array/i);
+  });
+});
+
+describe("live follow model lookup", () => {
+  it("ignores an unmarked or wrong live model file", async () => {
+    const folder = await fs.mkdtemp(path.join(os.tmpdir(), "booth-live-model-"));
+    try {
+      const models = path.join(folder, "models");
+      await fs.mkdir(models, { recursive: true });
+      await fs.writeFile(path.join(models, LIVE_MODEL.fileName), Buffer.from("fixture"));
+      await expect(findLiveModel({ userDataPath: folder, resourcesPath: folder, appPath: folder })).resolves.toBeNull();
+    } finally {
+      await fs.rm(folder, { recursive: true, force: true });
+    }
   });
 });
