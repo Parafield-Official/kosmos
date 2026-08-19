@@ -7,6 +7,7 @@ const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
 const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
+const { PersistentParakeetLive } = require("./parakeet-live.cjs");
 const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
@@ -67,6 +68,7 @@ const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
 let pronunciationLexicon = null;
 const liveAsrServer = new PersistentWhisperServer();
 const liveFollowServer = new PersistentParakeetServer();
+const liveFollowStream = new PersistentParakeetLive();
 
 // Kosmos is a product rename, not a data migration. Keep the established
 // application-data folder so existing model caches, identities, and recent
@@ -1464,17 +1466,38 @@ async function audioMetadata(folder, relativePath) {
   };
 }
 
+function decodePcmBase64(encoded) {
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    throw new Error("Live PCM is empty.");
+  }
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.length < 4 || bytes.length % 4 !== 0) {
+    throw new Error("Live PCM is malformed.");
+  }
+  return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+}
+
 async function transcribeAudioBuffer(payload) {
+  if (payload?.pcmBase64) {
+    const pcm = decodePcmBase64(payload.pcmBase64);
+    if (liveFollowStream.running) {
+      return liveFollowStream.feed(pcm);
+    }
+    throw new Error("Live stream is not running.");
+  }
   const { bytes, extension } = decodeLiveAudioPayload(payload);
   const language = payload.language || "en";
+  const wantWhisper = payload?.engine === "whisper";
   if (extension === ".wav") {
-    try {
-      const follow = await transcribeLiveFollowWindow(bytes);
-      if (follow) {
-        return follow;
+    if (!wantWhisper) {
+      try {
+        const follow = await transcribeLiveFollowWindow(bytes);
+        if (follow) {
+          return follow;
+        }
+      } catch (error) {
+        console.warn(`Live follow model unavailable; using Whisper: ${error?.message ?? error}`);
       }
-    } catch (error) {
-      console.warn(`Live follow model unavailable; using Whisper: ${error?.message ?? error}`);
     }
     try {
       const modelPath = await findModel({
@@ -1495,7 +1518,7 @@ async function transcribeAudioBuffer(payload) {
           modelPath,
           wavBytes: bytes,
           language,
-          threads: Math.min(6, Math.max(2, os.cpus().length)),
+          threads: Math.min(4, Math.max(2, os.cpus().length)),
         });
       }
     } catch (error) {
@@ -1544,29 +1567,7 @@ async function transcribeLiveFollowWindow(wavBytes) {
   });
 }
 
-async function warmLiveTranscription() {
-  try {
-    const liveModelPath = await findLiveModel({
-      userDataPath: app.getPath("userData"),
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-    });
-    if (liveModelPath) {
-      const serverPath = resolveRuntimeBinary({
-        name: "parakeet-server",
-        envVar: "PARAKEET_SERVER_PATH",
-        resourcesPath: process.resourcesPath,
-        appPath: app.getAppPath(),
-        requireBundled: false,
-      });
-      return await liveFollowServer.warm({
-        serverPath,
-        modelPath: liveModelPath,
-      });
-    }
-  } catch (error) {
-    console.warn(`Live follow warm-up skipped: ${error?.message ?? error}`);
-  }
+async function warmWhisperLive() {
   const modelPath = await findModel({
     userDataPath: app.getPath("userData"),
     resourcesPath: process.resourcesPath,
@@ -1575,6 +1576,7 @@ async function warmLiveTranscription() {
   if (!modelPath) {
     throw new Error("No speech model is ready yet.");
   }
+  liveAsrServer.useGpu = false;
   const serverPath = resolveRuntimeBinary({
     name: "whisper-server",
     envVar: "WHISPER_SERVER_PATH",
@@ -1585,8 +1587,59 @@ async function warmLiveTranscription() {
   return liveAsrServer.warm({
     serverPath,
     modelPath,
-    threads: Math.min(6, Math.max(2, os.cpus().length)),
+    threads: Math.min(4, Math.max(2, os.cpus().length)),
   });
+}
+
+async function warmLiveTranscription() {
+  let follow = null;
+  try {
+    const liveModelPath = await findLiveModel({
+      userDataPath: app.getPath("userData"),
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    });
+    if (liveModelPath) {
+      try {
+        const livePath = resolveRuntimeBinary({
+          name: "parakeet-live",
+          envVar: "PARAKEET_LIVE_PATH",
+          resourcesPath: process.resourcesPath,
+          appPath: app.getAppPath(),
+          requireBundled: false,
+        });
+        follow = await liveFollowStream.start({
+          serverPath: livePath,
+          modelPath: liveModelPath,
+        });
+      } catch (error) {
+        console.warn(`Parakeet live stream unavailable; using clip server: ${error?.message ?? error}`);
+        const serverPath = resolveRuntimeBinary({
+          name: "parakeet-server",
+          envVar: "PARAKEET_SERVER_PATH",
+          resourcesPath: process.resourcesPath,
+          appPath: app.getAppPath(),
+          requireBundled: false,
+        });
+        follow = await liveFollowServer.warm({
+          serverPath,
+          modelPath: liveModelPath,
+        });
+      }
+    }
+  } catch (error) {
+    console.warn(`Live follow warm-up skipped: ${error?.message ?? error}`);
+  }
+  try {
+    const whisper = await warmWhisperLive();
+    return follow ? { ...follow, backcheck: "whisper" } : whisper;
+  } catch (error) {
+    console.warn(`Whisper back-check warm-up skipped: ${error?.message ?? error}`);
+    if (follow) {
+      return follow;
+    }
+    throw error;
+  }
 }
 
 async function measureAudioFile(folder, relativePath, options = {}) {
@@ -2591,12 +2644,13 @@ ipcMain.handle("proof:start-live", async () => {
   }
 });
 ipcMain.handle("proof:stop-live", () => {
+  liveFollowStream.stop();
   liveFollowServer.stop();
   liveAsrServer.stop();
   return { stopped: true };
 });
 ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
-  if (!payload?.audioBase64 || !payload?.mimeType) {
+  if (!payload?.pcmBase64 && (!payload?.audioBase64 || !payload?.mimeType)) {
     throw new Error("Invalid listen-only transcription request");
   }
   return transcribeAudioBuffer(payload);
@@ -2665,6 +2719,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  liveFollowStream.stop();
   liveFollowServer.stop();
   liveAsrServer.stop();
 });

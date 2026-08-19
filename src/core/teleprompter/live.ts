@@ -53,6 +53,7 @@ export interface LiveMatchInput {
 
 export const LIVE_CONTEXT_SECONDS = 1.6;
 export const LIVE_HOP_SECONDS = 0.55;
+export const LIVE_STREAM_HOP_SECONDS = 0.16;
 export const LIVE_MIN_SPEECH_SECONDS = 0.9;
 export const LIVE_SPEECH_RMS = 0.01;
 export const LIVE_OVERLAP_SECONDS = 1.05;
@@ -271,6 +272,39 @@ export function liveWordMark(
 
 export function liveFlagChipCopy(flag: { expected: string; heard: string }): string {
   return `${flag.expected} → ${flag.heard}`;
+}
+
+/** Whisper QC: mark a swap. Never move the gold cursor. */
+export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
+  return matchLiveWindow({ ...input, flagsEnabled: true }).flag;
+}
+
+export function parseParakeetLiveLine(line: string): LiveTranscriptWord[] {
+  try {
+    const parsed = JSON.parse(line) as { words?: Array<{ w?: string; word?: string; start?: number; end?: number; conf?: number }> };
+    if (!Array.isArray(parsed.words)) {
+      return [];
+    }
+    const words: LiveTranscriptWord[] = [];
+    for (const item of parsed.words) {
+      const text = String(item?.w ?? item?.word ?? "").replace(/<EOU>|<EOB>/giu, "").trim();
+      const start = Number(item?.start);
+      const end = Number(item?.end);
+      if (!text || !Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+        continue;
+      }
+      const confidence = Number(item?.conf);
+      words.push({
+        text,
+        start,
+        end,
+        confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.75,
+      });
+    }
+    return words;
+  } catch {
+    return [];
+  }
 }
 
 /** Live flags file themselves. Dismiss is optional, not a gate. */

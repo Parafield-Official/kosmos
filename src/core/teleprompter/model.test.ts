@@ -34,10 +34,10 @@ describe("teleprompter model", () => {
     expect(promptWordCount("Marie-Laure said, ‘don’t stop.’")).toBe(5);
   });
 
-  it("highlights only the most recently followed word while voice follow is active", () => {
-    expect(liveHighlightWordIndex(0, true)).toBe(-1);
-    expect(liveHighlightWordIndex(1, true)).toBe(0);
-    expect(liveHighlightWordIndex(9, true)).toBe(8);
+  it("highlights the current follow word while voice follow is active", () => {
+    expect(liveHighlightWordIndex(0, true)).toBe(0);
+    expect(liveHighlightWordIndex(1, true)).toBe(1);
+    expect(liveHighlightWordIndex(9, true)).toBe(9);
     expect(liveHighlightWordIndex(9, false)).toBe(-1);
   });
 

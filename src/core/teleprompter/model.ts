@@ -143,10 +143,10 @@ export function promptWordCount(text: string): number {
 }
 
 export function liveHighlightWordIndex(cursor: number, enabled: boolean): number {
-  if (!enabled || !Number.isFinite(cursor) || cursor <= 0) {
+  if (!enabled || !Number.isFinite(cursor) || cursor < 0) {
     return -1;
   }
-  return Math.floor(cursor) - 1;
+  return Math.floor(cursor);
 }
 
 export function remainingReadTimeLabel(totalMinutes: number, progress: number): string {

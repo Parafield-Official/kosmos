@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dropUnstableLiveTail, liveFlagChipCopy, liveFlagRequiresClick, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, pcmHasSpeech, pickupFromLiveFlag, type LiveExpectedWord, type LiveMismatch } from "./live";
+import { dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
 
 const expected: LiveExpectedWord[] = [
   { index: 0, lineIndex: 0, text: "The" },
@@ -302,5 +302,31 @@ describe("live flag chrome", () => {
     expect(liveFlagRequiresClick()).toBe(false);
     expect(mergeLivePickup([], pickup)).toEqual([pickup]);
     expect(mergeLivePickup([pickup], pickup)).toEqual([pickup]);
+  });
+});
+
+describe("parakeet live stream lines", () => {
+  it("reads finalized words from a C-API stream hop and ignores empty hops", () => {
+    expect(LIVE_STREAM_HOP_SECONDS).toBe(0.16);
+    expect(parseParakeetLiveLine("{\"text\":\"\",\"words\":[]}")).toEqual([]);
+    expect(parseParakeetLiveLine("{\"text\":\" i don't\",\"words\":[{\"w\":\"well\",\"start\":0.8,\"end\":0.88,\"conf\":0.95},{\"w\":\"i\",\"start\":0.96,\"end\":1.04,\"conf\":0.99}]}")).toEqual([
+      { text: "well", start: 0.8, end: 0.88, confidence: 0.95 },
+      { text: "i", start: 0.96, end: 1.04, confidence: 0.99 },
+    ]);
+    expect(parseParakeetLiveLine("not-json")).toEqual([]);
+  });
+
+  it("lets Whisper flag a swap without moving the gold cursor", () => {
+    const state = { cursor: 2, lastHeardEnd: 0 };
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected,
+      transcript: [{ text: "hopped", start: 1, end: 1.3, confidence: 0.96 }],
+      state,
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toMatchObject({ expected: "jumped", heard: "hopped", expectedIndex: 2 });
+    expect(state.cursor).toBe(2);
   });
 });
