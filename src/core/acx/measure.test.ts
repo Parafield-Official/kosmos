@@ -21,6 +21,23 @@ describe("ACX measurement", () => {
     expect(report.rms_dbfs).toBeCloseTo(-20, 1);
     expect(report.sample_rate).toBe(48000);
     expect(report.checks.sample_rate).toBe("fail");
+    expect(report.noise_floor_start_seconds).toBeGreaterThanOrEqual(0);
+    expect(report.noise_floor_duration_seconds).toBeGreaterThanOrEqual(0.1);
+  });
+
+  it("identifies the sustained quiet window used for the noise-floor result", () => {
+    const sampleRate = 1_000;
+    const loud = new Array(500).fill(0.1);
+    const quiet = new Array(300).fill(0.0001);
+    const report = measurePcm({
+      samples: Float32Array.from([...loud, ...quiet, ...loud]),
+      sampleRate,
+      channels: 1,
+    });
+
+    expect(report.noise_floor_dbfs).toBeCloseTo(-80, 1);
+    expect(report.noise_floor_start_seconds).toBeCloseTo(0.5, 1);
+    expect(report.noise_floor_duration_seconds).toBeCloseTo(0.3, 1);
   });
 
   it("rejects VBR MP3 metadata even when the bitrate is high enough", () => {

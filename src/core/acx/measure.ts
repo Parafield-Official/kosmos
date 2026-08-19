@@ -21,6 +21,10 @@ export interface AcxReport {
   true_peak_dbfs: number;
   sample_peak_dbfs: number;
   noise_floor_dbfs: number;
+  /** Start of the sustained low-level window used for the floor estimate. */
+  noise_floor_start_seconds: number;
+  /** Duration of the sustained low-level window used for the floor estimate. */
+  noise_floor_duration_seconds: number;
   sample_rate: number;
   channels: number;
   duration_seconds: number;
@@ -109,7 +113,8 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
     ? samples.length / channels / sampleRate
     : 0;
   const frameRms = frameRmsDbfs(samples, sampleRate, channels);
-  const noiseFloor = detectNoiseFloor(samples, sampleRate, channels, frameRms);
+  const noiseEstimate = detectNoiseFloor(samples, sampleRate, channels, frameRms);
+  const noiseFloor = noiseEstimate.dbfs;
   const roomTone = measureRoomTone(samples, sampleRate, channels, frameRms, noiseFloor);
   const samplePeak = samplePeakDbfs(samples);
   const truePeak = truePeakDbfs(samples, channels > 0 ? channels : 1);
@@ -146,6 +151,8 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
     true_peak_dbfs: truePeak,
     sample_peak_dbfs: samplePeak,
     noise_floor_dbfs: noiseFloor,
+    noise_floor_start_seconds: noiseEstimate.start_frame * FRAME_SECONDS,
+    noise_floor_duration_seconds: (noiseEstimate.end_frame - noiseEstimate.start_frame) * FRAME_SECONDS,
     sample_rate: sampleRate,
     channels,
     duration_seconds: durationSeconds,
@@ -329,17 +336,23 @@ function frameRmsDbfs(
   return frames;
 }
 
+interface NoiseFloorEstimate {
+  dbfs: number;
+  start_frame: number;
+  end_frame: number;
+}
+
 function detectNoiseFloor(
   samples: Float32Array | number[],
   sampleRate: number,
   channels: number,
   frameRms: number[],
-): number {
+): NoiseFloorEstimate {
   if (samples.length === 0) {
-    return -Infinity;
+    return { dbfs: -Infinity, start_frame: 0, end_frame: 0 };
   }
   if (samples.every((sample) => Math.abs(sample) <= DIGITAL_SILENCE_EPSILON)) {
-    return -Infinity;
+    return { dbfs: -Infinity, start_frame: 0, end_frame: frameRms.length };
   }
 
   const sorted = [...frameRms].sort((a, b) => a - b);
@@ -365,21 +378,32 @@ function detectNoiseFloor(
 
   if (candidates.length > 0) {
     let quietest = Infinity;
+    let bestWindow: [number, number] | null = null;
     for (const [from, to] of candidates) {
-      quietest = Math.min(quietest, rmsDbfs(sliceFrames(samples, sampleRate, channels, from, to)));
+      const candidateRms = rmsDbfs(sliceFrames(samples, sampleRate, channels, from, to));
+      if (candidateRms < quietest) {
+        quietest = candidateRms;
+        bestWindow = [from, to];
+      }
     }
-    return quietest === Infinity ? rmsDbfs(samples) : quietest;
+    if (bestWindow) {
+      return { dbfs: quietest, start_frame: bestWindow[0], end_frame: bestWindow[1] };
+    }
   }
 
   const fallbackFrames = Math.max(1, Math.ceil(0.5 / FRAME_SECONDS));
   let quietest = Infinity;
+  let bestStart = 0;
   for (let index = 0; index + fallbackFrames <= frameRms.length; index += 1) {
-    quietest = Math.min(
-      quietest,
-      rmsDbfs(sliceFrames(samples, sampleRate, channels, index, index + fallbackFrames)),
-    );
+    const candidateRms = rmsDbfs(sliceFrames(samples, sampleRate, channels, index, index + fallbackFrames));
+    if (candidateRms < quietest) {
+      quietest = candidateRms;
+      bestStart = index;
+    }
   }
-  return quietest === Infinity ? rmsDbfs(samples) : quietest;
+  return quietest === Infinity
+    ? { dbfs: rmsDbfs(samples), start_frame: 0, end_frame: frameRms.length }
+    : { dbfs: quietest, start_frame: bestStart, end_frame: bestStart + fallbackFrames };
 }
 
 function measureRoomTone(

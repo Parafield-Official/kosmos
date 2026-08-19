@@ -25,6 +25,30 @@ export interface ExportPlan {
   readmeFiles: Array<{ fileName: string; contents: string }>;
 }
 
+export interface ExportReadiness {
+  totalChapters: number;
+  attachedChapters: number;
+  missingAudio: ChapterFile[];
+  ready: boolean;
+}
+
+/**
+ * ACX output is a delivery pack, not a progress snapshot. Every manuscript
+ * chapter must have an attached take before the export can be called ready.
+ * Mastering failures are discovered while processing the takes and are
+ * handled by the desktop export transaction.
+ */
+export function getExportReadiness(project: Pick<ProjectFile, "chapters">): ExportReadiness {
+  const chapters = [...project.chapters].sort((a, b) => a.index - b.index);
+  const missingAudio = chapters.filter((chapter) => !chapter.audio_path);
+  return {
+    totalChapters: chapters.length,
+    attachedChapters: chapters.length - missingAudio.length,
+    missingAudio,
+    ready: chapters.length > 0 && missingAudio.length === 0,
+  };
+}
+
 export interface ReportEntry {
   fileName: string;
   before?: AcxReport;
@@ -120,13 +144,18 @@ export function reportText(entries: ReportEntry[]): string {
 function summary(report: AcxReport): string {
   return [
     `RMS ${format(report.rms_dbfs)} dBFS`,
-    `TP ${format(report.true_peak_dbfs)} dBFS`,
-    `floor ${format(report.noise_floor_dbfs)} dBFS`,
+    `TP ${format(report.true_peak_dbfs)} dBTP`,
+    `floor ${format(report.noise_floor_dbfs)} dBFS RMS`,
+    `floor window ${formatSeconds(report.noise_floor_start_seconds)}–${formatSeconds(report.noise_floor_start_seconds + report.noise_floor_duration_seconds)} s`,
     `${report.sample_rate} Hz`,
     `${report.channels} ch`,
     `${report.duration_seconds.toFixed(2)} s`,
     `traffic ${report.traffic_light}`,
   ].join(", ");
+}
+
+function formatSeconds(value: number): string {
+  return Number.isFinite(value) ? value.toFixed(2) : "?";
 }
 
 function creditTemplate(kind: "opening" | "closing"): string {

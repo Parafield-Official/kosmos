@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
+import { getExportReadiness, type ExportReadiness } from "../core/acx/export";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
@@ -227,6 +228,10 @@ function ProjectHome({
   const projectSettings = useMemo(
     () => normalizeProjectSettings(project.settings),
     [project.settings],
+  );
+  const exportReadiness = useMemo(
+    () => getExportReadiness(project),
+    [project.chapters],
   );
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     project.chapters[0]?.id ?? null,
@@ -733,11 +738,22 @@ function ProjectHome({
       setNotice("ACX export is available in the desktop app after the master core is built.");
       return;
     }
+    if (!exportReadiness.ready) {
+      const titles = exportReadiness.missingAudio.map((chapter) => chapter.title);
+      const preview = titles.slice(0, 3).join(", ");
+      const suffix = titles.length > 3 ? ` and ${titles.length - 3} more` : "";
+      setNotice(`Attach audio for ${titles.length} chapter${titles.length === 1 ? "" : "s"} before exporting (${preview}${suffix}).`);
+      return;
+    }
     await runAction("export", async () => {
       const result = await window.boothDesk?.exportAcx(envelope);
       if (result) {
         setExportResult(result);
-        setNotice("ACX export is ready. Review the report and listen once.");
+        setNotice(
+          result.status === "ready_with_warnings"
+            ? `ACX pack is ready with ${result.warningCount} item${result.warningCount === 1 ? "" : "s"} to review. Listen once before delivery.`
+            : "ACX pack is ready. Review the report and listen once before delivery.",
+        );
       }
     });
   }
@@ -1573,12 +1589,16 @@ function ProjectHome({
             selectedChapter ? (
               <FinishPage
                 chapter={selectedChapter}
+                exportReadiness={exportReadiness}
                 busyAction={busyAction}
                 acxReport={acxReport}
                 exportResult={exportResult}
+                audioUrl={audioUrl}
+                audioRef={audioRef}
                 onMeasure={() => void runAcxCheck(selectedChapter)}
                 onExport={() => void exportAcx()}
                 onShare={() => void shareProject()}
+                onPlayRange={playRange}
               />
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
@@ -3783,20 +3803,28 @@ function ReviewPage({
 
 function FinishPage({
   chapter,
+  exportReadiness,
   busyAction,
   acxReport,
   exportResult,
+  audioUrl,
+  audioRef,
   onMeasure,
   onExport,
   onShare,
+  onPlayRange,
 }: {
   chapter: ChapterFile;
+  exportReadiness: ExportReadiness;
   busyAction: string | null;
   acxReport: AcxReport | null;
   exportResult: AcxExportResult | null;
+  audioUrl: string | null;
+  audioRef: React.RefObject<HTMLAudioElement | null>;
   onMeasure: () => void;
   onExport: () => void;
   onShare: () => void;
+  onPlayRange: (start: number, end?: number) => void;
 }) {
   return (
     <div className="finish-page">
@@ -3816,15 +3844,36 @@ function FinishPage({
             {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
           </button>
         </div>
-        {acxReport ? <AcxMeter report={acxReport} /> : null}
+        {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
+        {acxReport ? (
+          <AcxMeter
+            report={acxReport}
+            onPlayNoiseFloor={audioUrl ? () => onPlayRange(
+              acxReport.noise_floor_start_seconds,
+              acxReport.noise_floor_start_seconds + acxReport.noise_floor_duration_seconds,
+            ) : undefined}
+          />
+        ) : null}
       </article>
 
       <article className="surface-card">
         <p className="card-kicker">The pack</p>
         <h3>Export and share</h3>
         <p className="panel-honesty">Write the ACX folder, or make a copy for the other seat.</p>
+        <div className={`export-readiness ${exportReadiness.ready ? "ready" : "blocked"}`} role="status">
+          <strong>{exportReadiness.ready ? "Ready to prepare" : "Audio still needed"}</strong>
+          <span>{exportReadiness.attachedChapters} of {exportReadiness.totalChapters} chapters have audio</span>
+          {!exportReadiness.ready ? (
+            <p>
+              Record or import: {exportReadiness.missingAudio.slice(0, 3).map((missing) => missing.title).join(", ")}
+              {exportReadiness.missingAudio.length > 3 ? ` and ${exportReadiness.missingAudio.length - 3} more` : ""}.
+            </p>
+          ) : (
+            <p>Every chapter will be mastered, re-measured after MP3 encoding, and listed in the report.</p>
+          )}
+        </div>
         <div className="desk-actions">
-          <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onExport}>
+          <button className="primary-button" type="button" disabled={!exportReadiness.ready || busyAction !== null} onClick={onExport}>
             {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
           </button>
           <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShare}>
@@ -3832,8 +3881,8 @@ function FinishPage({
           </button>
         </div>
         {exportResult ? (
-          <p className="export-summary inline">
-            Last export: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"} ready
+          <p className={`export-summary inline ${exportResult.status === "ready_with_warnings" ? "warning" : "success"}`}>
+            {exportResult.status === "ready_with_warnings" ? "Ready with items to review" : "Ready for delivery"}: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"}
           </p>
         ) : null}
       </article>
@@ -4138,11 +4187,11 @@ function PickupNoteEditor({ pickup, busy, onSave }: { pickup: Pickup; busy: bool
   );
 }
 
-function AcxMeter({ report }: { report: AcxReport }) {
+function AcxMeter({ report, onPlayNoiseFloor }: { report: AcxReport; onPlayNoiseFloor?: () => void }) {
   const rows = [
     ["RMS", "−23 to −18 dBFS", formatDb(report.rms_dbfs), report.checks.rms],
-    ["True peak", "≤ −3.0 dBFS", formatDb(report.true_peak_dbfs), report.checks.true_peak],
-    ["Noise floor", "≤ −60 dBFS", formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
+    ["True peak", "≤ −3.0 dBTP", formatDb(report.true_peak_dbfs), report.checks.true_peak],
+    ["Noise floor", "≤ −60 dBFS RMS", formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
     ["Sample rate", "44.1 kHz", `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
     ["Channels", "Mono or stereo", String(report.channels), report.checks.channels],
     ["Format", "Supported audio file", report.format.toUpperCase(), report.checks.format],
@@ -4185,6 +4234,19 @@ function AcxMeter({ report }: { report: AcxReport }) {
           ))}
         </tbody>
       </table>
+      <div className="meter-evidence">
+        <div>
+          <strong>Noise-floor evidence</strong>
+          <span>
+            Measured from {report.noise_floor_start_seconds.toFixed(2)}–{(report.noise_floor_start_seconds + report.noise_floor_duration_seconds).toFixed(2)} s, the quietest sustained section found. Listen to confirm it is voice-free.
+          </span>
+        </div>
+        {onPlayNoiseFloor ? (
+          <button className="table-action" type="button" onClick={onPlayNoiseFloor}>
+            Listen to this section
+          </button>
+        ) : null}
+      </div>
       <p className="meter-honesty">
         These checks cover levels and format. Listen once for clicks and room noise.
       </p>

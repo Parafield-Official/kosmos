@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExportPlan, reportText } from "./export";
+import { buildExportPlan, getExportReadiness, reportText } from "./export";
 import { createEmptyProject, addChapter } from "../project/project";
 
 describe("ACX export plan", () => {
@@ -42,6 +42,48 @@ describe("ACX export plan", () => {
     expect(report).toContain("before: RMS -24.0 dBFS");
     expect(report).toContain("after:  RMS -20.0 dBFS");
   });
+
+  it("blocks delivery readiness until every chapter has audio", () => {
+    let project = createEmptyProject("Book", { id: "book-2", now: "2026-01-01T00:00:00.000Z" });
+    project = addChapter(project, {
+      id: "ch01",
+      index: 1,
+      title: "First",
+      text_path: "manuscript/chapters/01.json",
+    });
+    project = addChapter(project, {
+      id: "ch02",
+      index: 2,
+      title: "Second",
+      text_path: "manuscript/chapters/02.json",
+      audio_path: "audio/02.wav",
+    });
+
+    const readiness = getExportReadiness(project);
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.totalChapters).toBe(2);
+    expect(readiness.attachedChapters).toBe(1);
+    expect(readiness.missingAudio.map((chapter) => chapter.title)).toEqual(["First"]);
+  });
+
+  it("reports a complete book as ready for the transactional export", () => {
+    let project = createEmptyProject("Book", { id: "book-3", now: "2026-01-01T00:00:00.000Z" });
+    project = addChapter(project, {
+      id: "ch01",
+      index: 1,
+      title: "First",
+      text_path: "manuscript/chapters/01.json",
+      audio_path: "audio/01.wav",
+    });
+
+    expect(getExportReadiness(project)).toMatchObject({
+      totalChapters: 1,
+      attachedChapters: 1,
+      missingAudio: [],
+      ready: true,
+    });
+  });
 });
 
 function fakeReport(rms: number) {
@@ -50,6 +92,8 @@ function fakeReport(rms: number) {
     true_peak_dbfs: -4,
     sample_peak_dbfs: -4.2,
     noise_floor_dbfs: -65,
+    noise_floor_start_seconds: 0.2,
+    noise_floor_duration_seconds: 0.5,
     sample_rate: 44100,
     channels: 1,
     duration_seconds: 10,

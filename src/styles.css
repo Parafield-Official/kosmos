@@ -728,6 +728,46 @@ button {
   text-align: left;
 }
 
+.export-readiness {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #d9cec2;
+  border-radius: 10px;
+  background: #f8f3ed;
+  font-size: 12px;
+}
+
+.export-readiness strong {
+  font-size: 13px;
+}
+
+.export-readiness span,
+.export-readiness p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.export-readiness.ready {
+  border-color: #bcd7c1;
+  background: var(--good-soft);
+}
+
+.export-readiness.blocked {
+  border-color: #dfc7b5;
+  background: var(--warn-soft);
+}
+
+.export-summary.success {
+  color: var(--good);
+}
+
+.export-summary.warning {
+  color: var(--warn);
+}
+
 .project-shell {
   background: var(--canvas);
 }
@@ -1586,6 +1626,33 @@ button {
   margin-bottom: 0;
   color: #8b7e71;
   font-size: 10px;
+}
+
+.meter-evidence {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid #ddd2c6;
+  border-radius: 9px;
+  background: #fffdf9;
+  font-size: 11px;
+}
+
+.meter-evidence div {
+  display: grid;
+  gap: 3px;
+}
+
+.meter-evidence span {
+  color: #766a60;
+  line-height: 1.4;
+}
+
+.meter-evidence .table-action {
+  flex: 0 0 auto;
 }
 
 .modal-backdrop {

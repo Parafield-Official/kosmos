@@ -1683,16 +1683,17 @@ async function exportAcxPack(folder, project) {
       throw new Error("Add at least one chapter before exporting an ACX pack");
     }
 
-    for (const chapter of chapters) {
-      if (!chapter.audio_path) {
-        entries.push({
-          fileName: exportCore.chapterFileName(chapter),
-          status: "not_measured",
-          note: "No audio is attached to this chapter.",
-        });
-        continue;
-      }
+    const readiness = exportCore.getExportReadiness(project);
+    if (!readiness.ready) {
+      const titles = readiness.missingAudio.map((chapter) => chapter.title);
+      const preview = titles.slice(0, 3).join(", ");
+      const suffix = titles.length > 3 ? ` and ${titles.length - 3} more` : "";
+      throw new Error(
+        `ACX export is blocked: attach audio for ${titles.length} chapter${titles.length === 1 ? "" : "s"} first (${preview}${suffix}).`,
+      );
+    }
 
+    for (const chapter of chapters) {
       const decoded = await decodeAudioPcm(folder, chapter.audio_path);
       const samples = float32View(decoded.pcm);
       const master = masterCore.masterPcm({
@@ -1741,6 +1742,13 @@ async function exportAcxPack(folder, project) {
       });
       entries.push({ fileName, before: master.before, after, status: reportStatus(after) });
       outputFiles.push(fileName);
+    }
+
+    const failedEntries = entries.filter((entry) => entry.status === "fail");
+    if (failedEntries.length > 0) {
+      const preview = failedEntries.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || "failed ACX checks"}`).join("; ");
+      const suffix = failedEntries.length > 3 ? `; and ${failedEntries.length - 3} more` : "";
+      throw new Error(`ACX export stopped because ${failedEntries.length} chapter${failedEntries.length === 1 ? "" : "s"} failed: ${preview}${suffix}`);
     }
 
     const plan = exportCore.buildExportPlan(project);
@@ -1811,7 +1819,15 @@ async function exportAcxPack(folder, project) {
       "utf8",
     );
     await replaceDirectory(stagingOutputFolder, outputFolder);
-    return { folder: outputFolder, files: outputFiles, entries, report };
+    const warningCount = entries.filter((entry) => entry.status === "warn" || entry.status === "not_measured").length;
+    return {
+      folder: outputFolder,
+      files: outputFiles,
+      entries,
+      report,
+      status: warningCount > 0 ? "ready_with_warnings" : "ready",
+      warningCount,
+    };
   } finally {
     await fs.rm(temporaryFolder, { recursive: true, force: true });
     await fs.rm(stagingOutputFolder, { recursive: true, force: true });

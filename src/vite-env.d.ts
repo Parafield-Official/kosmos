@@ -169,6 +169,8 @@ interface AcxExportResult {
   files: string[];
   entries: Array<{ fileName: string; status: string; note?: string }>;
   report: string;
+  status: "ready" | "ready_with_warnings";
+  warningCount: number;
 }
 
 interface ShareZipResult {
