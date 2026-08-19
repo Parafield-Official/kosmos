@@ -259,7 +259,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!expected) {
       continue;
     }
-    if (heard === expected || wordsSimilar(heard, expected)) {
+    if (heard === expected || wordsSimilar(heard, expected) || sameSpokenNumber(heard, expected)) {
       cursor += 1;
       pendingResync = undefined;
       matchedInWindow += 1;
@@ -273,7 +273,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       matchedInWindow += 1;
       continue;
     }
-    if (!input.flagsEnabled && isReliableShortSwap(expected, heard)) {
+    if (!input.flagsEnabled && (isReliableShortSwap(expected, heard) || isNumberSlip(expected, heard))) {
       cursor += 1;
       pendingResync = undefined;
       matchedInWindow += 1;
@@ -831,11 +831,41 @@ function isReliableShortSwap(expected: string, heard: string): boolean {
   return (DETERMINERS.has(expected) && DETERMINERS.has(heard))
     || (PREPOSITIONS.has(expected) && PREPOSITIONS.has(heard))
     || (PRONOUNS.has(expected) && PRONOUNS.has(heard))
-    || (AUXILIARIES.has(expected) && AUXILIARIES.has(heard));
+    || (AUXILIARIES.has(expected) && AUXILIARIES.has(heard))
+    || isNumberSlip(expected, heard);
+}
+
+const NUMBER_WORDS = new Map<string, number>([
+  ["zero", 0], ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
+  ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9], ["ten", 10],
+  ["eleven", 11], ["twelve", 12], ["thirteen", 13], ["fourteen", 14], ["fifteen", 15],
+  ["sixteen", 16], ["seventeen", 17], ["eighteen", 18], ["nineteen", 19], ["twenty", 20],
+  ["thirty", 30], ["forty", 40], ["fifty", 50], ["sixty", 60], ["seventy", 70],
+  ["eighty", 80], ["ninety", 90],
+]);
+
+function numberValue(token: string): number | undefined {
+  if (/^\d+$/.test(token)) {
+    const value = Number(token);
+    return Number.isFinite(value) ? value : undefined;
+  }
+  return NUMBER_WORDS.get(token);
+}
+
+function sameSpokenNumber(heard: string, expected: string): boolean {
+  const left = numberValue(heard);
+  const right = numberValue(expected);
+  return left != null && left === right;
+}
+
+function isNumberSlip(expected: string, heard: string): boolean {
+  const left = numberValue(expected);
+  const right = numberValue(heard);
+  return left != null && right != null && left !== right;
 }
 
 function isContentWord(token: string): boolean {
-  return token.length >= 4 && !FUNCTION_WORDS.has(token);
+  return (token.length >= 4 && !FUNCTION_WORDS.has(token)) || numberValue(token) != null;
 }
 
 function isWhisperWordPiece(heard: string, expected: string): boolean {
