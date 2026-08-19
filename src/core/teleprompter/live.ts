@@ -596,7 +596,7 @@ function alignWhisperWords(
       const manuscript = normalizeToken(expectedSlice[column - 1]?.text ?? "");
       const similarity = tokenSimilarity(heard, manuscript);
       const diagonal = (scores[row - 1]?.[column - 1] ?? Number.NEGATIVE_INFINITY)
-        + (heard === manuscript ? WHISPER_ALIGNMENT_EXACT : similarity >= 0.45 ? WHISPER_ALIGNMENT_SIMILAR : WHISPER_ALIGNMENT_MISMATCH);
+        + (heard === manuscript || sameSpokenNumber(heard, manuscript) ? WHISPER_ALIGNMENT_EXACT : similarity >= 0.45 ? WHISPER_ALIGNMENT_SIMILAR : WHISPER_ALIGNMENT_MISMATCH);
       const up = (scores[row - 1]?.[column] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_HEARD;
       const left = (scores[row]?.[column - 1] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_EXPECTED;
       if (diagonal >= up && diagonal >= left) {
@@ -631,7 +631,7 @@ function alignWhisperWords(
       pairs.unshift({
         heardIndex: row - 1,
         expectedIndex: start + column - 1,
-        kind: heard === manuscript ? "exact" : similarity >= 0.45 ? "similar" : "mismatch",
+        kind: heard === manuscript || sameSpokenNumber(heard, manuscript) ? "exact" : similarity >= 0.45 ? "similar" : "mismatch",
       });
       row -= 1;
       column -= 1;
@@ -652,7 +652,7 @@ function tokenSimilarity(heardText: string, expectedText: string): number {
   if (!heard || !expected) {
     return 0;
   }
-  if (heard === expected) {
+  if (heard === expected || sameSpokenNumber(heard, expected)) {
     return 1;
   }
   const distance = editDistance(heard, expected);
@@ -732,7 +732,7 @@ function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: numbe
   const window = expected.slice(cursor + 1, cursor + 1 + LIVE_NEAR_JUMP);
   const hits = window.flatMap((candidate, offset) => {
     const token = normalizeToken(candidate.text);
-    if (!token || (token !== heard && !wordsSimilar(heard, token))) {
+    if (!token || (token !== heard && !wordsSimilar(heard, token) && !sameSpokenNumber(heard, token))) {
       return [];
     }
     return [{ index: cursor + 1 + offset, offset }];
@@ -835,21 +835,62 @@ function isReliableShortSwap(expected: string, heard: string): boolean {
     || isNumberSlip(expected, heard);
 }
 
-const NUMBER_WORDS = new Map<string, number>([
-  ["zero", 0], ["one", 1], ["two", 2], ["three", 3], ["four", 4], ["five", 5],
-  ["six", 6], ["seven", 7], ["eight", 8], ["nine", 9], ["ten", 10],
-  ["eleven", 11], ["twelve", 12], ["thirteen", 13], ["fourteen", 14], ["fifteen", 15],
-  ["sixteen", 16], ["seventeen", 17], ["eighteen", 18], ["nineteen", 19], ["twenty", 20],
-  ["thirty", 30], ["forty", 40], ["fifty", 50], ["sixty", 60], ["seventy", 70],
-  ["eighty", 80], ["ninety", 90],
-]);
+const ONES: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
+  eighth: 8, ninth: 9, tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13,
+  fourteenth: 14, fifteenth: 15, sixteenth: 16, seventeenth: 17, eighteenth: 18, nineteenth: 19,
+};
+const TENS: Record<string, number> = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  twentieth: 20, thirtieth: 30, fortieth: 40, fiftieth: 50, sixtieth: 60,
+  seventieth: 70, eightieth: 80, ninetieth: 90,
+};
+const SCALES: Record<string, number> = {
+  hundred: 100, thousand: 1_000, million: 1_000_000, billion: 1_000_000_000,
+};
 
 function numberValue(token: string): number | undefined {
-  if (/^\d+$/.test(token)) {
-    const value = Number(token);
+  const raw = token.toLocaleLowerCase("en-US").replace(/,/g, "");
+  if (/^\d+$/.test(raw)) {
+    const value = Number(raw);
     return Number.isFinite(value) ? value : undefined;
   }
-  return NUMBER_WORDS.get(token);
+  const ordinalDigits = raw.match(/^(\d+)(?:st|nd|rd|th)$/);
+  if (ordinalDigits) {
+    return Number(ordinalDigits[1]);
+  }
+  let total = 0;
+  let current = 0;
+  let seen = false;
+  let index = 0;
+  const keys = [...Object.keys(ONES), ...Object.keys(TENS), ...Object.keys(SCALES)]
+    .sort((left, right) => right.length - left.length);
+  while (index < raw.length) {
+    const rest = raw.slice(index);
+    const piece = keys.find((key) => rest.startsWith(key));
+    if (!piece) {
+      return undefined;
+    }
+    if (ONES[piece] != null) {
+      current += ONES[piece];
+    } else if (TENS[piece] != null) {
+      current += TENS[piece];
+    } else if (SCALES[piece] != null) {
+      current = Math.max(current, 1) * SCALES[piece];
+      if (SCALES[piece] >= 1_000) {
+        total += current;
+        current = 0;
+      }
+    } else {
+      return undefined;
+    }
+    seen = true;
+    index += piece.length;
+  }
+  return seen ? total + current : undefined;
 }
 
 function sameSpokenNumber(heard: string, expected: string): boolean {

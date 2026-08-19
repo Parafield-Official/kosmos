@@ -131,4 +131,50 @@ describe("later-paragraph narrator slips", () => {
     });
     expect(loneDigit.state.cursor).toBe(at + 1);
   });
+
+  it("treats any English number tokens as one class, not a twelve/twenty pair", () => {
+    const cases = [
+      { expected: ["one", "hundred", "men"], heard: "100", index: 1, cursorAfter: 2, flag: false },
+      { expected: ["nearly", "thousand", "strong"], heard: "1000", index: 1, cursorAfter: 2, flag: false },
+      { expected: ["room", "twenty-one", "now"], heard: "21", index: 1, cursorAfter: 2, flag: false },
+      { expected: ["the", "first", "night"], heard: "third", index: 1, cursorAfter: 2, flag: true },
+      { expected: ["on", "1st", "street"], heard: "first", index: 1, cursorAfter: 2, flag: false },
+      { expected: ["only", "fourteen", "left"], heard: "40", index: 1, cursorAfter: 2, flag: true },
+    ] as const;
+
+    for (const item of cases) {
+      const expected = item.expected.map((text, index) => ({ index, lineIndex: 0, text }));
+      const follow = matchLiveWindow({
+        chapterId: "later",
+        expected,
+        transcript: [{ text: item.heard, start: 0, end: 0.3, confidence: 0.97 }],
+        state: { cursor: item.index, lastHeardEnd: 0 },
+        flagsEnabled: false,
+      });
+      expect(follow.state.cursor, `${item.expected[item.index]} ← ${item.heard}`).toBe(item.cursorAfter);
+
+      const flag = liveBackFlag({
+        chapterId: "later",
+        expected,
+        transcript: [
+          { text: expected[item.index - 1]?.text ?? item.heard, start: 0, end: 0.2, confidence: 0.99 },
+          { text: item.heard, start: 0.2, end: 0.45, confidence: 0.97 },
+          { text: expected[item.index + 1]?.text ?? "now", start: 0.45, end: 0.7, confidence: 0.99 },
+        ],
+        state: { cursor: Math.max(0, item.index - 1), lastHeardEnd: 0 },
+        flagsEnabled: true,
+        goldCursor: item.index + 2,
+        confidenceThreshold: 0.9,
+      });
+      if (item.flag) {
+        expect(flag, `${item.expected[item.index]} → ${item.heard}`).toMatchObject({
+          expected: item.expected[item.index],
+          heard: item.heard,
+          expectedIndex: item.index,
+        });
+      } else {
+        expect(flag?.expectedIndex === item.index, `${item.expected[item.index]} should match ${item.heard}`).toBeFalsy();
+      }
+    }
+  });
 });
