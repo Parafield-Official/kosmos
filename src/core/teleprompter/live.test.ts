@@ -707,50 +707,38 @@ describe("parakeet live stream lines", () => {
 });
 
 describe("background Whisper QC buffering", () => {
-  it("waits for the earlier two-second Whisper context before checking", () => {
-    let buffer = appendLiveQcSamples(
-      createLiveQcBuffer(),
-      new Float32Array(19),
-      3,
-      1,
-    );
-    expect(drainLiveQcBuffer(buffer, 10).window).toBeUndefined();
+  it("holds the phrase until gold has left it, then hands Whisper that span", () => {
+    let buffer = createLiveQcBuffer();
+    for (let hop = 0; hop < 4; hop += 1) {
+      buffer = appendLiveQcSamples(
+        buffer,
+        new Float32Array([hop + 0.1, hop + 0.2]),
+        34 + hop,
+        hop * 0.16,
+      );
+    }
 
-    buffer = appendLiveQcSamples(buffer, new Float32Array(1), 4, 2.9);
-    expect(drainLiveQcBuffer(buffer, 10).window?.samples.length).toBe(20);
+    expect(drainLiveQcBuffer(buffer, 16_000, false, 37).window).toBeUndefined();
+
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 42);
+    expect(drained.window).toMatchObject({ cursor: 34, startSeconds: 0 });
+    expect(Array.from(drained.window?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([
+      0.1, 0.2, 1.1, 1.2, 2.1, 2.2, 3.1, 3.2,
+    ]);
+    expect(drained.buffer.sampleCount).toBe(0);
   });
 
-  it("keeps Whisper's rolling overlap and anchors it to the retained audio", () => {
+  it("keeps the next phrase in the buffer after gold leaves the first", () => {
     let buffer = createLiveQcBuffer();
-    buffer = appendLiveQcSamples(buffer, new Float32Array([0.1, 0.2]), 7, 2.5);
-    buffer = appendLiveQcSamples(buffer, new Float32Array([0.3, 0.4]), 9, 3.5);
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.1, 0.2]), 34, 0);
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.3, 0.4]), 41, 1.1);
+    buffer = appendLiveQcSamples(buffer, new Float32Array([0.5, 0.6]), 42, 1.3);
 
-    const drained = drainLiveQcBuffer(buffer, 2);
-    expect(drained.window).toMatchObject({ cursor: 7 });
-    expect(drained.window?.startSeconds).toBeCloseTo(2.5, 5);
-    expect(Array.from(drained.window?.samples ?? [])).toEqual([
-      expect.closeTo(0.1, 5),
-      expect.closeTo(0.2, 5),
-      expect.closeTo(0.3, 5),
-      expect.closeTo(0.4, 5),
-    ]);
-    expect(drained.buffer.sampleCount).toBe(2);
-
-    const nextBuffer = appendLiveQcSamples(
-      drained.buffer,
-      new Float32Array([0.5, 0.6]),
-      11,
-      4.5,
-    );
-    const next = drainLiveQcBuffer(nextBuffer, 2);
-    expect(next.window?.cursor).toBe(9);
-    expect(next.window?.startSeconds).toBeCloseTo(3.5, 5);
-    expect(Array.from(next.window?.samples ?? [])).toEqual([
-      expect.closeTo(0.3, 5),
-      expect.closeTo(0.4, 5),
-      expect.closeTo(0.5, 5),
-      expect.closeTo(0.6, 5),
-    ]);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 42);
+    expect(drained.window?.cursor).toBe(34);
+    expect(Array.from(drained.window?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(drained.buffer.cursor).toBe(42);
+    expect(Array.from(drained.buffer.chunks[0]?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.5, 0.6]);
   });
 
   it("keeps a short final window until stop forces a background check", () => {
@@ -761,8 +749,8 @@ describe("background Whisper QC buffering", () => {
       1.25,
     );
 
-    expect(drainLiveQcBuffer(buffer, 4).window).toBeUndefined();
-    const final = drainLiveQcBuffer(buffer, 4, true);
+    expect(drainLiveQcBuffer(buffer, 4, false, 6).window).toBeUndefined();
+    const final = drainLiveQcBuffer(buffer, 4, true, 6);
     expect(final.window).toMatchObject({ cursor: 4, startSeconds: 1.25 });
     expect(Array.from(final.window?.samples ?? [])).toEqual([
       expect.closeTo(0.1, 5),
@@ -771,13 +759,13 @@ describe("background Whisper QC buffering", () => {
     ]);
   });
 
-  it("does not replay overlap at stop when no new QC audio arrived", () => {
+  it("does not replay a finished phrase at stop", () => {
     let buffer = createLiveQcBuffer();
     buffer = appendLiveQcSamples(buffer, new Float32Array([0.1, 0.2]), 7, 2.5);
     buffer = appendLiveQcSamples(buffer, new Float32Array([0.3, 0.4]), 9, 3.5);
-    const drained = drainLiveQcBuffer(buffer, 2);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 16);
 
     expect(drained.window).toBeDefined();
-    expect(drainLiveQcBuffer(drained.buffer, 2, true).window).toBeUndefined();
+    expect(drainLiveQcBuffer(drained.buffer, 16_000, true, 16).window).toBeUndefined();
   });
 });

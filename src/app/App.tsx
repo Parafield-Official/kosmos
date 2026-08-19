@@ -2228,7 +2228,12 @@ function Teleprompter({
     if (liveWhisperBusyRef.current || liveStateRef.current.dimmed) {
       return;
     }
-    const drained = drainLiveQcBuffer(liveQcBufferRef.current, sampleRate, force);
+    const drained = drainLiveQcBuffer(
+      liveQcBufferRef.current,
+      sampleRate,
+      force,
+      liveMatchStateRef.current.cursor,
+    );
     liveQcBufferRef.current = drained.buffer;
     if (!drained.window) {
       return;

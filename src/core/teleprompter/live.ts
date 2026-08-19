@@ -65,6 +65,7 @@ export const LIVE_UNSTABLE_TAIL_SECONDS = 0.32;
 export const LIVE_QC_CONTEXT_SECONDS = 2;
 export const LIVE_QC_OVERLAP_SECONDS = 0.8;
 export const LIVE_QC_RECENT_WORDS = 12;
+export const LIVE_QC_PHRASE_WORDS = 8;
 
 export interface LiveQcBuffer {
   chunks: LiveQcChunk[];
@@ -114,74 +115,47 @@ export function drainLiveQcBuffer(
   buffer: LiveQcBuffer,
   sampleRate: number,
   force = false,
+  goldCursor?: number,
 ): { buffer: LiveQcBuffer; window?: LiveQcWindow } {
-  const minimumSamples = Math.max(1, Math.floor(sampleRate * (
-    force ? LIVE_UNSTABLE_TAIL_SECONDS : LIVE_QC_CONTEXT_SECONDS
-  )));
-  const enoughAudio = force
-    ? buffer.pendingSampleCount >= minimumSamples
-    : buffer.sampleCount >= minimumSamples;
-  if (!enoughAudio || buffer.sampleCount === 0) {
+  if (buffer.sampleCount === 0 || buffer.chunks.length === 0) {
     return { buffer };
   }
 
-  const windowSamples = force
-    ? Math.min(buffer.sampleCount, Math.floor(sampleRate * LIVE_QC_CONTEXT_SECONDS))
-    : Math.floor(sampleRate * LIVE_QC_CONTEXT_SECONDS);
-  const windowChunks = tailLiveQcChunks(buffer.chunks, windowSamples, sampleRate);
-  const samples = concatLiveQcChunks(windowChunks);
+  const phraseStart = buffer.cursor;
+  const phraseEnd = phraseStart + LIVE_QC_PHRASE_WORDS;
+  const gold = Number.isFinite(goldCursor) ? Math.floor(goldCursor as number) : phraseStart;
+  if (!force && gold < phraseEnd) {
+    return { buffer };
+  }
+
+  const take = force
+    ? buffer.chunks
+    : buffer.chunks.filter((chunk) => chunk.cursor < phraseEnd);
+  const keep = force
+    ? []
+    : buffer.chunks.filter((chunk) => chunk.cursor >= phraseEnd);
+  if (take.length === 0) {
+    return { buffer };
+  }
+
+  const samples = concatLiveQcChunks(take);
   if (samples.length === 0) {
     return { buffer };
   }
-  if (force) {
-    return {
-      buffer: createLiveQcBuffer(),
-      window: {
-        samples,
-        cursor: windowChunks[0]?.cursor ?? buffer.cursor,
-        startSeconds: windowChunks[0]?.startSeconds ?? 0,
-      },
-    };
-  }
 
-  const overlapSamples = Math.min(samples.length, Math.max(1, Math.round(sampleRate * LIVE_QC_OVERLAP_SECONDS)));
-  const retainedChunks = tailLiveQcChunks(windowChunks, overlapSamples, sampleRate);
   return {
     buffer: {
-      chunks: retainedChunks,
-      sampleCount: retainedChunks.reduce((count, chunk) => count + chunk.samples.length, 0),
-      pendingSampleCount: 0,
-      cursor: retainedChunks[0]?.cursor ?? buffer.cursor,
+      chunks: keep,
+      sampleCount: keep.reduce((count, chunk) => count + chunk.samples.length, 0),
+      pendingSampleCount: keep.reduce((count, chunk) => count + chunk.samples.length, 0),
+      cursor: keep[0]?.cursor ?? phraseEnd,
     },
     window: {
       samples,
-      cursor: windowChunks[0]?.cursor ?? buffer.cursor,
-      startSeconds: windowChunks[0]?.startSeconds ?? 0,
+      cursor: take[0]?.cursor ?? phraseStart,
+      startSeconds: take[0]?.startSeconds ?? 0,
     },
   };
-}
-
-function tailLiveQcChunks(chunks: LiveQcChunk[], sampleCount: number, sampleRate: number): LiveQcChunk[] {
-  if (sampleCount <= 0 || chunks.length === 0) {
-    return [];
-  }
-  const retained: LiveQcChunk[] = [];
-  let remaining = sampleCount;
-  for (let index = chunks.length - 1; index >= 0 && remaining > 0; index -= 1) {
-    const chunk = chunks[index];
-    const take = Math.min(remaining, chunk.samples.length);
-    const skippedSamples = chunk.samples.length - take;
-    const samples = take === chunk.samples.length
-      ? chunk.samples
-      : chunk.samples.slice(skippedSamples);
-    retained.unshift({
-      samples,
-      cursor: chunk.cursor,
-      startSeconds: chunk.startSeconds + skippedSamples / Math.max(1, sampleRate),
-    });
-    remaining -= take;
-  }
-  return retained;
 }
 
 function concatLiveQcChunks(chunks: LiveQcChunk[]): Float32Array {
