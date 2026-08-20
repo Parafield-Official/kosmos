@@ -226,6 +226,10 @@ function concatLiveQcChunks(chunks: LiveQcChunk[]): Float32Array {
 }
 
 const LIVE_RESYNC_LOOKAHEAD = 8;
+// Narrators can skip a sentence or a paragraph while the follow model is
+// catching up. A short rolling hop should still be able to rejoin on a
+// distinctive two-word anchor without pinning the page forever.
+const LIVE_LONG_RESYNC_LOOKAHEAD = 64;
 const LIVE_NEAR_JUMP = 3;
 const RECENT_HEARD_LIMIT = 12;
 const OVERLAP_REMATCH_SECONDS = 0.65;
@@ -327,6 +331,22 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     }
 
     const nextHeard = normalizeToken(words[wordIndex + 1]?.text ?? "");
+    if (!input.flagsEnabled) {
+      const longResync = findLongResync(heard, nextHeard, input.expected, cursor, threshold);
+      if (longResync >= 0) {
+        cursor = longResync + (nextHeard ? 2 : 1);
+        pendingResync = undefined;
+        matchedInWindow += nextHeard ? 2 : 1;
+        if (nextHeard) {
+          const confirmed = words[wordIndex + 1];
+          if (confirmed) {
+            lastHeardEnd = Math.max(lastHeardEnd, confirmed.end);
+            rememberHeard(recentHeard, nextHeard, confirmed.end);
+          }
+        }
+        continue;
+      }
+    }
     const lookahead = input.expected.slice(cursor + 1, cursor + 1 + LIVE_RESYNC_LOOKAHEAD);
     if (nextHeard) {
       const resyncOffset = lookahead.findIndex((candidate, candidateOffset) => (
@@ -885,6 +905,36 @@ function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: numbe
     return hit.index;
   }
   return -1;
+}
+
+function findLongResync(
+  heard: string,
+  nextHeard: string,
+  expected: LiveExpectedWord[],
+  cursor: number,
+  threshold: number,
+): number {
+  const end = Math.min(expected.length, cursor + 1 + LIVE_LONG_RESYNC_LOOKAHEAD);
+  const hits: number[] = [];
+  for (let index = cursor + 1; index < end; index += 1) {
+    const candidate = normalizeToken(expected[index]?.text ?? "");
+    if (!candidate || (candidate !== heard && !wordsSimilar(heard, candidate) && !sameSpokenNumber(heard, candidate))) {
+      continue;
+    }
+    if (nextHeard) {
+      const following = normalizeToken(expected[index + 1]?.text ?? "");
+      if (following !== nextHeard && !wordsSimilar(nextHeard, following) && !sameSpokenNumber(nextHeard, following)) {
+        continue;
+      }
+    } else {
+      const confidence = threshold;
+      if (!isContentWord(heard) || heard.length < 5 || confidence < 0.55) {
+        continue;
+      }
+    }
+    hits.push(index);
+  }
+  return hits.length === 1 ? hits[0]! : -1;
 }
 
 function hasTwoWordTrailingAnchor(

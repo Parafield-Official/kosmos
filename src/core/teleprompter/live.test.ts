@@ -243,6 +243,32 @@ describe("teleprompter live matching", () => {
     expect(rejoined.state.cursor).toBe(8);
   });
 
+  it("rejoins after a skipped paragraph using a unique long-range anchor", () => {
+    const passage: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "Before" },
+      { index: 1, lineIndex: 0, text: "the" },
+      { index: 2, lineIndex: 0, text: "skipped" },
+      { index: 3, lineIndex: 0, text: "paragraph" },
+      { index: 4, lineIndex: 0, text: "the" },
+      { index: 5, lineIndex: 0, text: "narrator" },
+      { index: 6, lineIndex: 0, text: "Vauborel" },
+      { index: 7, lineIndex: 0, text: "returns" },
+      { index: 8, lineIndex: 0, text: "to" },
+    ];
+    const result = matchLiveWindow({
+      chapterId: "ch01",
+      expected: passage,
+      transcript: [
+        { text: "Vauborel", start: 4, end: 4.3, confidence: 0.9 },
+        { text: "returns", start: 4.4, end: 4.7, confidence: 0.9 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: false,
+      confidenceThreshold: 0.55,
+    });
+    expect(result.state.cursor).toBe(8);
+  });
+
   it("rejoins after Whisper misses a word in the middle of a line", () => {
     const result = matchLiveWindow({
       chapterId: "ch01",

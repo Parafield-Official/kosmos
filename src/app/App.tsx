@@ -2342,6 +2342,26 @@ function Teleprompter({
         start: word.start + startSeconds,
         end: word.end + startSeconds,
       }));
+      // The low-latency follow model is intentionally allowed to lag behind
+      // on machines where its Metal backend is unavailable. Whisper has just
+      // judged this same frozen audio window, so use its ordered words as a
+      // conservative cursor fallback instead of repeatedly grading later
+      // audio against the first stalled phrase. This is independent of the
+      // manuscript/test vocabulary: matchLiveWindow only advances on a
+      // nearby exact/similar/number match and never moves the cursor back.
+      const followBeforeWhisper = liveMatchStateRef.current;
+      const whisperFollow = matchLiveWindow({
+        chapterId,
+        expected: expectedWords,
+        transcript,
+        state: followBeforeWhisper,
+        flagsEnabled: false,
+        confidenceThreshold: 0.55,
+      });
+      if (whisperFollow.state.cursor > followBeforeWhisper.cursor) {
+        liveMatchStateRef.current = whisperFollow.state;
+        commitLiveCursor(whisperFollow.state.cursor);
+      }
       // A single QC clip can contain two adjacent slips (for example a
       // dropped plural followed by a content-word substitution). Walk the
       // same frozen window again after each result so the first mismatch does
@@ -2478,6 +2498,13 @@ function Teleprompter({
       // the main process releases it when this session stops.
       const warmed = await window.boothDesk.startLiveTranscription();
       liveFollowStreamRef.current = Boolean(warmed?.streaming);
+      // A Parakeet follow server can still warm successfully when Whisper
+      // failed. Keep voice-follow usable, but make the missing proofreader
+      // explicit instead of presenting a healthy-looking cursor-only run.
+      const whisperReady = warmed?.backcheck === "whisper" || warmed?.persistent === true;
+      if (!whisperReady) {
+        setLiveWhisperLastError("Whisper back-check is unavailable; cursor follow is still running.");
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
@@ -3007,6 +3034,8 @@ function LiveVoiceStatus({
   startCursor,
   detectedFlags,
   signalLevel,
+  cursor,
+  totalWords,
 }: {
   modelAvailable: boolean | null;
   status: "off" | "starting" | "listening" | "processing" | "error";
@@ -3043,6 +3072,7 @@ function LiveVoiceStatus({
         {enabled && whisperLastError ? <span role="alert">{whisperLastError}</span> : null}
         {enabled && whisperLastWords ? <span aria-label={`Whisper heard ${whisperLastWords}`}>Heard: {whisperLastWords}</span> : null}
         {enabled && startCursor != null ? <span aria-label={`Live start cursor ${startCursor}`}>Start {startCursor}</span> : null}
+        {enabled ? <span aria-label={`Live cursor ${cursor} of ${totalWords}`}>Cursor {cursor}</span> : null}
         {enabled && detectedFlags.length > 0 ? (
           <span aria-label={`Whisper flags ${detectedFlags.length}: ${detectedFlags.map((flag) => `${flag.expected} to ${flag.heard}`).join(", ")}`}>
             Flags {detectedFlags.length}
