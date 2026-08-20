@@ -731,6 +731,30 @@ describe("parakeet live stream lines", () => {
     expect(misspelled).toMatchObject({ expected: "inhabitants", heard: "inhibitants", expectedIndex: 1 });
   });
 
+  it("does not let a near-spelling manuscript variant hide a later pickup", () => {
+    const flag = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "rampars" },
+        { index: 1, lineIndex: 0, text: "turn" },
+        { index: 2, lineIndex: 0, text: "cartwheels" },
+        { index: 3, lineIndex: 0, text: "over" },
+      ],
+      transcript: [
+        { text: "rampers", start: 0, end: 0.3, confidence: 0.99 },
+        { text: "turn", start: 0.3, end: 0.5, confidence: 0.99 },
+        { text: "cartwheel", start: 0.5, end: 0.9, confidence: 0.99 },
+        { text: "over", start: 0.9, end: 1.1, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 4,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(flag).toMatchObject({ expected: "cartwheels", heard: "cartwheel", expectedIndex: 2 });
+  });
+
   it("flags the narrator slips people actually make mid-sentence", () => {
     const thisTown = liveBackFlag({
       chapterId: "ch1",
@@ -1183,6 +1207,65 @@ describe("background Whisper QC buffering", () => {
     expect(stalled.window?.cursor).toBe(68);
     expect(stalled.window?.samples.length).toBe(16_000);
     expect(stalled.buffer.sampleCount).toBe(0);
+  });
+
+  it("keeps the gold checkpoint attached while Whisper is still processing", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(16_000).fill(0.1), 0, 0);
+
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 8);
+    expect(drained.window?.goldCursor).toBe(8);
+    const jumped = drainLiveQcBuffer(buffer, 16_000, false, 20);
+    expect(jumped.window?.goldCursor).toBe(8);
+
+    const delayedExpected: LiveExpectedWord[] = [
+      { index: 0, lineIndex: 0, text: "The" },
+      { index: 1, lineIndex: 0, text: "fox" },
+      { index: 2, lineIndex: 0, text: "jumped" },
+      { index: 3, lineIndex: 0, text: "on" },
+      { index: 4, lineIndex: 0, text: "the" },
+      { index: 5, lineIndex: 0, text: "mat" },
+      { index: 6, lineIndex: 0, text: "and" },
+      { index: 7, lineIndex: 0, text: "sat" },
+      { index: 8, lineIndex: 0, text: "quietly" },
+      { index: 9, lineIndex: 0, text: "by" },
+      { index: 10, lineIndex: 0, text: "the" },
+      { index: 11, lineIndex: 0, text: "door" },
+      { index: 12, lineIndex: 0, text: "until" },
+      { index: 13, lineIndex: 0, text: "dawn" },
+      { index: 14, lineIndex: 0, text: "arrived" },
+      { index: 15, lineIndex: 0, text: "again" },
+    ];
+    const whisperWords = ["The", "fox", "jumped", "in", "the", "mat"].map((text, index) => ({
+      text,
+      start: index * 0.2,
+      end: index * 0.2 + 0.15,
+      confidence: 0.99,
+    }));
+
+    // A slow Whisper response may complete after Parakeet has moved gold to
+    // 16. Grading against that mutable cursor would align this clip to the
+    // later words and drop the real on→in pickup.
+    const flag = liveBackFlag({
+      chapterId: "delayed-qc",
+      expected: delayedExpected,
+      transcript: whisperWords,
+      state: { cursor: drained.window?.cursor ?? 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: drained.window?.goldCursor,
+      confidenceThreshold: 0.9,
+    });
+    const staleFlag = liveBackFlag({
+      chapterId: "delayed-qc",
+      expected: delayedExpected,
+      transcript: whisperWords,
+      state: { cursor: drained.window?.cursor ?? 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 16,
+      confidenceThreshold: 0.9,
+    });
+    expect(flag).toMatchObject({ expected: "on", heard: "in", expectedIndex: 3 });
+    expect(staleFlag).toBeUndefined();
   });
 
   it("still grades the last word when gold jumps past it", () => {

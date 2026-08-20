@@ -15,7 +15,7 @@ const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
  * model under resources/, while contributors can point the same code at a
  * locally built binary with WHISPER_CLI_PATH and WHISPER_MODEL_PATH.
  */
-async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en", requireBundled = false, live = false, inputIsPcmWav = false }) {
+async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath, language = "en", requireBundled = false, live = false, inputIsPcmWav = false, quality = !live }) {
   const cliPath = findWhisperCli({ resourcesPath, appPath, requireBundled });
   if (!cliPath) {
     throw new Error(
@@ -57,6 +57,7 @@ async function transcribeAudio({ audioPath, userDataPath, resourcesPath, appPath
       outputBase,
       language: normalizeLanguage(language),
       live,
+      quality,
       threads: live ? Math.min(6, Math.max(2, os.cpus().length)) : undefined,
     }), { cwd: temporaryRoot, timeoutMs: WHISPER_TIMEOUT_MS });
     const json = JSON.parse(await fs.readFile(outputPath, "utf8"));
@@ -215,7 +216,8 @@ function segmentTokenWords(segment) {
   }
   const wordTokens = segment.tokens.filter((token) => {
     const text = String(token?.text ?? "").trim();
-    return text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length > 0;
+    return !isWhisperSpecialToken(text)
+      && text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length > 0;
   });
   if (wordTokens.length === 0) {
     return [];
@@ -281,25 +283,32 @@ function buildPcmConversionArgs(inputPath, outputPath) {
   ];
 }
 
-function buildWhisperArgs({ modelPath, inputPath, outputBase, language, live = false, threads }) {
+function buildWhisperArgs({ modelPath, inputPath, outputBase, language, live = false, threads, quality = !live }) {
   const args = [
     "-m", modelPath,
     "-f", inputPath,
     "-l", language,
-    "-oj",
+    "-ojf",
     "-of", outputBase,
     "-np",
   ];
   if (live) {
-    // Listen-only windows value responsiveness over the last few percentage
-    // points of beam-search accuracy. Full chapter Proof keeps Whisper's
-    // default higher-quality decoder settings.
     if (Number.isFinite(threads) && threads > 0) {
       args.push("-t", String(Math.floor(threads)));
     }
-    args.push("-bs", "1", "-bo", "1", "-fa", "-sow");
+    if (quality) {
+      args.push("-bs", "5", "-bo", "5", "-sow");
+    } else {
+      // The follow cursor values responsiveness; Whisper QC uses the quality
+      // path above even when the persistent server has to fall back to CLI.
+      args.push("-bs", "1", "-bo", "1", "-fa", "-sow");
+    }
   }
   return args;
+}
+
+function isWhisperSpecialToken(text) {
+  return /^\[[^\]]+\]$/u.test(String(text ?? "").trim());
 }
 
 function run(command, args, options = {}) {
@@ -319,4 +328,5 @@ module.exports = {
   transcribeAudio,
   segmentWords,
   segmentTokenWords,
+  isWhisperSpecialToken,
 };

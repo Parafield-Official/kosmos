@@ -2178,6 +2178,7 @@ function Teleprompter({
               audioBase64: bytesToBase64(encodeWavPcm16(mono, 16_000, 1)),
               mimeType: "audio/wav",
               language: "en",
+              engine: "whisper",
             }),
         20_000,
         "Speech check took too long. Try a quieter room or stop and start again.",
@@ -2284,6 +2285,7 @@ function Teleprompter({
       sessionId,
       drained.window.cursor,
       drained.window.startSeconds,
+      drained.window.goldCursor,
     );
     liveWhisperPromiseRef.current = promise;
     void promise.finally(() => {
@@ -2299,6 +2301,7 @@ function Teleprompter({
     sessionId: number,
     cursor: number,
     startSeconds: number,
+    goldCursor: number,
   ) {
     const bridge = window.boothDesk;
     try {
@@ -2329,7 +2332,11 @@ function Teleprompter({
         })),
         state: { cursor, lastHeardEnd: 0 },
         flagsEnabled: true,
-        goldCursor: liveMatchStateRef.current.cursor,
+        // Whisper runs behind the low-latency follow model. Grade this audio
+        // against the gold checkpoint captured when the phrase was drained;
+        // reading the mutable cursor here re-anchors slow results to later
+        // manuscript text and silently drops real pickups.
+        goldCursor,
         confidenceThreshold: 0.9,
         dismissedIds: liveDismissedRef.current,
       });
@@ -2337,8 +2344,10 @@ function Teleprompter({
         setLiveFlag(flag);
         onFileLivePickup(pickupFromLiveFlag(flag, chapterId));
       }
-    } catch {
-      // Back-check is optional. Follow must keep moving.
+    } catch (reason) {
+      // Back-check is optional, but never make a failed Whisper run look like
+      // a successful one in the desktop diagnostics.
+      console.warn("Whisper back-check failed", reason);
     } finally {
       liveWhisperBusyRef.current = false;
       if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && !liveStateRef.current.dimmed) {

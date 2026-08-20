@@ -1538,6 +1538,7 @@ async function transcribeAudioBuffer(payload) {
       requireBundled: app.isPackaged,
       live: true,
       inputIsPcmWav: extension === ".wav",
+      quality: wantWhisper,
     });
   } finally {
     await fs.rm(temporaryRoot, { recursive: true, force: true }).catch(() => undefined);

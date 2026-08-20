@@ -32,7 +32,7 @@ describe("local Whisper JSON adapter", () => {
     expect(parseWhisperTime(undefined, "00:00:01,250")).toBe(1.25);
   });
 
-  it("uses greedy decoding for low-latency listen-only windows", () => {
+  it("uses full JSON with greedy decoding for low-latency follow windows", () => {
     expect(buildWhisperArgs({
       modelPath: "/models/small.en.bin",
       inputPath: "/tmp/window.wav",
@@ -44,8 +44,26 @@ describe("local Whisper JSON adapter", () => {
       "-m", "/models/small.en.bin",
       "-f", "/tmp/window.wav",
       "-l", "en",
-      "-oj", "-of", "/tmp/transcript", "-np",
+      "-ojf", "-of", "/tmp/transcript", "-np",
       "-t", "6", "-bs", "1", "-bo", "1", "-fa", "-sow",
+    ]);
+  });
+
+  it("keeps beam-5 accuracy for Whisper QC CLI fallback", () => {
+    expect(buildWhisperArgs({
+      modelPath: "/models/small.en.bin",
+      inputPath: "/tmp/window.wav",
+      outputBase: "/tmp/transcript",
+      language: "en",
+      live: true,
+      quality: true,
+      threads: 4,
+    })).toEqual([
+      "-m", "/models/small.en.bin",
+      "-f", "/tmp/window.wav",
+      "-l", "en",
+      "-ojf", "-of", "/tmp/transcript", "-np",
+      "-t", "4", "-bs", "5", "-bo", "5", "-sow",
     ]);
   });
 
@@ -61,6 +79,23 @@ describe("local Whisper JSON adapter", () => {
     expect(words).toEqual([
       { text: "alpha", start: 0.1, end: 0.45, confidence: 0.91 },
       { text: "beta", start: 0.5, end: 0.9, confidence: 0.88 },
+    ]);
+  });
+
+  it("filters full-JSON control tokens without losing word probabilities", () => {
+    const words = segmentWords([{
+      text: " the fox",
+      offsets: { from: 0, to: 500 },
+      tokens: [
+        { text: "[_BEG_]", offsets: { from: 0, to: 0 }, p: 0.99 },
+        { text: " the", offsets: { from: 10, to: 190 }, p: 0.94 },
+        { text: " fox", offsets: { from: 190, to: 400 }, p: 0.97 },
+        { text: "[_TT_20]", offsets: { from: 400, to: 400 }, p: 0.02 },
+      ],
+    }]);
+    expect(words).toEqual([
+      { text: "the", start: 0.01, end: 0.19, confidence: 0.94 },
+      { text: "fox", start: 0.19, end: 0.4, confidence: 0.97 },
     ]);
   });
 

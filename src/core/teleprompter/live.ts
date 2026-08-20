@@ -85,6 +85,8 @@ export interface LiveQcWindow {
   samples: Float32Array;
   cursor: number;
   startSeconds: number;
+  /** Gold position when this audio was drained, not when QC finishes. */
+  goldCursor: number;
 }
 
 export function createLiveQcBuffer(): LiveQcBuffer {
@@ -152,6 +154,9 @@ export function drainLiveQcBuffer(
   if (samples.length === 0) {
     return { buffer };
   }
+  const windowGold = force
+    ? gold
+    : Math.min(phraseEnd, Math.max(gold, coveredThrough + (enoughSpeech ? 1 : 0)));
 
   return {
     buffer: {
@@ -164,6 +169,7 @@ export function drainLiveQcBuffer(
       samples,
       cursor: take[0]?.cursor ?? phraseStart,
       startSeconds: take[0]?.startSeconds ?? 0,
+      goldCursor: windowGold,
     },
   };
 }
@@ -473,6 +479,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const exactAnchors = alignment.pairs.filter((pair) => pair.kind === "exact").length;
   const hasAnchor = exactAnchors > 0;
   const requireAnchor = input.requireFlagAnchor ?? true;
+  let pronunciationFallback: LiveMismatch | undefined;
 
   for (const pair of alignment.pairs) {
     if (pair.kind === "exact") {
@@ -510,7 +517,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (isStaleLiveFlag(pair.expectedIndex, input.goldCursor)) {
       continue;
     }
-    return {
+    const candidate: LiveMismatch = {
       id,
       expected: expectedWord.text,
       heard: heardWord.text,
@@ -520,6 +527,22 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       end: Math.max(Math.max(0, heardWord.start), heardWord.end),
       confidence,
     };
+    const isUnclassifiedSimilar = pair.kind === "similar"
+      && !isReliableShortSwap(expected, heard)
+      && !isInflectionSlip(heard, expected)
+      && !isOnsetClip(heard, expected)
+      && !isNumberSlip(expected, heard);
+    if (isUnclassifiedSimilar) {
+      // Hold a likely pronunciation/orthography variant as a fallback so it
+      // cannot hide a later, stronger narrator-slip class in the same phrase.
+      pronunciationFallback ??= candidate;
+      continue;
+    }
+    return candidate;
+  }
+
+  if (pronunciationFallback) {
+    return pronunciationFallback;
   }
 
   // A one-word, already-positioned check is the only case where there is no
