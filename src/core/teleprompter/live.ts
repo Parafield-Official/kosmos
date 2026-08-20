@@ -62,7 +62,30 @@ export const LIVE_MIN_SPEECH_SECONDS = 0.9;
 export const LIVE_SPEECH_RMS = 0.01;
 export const LIVE_OVERLAP_SECONDS = 1.05;
 export const LIVE_UNSTABLE_TAIL_SECONDS = 0.32;
-export const LIVE_QC_CONTEXT_SECONDS = 2;
+/**
+ * Speech kept in front of a QC window after it has already been graded. A drain
+ * boundary lands on a hop, not on a pause, so without run-up the window can open
+ * partway through its own first word; clipping 150ms off the head costs ten
+ * points of detection and clipping 250ms costs twenty-four, and the loss is pure
+ * recall — the flag never appears rather than appearing wrongly.
+ *
+ * The budget counts speech rather than wall-clock because boundaries fall in
+ * pauses as often as mid-word. Half a second of run-up across the gap after
+ * "…along the horizon." is half a second of silence, and the next window still
+ * opens on its own first word: read live, "France" spoken as "Spain" is heard by
+ * Whisper at 0.96 confidence and still raises nothing, because a mismatch with
+ * no known word to its left cannot be told apart from a clipped onset. Reaching
+ * back past the pause to the previous word flags the same audio at 0.93, and
+ * back two words at 0.97.
+ *
+ * Two words, not one, because a word cut by the previous boundary is replayed
+ * at the head of this window: one word of run-up would make that word the
+ * opening word again and lose it for the same reason. The budget has to cover
+ * the replayed word and an anchor in front of it.
+ */
+export const LIVE_QC_PREROLL_SPEECH_SECONDS = 0.85;
+/** However long the narrator's pause, replay at most this much run-up. */
+export const LIVE_QC_PREROLL_MAX_SECONDS = 1.6;
 export const LIVE_QC_OVERLAP_SECONDS = 0.8;
 export const LIVE_QC_RECENT_WORDS = 12;
 export const LIVE_QC_PHRASE_WORDS = 8;
@@ -73,6 +96,12 @@ export interface LiveQcBuffer {
   sampleCount: number;
   pendingSampleCount: number;
   cursor: number;
+  /**
+   * Already-graded tail of the previous window, replayed as run-up. Held apart
+   * from `chunks` so it never counts towards a drain decision or gets graded a
+   * second time.
+   */
+  preroll: LiveQcChunk[];
 }
 
 interface LiveQcChunk {
@@ -93,7 +122,7 @@ export interface LiveQcWindow {
 }
 
 export function createLiveQcBuffer(): LiveQcBuffer {
-  return { chunks: [], sampleCount: 0, pendingSampleCount: 0, cursor: 0 };
+  return { chunks: [], sampleCount: 0, pendingSampleCount: 0, cursor: 0, preroll: [] };
 }
 
 export function appendLiveQcSamples(
@@ -116,7 +145,51 @@ export function appendLiveQcSamples(
     sampleCount: buffer.sampleCount + samples.length,
     pendingSampleCount: buffer.pendingSampleCount + samples.length,
     cursor: buffer.sampleCount === 0 ? Math.max(0, Math.floor(cursor)) : buffer.cursor,
+    preroll: buffer.preroll,
   };
+}
+
+/** Voiced seconds in a hop, counted in short frames like a gate would. */
+function speechSeconds(samples: Float32Array, sampleRate: number): number {
+  const frame = Math.max(1, Math.floor(sampleRate * 0.02));
+  let voiced = 0;
+  for (let start = 0; start + frame <= samples.length; start += frame) {
+    if (pcmHasSpeech(samples.subarray(start, start + frame))) {
+      voiced += 1;
+    }
+  }
+  return (voiced * frame) / sampleRate;
+}
+
+/**
+ * Trailing chunks holding `seconds` of speech, oldest first. Silence is carried
+ * but not counted, so a span measured from a boundary inside a pause still
+ * reaches back to the word on the other side of the pause.
+ */
+function trailingSpeechChunks(chunks: LiveQcChunk[], sampleRate: number, seconds: number): LiveQcChunk[] {
+  const cap = Math.max(0, Math.floor(sampleRate * LIVE_QC_PREROLL_MAX_SECONDS));
+  if (cap === 0 || seconds <= 0) {
+    return [];
+  }
+  const result: LiveQcChunk[] = [];
+  let count = 0;
+  let speech = 0;
+  for (let index = chunks.length - 1; index >= 0; index -= 1) {
+    const chunk = chunks[index];
+    if (!chunk) {
+      continue;
+    }
+    if (result.length > 0 && count + chunk.samples.length > cap) {
+      break;
+    }
+    result.unshift(chunk);
+    count += chunk.samples.length;
+    speech += speechSeconds(chunk.samples, sampleRate);
+    if (speech >= seconds) {
+      break;
+    }
+  }
+  return result;
 }
 
 export function drainLiveQcBuffer(
@@ -166,7 +239,13 @@ export function drainLiveQcBuffer(
   // buffer, but include it in this request as overlap. It gives Whisper an
   // exact trailing anchor for the final word without consuming the next
   // phrase's samples (which remain queued for its own check).
-  const overlap = !force && !stalledOnWord && !goldJumpedPast
+  //
+  // Stalls and gold jumps get this too. They drain a subset of the buffer, so
+  // later audio already exists to anchor against, and without it the window ends
+  // mid-word: read live, a window cut after "…LeBlanc kneel" came back as
+  // "LeBlancNiel over a low tape" and the dropped plural went unreported. Only a
+  // forced flush has nothing left to borrow.
+  const overlap = !force
     ? (() => {
         const needed = Math.max(1, Math.floor(sampleRate * LIVE_QC_OVERLAP_SECONDS));
         const result: LiveQcChunk[] = [];
@@ -184,7 +263,11 @@ export function drainLiveQcBuffer(
         return result;
       })()
     : [];
-  const samples = concatLiveQcChunks([...take, ...overlap]);
+  // Run-up first, so the window's own first word is never the audio's first
+  // word. The overlap path is skipped on every stall and forced flush, which is
+  // most of a real session, so the guard cannot live there.
+  const preroll = buffer.preroll;
+  const samples = concatLiveQcChunks([...preroll, ...take, ...overlap]);
   if (samples.length === 0) {
     return { buffer };
   }
@@ -198,17 +281,21 @@ export function drainLiveQcBuffer(
   );
   const windowGold = force ? gold : overlapGold;
 
+  const head = preroll[0] ?? take[0];
   return {
     buffer: {
       chunks: keep,
       sampleCount: keep.reduce((count, chunk) => count + chunk.samples.length, 0),
       pendingSampleCount: keep.reduce((count, chunk) => count + chunk.samples.length, 0),
       cursor: keep[0]?.cursor ?? phraseEnd,
+      preroll: trailingSpeechChunks([...preroll, ...take], sampleRate, LIVE_QC_PREROLL_SPEECH_SECONDS),
     },
     window: {
       samples,
-      cursor: take[0]?.cursor ?? phraseStart,
-      startSeconds: take[0]?.startSeconds ?? 0,
+      // The window opens where its audio opens. Run-up words sit outside the
+      // flaggable range, so they buy alignment anchors without buying verdicts.
+      cursor: head?.cursor ?? phraseStart,
+      startSeconds: head?.startSeconds ?? 0,
       goldCursor: windowGold,
     },
   };
@@ -309,7 +396,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!expected) {
       continue;
     }
-    if (heard === expected || wordsSimilar(heard, expected) || sameSpokenNumber(heard, expected)) {
+    if (sameWord(heard, expected) || wordsSimilar(heard, expected)) {
       cursor += 1;
       pendingResync = undefined;
       matchedInWindow += 1;
@@ -523,8 +610,8 @@ export function liveFlagChipCopy(flag: { expected: string; heard: string }): str
 
 /** Whisper QC: mark a swap. Never move the gold cursor or use the stream clock. */
 export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
-  const words = usableLiveWords(input.transcript);
-  if (words.length === 0 || input.expected.length === 0) {
+  const heardWords = usableLiveWords(input.transcript);
+  if (heardWords.length === 0 || input.expected.length === 0) {
     return undefined;
   }
 
@@ -532,6 +619,13 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const gold = Number.isFinite(input.goldCursor)
     ? Math.max(0, Math.floor(input.goldCursor as number))
     : originalCursor + LIVE_QC_PHRASE_WORDS;
+  const bounds = whisperAlignmentBounds(input.expected, originalCursor, gold);
+  const words = expandNumberRuns(
+    splitGluedHeardWords(heardWords, input.expected, bounds.start, bounds.end),
+    input.expected,
+    bounds.start,
+    bounds.end,
+  );
   const alignment = alignWhisperWords(words, input.expected, originalCursor, gold);
   const confidenceThreshold = Number.isFinite(input.confidenceThreshold)
     ? Math.min(1, Math.max(0, input.confidenceThreshold as number))
@@ -540,6 +634,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const hasAnchor = exactAnchors > 0;
   const requireAnchor = input.requireFlagAnchor ?? true;
   let pronunciationFallback: LiveMismatch | undefined;
+  let reportedStrongerSlip = false;
 
   for (const [pairIndex, pair] of alignment.pairs.entries()) {
     if (pair.kind === "exact") {
@@ -566,7 +661,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     }
     const hasStrongAnchor = hasStrongLocalWhisperAnchor(alignment.pairs, pairIndex);
     const candidateThreshold = hasStrongAnchor
-      ? anchoredWhisperThreshold(expected, heard, confidenceThreshold)
+      ? anchoredWhisperThreshold(expected, heard, confidenceThreshold, hasImmediateExactNeighbours(alignment.pairs, pairIndex))
       : confidenceThreshold;
     if (confidence < candidateThreshold) {
       continue;
@@ -574,8 +669,17 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (CLOSED_CLASS.has(heard) && !isReliableShortSwap(expected, heard) && !expected.startsWith(heard) && !expected.endsWith(heard)) {
       continue;
     }
+    // Narrators swap one small word for another. A function word paired with
+    // an unrelated content word is the alignment reaching for somewhere to put
+    // a stray Whisper token, not a slip the narrator would want to re-record.
+    if (isFunctionWord(expected) && !isFunctionWord(heard) && !isPlausibleSlip(expected, heard)) {
+      continue;
+    }
     const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
     if (input.dismissedIds?.includes(id)) {
+      if (pair.kind !== "similar" || isPlausibleSlip(expected, heard)) {
+        reportedStrongerSlip = true;
+      }
       continue;
     }
     if (requireAnchor && !hasAnchor) {
@@ -608,7 +712,10 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     return candidate;
   }
 
-  if (pronunciationFallback) {
+  // The fallback exists so a pronunciation variant cannot hide a real slip
+  // class in the same phrase. Once that slip has been reported, the leftover
+  // variant is Whisper mishearing a correctly read word: not a pickup.
+  if (pronunciationFallback && !reportedStrongerSlip) {
     return pronunciationFallback;
   }
 
@@ -643,6 +750,196 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   return undefined;
 }
 
+/**
+ * Whisper prints two spoken words with no space between them when the
+ * separator lands in a token that carries no letters (`such 'the` becomes
+ * `suchthe`, `twenty-hundred` becomes `twentyhundred`). Split such a token
+ * back apart when its halves land on two consecutive manuscript words, so the
+ * phrase can still be graded. Only the manuscript decides the split, so this
+ * is not tied to any particular book or narrator.
+ */
+function splitGluedHeardWords(
+  words: LiveTranscriptWord[],
+  expected: LiveExpectedWord[],
+  start: number,
+  end: number,
+): LiveTranscriptWord[] {
+  const window = expected.slice(start, end).map((word) => normalizeToken(word.text)).filter(Boolean);
+  if (window.length < 2) {
+    return words;
+  }
+  const result: LiveTranscriptWord[] = [];
+  for (const word of words) {
+    const heard = normalizeToken(word.text);
+    const split = heard.length >= 6 && !window.some((candidate) => sameWord(heard, candidate))
+      ? findGlueSplit(heard, window)
+      : undefined;
+    if (!split) {
+      result.push(word);
+      continue;
+    }
+    const cut = word.start + Math.max(0, word.end - word.start) * (split.left.length / heard.length);
+    result.push({ text: split.left, start: word.start, end: cut, confidence: word.confidence });
+    result.push({ text: split.right, start: cut, end: word.end, confidence: word.confidence });
+  }
+  return result;
+}
+
+function findGlueSplit(heard: string, window: string[]): { left: string; right: string } | undefined {
+  for (let cut = 2; cut <= heard.length - 2; cut += 1) {
+    const left = heard.slice(0, cut);
+    const right = heard.slice(cut);
+    for (let index = 0; index + 1 < window.length; index += 1) {
+      const first = window[index] ?? "";
+      const second = window[index + 1] ?? "";
+      const leftFits = sameWord(left, first);
+      const rightFits = sameWord(right, second);
+      if ((leftFits && rightFits)
+        || (leftFits && isPlausibleSlip(second, right))
+        || (rightFits && isPlausibleSlip(first, left))) {
+        return { left, right };
+      }
+    }
+  }
+  return undefined;
+}
+
+const NUMBER_RUN_WORDS = 6;
+
+/**
+ * Prose spells numbers out; Whisper writes them as digits. `seventeen hundred
+ * and forty` comes back as `1740`, which would otherwise align against a
+ * single manuscript word and read as a wrong number. When a numeric token
+ * carries the same value as a run of manuscript number words, the narrator
+ * read that run correctly: restore the manuscript's own words so the phrase
+ * aligns exactly.
+ */
+function expandNumberRuns(
+  words: LiveTranscriptWord[],
+  expected: LiveExpectedWord[],
+  start: number,
+  end: number,
+): LiveTranscriptWord[] {
+  const window = expected.slice(start, end);
+  if (window.length < 2) {
+    return words;
+  }
+  const result: LiveTranscriptWord[] = [];
+  for (const word of words) {
+    const heard = normalizeToken(word.text);
+    const value = numberValue(heard);
+    const run = value == null ? undefined : findNumberRun(heard, value, window) ?? misreadNumberRun(heard, window);
+    if (!run) {
+      result.push(word);
+      continue;
+    }
+    const duration = Math.max(0, word.end - word.start);
+    const step = run.length > 0 ? duration / run.length : 0;
+    run.forEach((token, offset) => {
+      result.push({
+        text: offset === 0 && token === MISREAD_NUMBER ? word.text : token,
+        start: word.start + step * offset,
+        end: word.start + step * (offset + 1),
+        confidence: word.confidence,
+      });
+    });
+  }
+  return result;
+}
+
+const MISREAD_NUMBER = "\u0000misread";
+
+/**
+ * A wrong number also arrives as one digit token spanning several manuscript
+ * words. Line the rest of the run up exactly and leave the digits against its
+ * first word, so the pickup lands on the number the narrator has to re-read
+ * instead of on whichever word the alignment happened to reach.
+ */
+function misreadNumberRun(heard: string, window: LiveExpectedWord[]): string[] | undefined {
+  if ((heard.match(/\d/gu) ?? []).length < 3) {
+    return undefined;
+  }
+  const runs: string[][] = [[]];
+  for (const word of window) {
+    const token = normalizeToken(word.text);
+    if (token && (numberValue(token) != null || token === "and")) {
+      runs.at(-1)?.push(token);
+      continue;
+    }
+    runs.push([]);
+  }
+  const spans = runs
+    .map((run) => {
+      let last = run.length;
+      while (last > 0 && numberValue(run[last - 1] ?? "") == null) {
+        last -= 1;
+      }
+      return run.slice(0, last);
+    })
+    .filter((run) => run.length >= 2);
+  const only = spans.length === 1 ? spans[0] : undefined;
+  return only ? [MISREAD_NUMBER, ...only.slice(1)] : undefined;
+}
+
+function findNumberRun(heard: string, value: number, window: LiveExpectedWord[]): string[] | undefined {
+  for (let index = 0; index < window.length; index += 1) {
+    const run: string[] = [];
+    for (let length = 0; length < NUMBER_RUN_WORDS && index + length < window.length; length += 1) {
+      const token = normalizeToken(window[index + length]?.text ?? "");
+      if (!token || (numberValue(token) == null && token !== "and")) {
+        break;
+      }
+      run.push(token);
+      if (run.length < 2 || run.at(-1) === "and") {
+        continue;
+      }
+      const spelled = run.filter((entry) => entry !== "and");
+      if (numberValue(spelled.join("")) === value || digitsRenderNumberRun(heard, spelled)) {
+        return run;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Times and years are read as several numbers and written as one digit string:
+ * `six forty-six` becomes `646`, `eight thirty-five` becomes `835`. The run's
+ * arithmetic value (52, 38) is not what Whisper printed, so check whether the
+ * digits are the run read out in groups before calling the number wrong.
+ */
+function digitsRenderNumberRun(heard: string, run: string[]): boolean {
+  if (!/^\d+$/u.test(heard)) {
+    return false;
+  }
+  const matches = (digitIndex: number, runIndex: number): boolean => {
+    if (digitIndex === heard.length && runIndex === run.length) {
+      return true;
+    }
+    for (let length = 1; runIndex + length <= run.length; length += 1) {
+      const value = numberValue(run.slice(runIndex, runIndex + length).join(""));
+      if (value == null) {
+        break;
+      }
+      const rendered = String(value);
+      if (heard.startsWith(rendered, digitIndex) && matches(digitIndex + rendered.length, runIndex + length)) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return matches(0, 0);
+}
+
+/** A substitution a narrator could plausibly make on this manuscript word. */
+function isPlausibleSlip(expected: string, heard: string): boolean {
+  return isReliableShortSwap(expected, heard)
+    || isNumberSlip(expected, heard)
+    || isInflectionSlip(heard, expected)
+    || isOnsetClip(heard, expected)
+    || wordsSimilar(heard, expected);
+}
+
 function hasStrongLocalWhisperAnchor(
   pairs: WhisperAlignmentPair[],
   pairIndex: number,
@@ -667,7 +964,35 @@ function hasStrongLocalWhisperAnchor(
   return (exactBefore && exactAfter) || (!exactBefore && exactAfter && exactAfterCount >= 2);
 }
 
-function anchoredWhisperThreshold(expected: string, heard: string, base: number): number {
+/**
+ * A word whose immediate neighbours both match the manuscript exactly is
+ * pinned in place: the only open question is which word was spoken there.
+ * That is a much stronger position than "some exact word exists in this
+ * window", so it earns a lower confidence floor below.
+ */
+function hasImmediateExactNeighbours(pairs: WhisperAlignmentPair[], pairIndex: number): boolean {
+  const anchored = (index: number): boolean => pairs[index]?.kind === "exact";
+  if (anchored(pairIndex - 1) && anchored(pairIndex + 1)) {
+    return true;
+  }
+  // A QC window can open on the substitution itself. Two exact words directly
+  // after it pin the position just as well as one on each side.
+  return pairIndex === 0 && anchored(1) && anchored(2);
+}
+
+function anchoredWhisperThreshold(expected: string, heard: string, base: number, pinned: boolean): number {
+  // Whisper spreads probability across equivalent surface forms, so a real
+  // slip can be reported at a low token probability purely because `fifth`
+  // competed with `5th`, or `eye` with `eyes`. When the position is pinned by
+  // exact neighbours and the substitution belongs to a bounded class, accept
+  // that weaker score instead of dropping the pickup.
+  const bounded = isNumberSlip(expected, heard)
+    || isInflectionSlip(heard, expected)
+    || isOnsetClip(heard, expected)
+    || isReliableShortSwap(expected, heard);
+  if (pinned && bounded) {
+    return Math.min(base, 0.35);
+  }
   if (isNumberSlip(expected, heard)) {
     return Math.min(base, 0.55);
   }
@@ -706,9 +1031,35 @@ const WHISPER_ALIGNMENT_GAP_HEARD = -2.25;
 // than to force-pair as a narrator slip. This matters for rolling QC windows:
 // they commonly include a few words before/after the phrase checkpoint.
 const WHISPER_ALIGNMENT_MISMATCH = -3;
+// Narrators substitute within a word class far more often than across it, so
+// a leftover content word belongs against the content word it displaced
+// rather than against the little word beside it.
+const WHISPER_ALIGNMENT_CROSS_CLASS = -3.6;
 const WHISPER_ALIGNMENT_SHORT_SWAP = -1.8;
 const WHISPER_ALIGNMENT_SIMILAR = 2.6;
 const WHISPER_ALIGNMENT_EXACT = 4;
+
+function whisperMismatchScore(heard: string, manuscript: string): number {
+  return isFunctionWord(heard) === isFunctionWord(manuscript)
+    ? WHISPER_ALIGNMENT_MISMATCH
+    : WHISPER_ALIGNMENT_CROSS_CLASS;
+}
+
+/**
+ * Include a trailing phrase of manuscript context. QC audio often contains
+ * overlap beyond the drained phrase; consuming all of those Whisper words
+ * against a slice that ends exactly at gold can otherwise force DP to pair a
+ * later trailing word with the slip at the phrase boundary.
+ */
+function whisperAlignmentBounds(
+  expected: LiveExpectedWord[],
+  originalCursor: number,
+  goldCursor: number,
+): { start: number; end: number } {
+  const end = Math.max(0, Math.min(expected.length, goldCursor + LIVE_QC_PHRASE_WORDS));
+  const start = Math.max(0, Math.min(originalCursor, Math.max(0, end - LIVE_QC_PHRASE_WORDS)));
+  return { start, end };
+}
 
 function alignWhisperWords(
   words: LiveTranscriptWord[],
@@ -716,12 +1067,7 @@ function alignWhisperWords(
   originalCursor: number,
   goldCursor: number,
 ): WhisperAlignment {
-  // Include a trailing phrase of manuscript context. QC audio often contains
-  // overlap beyond the drained phrase; consuming all of those Whisper words
-  // against a slice that ends exactly at gold can otherwise force DP to pair
-  // a later trailing word with the slip at the phrase boundary.
-  const end = Math.max(0, Math.min(expected.length, goldCursor + LIVE_QC_PHRASE_WORDS));
-  const start = Math.max(0, Math.min(originalCursor, Math.max(0, end - LIVE_QC_PHRASE_WORDS)));
+  const { start, end } = whisperAlignmentBounds(expected, originalCursor, goldCursor);
   const expectedSlice = expected.slice(start, end);
   const rows = words.length + 1;
   const columns = expectedSlice.length + 1;
@@ -747,13 +1093,13 @@ function alignWhisperWords(
       const similarity = tokenSimilarity(heard, manuscript);
       const shortSwap = isReliableShortSwap(manuscript, heard) || isNumberSlip(manuscript, heard);
       const diagonal = (scores[row - 1]?.[column - 1] ?? Number.NEGATIVE_INFINITY)
-        + (heard === manuscript || sameSpokenNumber(heard, manuscript)
+        + (sameWord(heard, manuscript)
           ? WHISPER_ALIGNMENT_EXACT
           : similarity >= 0.45
             ? WHISPER_ALIGNMENT_SIMILAR
             : shortSwap
               ? WHISPER_ALIGNMENT_SHORT_SWAP
-              : WHISPER_ALIGNMENT_MISMATCH);
+              : whisperMismatchScore(heard, manuscript));
       const up = (scores[row - 1]?.[column] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_HEARD;
       const left = (scores[row]?.[column - 1] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_EXPECTED;
       if (diagonal >= up && diagonal >= left) {
@@ -788,7 +1134,7 @@ function alignWhisperWords(
       pairs.unshift({
         heardIndex: row - 1,
         expectedIndex: start + column - 1,
-        kind: heard === manuscript || sameSpokenNumber(heard, manuscript) ? "exact" : similarity >= 0.45 ? "similar" : "mismatch",
+        kind: sameWord(heard, manuscript) ? "exact" : similarity >= 0.45 ? "similar" : "mismatch",
       });
       row -= 1;
       column -= 1;
@@ -809,7 +1155,7 @@ function tokenSimilarity(heardText: string, expectedText: string): number {
   if (!heard || !expected) {
     return 0;
   }
-  if (heard === expected || sameSpokenNumber(heard, expected)) {
+  if (sameWord(heard, expected)) {
     return 1;
   }
   const distance = editDistance(heard, expected);
@@ -889,7 +1235,7 @@ function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: numbe
   const window = expected.slice(cursor + 1, cursor + 1 + LIVE_NEAR_JUMP);
   const hits = window.flatMap((candidate, offset) => {
     const token = normalizeToken(candidate.text);
-    if (!token || (token !== heard && !wordsSimilar(heard, token) && !sameSpokenNumber(heard, token))) {
+    if (!token || (!sameWord(heard, token) && !wordsSimilar(heard, token))) {
       return [];
     }
     return [{ index: cursor + 1 + offset, offset }];
@@ -918,12 +1264,12 @@ function findLongResync(
   const hits: number[] = [];
   for (let index = cursor + 1; index < end; index += 1) {
     const candidate = normalizeToken(expected[index]?.text ?? "");
-    if (!candidate || (candidate !== heard && !wordsSimilar(heard, candidate) && !sameSpokenNumber(heard, candidate))) {
+    if (!candidate || (!sameWord(heard, candidate) && !wordsSimilar(heard, candidate))) {
       continue;
     }
     if (nextHeard) {
       const following = normalizeToken(expected[index + 1]?.text ?? "");
-      if (following !== nextHeard && !wordsSimilar(nextHeard, following) && !sameSpokenNumber(nextHeard, following)) {
+      if (!sameWord(nextHeard, following) && !wordsSimilar(nextHeard, following)) {
         continue;
       }
     } else {
@@ -1000,7 +1346,14 @@ const FUNCTION_WORDS = new Set([
 ]);
 
 const DETERMINERS = new Set(["a", "an", "the", "this", "that", "these", "those"]);
-const PREPOSITIONS = new Set(["at", "by", "for", "from", "in", "into", "of", "off", "on", "onto", "to", "too"]);
+const PREPOSITIONS = new Set([
+  "about", "above", "across", "after", "against", "along", "among", "around",
+  "at", "before", "behind", "below", "beneath", "beside", "between", "beyond",
+  "by", "down", "during", "for", "from", "in", "inside", "into", "near", "of",
+  "off", "on", "onto", "out", "outside", "over", "past", "through",
+  "throughout", "to", "too", "toward", "towards", "under", "underneath",
+  "until", "up", "upon", "with", "within", "without",
+]);
 const PRONOUNS = new Set([
   "he", "her", "hers", "him", "his", "i", "it", "its", "me", "my", "mine",
   "our", "ours", "she", "their", "theirs", "them", "they", "us", "we", "you", "your", "yours",
@@ -1010,6 +1363,72 @@ const AUXILIARIES = new Set([
   "is", "was", "were",
 ]);
 const CLOSED_CLASS = new Set([...DETERMINERS, ...PREPOSITIONS, ...PRONOUNS, ...AUXILIARIES]);
+
+function isFunctionWord(token: string): boolean {
+  return FUNCTION_WORDS.has(token) || CLOSED_CLASS.has(token);
+}
+
+/**
+ * British and American spellings of one word are not a narrator slip, and
+ * Whisper frequently writes contractions and `o'clock` without the
+ * apostrophe. Systematic suffix rules carry the common cases; the guards on
+ * stem length keep them from folding unrelated short words together (four
+ * must not become for). The irregular pairs below have no rule to derive.
+ */
+const DIALECT_IRREGULAR = new Map([
+  ["grey", "gray"],
+  ["mould", "mold"],
+  ["smoulder", "smolder"],
+  ["moustache", "mustache"],
+  ["plough", "plow"],
+  ["tyre", "tire"],
+  ["kerb", "curb"],
+  ["pyjamas", "pajamas"],
+  ["aluminium", "aluminum"],
+  ["jewellery", "jewelry"],
+  ["programme", "program"],
+  ["aeroplane", "airplane"],
+  ["sceptical", "skeptical"],
+  ["judgement", "judgment"],
+  ["whisky", "whiskey"],
+  ["draught", "draft"],
+  ["cheque", "check"],
+  ["storey", "story"],
+  ["gaol", "jail"],
+]);
+
+function dialectKey(token: string): string {
+  const bare = token.replace(/'/gu, "");
+  const irregular = DIALECT_IRREGULAR.get(bare);
+  if (irregular) {
+    return irregular;
+  }
+  let key = bare.replace(/(\p{L}{3,})our/u, "$1or");
+  if (key.length >= 5) {
+    key = key.replace(/(\p{L}{3,})re$/u, "$1er");
+  }
+  if (key.length >= 6) {
+    key = key
+      .replace(/is(e|ed|es|ing|ation|ations)$/u, "iz$1")
+      .replace(/ys(e|ed|es|ing)$/u, "yz$1")
+      .replace(/ogue$/u, "og")
+      .replace(/ence$/u, "ense");
+  }
+  if (key.length >= 8) {
+    key = key.replace(/ll(ed|ing|er|est|ous)$/u, "l$1");
+  }
+  return key;
+}
+
+/** One spoken word written two ways: same value, same spelling variant. */
+function sameWord(heard: string, expected: string): boolean {
+  if (!heard || !expected) {
+    return false;
+  }
+  return heard === expected
+    || sameSpokenNumber(heard, expected)
+    || dialectKey(heard) === dialectKey(expected);
+}
 
 function isReliableShortSwap(expected: string, heard: string): boolean {
   if (!expected || !heard || expected === heard) {
@@ -1039,7 +1458,7 @@ const SCALES: Record<string, number> = {
   hundred: 100, thousand: 1_000, million: 1_000_000, billion: 1_000_000_000,
 };
 
-function numberValue(token: string): number | undefined {
+export function numberValue(token: string): number | undefined {
   const raw = token.toLocaleLowerCase("en-US").replace(/,/g, "");
   if (/^\d+$/.test(raw)) {
     const value = Number(raw);
@@ -1121,12 +1540,39 @@ function isOnsetClip(heard: string, expected: string): boolean {
   return longer.endsWith(shorter) && dropped.length > 0 && dropped.length <= 2;
 }
 
+/** Dropping or adding a plural is the same slip whether or not English is regular about it. */
+const IRREGULAR_PLURALS = new Map([
+  ["children", "child"],
+  ["men", "man"],
+  ["women", "woman"],
+  ["gentlemen", "gentleman"],
+  ["people", "person"],
+  ["feet", "foot"],
+  ["teeth", "tooth"],
+  ["geese", "goose"],
+  ["mice", "mouse"],
+  ["lice", "louse"],
+  ["oxen", "ox"],
+  ["lives", "life"],
+  ["wives", "wife"],
+  ["knives", "knife"],
+  ["leaves", "leaf"],
+  ["halves", "half"],
+  ["shelves", "shelf"],
+  ["thieves", "thief"],
+  ["wolves", "wolf"],
+  ["loaves", "loaf"],
+]);
+
 function isInflectionSlip(heard: string, expected: string): boolean {
   if (!heard || !expected || heard === expected) {
     return false;
   }
   const shorter = heard.length <= expected.length ? heard : expected;
   const longer = heard.length <= expected.length ? expected : heard;
+  if (IRREGULAR_PLURALS.get(longer) === shorter || IRREGULAR_PLURALS.get(shorter) === longer) {
+    return true;
+  }
   if (shorter.length < 3) {
     return false;
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_QC_PREROLL_MAX_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
 
 const expected: LiveExpectedWord[] = [
   { index: 0, lineIndex: 0, text: "The" },
@@ -1277,6 +1277,89 @@ describe("background Whisper QC buffering", () => {
     expect(Array.from(drained.window?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
     expect(drained.buffer.cursor).toBe(42);
     expect(Array.from(drained.buffer.chunks[0]?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.5, 0.6]);
+  });
+
+  it("opens the next window on already-graded run-up instead of its own first word", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 0, 0);
+    const first = drainLiveQcBuffer(buffer, 16_000, false, 8);
+    expect(first.window?.cursor).toBe(0);
+    expect(first.window?.samples.length).toBe(8_000);
+
+    buffer = appendLiveQcSamples(first.buffer, new Float32Array(8_000).fill(0.2), 8, 0.5);
+    const second = drainLiveQcBuffer(buffer, 16_000, false, 16);
+
+    // The window now starts half a second earlier, so a boundary that lands
+    // mid-word eats run-up rather than the first word under judgement.
+    expect(second.window).toMatchObject({ cursor: 0, startSeconds: 0, goldCursor: 16 });
+    expect(second.window?.samples.length).toBe(16_000);
+    expect(second.window?.samples[0]).toBeCloseTo(0.1, 5);
+    expect(second.window?.samples[15_999]).toBeCloseTo(0.2, 5);
+  });
+
+  it("does not let run-up audio count towards a drain or be graded twice", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 0, 0);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 8);
+
+    expect(drained.buffer.preroll.length).toBe(1);
+    expect(drained.buffer.sampleCount).toBe(0);
+    expect(drainLiveQcBuffer(drained.buffer, 16_000, true, 8).window).toBeUndefined();
+  });
+
+  it("stops collecting run-up once it holds enough speech", () => {
+    let buffer = createLiveQcBuffer();
+    for (let hop = 0; hop < 6; hop += 1) {
+      buffer = appendLiveQcSamples(buffer, new Float32Array(4_000).fill((hop + 1) / 10), hop, hop * 0.25);
+    }
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 8);
+
+    // Quarter-second hops, all voiced: four of them cover the budget, so the
+    // walk back stops there instead of replaying the whole phrase.
+    const carried = drained.buffer.preroll.reduce((count, chunk) => count + chunk.samples.length, 0);
+    expect(carried).toBe(16_000);
+    expect(drained.buffer.preroll[0]?.samples[0]).toBeCloseTo(0.3, 5);
+  });
+
+  it("reaches run-up back past a pause to the speech before it", () => {
+    // A sentence, then the gap a narrator leaves after the full stop. Counting
+    // run-up in wall-clock would replay only the gap and leave the next window
+    // opening on its own first word.
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 0, 0);
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0), 4, 0.5);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 8);
+
+    expect(drained.buffer.preroll.length).toBe(2);
+    expect(drained.buffer.preroll[0]?.samples[0]).toBeCloseTo(0.1, 5);
+
+    const next = appendLiveQcSamples(drained.buffer, new Float32Array(8_000).fill(0.2), 8, 1);
+    const second = drainLiveQcBuffer(next, 16_000, false, 16);
+    expect(second.window?.samples[0]).toBeCloseTo(0.1, 5);
+  });
+
+  it("borrows a trailing anchor on a stalled drain without consuming it", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(16_000).fill(0.1), 0, 0, 0);
+    buffer = appendLiveQcSamples(buffer, new Float32Array(16_000).fill(0.2), 10, 1, 16);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 16);
+
+    // The later hop anchors the last word of the graded phrase instead of the
+    // window ending mid-word, and stays queued for its own check.
+    expect(drained.window?.samples.at(-1)).toBeCloseTo(0.2, 5);
+    expect(drained.buffer.chunks.map((chunk) => chunk.cursor)).toEqual([10]);
+  });
+
+  it("replays at most the run-up cap however long the pause", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0.1), 0, 0);
+    for (let hop = 0; hop < 8; hop += 1) {
+      buffer = appendLiveQcSamples(buffer, new Float32Array(8_000).fill(0), 4 + hop, 0.5 + hop * 0.5);
+    }
+    const drained = drainLiveQcBuffer(buffer, 16_000, true, 12);
+
+    const carried = drained.buffer.preroll.reduce((count, chunk) => count + chunk.samples.length, 0);
+    expect(carried).toBeLessThanOrEqual(16_000 * LIVE_QC_PREROLL_MAX_SECONDS);
   });
 
   it("keeps a short final window until stop forces a background check", () => {

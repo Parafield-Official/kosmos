@@ -28,3 +28,5 @@ vendor/bin/FFMPEG_AUDIT.json
 !vendor/bin/MARKITDOWN_LICENSE.txt
 vendor/models/*
 !vendor/models/README.md
+.qc-eval-cache/
+.live-run/

@@ -2501,7 +2501,7 @@ function Teleprompter({
       // A Parakeet follow server can still warm successfully when Whisper
       // failed. Keep voice-follow usable, but make the missing proofreader
       // explicit instead of presenting a healthy-looking cursor-only run.
-      const whisperReady = warmed?.backcheck === "whisper" || warmed?.persistent === true;
+      const whisperReady = warmed?.backcheck === "whisper";
       if (!whisperReady) {
         setLiveWhisperLastError("Whisper back-check is unavailable; cursor follow is still running.");
       }

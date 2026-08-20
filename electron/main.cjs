@@ -1633,11 +1633,14 @@ async function warmLiveTranscription() {
   }
   try {
     const whisper = await warmWhisperLive();
-    return follow ? { ...follow, backcheck: "whisper" } : whisper;
+    return { ...(follow ?? whisper), backcheck: "whisper" };
   } catch (error) {
     console.warn(`Whisper back-check warm-up skipped: ${error?.message ?? error}`);
     if (follow) {
-      return follow;
+      // Voice follow still works, but word checks do not. Say so explicitly:
+      // the follow server also reports `persistent`, so the renderer cannot
+      // infer proofreading health from that flag alone.
+      return { ...follow, backcheck: "none" };
     }
     throw error;
   }
