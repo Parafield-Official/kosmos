@@ -783,7 +783,7 @@ function ProjectHome({
         pickups: proof.pickups.filter((pickup) => pickup.status === "open"),
       });
       if (result) {
-        setNotice("Markers are ready to open in your audio editor.");
+        setNotice("Markers written for Audacity, Reaper, and Audition, plus a spreadsheet table and subtitles. Read the README in that folder for which file your editor wants.");
       }
     });
   }
