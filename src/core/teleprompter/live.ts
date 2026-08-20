@@ -77,7 +77,10 @@ export interface LiveQcBuffer {
 
 interface LiveQcChunk {
   samples: Float32Array;
+  /** Manuscript cursor before this hop's audio was interpreted. */
   cursor: number;
+  /** Farthest manuscript cursor covered after interpreting this hop. */
+  coveredCursor: number;
   startSeconds: number;
 }
 
@@ -98,6 +101,7 @@ export function appendLiveQcSamples(
   samples: Float32Array,
   cursor: number,
   startSeconds = 0,
+  coveredCursor = cursor,
 ): LiveQcBuffer {
   if (samples.length === 0) {
     return buffer;
@@ -106,6 +110,7 @@ export function appendLiveQcSamples(
     chunks: [...buffer.chunks, {
       samples,
       cursor: Math.max(0, Math.floor(cursor)),
+      coveredCursor: Math.max(Math.max(0, Math.floor(cursor)), Math.max(0, Math.floor(coveredCursor))),
       startSeconds: Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0,
     }],
     sampleCount: buffer.sampleCount + samples.length,
@@ -127,11 +132,18 @@ export function drainLiveQcBuffer(
   const phraseStart = buffer.cursor;
   const phraseEnd = phraseStart + LIVE_QC_PHRASE_WORDS;
   const gold = Number.isFinite(goldCursor) ? Math.floor(goldCursor as number) : phraseStart;
-  const coveredThrough = buffer.chunks.reduce((maxCursor, chunk) => Math.max(maxCursor, chunk.cursor), phraseStart);
+  const coveredThrough = buffer.chunks.reduce((maxCursor, chunk) => Math.max(maxCursor, chunk.coveredCursor), phraseStart);
   const leftoverSamples = buffer.chunks
-    .filter((chunk) => chunk.cursor === coveredThrough)
+    .filter((chunk) => chunk.coveredCursor === coveredThrough)
     .reduce((count, chunk) => count + chunk.samples.length, 0);
-  const enoughSpeech = leftoverSamples >= Math.max(1, Math.floor(sampleRate * LIVE_QC_STALL_SECONDS));
+  // A half-second stall is enough to decide that the follow model stopped
+  // advancing, but it is too short to give Whisper a reliable acoustic
+  // context. Keep buffering until the normal minimum speech window before
+  // asking the slower back-check model to judge a stalled phrase.
+  const enoughSpeech = leftoverSamples >= Math.max(
+    1,
+    Math.floor(sampleRate * Math.max(LIVE_QC_STALL_SECONDS, LIVE_MIN_SPEECH_SECONDS)),
+  );
   const stalledOnWord = gold === coveredThrough && enoughSpeech;
   const goldJumpedPast = gold > coveredThrough && enoughSpeech;
   if (!force && gold < phraseEnd && !stalledOnWord && !goldJumpedPast) {
@@ -150,13 +162,41 @@ export function drainLiveQcBuffer(
     return { buffer };
   }
 
-  const samples = concatLiveQcChunks(take);
+  // Keep a small amount of audio immediately after the phrase in the QC
+  // buffer, but include it in this request as overlap. It gives Whisper an
+  // exact trailing anchor for the final word without consuming the next
+  // phrase's samples (which remain queued for its own check).
+  const overlap = !force && !stalledOnWord && !goldJumpedPast
+    ? (() => {
+        const needed = Math.max(1, Math.floor(sampleRate * LIVE_QC_OVERLAP_SECONDS));
+        const result: LiveQcChunk[] = [];
+        let count = 0;
+        for (const chunk of buffer.chunks) {
+          if (take.includes(chunk)) {
+            continue;
+          }
+          result.push(chunk);
+          count += chunk.samples.length;
+          if (count >= needed) {
+            break;
+          }
+        }
+        return result;
+      })()
+    : [];
+  const samples = concatLiveQcChunks([...take, ...overlap]);
   if (samples.length === 0) {
     return { buffer };
   }
-  const windowGold = force
-    ? gold
-    : Math.min(phraseEnd, Math.max(gold, coveredThrough + (enoughSpeech ? 1 : 0)));
+  // A stalled follow cursor has no trustworthy word boundary yet. Grade the
+  // whole phrase-sized manuscript slice so Whisper has exact anchors around
+  // a substitution (for example `at` → `in`) instead of a one-word range
+  // that can never establish an alignment.
+  const overlapGold = [...take, ...overlap].reduce(
+    (maxCursor, chunk) => Math.max(maxCursor, chunk.cursor + 1, chunk.coveredCursor),
+    phraseEnd,
+  );
+  const windowGold = force ? gold : overlapGold;
 
   return {
     buffer: {
@@ -481,7 +521,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const requireAnchor = input.requireFlagAnchor ?? true;
   let pronunciationFallback: LiveMismatch | undefined;
 
-  for (const pair of alignment.pairs) {
+  for (const [pairIndex, pair] of alignment.pairs.entries()) {
     if (pair.kind === "exact") {
       continue;
     }
@@ -495,13 +535,20 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     const confidence = Number.isFinite(heardWord.confidence)
       ? Math.min(1, Math.max(0, heardWord.confidence as number))
       : 0;
-    if (!heard || !expected || confidence < confidenceThreshold) {
+    if (!heard || !expected) {
       continue;
     }
     if (isWhisperWordPiece(heard, expected)) {
       continue;
     }
     if (pair.expectedIndex >= gold || pair.expectedIndex + LIVE_QC_PHRASE_WORDS < gold) {
+      continue;
+    }
+    const hasStrongAnchor = hasStrongLocalWhisperAnchor(alignment.pairs, pairIndex);
+    const candidateThreshold = hasStrongAnchor
+      ? anchoredWhisperThreshold(expected, heard, confidenceThreshold)
+      : confidenceThreshold;
+    if (confidence < candidateThreshold) {
       continue;
     }
     if (CLOSED_CLASS.has(heard) && !isReliableShortSwap(expected, heard) && !expected.startsWith(heard) && !expected.endsWith(heard)) {
@@ -576,6 +623,53 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   return undefined;
 }
 
+function hasStrongLocalWhisperAnchor(
+  pairs: WhisperAlignmentPair[],
+  pairIndex: number,
+): boolean {
+  let exactBefore = false;
+  let exactAfter = false;
+  let exactAfterCount = 0;
+  for (let index = 0; index < pairs.length; index += 1) {
+    if (pairs[index]?.kind !== "exact") {
+      continue;
+    }
+    if (index < pairIndex) {
+      exactBefore = true;
+    } else if (index > pairIndex) {
+      exactAfter = true;
+      exactAfterCount += 1;
+    }
+  }
+  // A phrase can begin exactly at the substitution (for example, “The sea
+  // glides…”). Two exact trailing words provide the same local guard when no
+  // preceding token is present in the QC window.
+  return (exactBefore && exactAfter) || (!exactBefore && exactAfter && exactAfterCount >= 2);
+}
+
+function anchoredWhisperThreshold(expected: string, heard: string, base: number): number {
+  if (isNumberSlip(expected, heard)) {
+    return Math.min(base, 0.55);
+  }
+  if (isInflectionSlip(heard, expected)) {
+    return Math.min(base, 0.62);
+  }
+  if (isOnsetClip(heard, expected)) {
+    return Math.min(base, 0.7);
+  }
+  if (isReliableShortSwap(expected, heard)) {
+    // Whisper is often least certain on a one-syllable determiner/preposition
+    // even when both neighboring content words are exact. With two local
+    // anchors this is still a bounded substitution, so retain it at .50.
+    return Math.min(base, 0.5);
+  }
+  // Content-word substitutions can also receive conservative token
+  // probabilities (especially names and place names). Only use this lower
+  // floor when exact anchors exist on both sides (or two trailing anchors at
+  // a phrase start), so an unanchored hallucination remains suppressed.
+  return Math.min(base, 0.6);
+}
+
 interface WhisperAlignmentPair {
   heardIndex: number;
   expectedIndex: number;
@@ -588,7 +682,11 @@ interface WhisperAlignment {
 
 const WHISPER_ALIGNMENT_GAP_EXPECTED = -1.25;
 const WHISPER_ALIGNMENT_GAP_HEARD = -2.25;
-const WHISPER_ALIGNMENT_MISMATCH = -2.2;
+// A transcript word that cannot fit the manuscript should be cheaper to drop
+// than to force-pair as a narrator slip. This matters for rolling QC windows:
+// they commonly include a few words before/after the phrase checkpoint.
+const WHISPER_ALIGNMENT_MISMATCH = -3;
+const WHISPER_ALIGNMENT_SHORT_SWAP = -1.8;
 const WHISPER_ALIGNMENT_SIMILAR = 2.6;
 const WHISPER_ALIGNMENT_EXACT = 4;
 
@@ -598,7 +696,11 @@ function alignWhisperWords(
   originalCursor: number,
   goldCursor: number,
 ): WhisperAlignment {
-  const end = Math.max(0, Math.min(expected.length, goldCursor));
+  // Include a trailing phrase of manuscript context. QC audio often contains
+  // overlap beyond the drained phrase; consuming all of those Whisper words
+  // against a slice that ends exactly at gold can otherwise force DP to pair
+  // a later trailing word with the slip at the phrase boundary.
+  const end = Math.max(0, Math.min(expected.length, goldCursor + LIVE_QC_PHRASE_WORDS));
   const start = Math.max(0, Math.min(originalCursor, Math.max(0, end - LIVE_QC_PHRASE_WORDS)));
   const expectedSlice = expected.slice(start, end);
   const rows = words.length + 1;
@@ -623,8 +725,15 @@ function alignWhisperWords(
       const heard = normalizeToken(words[row - 1]?.text ?? "");
       const manuscript = normalizeToken(expectedSlice[column - 1]?.text ?? "");
       const similarity = tokenSimilarity(heard, manuscript);
+      const shortSwap = isReliableShortSwap(manuscript, heard) || isNumberSlip(manuscript, heard);
       const diagonal = (scores[row - 1]?.[column - 1] ?? Number.NEGATIVE_INFINITY)
-        + (heard === manuscript || sameSpokenNumber(heard, manuscript) ? WHISPER_ALIGNMENT_EXACT : similarity >= 0.45 ? WHISPER_ALIGNMENT_SIMILAR : WHISPER_ALIGNMENT_MISMATCH);
+        + (heard === manuscript || sameSpokenNumber(heard, manuscript)
+          ? WHISPER_ALIGNMENT_EXACT
+          : similarity >= 0.45
+            ? WHISPER_ALIGNMENT_SIMILAR
+            : shortSwap
+              ? WHISPER_ALIGNMENT_SHORT_SWAP
+              : WHISPER_ALIGNMENT_MISMATCH);
       const up = (scores[row - 1]?.[column] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_HEARD;
       const left = (scores[row]?.[column - 1] ?? Number.NEGATIVE_INFINITY) + WHISPER_ALIGNMENT_GAP_EXPECTED;
       if (diagonal >= up && diagonal >= left) {

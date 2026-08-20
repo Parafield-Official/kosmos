@@ -238,11 +238,37 @@ function segmentTokenWords(segment) {
       start,
       end,
       confidence: Number.isFinite(Number(token?.p)) ? Math.max(0, Math.min(1, Number(token.p))) : 0.75,
+      startsWord: /^\s/u.test(String(token?.text ?? "")),
     }));
   });
   // A partial token timing set is less trustworthy than the segment timing;
   // falling back keeps words from being pinned at 0 seconds.
-  return tokenWords.some((words) => words === null) ? [] : tokenWords.flat();
+  if (tokenWords.some((words) => words === null)) {
+    return [];
+  }
+  const words = [];
+  for (const tokenWordsForEntry of tokenWords) {
+    for (const tokenWord of tokenWordsForEntry) {
+      const previous = words.at(-1);
+      // whisper.cpp's full JSON may split one spoken word into several
+      // timestamped tokens (e.g. `che` + `v` + `rons`). A leading space marks
+      // a new word; otherwise merge into the preceding token while retaining
+      // the weakest confidence across the pieces.
+      if (previous && !tokenWord.startsWord) {
+        previous.text += tokenWord.text;
+        previous.end = Math.max(previous.end, tokenWord.end);
+        previous.confidence = Math.min(previous.confidence, tokenWord.confidence);
+      } else {
+        words.push({
+          text: tokenWord.text,
+          start: tokenWord.start,
+          end: tokenWord.end,
+          confidence: tokenWord.confidence,
+        });
+      }
+    }
+  }
+  return words;
 }
 
 function parseWhisperTime(offsetMs, timestamp) {

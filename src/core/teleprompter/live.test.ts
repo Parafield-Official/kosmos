@@ -339,6 +339,13 @@ describe("teleprompter live matching", () => {
 });
 
 describe("live follow helpers", () => {
+  it("gives a stalled Whisper window a phrase-sized gold checkpoint", () => {
+    let buffer = createLiveQcBuffer();
+    buffer = appendLiveQcSamples(buffer, new Float32Array(16_000).fill(0.05), 2, 0);
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 2);
+    expect(drained.window).toMatchObject({ cursor: 2, goldCursor: 10 });
+  });
+
   it("keeps the visible status stable during streaming hops", () => {
     expect(liveRequestStatus(true)).toBe("listening");
     expect(liveRequestStatus(false)).toBe("processing");
@@ -653,6 +660,84 @@ describe("parakeet live stream lines", () => {
       heard: "on",
       expectedIndex: 2,
     });
+  });
+
+  it("keeps anchored lower-confidence number and inflection slips", () => {
+    const number = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "There" },
+        { index: 1, lineIndex: 0, text: "are" },
+        { index: 2, lineIndex: 0, text: "twenty" },
+        { index: 3, lineIndex: 0, text: "and" },
+      ],
+      transcript: [
+        { text: "There", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "are", start: 0.2, end: 0.4, confidence: 0.99 },
+        { text: "twelve", start: 0.4, end: 0.6, confidence: 0.66 },
+        { text: "and", start: 0.6, end: 0.8, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 4,
+      confidenceThreshold: 0.9,
+    });
+    expect(number).toMatchObject({ expected: "twenty", heard: "twelve", expectedIndex: 2 });
+
+    const inflection = liveBackFlag({
+      chapterId: "ch1",
+      expected: [
+        { index: 0, lineIndex: 0, text: "The" },
+        { index: 1, lineIndex: 0, text: "ships" },
+        { index: 2, lineIndex: 0, text: "appear" },
+      ],
+      transcript: [
+        { text: "The", start: 0, end: 0.2, confidence: 0.99 },
+        { text: "ship", start: 0.2, end: 0.4, confidence: 0.66 },
+        { text: "appear", start: 0.4, end: 0.6, confidence: 0.99 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      goldCursor: 3,
+      confidenceThreshold: 0.9,
+    });
+    expect(inflection).toMatchObject({ expected: "ships", heard: "ship", expectedIndex: 1 });
+  });
+
+  it("accepts Whisper digit and ordinal forms with local anchors", () => {
+    const cases = [
+      {
+        expected: ["The", "sea", "glides", "along"],
+        heard: ["A", "sea", "glide", "along"],
+        index: 0,
+        confidence: 0.52,
+      },
+      {
+        expected: ["aiming", "window", "and", "counts", "to", "twenty", "in", "a", "corner"],
+        heard: ["aiming", "window", "and", "counts", "to", "12", "in", "a", "corner"],
+        index: 5,
+        confidence: 0.62,
+      },
+      {
+        expected: ["rue", "Vauborel", "on", "the", "sixth", "and", "highest", "floor"],
+        heard: ["Ruva", "Boral", "on", "the", "5th", "and", "highest", "floor"],
+        index: 4,
+        confidence: 0.62,
+      },
+    ];
+    for (const item of cases) {
+      const expected = item.expected.map((text, index) => ({ index, lineIndex: 0, text }));
+      const flag = liveBackFlag({
+        chapterId: "debug",
+        expected,
+        transcript: item.heard.map((text, index) => ({ text, start: index * 0.2, end: index * 0.2 + 0.15, confidence: index === item.index ? item.confidence : 0.99 })),
+        state: { cursor: 0, lastHeardEnd: 0 },
+        flagsEnabled: true,
+        goldCursor: expected.length,
+        confidenceThreshold: 0.9,
+      });
+      expect(flag, `${item.expected[item.index]} -> ${item.heard[item.index]}`).toMatchObject({ expected: item.expected[item.index], heard: item.heard[item.index], expectedIndex: item.index });
+    }
   });
 
   it("does not flag a Whisper word-piece as a narrator swap", () => {
@@ -1163,7 +1248,7 @@ describe("background Whisper QC buffering", () => {
 
     const drained = drainLiveQcBuffer(buffer, 16_000, false, 42);
     expect(drained.window?.cursor).toBe(34);
-    expect(Array.from(drained.window?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.1, 0.2, 0.3, 0.4]);
+    expect(Array.from(drained.window?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
     expect(drained.buffer.cursor).toBe(42);
     expect(Array.from(drained.buffer.chunks[0]?.samples ?? []).map((sample) => Number(sample.toFixed(2)))).toEqual([0.5, 0.6]);
   });
@@ -1266,6 +1351,18 @@ describe("background Whisper QC buffering", () => {
     });
     expect(flag).toMatchObject({ expected: "on", heard: "in", expectedIndex: 3 });
     expect(staleFlag).toBeUndefined();
+  });
+
+  it("uses the post-hop cursor when a hop crosses a phrase boundary", () => {
+    const buffer = appendLiveQcSamples(
+      createLiveQcBuffer(),
+      new Float32Array(16_000).fill(0.1),
+      0,
+      0,
+      9,
+    );
+    const drained = drainLiveQcBuffer(buffer, 16_000, false, 8);
+    expect(drained.window?.goldCursor).toBe(9);
   });
 
   it("still grades the last word when gold jumps past it", () => {

@@ -46,7 +46,7 @@ import {
   liveCursorForVisibleLine,
   type PromptTheme,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, isStaleLiveFlag, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -1878,11 +1878,18 @@ function Teleprompter({
   const [liveState, setLiveState] = useState(createLiveFlagsState);
   const [liveStatus, setLiveStatus] = useState<"off" | "starting" | "listening" | "processing" | "error">("off");
   const [liveFlag, setLiveFlag] = useState<LiveMismatch | null>(null);
+  const [liveDetectedFlags, setLiveDetectedFlags] = useState<LiveMismatch[]>([]);
   const [liveCursor, setLiveCursor] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveHeardText, setLiveHeardText] = useState("");
   const [liveCheckCount, setLiveCheckCount] = useState(0);
   const [liveLatencyMs, setLiveLatencyMs] = useState<number | null>(null);
+  const [liveWhisperAttempted, setLiveWhisperAttempted] = useState(0);
+  const [liveWhisperSucceeded, setLiveWhisperSucceeded] = useState(0);
+  const [liveWhisperFailed, setLiveWhisperFailed] = useState(0);
+  const [liveWhisperLastError, setLiveWhisperLastError] = useState<string | null>(null);
+  const [liveWhisperLastWords, setLiveWhisperLastWords] = useState("");
+  const [liveStartCursor, setLiveStartCursor] = useState<number | null>(null);
   const [liveSignalLevel, setLiveSignalLevel] = useState(0);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2041,7 +2048,10 @@ function Teleprompter({
     const safeNext = Math.min(expectedWords.length, Math.max(0, Math.floor(nextCursor)));
     liveVisualCursorRef.current = safeNext;
     setLiveCursor(safeNext);
-    setLiveFlag((flag) => (flag && isStaleLiveFlag(flag.expectedIndex, safeNext) ? null : flag));
+    // Whisper QC is deliberately delayed behind the follow cursor. Do not
+    // erase a flag just because Parakeet advanced while that QC request was
+    // in flight; the flag is tied to the frozen audio/gold checkpoint passed
+    // to liveBackFlag and remains actionable until the narrator decides it.
   }
 
   function disconnectLiveInput() {
@@ -2210,6 +2220,7 @@ function Teleprompter({
       commitLiveCursor(result.state.cursor);
       if (result.flag) {
         setLiveFlag(result.flag);
+        setLiveDetectedFlags((flags) => flags.some((candidate) => candidate.id === result.flag!.id) ? flags : [...flags, result.flag!]);
         onFileLivePickup(pickupFromLiveFlag(result.flag, chapterId));
       }
       setLiveCheckCount((count) => count + 1);
@@ -2222,7 +2233,7 @@ function Teleprompter({
       setLiveStatus("listening");
       setLiveError(null);
       if (liveFollowStreamRef.current) {
-        queueWhisperQc(samples, sampleRate, sessionId, cursorBeforeAudio, startSeconds);
+        queueWhisperQc(samples, sampleRate, sessionId, cursorBeforeAudio, result.state.cursor, startSeconds);
       }
     } catch (reason) {
       const message = messageFor(reason, "Live flags could not transcribe this microphone window.");
@@ -2246,6 +2257,7 @@ function Teleprompter({
     sampleRate: number,
     sessionId: number,
     cursorBeforeAudio: number,
+    coveredCursor: number,
     startSeconds: number,
   ) {
     if (liveStateRef.current.dimmed) {
@@ -2257,6 +2269,7 @@ function Teleprompter({
       samples,
       cursorBeforeAudio,
       startSeconds,
+      coveredCursor,
     );
     flushLiveQcWindow(sampleRate, sessionId);
   }
@@ -2278,6 +2291,7 @@ function Teleprompter({
     if (!pcmHasSpeech(drained.window.samples)) {
       return;
     }
+    setLiveWhisperAttempted((count) => count + 1);
     liveWhisperBusyRef.current = true;
     const promise = transcribeWhisperQc(
       drained.window.samples,
@@ -2322,32 +2336,53 @@ function Teleprompter({
       if (!liveEnabledRef.current || sessionId !== liveSessionRef.current || liveStateRef.current.dimmed) {
         return;
       }
-      const flag = liveBackFlag({
-        chapterId,
-        expected: expectedWords,
-        transcript: transcription.words.map((word) => ({
-          ...word,
-          start: word.start + startSeconds,
-          end: word.end + startSeconds,
-        })),
-        state: { cursor, lastHeardEnd: 0 },
-        flagsEnabled: true,
-        // Whisper runs behind the low-latency follow model. Grade this audio
-        // against the gold checkpoint captured when the phrase was drained;
-        // reading the mutable cursor here re-anchors slow results to later
-        // manuscript text and silently drops real pickups.
-        goldCursor,
-        confidenceThreshold: 0.9,
-        dismissedIds: liveDismissedRef.current,
-      });
-      if (flag) {
+      setLiveWhisperLastWords(transcription.words.slice(-12).map((word) => word.text).join(" "));
+      const transcript = transcription.words.map((word) => ({
+        ...word,
+        start: word.start + startSeconds,
+        end: word.end + startSeconds,
+      }));
+      // A single QC clip can contain two adjacent slips (for example a
+      // dropped plural followed by a content-word substitution). Walk the
+      // same frozen window again after each result so the first mismatch does
+      // not hide the next one. The temporary IDs only affect this request;
+      // user dismissals remain the persistent filter.
+      const requestDismissed = [...liveDismissedRef.current];
+      const flags: LiveMismatch[] = [];
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const flag = liveBackFlag({
+          chapterId,
+          expected: expectedWords,
+          transcript,
+          state: { cursor, lastHeardEnd: 0 },
+          flagsEnabled: true,
+          // Whisper runs behind the low-latency follow model. Grade this audio
+          // against the gold checkpoint captured when the phrase was drained;
+          // reading the mutable cursor here re-anchors slow results to later
+          // manuscript text and silently drops real pickups.
+          goldCursor,
+          confidenceThreshold: 0.9,
+          dismissedIds: requestDismissed,
+        });
+        if (!flag) {
+          break;
+        }
+        flags.push(flag);
+        requestDismissed.push(flag.id);
+      }
+      for (const flag of flags) {
         setLiveFlag(flag);
+        setLiveDetectedFlags((detected) => detected.some((candidate) => candidate.id === flag.id) ? detected : [...detected, flag]);
         onFileLivePickup(pickupFromLiveFlag(flag, chapterId));
       }
+      setLiveWhisperSucceeded((count) => count + 1);
+      setLiveWhisperLastError(null);
     } catch (reason) {
       // Back-check is optional, but never make a failed Whisper run look like
       // a successful one in the desktop diagnostics.
       console.warn("Whisper back-check failed", reason);
+      setLiveWhisperFailed((count) => count + 1);
+      setLiveWhisperLastError(messageFor(reason, "Whisper back-check failed."));
     } finally {
       liveWhisperBusyRef.current = false;
       if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && !liveStateRef.current.dimmed) {
@@ -2467,7 +2502,11 @@ function Teleprompter({
       liveWhisperPromiseRef.current = null;
       liveFollowPromiseRef.current = null;
       liveSessionRef.current += 1;
+      // Scroll percentage is a visual position, not a word index: headings,
+      // spacing, and wrapped lines make multiplying it by the chapter word
+      // count wrong. Use the measured first visible manuscript line.
       const startingCursor = visibleLiveCursor();
+      setLiveStartCursor(startingCursor);
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
       liveVisualCursorRef.current = startingCursor;
       setLiveCursor(startingCursor);
@@ -2475,6 +2514,12 @@ function Teleprompter({
       setLiveHeardText("");
       setLiveCheckCount(0);
       setLiveLatencyMs(null);
+      setLiveWhisperAttempted(0);
+      setLiveWhisperSucceeded(0);
+      setLiveWhisperFailed(0);
+      setLiveWhisperLastError(null);
+      setLiveWhisperLastWords("");
+      setLiveDetectedFlags([]);
       processor.onaudioprocess = (event) => {
         if (!liveEnabledRef.current) {
           return;
@@ -2682,6 +2727,13 @@ function Teleprompter({
               heardText={liveHeardText}
               checkCount={liveCheckCount}
               latencyMs={liveLatencyMs}
+              whisperAttempted={liveWhisperAttempted}
+              whisperSucceeded={liveWhisperSucceeded}
+              whisperFailed={liveWhisperFailed}
+              whisperLastError={liveWhisperLastError}
+              whisperLastWords={liveWhisperLastWords}
+              startCursor={liveStartCursor}
+              detectedFlags={liveDetectedFlags}
               signalLevel={liveSignalLevel}
               cursor={liveCursor}
               totalWords={expectedWords.length}
@@ -2947,6 +2999,13 @@ function LiveVoiceStatus({
   dimmed,
   error,
   heardText,
+  whisperAttempted,
+  whisperSucceeded,
+  whisperFailed,
+  whisperLastError,
+  whisperLastWords,
+  startCursor,
+  detectedFlags,
   signalLevel,
 }: {
   modelAvailable: boolean | null;
@@ -2957,6 +3016,13 @@ function LiveVoiceStatus({
   heardText: string;
   checkCount: number;
   latencyMs: number | null;
+  whisperAttempted: number;
+  whisperSucceeded: number;
+  whisperFailed: number;
+  whisperLastError: string | null;
+  whisperLastWords: string;
+  startCursor: number | null;
+  detectedFlags: LiveMismatch[];
   signalLevel: number;
   cursor: number;
   totalWords: number;
@@ -2969,6 +3035,19 @@ function LiveVoiceStatus({
         <span className="live-voice-status-dot" aria-hidden="true" />
         <strong>{copy.title}</strong>
         {copy.detail ? <span>{copy.detail}</span> : null}
+        {enabled && whisperAttempted > 0 ? (
+          <span aria-label={`Whisper back-check ${whisperSucceeded} succeeded, ${whisperFailed} failed`}>
+            Whisper {whisperSucceeded}/{whisperAttempted}
+          </span>
+        ) : null}
+        {enabled && whisperLastError ? <span role="alert">{whisperLastError}</span> : null}
+        {enabled && whisperLastWords ? <span aria-label={`Whisper heard ${whisperLastWords}`}>Heard: {whisperLastWords}</span> : null}
+        {enabled && startCursor != null ? <span aria-label={`Live start cursor ${startCursor}`}>Start {startCursor}</span> : null}
+        {enabled && detectedFlags.length > 0 ? (
+          <span aria-label={`Whisper flags ${detectedFlags.length}: ${detectedFlags.map((flag) => `${flag.expected} to ${flag.heard}`).join(", ")}`}>
+            Flags {detectedFlags.length}
+          </span>
+        ) : null}
       </div>
       {enabled ? (
         <span className="live-mic-meter" aria-label={`Microphone level ${Math.round(signalLevel * 100)} percent`}>

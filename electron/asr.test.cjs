@@ -99,6 +99,24 @@ describe("local Whisper JSON adapter", () => {
     ]);
   });
 
+  it("merges Whisper full-JSON subword pieces into spoken words", () => {
+    const words = segmentWords([{
+      offsets: { from: 0, to: 1000 },
+      tokens: [
+        { text: " the", offsets: { from: 0, to: 120 }, p: 0.99 },
+        { text: " che", offsets: { from: 120, to: 260 }, p: 0.99 },
+        { text: "v", offsets: { from: 260, to: 330 }, p: 0.98 },
+        { text: "rons", offsets: { from: 330, to: 520 }, p: 0.97 },
+        { text: " of", offsets: { from: 600, to: 720 }, p: 0.99 },
+      ],
+    }]);
+    expect(words).toEqual([
+      { text: "the", start: 0, end: 0.12, confidence: 0.99 },
+      { text: "chevrons", start: 0.12, end: 0.52, confidence: 0.97 },
+      { text: "of", start: 0.6, end: 0.72, confidence: 0.99 },
+    ]);
+  });
+
   it("falls back to segment timing when token entries omit timing metadata", () => {
     const words = segmentWords([{
       offsets: { from: 1000, to: 3000 },
