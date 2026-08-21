@@ -28,6 +28,14 @@ describe("filtering a word for the whole book", () => {
       .toBe(false);
   });
 
+  it("drops a merged pickup when every word in it is filtered", () => {
+    // The expected text of a merged pickup is a phrase, so the filter has to
+    // read it as separate words rather than as one long run of letters.
+    const filter = normalizeSuppressedWords(["Leominster", "road"]);
+    expect(isSuppressedPickup({ expected: "Leominster road", heard: "lemster rode", kind: "sub" }, filter))
+      .toBe(true);
+  });
+
   it("judges an inserted word by what was heard, since it has no manuscript side", () => {
     const filter = normalizeSuppressedWords(["um"]);
     expect(isSuppressedPickup({ expected: "", heard: "um", kind: "insert" }, filter)).toBe(true);

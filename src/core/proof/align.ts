@@ -405,6 +405,134 @@ function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
   return merged;
 }
 
+export interface TokenAlignment {
+  tokenIndex: number;
+  /** The manuscript word as written. */
+  written: string;
+  /** What the recogniser reported here, or "" when nothing was heard. */
+  heard: string;
+  start?: number;
+  end?: number;
+}
+
+/**
+ * Line every manuscript token up with what was heard there. The pickup list
+ * only covers the places that disagreed, so a question like "did the narrator
+ * say this name the same way each time" needs the matches too.
+ */
+export function alignManuscriptTokens(
+  manuscript: string,
+  transcript: TranscriptWord[],
+): TokenAlignment[] {
+  const tokens = tokenizeManuscript(manuscript);
+  const words = transcript.filter((word) =>
+    typeof word.text === "string" && normalizeToken(word.text).length > 0);
+  const manuscriptUnits = manuscriptMatchUnits(tokens);
+  const transcriptUnits = transcriptMatchUnits(words);
+  const operations = diffTokens(
+    manuscriptUnits.map((unit) => unit.key),
+    transcriptUnits.map((unit) => unit.key),
+  );
+
+  const alignments: TokenAlignment[] = tokens.map((token) => ({
+    tokenIndex: token.index,
+    written: token.text,
+    heard: "",
+  }));
+
+  // A hyphenated compound is matched piece by piece, so more than one match
+  // unit can land on the same manuscript token.
+  const assigned = new Set<number>();
+  let index = 0;
+  while (index < operations.length) {
+    const operation = operations[index];
+    if (operation.kind === "equal") {
+      assign(
+        manuscriptUnits[operation.manuscriptIndex],
+        [transcriptUnits[operation.transcriptIndex]],
+      );
+      index += 1;
+      continue;
+    }
+
+    // Gather the whole disagreement. A misread word is a delete beside an
+    // insert, and the inserted words are what was actually said in place of the
+    // deleted ones, which is the answer a pronunciation check needs.
+    const deleted: MatchUnit[] = [];
+    const inserted: MatchUnit[] = [];
+    while (index < operations.length && operations[index].kind !== "equal") {
+      const current = operations[index];
+      if (current.kind === "delete") {
+        deleted.push(manuscriptUnits[current.manuscriptIndex]);
+      } else if (current.kind === "insert") {
+        inserted.push(transcriptUnits[current.transcriptIndex]);
+      }
+      index += 1;
+    }
+    assignDisagreement(deleted, inserted);
+  }
+
+  return alignments;
+
+  /**
+   * Decide which spoken words stand in for which written ones inside a stretch
+   * that disagreed. One word read as several, or several read as one, is a
+   * plain substitution. A longer mismatch on both sides is garbled, and
+   * guessing a pairing there would invent pronunciations that were never said,
+   * so those tokens report nothing heard.
+   */
+  function assignDisagreement(deleted: MatchUnit[], inserted: MatchUnit[]): void {
+    if (deleted.length === 0) {
+      return;
+    }
+    if (inserted.length === 0 || deleted.length === 1 || inserted.length === 1) {
+      for (const unit of deleted) {
+        assign(unit, inserted);
+      }
+      return;
+    }
+    if (deleted.length === inserted.length) {
+      deleted.forEach((unit, offset) => assign(unit, [inserted[offset]]));
+      return;
+    }
+    for (const unit of deleted) {
+      assign(unit, []);
+    }
+  }
+
+  function assign(manuscriptUnit: MatchUnit | undefined, transcriptUnitList: Array<MatchUnit | undefined>): void {
+    if (!manuscriptUnit) {
+      return;
+    }
+    const heardWords = transcriptUnitList
+      .filter((unit): unit is MatchUnit => unit !== undefined)
+      .flatMap((unit) => words.slice(unit.from, unit.to + 1));
+    const heard = heardWords.map((word) => word.text).join(" ");
+    const start = heardWords[0]?.start;
+    const end = heardWords[heardWords.length - 1]?.end;
+    for (let token = manuscriptUnit.from; token <= manuscriptUnit.to; token += 1) {
+      const alignment = alignments[token];
+      if (!alignment) {
+        continue;
+      }
+      if (assigned.has(token)) {
+        // Each half of "half-empty" is matched on its own, so the second half
+        // joins the first reading rather than replacing it.
+        alignment.heard = [alignment.heard, heard].filter((part) => part !== "").join(" ");
+        alignment.start = alignment.start ?? start;
+        alignment.end = end ?? alignment.end;
+        continue;
+      }
+      assigned.add(token);
+      // A number spoken across several words covers several tokens at once, so
+      // each of them reports the whole spoken figure.
+      alignment.heard = heard;
+      alignment.start = start;
+      alignment.end = end;
+    }
+  }
+}
+
 /** Normalize the filter list the same way tokens are, so it matches them. */
 export function normalizeSuppressedWords(words: readonly string[] | undefined): Set<string> {
   const set = new Set<string>();

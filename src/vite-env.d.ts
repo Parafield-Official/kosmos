@@ -33,6 +33,7 @@ interface BoothDeskBridge {
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
   audioMetadata: (payload: { folder: string; relativePath: string }) => Promise<AudioMetadata>;
   measureAudio: (payload: { folder: string; relativePath: string; requireRoomTone?: boolean; presetId?: string; customPresets?: import("./core/acx/presets").SpecPreset[] }) => Promise<import("./core/acx/measure").AcxReport>;
+  readBookProof: (payload: ProjectEnvelope) => Promise<BookProof>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
   startLiveTranscription: () => Promise<{ persistent: boolean; acceleration: string; engine?: string; streaming?: boolean; backcheck?: string }>;
   stopLiveTranscription: () => Promise<{ stopped: boolean }>;
@@ -143,6 +144,20 @@ interface AudioMetadata {
   durationSeconds: number;
   bitrateKbps?: number;
   vbr?: boolean;
+}
+
+interface BookProofChapter {
+  chapterId: string;
+  chapterIndex: number;
+  chapterTitle: string;
+  manuscript: string;
+  transcript: import("./core/proof/align").TranscriptWord[];
+  pickups: import("./core/project/types").Pickup[];
+  hasAudio: boolean;
+}
+
+interface BookProof {
+  chapters: BookProofChapter[];
 }
 
 interface TranscriptionResult {

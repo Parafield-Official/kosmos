@@ -13,6 +13,7 @@ import {
   type TranscriptWord,
 } from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
+import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
 import { findWordOccurrences, type WordOccurrence } from "../core/proof/occurrences";
 import {
   addGlossaryEntry,
@@ -264,6 +265,8 @@ function ProjectHome({
   const [modelProgress, setModelProgress] = useState(0);
   const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
   const [activePanel, setActivePanel] = useState<StudioTab>("book");
+  const [scanWord, setScanWord] = useState("");
+  const [scanReport, setScanReport] = useState<BookScanReport | null>(null);
   const [studioNavOpen, setStudioNavOpen] = useState(true);
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
@@ -291,6 +294,7 @@ function ProjectHome({
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const rangeStopRef = useRef<(() => void) | null>(null);
+  const pendingSeekRef = useRef<{ chapterId: string; start: number } | null>(null);
   const glossaryAudioRef = useRef<HTMLAudioElement | null>(null);
   const glossaryAudioUrlRef = useRef<string | null>(null);
 
@@ -420,6 +424,30 @@ function ProjectHome({
       // object URL to revoke here.
     };
   }, [selectedChapter?.audio_path, folder]);
+
+  useEffect(() => {
+    const pending = pendingSeekRef.current;
+    if (!pending || !audioUrl || pending.chapterId !== selectedChapterId || activePanel !== "review") {
+      return;
+    }
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    pendingSeekRef.current = null;
+    const seek = () => {
+      audio.currentTime = Math.max(0, pending.start - 0.5);
+      void audio.play();
+    };
+    if (audio.readyState >= 1) {
+      seek();
+      return;
+    }
+    audio.addEventListener("loadedmetadata", seek, { once: true });
+    return () => {
+      audio.removeEventListener("loadedmetadata", seek);
+    };
+  }, [audioUrl, selectedChapterId, activePanel]);
 
   useEffect(() => {
     const bridge = window.boothDesk;
@@ -1030,6 +1058,41 @@ function ProjectHome({
       }
       setNotice("Preferences saved.");
     });
+  }
+
+  async function scanBookForWord() {
+    const word = scanWord.trim();
+    if (word === "") {
+      setNotice("Type a word or a short phrase to scan for.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Scanning the whole book is available in the desktop app.");
+      return;
+    }
+    await runAction("scan-occurrences", async () => {
+      const book = await window.boothDesk?.readBookProof(envelope);
+      if (!book) {
+        return;
+      }
+      setScanReport(scanBookOccurrences(word, book.chapters.map((chapter) => ({
+        chapterId: chapter.chapterId,
+        chapterIndex: chapter.chapterIndex,
+        chapterTitle: chapter.chapterTitle,
+        manuscript: chapter.manuscript,
+        transcript: chapter.transcript,
+      }))));
+    });
+  }
+
+  function openOccurrence(chapterId: string, start?: number) {
+    // The player for another chapter is not mounted yet, so remember where to
+    // land and let the effect below seek once that audio has loaded.
+    pendingSeekRef.current = start !== undefined && Number.isFinite(start)
+      ? { chapterId, start }
+      : null;
+    setSelectedChapterId(chapterId);
+    setActivePanel("review");
   }
 
   async function suppressPickupWord(pickup: Pickup) {
@@ -1718,6 +1781,17 @@ function ProjectHome({
               onAttachClip={(id) => void attachGlossaryClip(id)}
               onPlayClip={(entry) => void playGlossaryClip(entry)}
               onRecordClip={setGlossaryRecording}
+            />
+          ) : null}
+
+          {!teleprompterOpen && activePanel === "words" ? (
+            <BookWordScanner
+              word={scanWord}
+              report={scanReport}
+              busyAction={busyAction}
+              onWord={setScanWord}
+              onScan={() => void scanBookForWord()}
+              onOpenOccurrence={(chapterId, start) => openOccurrence(chapterId, start)}
             />
           ) : null}
 
@@ -3587,6 +3661,96 @@ function ChapterManager({
         </div>
       </section>
     </div>
+  );
+}
+
+function BookWordScanner({
+  word,
+  report,
+  busyAction,
+  onWord,
+  onScan,
+  onOpenOccurrence,
+}: {
+  word: string;
+  report: BookScanReport | null;
+  busyAction: string | null;
+  onWord: (value: string) => void;
+  onScan: () => void;
+  onOpenOccurrence: (chapterId: string, start?: number) => void;
+}) {
+  return (
+    <section className="phase-panel" aria-labelledby="scan-title">
+      <header className="panel-heading">
+        <div>
+          <p className="card-kicker">Consistency</p>
+          <h3 id="scan-title">Scan the whole book</h3>
+        </div>
+        {report ? (
+          <span className={`status-pill ${report.consistent ? "attached" : ""}`}>
+            {report.consistent ? "Read the same way" : "Read more than one way"}
+          </span>
+        ) : null}
+      </header>
+      <p className="panel-honesty">
+        Find every place a name appears and compare how it was read each time. Only chapters you have
+        already checked against audio can be compared.
+      </p>
+      <div className="scan-controls">
+        <input
+          type="search"
+          value={word}
+          placeholder="Leominster"
+          aria-label="Word or phrase to scan for"
+          onChange={(event) => onWord(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onScan();
+            }
+          }}
+        />
+        <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onScan}>
+          {busyAction === "scan-occurrences" ? "Scanning…" : "Scan"}
+        </button>
+      </div>
+      {report === null ? null : report.totalOccurrences === 0 ? (
+        <p className="result-empty">“{report.word}” does not appear in this book.</p>
+      ) : (
+        <div className="scan-results">
+          <p className="scan-summary">
+            {report.totalOccurrences} {report.totalOccurrences === 1 ? "occurrence" : "occurrences"},
+            {" "}{report.checkedOccurrences} checked against audio
+            {report.chaptersWithoutAudio.length > 0
+              ? `. Not yet checked: ${report.chaptersWithoutAudio.join(", ")}.`
+              : "."}
+          </p>
+          {report.readings.map((group) => (
+            <div className="scan-group" key={group.heard}>
+              <h4>
+                Heard as “{group.heard}” · {group.count}
+                {group.count === 1 ? " time" : " times"}
+              </h4>
+              <ul>
+                {group.occurrences.map((occurrence) => (
+                  <li key={`${occurrence.chapterId}-${occurrence.offset}`}>
+                    <button
+                      type="button"
+                      disabled={busyAction !== null}
+                      onClick={() => onOpenOccurrence(occurrence.chapterId, occurrence.start)}
+                    >
+                      {occurrence.chapterTitle}
+                      {occurrence.start === undefined ? "" : ` · ${formatTime(occurrence.start)}`}
+                    </button>
+                    <span>{occurrence.context}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

@@ -25,6 +25,7 @@ const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
+const { collectBookProof } = require("./book-proof.cjs");
 const {
   assertDuetMixRouting,
   chapterAfterDuetRoutingChange,
@@ -1076,6 +1077,16 @@ async function readAlignment(folder, project, chapterId) {
     }
     throw error;
   }
+}
+
+/** Every chapter's text and saved alignment in one read, for whole-book scans. */
+async function readBookProof(folder, project) {
+  await assertProjectEnvelope(folder, project);
+  return collectBookProof(
+    project,
+    (chapter) => readChapterDocument(folder, chapter),
+    (chapterId) => readAlignment(folder, project, chapterId),
+  );
 }
 
 async function exportMarkerFiles(folder, project, chapterId, pickups) {
@@ -2579,6 +2590,12 @@ ipcMain.handle("project:read-alignment", (_event, payload) => {
     throw new Error("Invalid alignment read request");
   }
   return readAlignment(payload.folder, payload.project, payload.chapterId);
+});
+ipcMain.handle("project:read-book-proof", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid book proof read request");
+  }
+  return readBookProof(payload.folder, payload.project);
 });
 ipcMain.handle("project:export-markers", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

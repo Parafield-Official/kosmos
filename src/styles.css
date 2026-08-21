@@ -1612,6 +1612,72 @@ button {
   color: #766a60;
 }
 
+.scan-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scan-controls input {
+  flex: 1;
+  padding: 9px 11px;
+  border: 1px solid #e0d7cd;
+  border-radius: 9px;
+  background: #fffdfa;
+  font: inherit;
+  font-size: 13px;
+}
+
+.scan-summary {
+  margin: 14px 0 6px;
+  color: #766a60;
+  font-size: 12px;
+}
+
+.scan-group {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #ece4da;
+}
+
+.scan-group h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.scan-group ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scan-group li {
+  display: grid;
+  gap: 3px;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  align-items: baseline;
+}
+
+.scan-group li button {
+  border: 1px solid #e0d7cd;
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: #fffdfa;
+  color: #3f3630;
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scan-group li span {
+  color: #766a60;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .settings-word-filter {
   display: grid;
   gap: 6px;

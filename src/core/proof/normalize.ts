@@ -24,11 +24,12 @@ export interface MatchUnit {
 /**
  * Split for matching on the pieces a reader actually says. "Twenty-one" is one
  * manuscript token but two spoken words, and the recogniser only ever reports
- * spoken words.
+ * spoken words. Whitespace splits too, so this also accepts a phrase such as a
+ * pickup's expected text or a search term.
  */
 export function spokenPieces(text: string): string[] {
   return text
-    .split(/[-\u2010-\u2015]+/u)
+    .split(/[\s\u2010-\u2015-]+/u)
     .map((piece) => normalizeToken(piece))
     .filter((piece) => piece.length > 0);
 }
