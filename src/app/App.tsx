@@ -3095,7 +3095,7 @@ function Teleprompter({
         {mode === "narrate" ? (
           <>
             <p className="booth-honesty">
-              Voice follow listens to your microphone to move the page and check possible word changes; it does not save a recording. Space and PageDown always remain available.
+              Voice follow is experimental. It listens to move the page; it does not save a recording. Space and PageDown always remain available.
               {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
               {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
             </p>
