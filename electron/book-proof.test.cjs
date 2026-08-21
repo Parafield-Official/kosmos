@@ -1,4 +1,4 @@
-const { collectBookProof } = require("./book-proof.cjs");
+const { collectBookProof, applyPickupDecision } = require("./book-proof.cjs");
 
 const project = {
   chapters: [
@@ -91,5 +91,48 @@ describe("whole-book proof collection", () => {
   it("handles an empty project", async () => {
     const book = await collectBookProof({}, readDocument, readAlignment);
     expect(book.chapters).toEqual([]);
+  });
+
+  it("reports which chapters already have a saved proof pass", async () => {
+    const book = await collectBookProof(project, readDocument, readAlignment);
+    expect(book.chapters.map((chapter) => chapter.checked)).toEqual([true, false, false]);
+  });
+});
+
+describe("bulk pickup decisions", () => {
+  const saved = [
+    { id: "p1", status: "open", expected: "Leominster" },
+    { id: "p2", status: "open", expected: "dawn" },
+    { id: "p3", status: "done", expected: "Leominster" },
+  ];
+
+  it("changes only the named flags", () => {
+    const result = applyPickupDecision(saved, ["p1"], "ignored");
+    expect(result.changed).toBe(true);
+    expect(result.pickups.map((pickup) => pickup.status)).toEqual(["ignored", "open", "done"]);
+  });
+
+  it("keeps the rest of each flag untouched", () => {
+    const result = applyPickupDecision(saved, ["p1"], "ignored");
+    expect(result.pickups[0]).toEqual({ id: "p1", status: "ignored", expected: "Leominster" });
+  });
+
+  it("reports no change when the flags already hold that decision", () => {
+    const result = applyPickupDecision(saved, ["p3"], "done");
+    expect(result.changed).toBe(false);
+    expect(result.pickups).toEqual(saved);
+  });
+
+  it("reports no change for ids this chapter does not have", () => {
+    const result = applyPickupDecision(saved, ["nope"], "ignored");
+    expect(result.changed).toBe(false);
+  });
+
+  it("refuses a status the workflow does not define", () => {
+    expect(() => applyPickupDecision(saved, ["p1"], "maybe")).toThrow(/status/i);
+  });
+
+  it("survives a chapter with no saved flags", () => {
+    expect(applyPickupDecision(undefined, ["p1"], "done")).toEqual({ pickups: [], changed: false });
   });
 });

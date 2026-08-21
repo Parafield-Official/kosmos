@@ -1612,6 +1612,75 @@ button {
   color: #766a60;
 }
 
+.book-repeats,
+.book-pickup-list,
+.book-progress {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-repeats li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.book-repeats li button,
+.book-pickup-list li button {
+  border: 1px solid #e0d7cd;
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: #fffdfa;
+  color: #3f3630;
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.book-pickup-list {
+  margin-top: 12px;
+}
+
+.book-pickup-list li {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, auto) 72px 1fr;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.book-pickup-list li.current {
+  background: #f6efe6;
+}
+
+.book-pickup-kind {
+  color: #8a7d72;
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.book-progress {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #ece4da;
+  font-size: 12px;
+}
+
+.book-progress li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #766a60;
+}
+
 .scan-controls {
   display: flex;
   gap: 8px;

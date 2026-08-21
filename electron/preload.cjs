@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   audioMetadata: (payload) => ipcRenderer.invoke("audio:metadata", payload),
   measureAudio: (payload) => ipcRenderer.invoke("audio:measure", payload),
   readBookProof: (payload) => ipcRenderer.invoke("project:read-book-proof", payload),
+  resolveBookPickups: (payload) => ipcRenderer.invoke("project:resolve-book-pickups", payload),
   transcribe: (payload) => ipcRenderer.invoke("proof:transcribe", payload),
   startLiveTranscription: () => ipcRenderer.invoke("proof:start-live"),
   stopLiveTranscription: () => ipcRenderer.invoke("proof:stop-live"),

@@ -40,9 +40,37 @@ async function collectBookProof(project, readDocument, readAlignment) {
       transcript: alignment?.transcript ?? [],
       pickups: alignment?.pickups ?? [],
       hasAudio: Boolean(chapter.audio_path),
+      checked: Boolean(alignment),
     });
   }
   return { chapters: entries };
 }
 
-module.exports = { collectBookProof };
+const PICKUP_STATUSES = new Set(["open", "done", "ignored"]);
+
+/**
+ * Set one decision on the named flags of a chapter, leaving the rest of the
+ * saved alignment alone. Reports whether anything actually changed so an
+ * untouched chapter is not rewritten on disk.
+ *
+ * @param {object[]} pickups saved pickups for one chapter
+ * @param {string[]} ids pickup ids to change
+ * @param {"open" | "done" | "ignored"} status
+ */
+function applyPickupDecision(pickups, ids, status) {
+  if (!PICKUP_STATUSES.has(status)) {
+    throw new Error(`Unknown pickup status: ${String(status)}`);
+  }
+  const wanted = new Set(Array.isArray(ids) ? ids : []);
+  let changed = false;
+  const next = (pickups ?? []).map((pickup) => {
+    if (!wanted.has(pickup.id) || pickup.status === status) {
+      return pickup;
+    }
+    changed = true;
+    return { ...pickup, status };
+  });
+  return { pickups: next, changed };
+}
+
+module.exports = { collectBookProof, applyPickupDecision };

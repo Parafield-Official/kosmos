@@ -25,7 +25,7 @@ const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
-const { collectBookProof } = require("./book-proof.cjs");
+const { collectBookProof, applyPickupDecision } = require("./book-proof.cjs");
 const {
   assertDuetMixRouting,
   chapterAfterDuetRoutingChange,
@@ -1087,6 +1087,43 @@ async function readBookProof(folder, project) {
     (chapter) => readChapterDocument(folder, chapter),
     (chapterId) => readAlignment(folder, project, chapterId),
   );
+}
+
+/**
+ * Apply one decision to flags in several chapters at once. The same misread
+ * name can be flagged in a dozen chapters, and opening each one to dismiss it
+ * is the part narrators give up on.
+ */
+async function resolveBookPickups(folder, project, requests, status) {
+  await assertProjectEnvelope(folder, project);
+  if (!Array.isArray(requests)) {
+    throw new Error("Invalid pickup decision request");
+  }
+  let current = project;
+  let changedChapters = 0;
+  for (const request of requests) {
+    if (!request?.chapterId || !Array.isArray(request.ids) || request.ids.length === 0) {
+      continue;
+    }
+    const alignment = await readAlignment(folder, current, request.chapterId);
+    if (!alignment) {
+      continue;
+    }
+    const decided = applyPickupDecision(alignment.pickups, request.ids, status);
+    if (!decided.changed) {
+      continue;
+    }
+    const saved = await saveAlignment(
+      folder,
+      current,
+      request.chapterId,
+      decided.pickups,
+      alignment.transcript,
+    );
+    current = saved.project;
+    changedChapters += 1;
+  }
+  return { folder, project: current, changedChapters };
 }
 
 async function exportMarkerFiles(folder, project, chapterId, pickups) {
@@ -2596,6 +2633,12 @@ ipcMain.handle("project:read-book-proof", (_event, payload) => {
     throw new Error("Invalid book proof read request");
   }
   return readBookProof(payload.folder, payload.project);
+});
+ipcMain.handle("project:resolve-book-pickups", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.status) {
+    throw new Error("Invalid pickup decision request");
+  }
+  return resolveBookPickups(payload.folder, payload.project, payload.requests, payload.status);
 });
 ipcMain.handle("project:export-markers", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

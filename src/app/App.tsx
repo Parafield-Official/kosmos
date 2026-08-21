@@ -14,6 +14,11 @@ import {
 } from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
 import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
+import {
+  summarizeBookPickups,
+  type BookPickupRow,
+  type BookPickupSummary,
+} from "../core/proof/book-pickups";
 import { findWordOccurrences, type WordOccurrence } from "../core/proof/occurrences";
 import {
   addGlossaryEntry,
@@ -61,6 +66,7 @@ import type {
   ChapterNote,
   GlossaryEntry,
   Pickup,
+  PickupStatus,
   ProjectFile,
   ProjectPerson,
   ProjectSettings,
@@ -267,6 +273,7 @@ function ProjectHome({
   const [activePanel, setActivePanel] = useState<StudioTab>("book");
   const [scanWord, setScanWord] = useState("");
   const [scanReport, setScanReport] = useState<BookScanReport | null>(null);
+  const [bookPickups, setBookPickups] = useState<BookPickupSummary | null>(null);
   const [studioNavOpen, setStudioNavOpen] = useState(true);
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
@@ -1060,6 +1067,65 @@ function ProjectHome({
     });
   }
 
+  async function loadBookPickups() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("The whole-book list is available in the desktop app.");
+      return;
+    }
+    await runAction("book-pickups", async () => {
+      const book = await window.boothDesk?.readBookProof(envelope);
+      if (!book) {
+        return;
+      }
+      setBookPickups(summarizeBookPickups(book.chapters.map((chapter) => ({
+        chapterId: chapter.chapterId,
+        chapterIndex: chapter.chapterIndex,
+        chapterTitle: chapter.chapterTitle,
+        hasAudio: chapter.hasAudio,
+        checked: chapter.checked,
+        pickups: chapter.pickups,
+      }))));
+    });
+  }
+
+  async function decideBookPickups(rows: BookPickupRow[], status: PickupStatus) {
+    if (rows.length === 0) {
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("The whole-book list is available in the desktop app.");
+      return;
+    }
+    const byChapter = new Map<string, string[]>();
+    for (const row of rows) {
+      const ids = byChapter.get(row.chapterId) ?? [];
+      ids.push(row.pickup.id);
+      byChapter.set(row.chapterId, ids);
+    }
+    const requests = [...byChapter.entries()].map(([chapterId, ids]) => ({ chapterId, ids }));
+    await runAction("book-pickups", async () => {
+      const result = await window.boothDesk?.resolveBookPickups({ ...envelope, requests, status });
+      if (!result) {
+        return;
+      }
+      onChange({ folder: result.folder, project: result.project });
+      // The open chapter's list is on screen, so reflect the decision there too.
+      const openChapterIds = byChapter.get(selectedChapterId ?? "");
+      if (openChapterIds) {
+        setProof((current) => current
+          ? {
+            ...current,
+            pickups: current.pickups.map((pickup) => openChapterIds.includes(pickup.id)
+              ? { ...pickup, status }
+              : pickup),
+          }
+          : current);
+      }
+      setNotice(`${rows.length} ${rows.length === 1 ? "flag" : "flags"} marked ${status} across ${result.changedChapters} ${result.changedChapters === 1 ? "chapter" : "chapters"}.`);
+    });
+    await loadBookPickups();
+  }
+
   async function scanBookForWord() {
     const word = scanWord.trim();
     if (word === "") {
@@ -1743,6 +1809,17 @@ function ProjectHome({
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
             )
+          ) : null}
+
+          {!teleprompterOpen && activePanel === "review" ? (
+            <BookPickupPanel
+              summary={bookPickups}
+              busyAction={busyAction}
+              selectedChapterId={selectedChapterId}
+              onLoad={() => void loadBookPickups()}
+              onOpen={(chapterId, start) => openOccurrence(chapterId, start)}
+              onIgnoreAll={(rows) => void decideBookPickups(rows, "ignored")}
+            />
           ) : null}
 
           {!teleprompterOpen && activePanel === "finish" ? (
@@ -3661,6 +3738,119 @@ function ChapterManager({
         </div>
       </section>
     </div>
+  );
+}
+
+const PICKUP_KIND_LABELS: Record<Pickup["kind"], string> = {
+  sub: "misread",
+  skip: "skipped",
+  insert: "added",
+  pause: "long pause",
+};
+
+function BookPickupPanel({
+  summary,
+  busyAction,
+  selectedChapterId,
+  onLoad,
+  onOpen,
+  onIgnoreAll,
+}: {
+  summary: BookPickupSummary | null;
+  busyAction: string | null;
+  selectedChapterId: string | null;
+  onLoad: () => void;
+  onOpen: (chapterId: string, start?: number) => void;
+  onIgnoreAll: (rows: BookPickupRow[]) => void;
+}) {
+  const busy = busyAction !== null;
+  return (
+    <section className="phase-panel" aria-labelledby="book-pickups-title">
+      <header className="panel-heading">
+        <div>
+          <p className="card-kicker">Whole book</p>
+          <h3 id="book-pickups-title">Everything still open</h3>
+        </div>
+        <button className="ghost-button" type="button" disabled={busy} onClick={onLoad}>
+          {busyAction === "book-pickups" ? "Reading…" : summary ? "Refresh" : "Load the book"}
+        </button>
+      </header>
+      <p className="panel-honesty">
+        Flags from every chapter you have checked, in reading order. Chapters you have not checked
+        yet are listed but have nothing to show.
+      </p>
+      {summary === null ? null : (
+        <div className="book-pickups">
+          <p className="scan-summary">
+            {summary.openCount} open · {summary.resolvedCount} handled
+            {summary.uncheckedChapters.length > 0
+              ? ` · not checked yet: ${summary.uncheckedChapters.map((chapter) => chapter.chapterTitle).join(", ")}`
+              : ""}
+          </p>
+          {summary.repeated.length > 0 ? (
+            <div className="scan-group">
+              <h4>The same word, more than once</h4>
+              <ul className="book-repeats">
+                {summary.repeated.map((group) => (
+                  <li key={group.word}>
+                    <span>
+                      “{group.word}” · {group.count} flags across {group.chapters}
+                      {group.chapters === 1 ? " chapter" : " chapters"}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onIgnoreAll(group.rows)}
+                    >
+                      Ignore all {group.count}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {summary.openCount === 0 ? (
+            <p className="result-empty">Nothing is open in the chapters you have checked.</p>
+          ) : (
+            <ul className="book-pickup-list">
+              {summary.open.map((row) => (
+                <li key={row.pickup.id} className={row.chapterId === selectedChapterId ? "current" : ""}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onOpen(row.chapterId, row.pickup.t_start)}
+                  >
+                    {row.chapterTitle} · {formatTime(row.pickup.t_start)}
+                  </button>
+                  <span className="book-pickup-kind">{PICKUP_KIND_LABELS[row.pickup.kind]}</span>
+                  <span>
+                    {row.pickup.expected ? `“${row.pickup.expected}”` : "nothing written"}
+                    {" → "}
+                    {row.pickup.heard ? `“${row.pickup.heard}”` : "nothing heard"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <ul className="book-progress">
+            {summary.chapters.map((chapter) => (
+              <li key={chapter.chapterId}>
+                <span>{chapter.chapterTitle}</span>
+                <span>
+                  {!chapter.hasAudio
+                    ? "no recording yet"
+                    : !chapter.checked
+                      ? "not checked yet"
+                      : chapter.open === 0
+                        ? "clear"
+                        : `${chapter.open} open`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
