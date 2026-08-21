@@ -26,6 +26,8 @@
     "verify:collab": "node scripts/verify-collab.mjs",
     "verify:proof": "jiti scripts/verify-proof.ts",
     "verify:book": "jiti scripts/verify-book.ts",
+    "design": "vite --host 127.0.0.1",
+    "design:shots": "electron scripts/design-shots.cjs",
     "audit:runtime": "node scripts/audit-runtime.cjs",
     "prepare:model": "node scripts/prepare-model.cjs",
     "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac",

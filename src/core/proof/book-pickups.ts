@@ -106,6 +106,54 @@ export function summarizeBookPickups(chapters: BookPickupChapter[]): BookPickupS
 }
 
 /**
+ * Fold one decision made elsewhere into an already-loaded worklist.
+ *
+ * The chapter list and the whole-book list are on screen together, so settling
+ * a flag in one has to settle it in the other. Re-reading every chapter from
+ * disk for a single click would be wasteful and would make the list flicker.
+ */
+export function reflectPickupDecision(
+  summary: BookPickupSummary,
+  pickup: Pickup,
+  chapter: { chapterId: string; chapterIndex: number; chapterTitle: string },
+): BookPickupSummary {
+  const wasOpen = summary.open.some((row) => row.pickup.id === pickup.id);
+  const isOpen = pickup.status === "open";
+  if (wasOpen === isOpen) {
+    // Same side of the line: only the stored copy of the flag changed.
+    const open = summary.open.map((row) => row.pickup.id === pickup.id ? { ...row, pickup } : row);
+    return { ...summary, open, repeated: repeatedWords(open) };
+  }
+
+  const open = summary.open.filter((row) => row.pickup.id !== pickup.id);
+  if (isOpen) {
+    open.push({ ...chapter, pickup });
+    open.sort((left, right) => left.chapterIndex - right.chapterIndex
+      || left.pickup.t_start - right.pickup.t_start);
+  }
+
+  const step = isOpen ? 1 : -1;
+  const byKind = { ...summary.byKind };
+  byKind[pickup.kind] = Math.max(0, byKind[pickup.kind] + step);
+
+  return {
+    ...summary,
+    open,
+    openCount: open.length,
+    resolvedCount: Math.max(0, summary.resolvedCount - step),
+    byKind,
+    repeated: repeatedWords(open),
+    chapters: summary.chapters.map((progress) => progress.chapterId === chapter.chapterId
+      ? {
+        ...progress,
+        open: Math.max(0, progress.open + step),
+        resolved: Math.max(0, progress.resolved - step),
+      }
+      : progress),
+  };
+}
+
+/**
  * Group open flags by the written word behind them. A name flagged in nine
  * places is one decision — fix the pronunciation, or filter the word — and
  * seeing the nine together is what makes that obvious.

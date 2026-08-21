@@ -30,3 +30,4 @@ vendor/models/*
 !vendor/models/README.md
 .qc-eval-cache/
 .live-run/
+design/shots/

@@ -116,6 +116,22 @@ the outside world against tools that were not written here, on real audio:
 and macOS `say`; the rest run anywhere the vendored ffmpeg does. `verify:packet`
 also needs Python with `openpyxl`.
 
+### Looking at the panels
+
+Reviewing an interface by reading JSX is guesswork. The design workbench renders
+the working panels with realistic content — a book mid-proof, a name read two
+ways, a pack that disagrees with yours — so a layout can be looked at:
+
+```bash
+npm run design                       # serves design/preview.html
+npm run design:shots                 # writes design/shots/*.png
+npm run design:shots -- --width 760  # the narrow column, for wrapping
+```
+
+Open `http://127.0.0.1:5173/design/preview.html` for every panel, add
+`?panel=pickups` for one, and `&open` to photograph menus open. The page is dev
+only and is not part of the production entry, so nothing there ships.
+
 For contributors testing a locally built whisper.cpp engine, point the desktop
 shell at it without changing the project format:
 

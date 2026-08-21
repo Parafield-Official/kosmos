@@ -17,6 +17,7 @@
   --bad: #8b3b31;
   --bad-soft: #f3d9d4;
   --shadow: 0 1px 0 rgba(26, 23, 20, 0.04), 0 10px 28px rgba(78, 50, 23, 0.05);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font-ui: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   color: var(--ink);
@@ -303,6 +304,120 @@ button {
   margin: 14px 0 0;
   color: var(--bad);
   font-size: 13px;
+}
+
+/* One button vocabulary for the working panels.
+ *
+ * `.action-button` is the quiet default, `.primary` is the one thing the panel
+ * wants you to do, `.danger` is the one you should have to aim at. Sizes and
+ * radii match the panel chrome so a row of buttons reads as a row, not a pile.
+ */
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: transform 140ms var(--ease-out), background 140ms ease, border-color 140ms ease;
+}
+
+.action-button.small {
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.action-button.primary {
+  border-color: var(--ink);
+  color: #fffaf4;
+  background: var(--ink);
+}
+
+.action-button.danger {
+  color: var(--bad);
+  border-color: #e6cec8;
+}
+
+/* For the suggested action inside a repeating row, where a filled button on
+ * every line would turn the list into a wall. */
+.action-button.accent {
+  border-color: transparent;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.action-button.plain {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .action-button:hover:not(:disabled) {
+    background: var(--stone);
+  }
+
+  .action-button.primary:hover:not(:disabled) {
+    background: #2c2723;
+  }
+
+  .action-button.accent:hover:not(:disabled) {
+    background: #e2ddff;
+  }
+
+  .action-button.danger:hover:not(:disabled) {
+    background: var(--bad-soft);
+  }
+}
+
+/* Press feedback: every button in the app should answer the click. */
+.action-button:active:not(:disabled),
+.primary-button:active:not(:disabled),
+.secondary-button:active:not(:disabled),
+.compact-button:active:not(:disabled),
+.table-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.action-button:focus-visible,
+.table-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-button {
+    transition: background 140ms ease;
+  }
+
+  .action-button:active:not(:disabled),
+  .primary-button:active:not(:disabled),
+  .secondary-button:active:not(:disabled),
+  .compact-button:active:not(:disabled),
+  .table-action:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .desk-card {
@@ -928,23 +1043,50 @@ button {
 .glossary-actions button,
 .collaboration-card > button,
 .status-actions button {
-  padding: 9px 11px;
-  border: 1px solid #bca38f;
-  border-radius: 8px;
-  color: #7b442b;
-  background: transparent;
+  justify-self: start;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--surface);
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 800;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
   white-space: nowrap;
+  transition: transform 140ms var(--ease-out), background 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .glossary-add-row button:hover:not(:disabled),
+  .glossary-actions button:hover:not(:disabled),
+  .collaboration-card > button:hover:not(:disabled),
+  .status-actions button:hover:not(:disabled) {
+    background: var(--stone);
+  }
+}
+
+.glossary-add-row button:active:not(:disabled),
+.glossary-actions button:active:not(:disabled),
+.collaboration-card > button:active:not(:disabled),
+.status-actions button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.glossary-add-row button:focus-visible,
+.glossary-actions button:focus-visible,
+.collaboration-card > button:focus-visible,
+.status-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .glossary-add-row button:disabled,
 .glossary-actions button:disabled,
 .collaboration-card > button:disabled,
 .status-actions button:disabled {
-  cursor: wait;
-  opacity: 0.5;
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .glossary-table-wrap {
@@ -985,12 +1127,24 @@ button {
 
 .glossary-actions {
   display: flex;
-  gap: 5px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 132px;
 }
 
-.glossary-actions button:last-child {
-  border-color: #d2b3aa;
-  color: #8b3b31;
+.glossary-table tr.edited td {
+  background: #fdfaef;
+}
+
+.glossary-needed {
+  display: block;
+  margin-top: 3px;
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .panel-empty {
@@ -1118,11 +1272,112 @@ button {
   list-style: none;
 }
 
-.people-list li,
+.note-list {
+  font-size: 12px;
+}
+
 .note-list li {
-  padding: 7px 8px;
-  border-radius: 6px;
-  background: #f3ede5;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+/* People are a fact about the book, not a form field: keep them out of the
+ * input rhythm above so nobody tries to type in them. */
+.people-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.people-list li {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--stone);
+  color: var(--muted);
+}
+
+/* One control, one value: which state this chapter is actually in. */
+.segmented {
+  display: inline-flex;
+  justify-self: start;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--stone);
+}
+
+.segmented button {
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  transition: transform 140ms var(--ease-out), background 140ms ease, color 140ms ease;
+}
+
+.segmented button.selected {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.segmented button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.segmented button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.segmented button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.segmented-note {
+  margin: 0 !important;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.pack-conflicts {
+  margin: 4px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #e8dcb4;
+  border-radius: 10px;
+  background: #fdfaef;
+}
+
+.pack-conflicts h5 {
+  margin: 0 0 6px;
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pack-conflicts p {
+  margin: 6px 0 0 !important;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+}
+
+.pack-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.collaboration-card.wide {
+  grid-column: 1 / -1;
 }
 
 .checkbox-label {
@@ -1442,42 +1697,166 @@ button {
   list-style: none;
 }
 
+/* Read the flag, then act on it: time, what happened, then the buttons. */
 .pickup-list li {
   display: grid;
-  grid-template-columns: minmax(0, auto) 42px minmax(0, 1fr) auto minmax(120px, auto);
+  grid-template-columns: 46px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 9px 10px;
-  border: 1px solid #ddd2c6;
-  border-radius: 9px;
-  background: #fffdf9;
-  font-size: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pickup-list li:hover {
+    border-color: #d8cec1;
+    background: #fffefb;
+  }
 }
 
 .pickup-list li.done,
 .pickup-list li.ignored {
-  opacity: 0.62;
+  background: transparent;
 }
 
-.pickup-list li button {
-  padding: 4px 7px;
-  border: 1px solid #cbbcaf;
-  border-radius: 6px;
-  color: #674b3a;
-  background: transparent;
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 800;
+.pickup-list li.done .pickup-reading,
+.pickup-list li.ignored .pickup-reading {
+  opacity: 0.7;
+}
+
+.pickup-reading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+
+.pickup-reading-note,
+.pickup-pause {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pickup-state {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pickup-state.done {
+  color: var(--good);
+}
+
+.pickup-note-text {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .pickup-actions {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 6px;
 }
 
-.pickup-actions button:last-child {
-  border-color: #b9977f;
-  color: #7b442b;
+/* A flag's rarer choices — mark fixed, silence a word for the whole book, leave
+ * a note — sit one click away so the common two stay easy to hit. */
+.pickup-more,
+.export-menu {
+  position: relative;
+}
+
+.pickup-more > summary,
+.export-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.pickup-more > summary::-webkit-details-marker,
+.export-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pickup-more > summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.pickup-more[open] > summary,
+.pickup-more > summary:hover {
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.pickup-more-menu,
+.export-menu-list {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 6px;
+  min-width: 260px;
+  width: max-content;
+  max-width: 340px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.pickup-more-menu .action-button,
+.pickup-more-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+
+.export-menu-item {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.export-menu-item strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.export-menu-item span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.export-menu-item:hover:not(:disabled) {
+  background: var(--stone);
+}
+
+.export-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .pickup-seat-filter {
@@ -1509,8 +1888,10 @@ button {
   font-size: 10px;
 }
 
-.pickup-list li > div {
-  min-width: 0;
+/* Only the words are allowed to run out of room. The action group next to them
+ * holds a menu that has to be able to escape the row. */
+.pickup-reading > .expected,
+.pickup-reading > .heard {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1538,30 +1919,22 @@ button {
   font-size: 9px;
 }
 
-.pickup-note {
-  min-width: 0;
-}
-
-.pickup-note summary {
-  color: #806e60;
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 750;
-}
-
 .pickup-note-editor {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
 }
 
 .pickup-note-editor input {
   min-width: 0;
-  width: 150px;
-  padding: 5px 6px;
-  border: 1px solid #d0c4b8;
-  border-radius: 5px;
-  font-size: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 12px;
 }
 
 .traffic-light {
@@ -1661,63 +2034,171 @@ button {
   list-style: none;
 }
 
+/* Counts worth reading at a glance, not buried in a sentence. */
+.book-tally {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.book-tally span {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: var(--stone);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.book-tally strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.book-tally .quiet {
+  background: transparent;
+  border: 1px dashed var(--line);
+}
+
+.book-repeat-block,
+.book-progress-block {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.book-repeat-block h4,
+.book-progress-block h4 {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.book-repeat-block p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .book-repeats li {
   display: flex;
   gap: 10px;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
 }
 
-.book-repeats li button,
-.book-pickup-list li button {
-  border: 1px solid #e0d7cd;
-  border-radius: 7px;
-  padding: 4px 8px;
-  background: #fffdfa;
-  color: #3f3630;
-  font: inherit;
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
+.book-repeats li strong {
+  font-weight: 650;
 }
 
 .book-pickup-list {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 
-.book-pickup-list li {
+/* The whole row jumps to the flag, so the whole row is the button. */
+.book-pickup-open {
   display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(120px, auto) 72px 1fr;
+  grid-template-columns: minmax(140px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: transform 140ms var(--ease-out), background 140ms ease, border-color 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .book-pickup-open:hover:not(:disabled) {
+    border-color: var(--line);
+    background: var(--surface);
+  }
+}
+
+.book-pickup-open:active:not(:disabled) {
+  transform: scale(0.995);
+}
+
+.book-pickup-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.book-pickup-where {
+  display: flex;
   align-items: baseline;
-  padding: 4px 6px;
-  border-radius: 8px;
-  font-size: 12px;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 600;
 }
 
-.book-pickup-list li.current {
-  background: #f6efe6;
-}
-
-.book-pickup-kind {
-  color: #8a7d72;
+.book-pickup-where time {
+  color: var(--faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
-  text-transform: lowercase;
 }
 
-.book-progress {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid #ece4da;
-  font-size: 12px;
+/* The chapter you are working in, marked without shouting. */
+.book-pickup-list li.current .book-pickup-open {
+  border-color: var(--line);
+  background: var(--surface);
 }
 
-.book-progress li {
+.book-progress li button {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  color: #766a60;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .book-progress li button:hover:not(:disabled) {
+    border-color: var(--line);
+    background: var(--surface);
+  }
+}
+
+.book-progress li button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.progress-state {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.progress-state.clear {
+  color: var(--good);
+}
+
+.progress-state.open {
+  color: var(--warn);
+}
+
+.progress-state.todo {
+  color: var(--accent-ink);
 }
 
 .scan-controls {
@@ -1728,29 +2209,107 @@ button {
 
 .scan-controls input {
   flex: 1;
+  max-width: 420px;
   padding: 9px 11px;
-  border: 1px solid #e0d7cd;
+  border: 1px solid var(--line);
   border-radius: 9px;
-  background: #fffdfa;
+  background: var(--surface);
   font: inherit;
   font-size: 13px;
 }
 
-.scan-summary {
-  margin: 14px 0 6px;
-  color: #766a60;
+.scan-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--faint);
   font-size: 12px;
+}
+
+/* Whether the name is read one way or three is the finding; say it plainly. */
+.scan-verdict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.scan-verdict.split {
+  border-color: #e8dcb4;
+  background: #fdfaef;
+}
+
+.scan-verdict.steady {
+  border-color: #cfe3d3;
+  background: #f6fbf7;
+}
+
+.scan-verdict > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.scan-verdict strong {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.scan-verdict span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scan-guide-chip {
+  display: inline-flex;
+  gap: 5px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: var(--stone);
+  white-space: nowrap;
+}
+
+.scan-guide-chip strong {
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .scan-group {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid #ece4da;
+  border-top: 1px solid var(--line);
 }
 
 .scan-group h4 {
-  margin: 0 0 6px;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.scan-group.quiet h4 {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.scan-match {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--good-soft);
+  color: var(--good);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scan-group ul {
@@ -1819,13 +2378,29 @@ button {
 }
 
 .settings-word-filter li button {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
   border: 0;
   border-radius: 999px;
-  padding: 2px 7px;
-  background: #f0e7dc;
-  color: #6d6259;
-  font-size: 10px;
+  background: var(--stone);
+  color: var(--muted);
   cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.settings-word-filter li button:hover {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.settings-word-filter li button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .check-dot.unspecified {
@@ -1834,27 +2409,113 @@ button {
 }
 
 .meter-target-select {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: #8b7f74;
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+  color: var(--faint);
   font-size: 10px;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .meter-target-select select {
-  flex: 1;
-  padding: 6px 8px;
-  border: 1px solid #e0d7cd;
-  border-radius: 7px;
-  background: #fffdfa;
-  color: #3f3630;
+  min-width: 180px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0;
   text-transform: none;
+}
+
+/* The answer, before the evidence. */
+.meter-verdict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.meter-verdict.green {
+  border-color: #cfe3d3;
+  background: #f6fbf7;
+}
+
+.meter-verdict.yellow {
+  border-color: #e8dcb4;
+  background: #fdfaef;
+}
+
+.meter-verdict.red {
+  border-color: #e8cec8;
+  background: #fdf6f4;
+}
+
+.meter-verdict > div {
+  display: grid;
+  gap: 6px;
+}
+
+.meter-verdict strong {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.meter-verdict > div > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.meter-trouble {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.meter-trouble li strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.meter-trouble li.warn {
+  color: var(--warn);
+}
+
+.meter-trouble li.fail {
+  color: var(--bad);
+}
+
+.meter-details {
+  margin-top: 14px;
+}
+
+.meter-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.meter-details > summary:hover {
+  color: var(--ink);
 }
 
 .check-dot {
@@ -3297,36 +3958,27 @@ button {
     flex-wrap: wrap;
   }
 
-  .pickup-actions {
-    flex: 1 1 100%;
+  .pickup-list time {
     order: 1;
   }
 
-  .pickup-list time {
+  .pickup-reading {
+    flex: 1 1 180px;
     order: 2;
   }
 
-  .pickup-list li > div {
-    flex: 1 1 180px;
+  .pickup-list .kind-badge {
     order: 3;
   }
 
-  .pickup-list .kind-badge {
+  .pickup-actions {
+    flex: 1 1 100%;
     order: 4;
   }
 
-  .pickup-note {
+  .pickup-note-text {
     flex: 1 1 100%;
     order: 5;
-  }
-
-  .pickup-note-editor {
-    flex-wrap: wrap;
-  }
-
-  .pickup-note-editor input {
-    flex: 1 1 180px;
-    width: auto;
   }
 }
 

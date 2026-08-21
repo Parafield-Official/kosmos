@@ -17,9 +17,11 @@ import type { SilenceRange } from "../core/proof/silence";
 import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
 import type { MergeConflict } from "../core/sharing/merge";
 import {
+  reflectPickupDecision,
   summarizeBookPickups,
   type BookPickupRow,
   type BookPickupSummary,
+  type ChapterProgress,
 } from "../core/proof/book-pickups";
 import { findWordOccurrences, type WordOccurrence } from "../core/proof/occurrences";
 import {
@@ -858,6 +860,18 @@ function ProjectHome({
         });
         onChange(saved);
       }
+      // The whole-book list sits under this one on the same screen, so a flag
+      // must not still read as open there after being settled here.
+      const decided = pickups.find((candidate) => candidate.id === pickup.id);
+      if (changes.status && decided) {
+        setBookPickups((current) => current
+          ? reflectPickupDecision(current, decided, {
+            chapterId: selectedChapter.id,
+            chapterIndex: selectedChapter.index,
+            chapterTitle: selectedChapter.title,
+          })
+          : current);
+      }
       setNotice(`Pickup ${changes.status ? changes.status : "note"} saved.`);
     });
   }
@@ -1180,8 +1194,11 @@ function ProjectHome({
     await loadBookPickups();
   }
 
-  async function scanBookForWord() {
-    const word = scanWord.trim();
+  async function scanBookForWord(candidate?: string) {
+    const word = (candidate ?? scanWord).trim();
+    if (candidate !== undefined) {
+      setScanWord(candidate);
+    }
     if (word === "") {
       setNotice("Type a word or a short phrase to scan for.");
       return;
@@ -1283,6 +1300,29 @@ function ProjectHome({
       await persistGlossary(glossary);
       setGlossarySpelling("");
       setGlossaryRespell("");
+    });
+  }
+
+  /**
+   * A scan that finds a name read two ways ends in one decision: write the
+   * pronunciation down. Do it from the scan, without retyping the word.
+   */
+  async function addScannedWordToGuide(word: string, heard: string) {
+    const trimmed = word.trim();
+    if (trimmed === "") {
+      return;
+    }
+    const existing = glossaryEntryFor(project.glossary ?? [], trimmed);
+    await runAction("glossary-add", async () => {
+      const glossary = existing
+        ? renameGlossaryEntry(project.glossary ?? [], existing.id, existing.spelling, heard, existing.voice_note ?? "")
+        : addGlossaryEntry(project.glossary ?? [], trimmed, { respell: heard });
+      await persistGlossary(glossary);
+      setNotice(
+        heard.trim() === ""
+          ? `“${trimmed}” is in the pronunciation guide. Add the respelling in Words.`
+          : `“${trimmed}” is in the pronunciation guide as “${heard}”. Edit it in Words.`,
+      );
     });
   }
 
@@ -1929,6 +1969,7 @@ function ProjectHome({
               summary={bookPickups}
               busyAction={busyAction}
               selectedChapterId={selectedChapterId}
+              canRead={Boolean(window.boothDesk) && folder !== "(browser preview)"}
               onLoad={() => void loadBookPickups()}
               onOpen={(chapterId, start) => openOccurrence(chapterId, start)}
               onIgnoreAll={(rows) => void decideBookPickups(rows, "ignored")}
@@ -1980,10 +2021,14 @@ function ProjectHome({
             <BookWordScanner
               word={scanWord}
               report={scanReport}
+              guide={glossaryEntryFor(project.glossary ?? [], scanReport?.word ?? scanWord)}
+              suggestions={scanSuggestions(project.glossary ?? [])}
               busyAction={busyAction}
               onWord={setScanWord}
               onScan={() => void scanBookForWord()}
+              onPickSuggestion={(candidate) => void scanBookForWord(candidate)}
               onOpenOccurrence={(chapterId, start) => openOccurrence(chapterId, start)}
+              onAddToGuide={(entryWord, heard) => void addScannedWordToGuide(entryWord, heard)}
             />
           ) : null}
 
@@ -3867,10 +3912,11 @@ const PICKUP_KIND_LABELS: Record<Pickup["kind"], string> = {
   pause: "long pause",
 };
 
-function BookPickupPanel({
+export function BookPickupPanel({
   summary,
   busyAction,
   selectedChapterId,
+  canRead,
   onLoad,
   onOpen,
   onIgnoreAll,
@@ -3878,56 +3924,88 @@ function BookPickupPanel({
   summary: BookPickupSummary | null;
   busyAction: string | null;
   selectedChapterId: string | null;
+  /** False in the browser preview, where chapters cannot be read from disk. */
+  canRead: boolean;
   onLoad: () => void;
   onOpen: (chapterId: string, start?: number) => void;
   onIgnoreAll: (rows: BookPickupRow[]) => void;
 }) {
   const busy = busyAction !== null;
+  const loading = busyAction === "book-pickups";
+  const requested = useRef(false);
+
+  // Arriving at a panel called "everything still open" and finding it empty
+  // until you press a button is a riddle. Read the book once, on arrival.
+  useEffect(() => {
+    if (canRead && summary === null && !requested.current) {
+      requested.current = true;
+      onLoad();
+    }
+  }, [canRead, onLoad, summary]);
+
   return (
-    <section className="phase-panel" aria-labelledby="book-pickups-title">
+    <section className="phase-panel book-panel" aria-labelledby="book-pickups-title">
       <header className="panel-heading">
         <div>
           <p className="card-kicker">Whole book</p>
           <h3 id="book-pickups-title">Everything still open</h3>
         </div>
-        <button className="ghost-button" type="button" disabled={busy} onClick={onLoad}>
-          {busyAction === "book-pickups" ? "Reading…" : summary ? "Refresh" : "Load the book"}
+        <button className="action-button" type="button" disabled={busy || !canRead} onClick={onLoad}>
+          {loading ? "Reading…" : "Refresh"}
         </button>
       </header>
       <p className="panel-honesty">
         Flags from every chapter you have checked, in reading order. Chapters you have not checked
         yet are listed but have nothing to show.
       </p>
-      {summary === null ? null : (
+      {summary === null ? (
+        <div className="panel-empty">
+          {!canRead
+            ? "The whole-book list needs the desktop app, where the chapters live."
+            : loading
+              ? "Reading every chapter…"
+              : "Press Refresh to read every chapter."}
+        </div>
+      ) : (
         <div className="book-pickups">
-          <p className="scan-summary">
-            {summary.openCount} open · {summary.resolvedCount} handled
-            {summary.uncheckedChapters.length > 0
-              ? ` · not checked yet: ${summary.uncheckedChapters.map((chapter) => chapter.chapterTitle).join(", ")}`
-              : ""}
-          </p>
+          <div className="book-tally">
+            <span><strong>{summary.openCount}</strong> still open</span>
+            <span><strong>{summary.resolvedCount}</strong> handled</span>
+            {summary.uncheckedChapters.length > 0 ? (
+              <span className="quiet">
+                <strong>{summary.uncheckedChapters.length}</strong>
+                {summary.uncheckedChapters.length === 1 ? " chapter" : " chapters"} recorded but not checked
+              </span>
+            ) : null}
+          </div>
+
           {summary.repeated.length > 0 ? (
-            <div className="scan-group">
-              <h4>The same word, more than once</h4>
+            <div className="book-repeat-block">
+              <h4>One word, flagged again and again</h4>
+              <p>Usually one decision rather than {summary.repeated[0].count} separate ones.</p>
               <ul className="book-repeats">
                 {summary.repeated.map((group) => (
                   <li key={group.word}>
                     <span>
-                      “{group.word}” · {group.count} flags across {group.chapters}
+                      <strong>{group.word}</strong>
+                      {" · "}
+                      {group.count} places in {group.chapters}
                       {group.chapters === 1 ? " chapter" : " chapters"}
                     </span>
                     <button
+                      className="action-button small"
                       type="button"
                       disabled={busy}
                       onClick={() => onIgnoreAll(group.rows)}
                     >
-                      Ignore all {group.count}
+                      Fine as read in all {group.count}
                     </button>
                   </li>
                 ))}
               </ul>
             </div>
           ) : null}
+
           {summary.openCount === 0 ? (
             <p className="result-empty">Nothing is open in the chapters you have checked.</p>
           ) : (
@@ -3935,59 +4013,93 @@ function BookPickupPanel({
               {summary.open.map((row) => (
                 <li key={row.pickup.id} className={row.chapterId === selectedChapterId ? "current" : ""}>
                   <button
+                    className="book-pickup-open"
                     type="button"
                     disabled={busy}
                     onClick={() => onOpen(row.chapterId, row.pickup.t_start)}
                   >
-                    {row.chapterTitle} · {formatTime(row.pickup.t_start)}
+                    <span className="book-pickup-where">
+                      {row.chapterTitle}
+                      <time>{formatTime(row.pickup.t_start)}</time>
+                    </span>
+                    <span className="pickup-reading">{pickupReading(row.pickup)}</span>
+                    <span className="kind-badge">{PICKUP_KIND_LABELS[row.pickup.kind]}</span>
                   </button>
-                  <span className="book-pickup-kind">{PICKUP_KIND_LABELS[row.pickup.kind]}</span>
-                  <span>
-                    {row.pickup.expected ? `“${row.pickup.expected}”` : "nothing written"}
-                    {" → "}
-                    {row.pickup.heard ? `“${row.pickup.heard}”` : "nothing heard"}
-                  </span>
                 </li>
               ))}
             </ul>
           )}
-          <ul className="book-progress">
-            {summary.chapters.map((chapter) => (
-              <li key={chapter.chapterId}>
-                <span>{chapter.chapterTitle}</span>
-                <span>
-                  {!chapter.hasAudio
-                    ? "no recording yet"
-                    : !chapter.checked
-                      ? "not checked yet"
-                      : chapter.open === 0
-                        ? "clear"
-                        : `${chapter.open} open`}
-                </span>
-              </li>
-            ))}
-          </ul>
+
+          <div className="book-progress-block">
+            <h4>Chapter by chapter</h4>
+            <ul className="book-progress">
+              {summary.chapters.map((chapter) => (
+                <li key={chapter.chapterId}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onOpen(chapter.chapterId)}
+                  >
+                    <span>{chapter.chapterTitle}</span>
+                    <span className={chapterProgressTone(chapter)}>
+                      {!chapter.hasAudio
+                        ? "no recording yet"
+                        : !chapter.checked
+                          ? "check it against the page"
+                          : chapter.open === 0
+                            ? "clear"
+                            : `${chapter.open} open`}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
     </section>
   );
 }
 
-function BookWordScanner({
+function chapterProgressTone(chapter: ChapterProgress): string {
+  if (!chapter.hasAudio) {
+    return "progress-state waiting";
+  }
+  if (!chapter.checked) {
+    return "progress-state todo";
+  }
+  return chapter.open === 0 ? "progress-state clear" : "progress-state open";
+}
+
+export function BookWordScanner({
   word,
   report,
+  guide,
+  suggestions,
   busyAction,
   onWord,
   onScan,
   onOpenOccurrence,
+  onAddToGuide,
+  onPickSuggestion,
 }: {
   word: string;
   report: BookScanReport | null;
+  /** The pronunciation this book already agreed on, if the word is in the guide. */
+  guide: GlossaryEntry | null;
+  /** Names worth checking, so the search box is not a blank page. */
+  suggestions: string[];
   busyAction: string | null;
   onWord: (value: string) => void;
   onScan: () => void;
   onOpenOccurrence: (chapterId: string, start?: number) => void;
+  onAddToGuide: (word: string, respell: string) => void;
+  onPickSuggestion: (word: string) => void;
 }) {
+  const spoken = report?.readings.filter((group) => group.occurrences[0]?.readingKey !== "#no-audio") ?? [];
+  const unchecked = report?.readings.filter((group) => group.occurrences[0]?.readingKey === "#no-audio") ?? [];
+  const agreed = guide?.respell?.trim() ? plainLetters(guide.respell) : "";
+
   return (
     <section className="phase-panel" aria-labelledby="scan-title">
       <header className="panel-heading">
@@ -3995,11 +4107,6 @@ function BookWordScanner({
           <p className="card-kicker">Consistency</p>
           <h3 id="scan-title">Scan the whole book</h3>
         </div>
-        {report ? (
-          <span className={`status-pill ${report.consistent ? "attached" : ""}`}>
-            {report.consistent ? "Read the same way" : "Read more than one way"}
-          </span>
-        ) : null}
       </header>
       <p className="panel-honesty">
         Find every place a name appears and compare how it was read each time. Only chapters you have
@@ -4009,7 +4116,7 @@ function BookWordScanner({
         <input
           type="search"
           value={word}
-          placeholder="Leominster"
+          placeholder="A name or phrase, such as Leominster"
           aria-label="Word or phrase to scan for"
           onChange={(event) => onWord(event.target.value)}
           onKeyDown={(event) => {
@@ -4019,37 +4126,114 @@ function BookWordScanner({
             }
           }}
         />
-        <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onScan}>
-          {busyAction === "scan-occurrences" ? "Scanning…" : "Scan"}
+        <button
+          className="action-button primary"
+          type="button"
+          disabled={busyAction !== null || word.trim().length === 0}
+          onClick={onScan}
+        >
+          {busyAction === "scan-occurrences" ? "Scanning…" : "Scan the book"}
         </button>
       </div>
+      {suggestions.length > 0 ? (
+        <div className="scan-suggestions">
+          <span>Names in your guide:</span>
+          {suggestions.map((candidate) => (
+            <button
+              key={candidate}
+              className="action-button small"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => onPickSuggestion(candidate)}
+            >
+              {candidate}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {report === null ? null : report.totalOccurrences === 0 ? (
         <p className="result-empty">“{report.word}” does not appear in this book.</p>
       ) : (
         <div className="scan-results">
-          <p className="scan-summary">
-            {report.totalOccurrences} {report.totalOccurrences === 1 ? "occurrence" : "occurrences"},
-            {" "}{report.checkedOccurrences} checked against audio
-            {report.chaptersWithoutAudio.length > 0
-              ? `. Not yet checked: ${report.chaptersWithoutAudio.join(", ")}.`
-              : "."}
-          </p>
-          {report.readings.map((group) => (
-            <div className="scan-group" key={group.heard}>
+          {/* Say what was found before listing where. */}
+          <div className={`scan-verdict ${report.consistent ? "steady" : "split"}`}>
+            <div>
+              <strong>
+                {report.checkedOccurrences === 0
+                  ? `“${report.word}” has not been read on tape yet.`
+                  : report.consistent
+                    ? `“${report.word}” is read the same way every time.`
+                    : `“${report.word}” is read ${spoken.length} different ways.`}
+              </strong>
+              <span>
+                {report.totalOccurrences} {report.totalOccurrences === 1 ? "place" : "places"} in the
+                manuscript, {report.checkedOccurrences} checked against audio
+                {report.chaptersWithoutAudio.length > 0
+                  ? `. Still to check: ${report.chaptersWithoutAudio.join(", ")}.`
+                  : "."}
+              </span>
+            </div>
+            <div className="scan-verdict-guide">
+              {guide?.respell?.trim() ? (
+                <span className="scan-guide-chip">Guide says <strong>{guide.respell}</strong></span>
+              ) : (
+                <button
+                  className="action-button small"
+                  type="button"
+                  disabled={busyAction !== null}
+                  onClick={() => onAddToGuide(report.word, spoken[0]?.heard ?? "")}
+                >
+                  {guide ? "Set a respelling" : "Add to the pronunciation guide"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {spoken.map((group) => {
+            const matchesGuide = agreed !== "" && plainLetters(group.heard) === agreed;
+            return (
+              <div className="scan-group" key={group.heard}>
+                <h4>
+                  Heard as “{group.heard}” · {group.count}
+                  {group.count === 1 ? " time" : " times"}
+                  {matchesGuide ? <span className="scan-match">matches your guide</span> : null}
+                </h4>
+                <ul>
+                  {group.occurrences.map((occurrence) => (
+                    <li key={`${occurrence.chapterId}-${occurrence.offset}`}>
+                      <button
+                        className="action-button small"
+                        type="button"
+                        disabled={busyAction !== null}
+                        onClick={() => onOpenOccurrence(occurrence.chapterId, occurrence.start)}
+                      >
+                        {occurrence.start === undefined ? "Open" : "Listen"} · {occurrence.chapterTitle}
+                        {occurrence.start === undefined ? "" : ` ${formatTime(occurrence.start)}`}
+                      </button>
+                      <span>{occurrence.context}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+
+          {unchecked.map((group) => (
+            <div className="scan-group quiet" key="unchecked">
               <h4>
-                Heard as “{group.heard}” · {group.count}
-                {group.count === 1 ? " time" : " times"}
+                Not checked against audio yet · {group.count}
+                {group.count === 1 ? " place" : " places"}
               </h4>
               <ul>
                 {group.occurrences.map((occurrence) => (
                   <li key={`${occurrence.chapterId}-${occurrence.offset}`}>
                     <button
+                      className="action-button small"
                       type="button"
                       disabled={busyAction !== null}
                       onClick={() => onOpenOccurrence(occurrence.chapterId, occurrence.start)}
                     >
-                      {occurrence.chapterTitle}
-                      {occurrence.start === undefined ? "" : ` · ${formatTime(occurrence.start)}`}
+                      Open · {occurrence.chapterTitle}
                     </button>
                     <span>{occurrence.context}</span>
                   </li>
@@ -4063,7 +4247,28 @@ function BookWordScanner({
   );
 }
 
-function GlossaryPanel({
+/** The names most worth a consistency pass: the ones said most often. */
+function scanSuggestions(glossary: GlossaryEntry[]): string[] {
+  return [...glossary]
+    .sort((left, right) => right.frequency - left.frequency)
+    .slice(0, 6)
+    .map((entry) => entry.spelling);
+}
+
+/** Letters only, so “LEM-ster” and “Lemster” can be compared. */
+function plainLetters(value: string): string {
+  return value.toLocaleLowerCase("en-US").replace(/[^a-z]/g, "");
+}
+
+function glossaryEntryFor(glossary: GlossaryEntry[], word: string): GlossaryEntry | null {
+  const wanted = word.trim().toLocaleLowerCase("en-US");
+  if (wanted === "") {
+    return null;
+  }
+  return glossary.find((entry) => entry.spelling.trim().toLocaleLowerCase("en-US") === wanted) ?? null;
+}
+
+export function GlossaryPanel({
   glossary,
   spelling,
   respell,
@@ -4105,32 +4310,50 @@ function GlossaryPanel({
           <h3 id="glossary-panel-title">Pronunciation guide</h3>
         </div>
         <div className="panel-heading-actions">
-          <span className="result-count">
-            {glossary.length} entries{undecided > 0 ? ` · ${undecided} unsaid` : ""}
-          </span>
-          <button type="button" className="table-action" disabled={busyAction !== null} onClick={onRefresh}>Refresh suggestions</button>
+          {undecided > 0 ? (
+            <button
+              type="button"
+              className="action-button primary"
+              disabled={busyAction !== null}
+              onClick={onSuggestRespells}
+            >
+              {busyAction === "glossary-respells"
+                ? "Looking them up…"
+                : `Fill ${undecided} from the dictionary`}
+            </button>
+          ) : null}
           <button
             type="button"
-            className="table-action"
-            disabled={busyAction !== null || undecided === 0}
-            onClick={onSuggestRespells}
-          >
-            Fill from dictionary
-          </button>
-          <button
-            type="button"
-            className="table-action"
+            className="action-button"
             disabled={busyAction !== null || glossary.length === 0}
             onClick={onExportGuide}
           >
             Export voice guide
           </button>
+          <details className="pickup-more">
+            <summary>More</summary>
+            <div className="pickup-more-menu">
+              <button type="button" className="action-button small plain" disabled={busyAction !== null} onClick={onRefresh}>
+                Look for new names in the manuscript
+              </button>
+            </div>
+          </details>
         </div>
       </header>
       <p className="panel-honesty">
         Add names and tricky words so everyone says them the same way. The voice note is for
         how a name should sound — accent, age, attitude — and rides along to the narrator.
       </p>
+      {glossary.length > 0 ? (
+        <div className="book-tally">
+          <span><strong>{glossary.length}</strong> {glossary.length === 1 ? "word" : "words"}</span>
+          {undecided > 0 ? (
+            <span className="quiet"><strong>{undecided}</strong> still without a respelling</span>
+          ) : (
+            <span><strong>Every word</strong> has a respelling</span>
+          )}
+        </div>
+      ) : null}
 
       <div className="glossary-add-row">
         <label>
@@ -4200,39 +4423,99 @@ function GlossaryRow({
     setVoiceNote(entry.voice_note ?? "");
   }, [entry.spelling, entry.respell, entry.voice_note]);
 
+  const edited = spelling !== entry.spelling
+    || respell !== (entry.respell ?? "")
+    || voiceNote !== (entry.voice_note ?? "");
+  const save = () => {
+    if (edited && spelling.trim().length > 0) {
+      onRename(entry.id, spelling, respell, voiceNote);
+    }
+  };
+  const onEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      save();
+    }
+  };
+
   return (
-    <tr>
-      <td><input value={spelling} onChange={(event) => setSpelling(event.target.value)} /></td>
-      <td><input value={respell} onChange={(event) => setRespell(event.target.value)} placeholder="Human pronunciation" /></td>
+    <tr className={edited ? "edited" : ""}>
+      <td>
+        <input
+          value={spelling}
+          aria-label="Spelling"
+          onChange={(event) => setSpelling(event.target.value)}
+          onKeyDown={onEnter}
+        />
+      </td>
+      <td>
+        <input
+          value={respell}
+          aria-label="Respelling"
+          onChange={(event) => setRespell(event.target.value)}
+          onKeyDown={onEnter}
+        />
+        {respell.trim() === "" ? <span className="glossary-needed">needs one</span> : null}
+      </td>
       <td>
         <input
           value={voiceNote}
+          aria-label="Voice note"
           onChange={(event) => setVoiceNote(event.target.value)}
-          placeholder="Clipped, northern, wry"
+          onKeyDown={onEnter}
         />
       </td>
       <td>{entry.frequency}</td>
-      <td>{entry.source}</td>
+      <td>{entry.source === "auto" ? "from the book" : "added by hand"}</td>
       <td className="glossary-actions">
-        <button
-          type="button"
-          disabled={busy || spelling.trim().length === 0}
-          onClick={() => onRename(entry.id, spelling, respell, voiceNote)}
-        >
-          Save
-        </button>
-        <button type="button" disabled={busy} onClick={() => onAttachClip(entry.id)}>
-          {entry.clip_path ? "Replace clip" : "Add clip"}
-        </button>
-        <button type="button" disabled={busy || !entry.clip_path} onClick={() => onPlayClip(entry)}>Play</button>
-        <button type="button" disabled={busy} onClick={() => onRecordClip(entry)}>Record clip</button>
-        <button type="button" disabled={busy} onClick={() => onDelete(entry.id)}>Delete</button>
+        {/* Nothing to save, nothing to show: the button appears with the edit. */}
+        {edited ? (
+          <button
+            type="button"
+            className="action-button small accent"
+            disabled={busy || spelling.trim().length === 0}
+            onClick={save}
+          >
+            Save
+          </button>
+        ) : null}
+        {entry.clip_path ? (
+          <button className="action-button small" type="button" disabled={busy} onClick={() => onPlayClip(entry)}>
+            Play
+          </button>
+        ) : null}
+        <details className="pickup-more">
+          <summary aria-label={`More for ${entry.spelling}`}>More</summary>
+          <div className="pickup-more-menu">
+            <button className="action-button small plain" type="button" disabled={busy} onClick={() => onRecordClip(entry)}>
+              Record how it sounds
+            </button>
+            <button className="action-button small plain" type="button" disabled={busy} onClick={() => onAttachClip(entry.id)}>
+              {entry.clip_path ? "Replace the clip from a file" : "Add a clip from a file"}
+            </button>
+            <button className="action-button small danger" type="button" disabled={busy} onClick={() => onDelete(entry.id)}>
+              Remove “{entry.spelling}”
+            </button>
+          </div>
+        </details>
       </td>
     </tr>
   );
 }
 
-function SettingsPanel({
+const CONFIDENCE_CHOICES: Record<string, number> = { every: 0, balanced: 0.35, strict: 0.6 };
+type ConfidenceChoice = "every" | "balanced" | "strict" | "custom";
+
+function confidenceChoice(value: number): ConfidenceChoice {
+  for (const [name, floor] of Object.entries(CONFIDENCE_CHOICES)) {
+    if (Math.abs(value - floor) < 0.001) {
+      return name as ConfidenceChoice;
+    }
+  }
+  return "custom";
+}
+
+export function SettingsPanel({
   settings,
   busyAction,
   onChange,
@@ -4251,7 +4534,9 @@ function SettingsPanel({
           <p className="card-kicker">Book preferences</p>
           <h3 id="settings-title">Reading and audio</h3>
         </div>
-        <span className="status-pill attached">Saved</span>
+        <span className={`status-pill ${dirty ? "" : "attached"}`}>
+          {dirty ? "Not saved yet" : "Saved"}
+        </span>
       </header>
       <p className="panel-honesty">
         Adjust how chapters are checked and how the teleprompter looks.
@@ -4272,9 +4557,28 @@ function SettingsPanel({
           <small>Only a mid-sentence gap longer than this is listed as a pause pickup.</small>
         </label>
         <label>
-          Ignore below confidence
-          <input type="number" min="0" max="0.9" step="0.05" value={draft.proof_confidence_floor} onChange={(event) => setDraft({ ...draft, proof_confidence_floor: Number(event.target.value) })} />
-          <small>Skips word alerts the recogniser was this unsure about, since it probably misheard rather than you misreading. Set 0 to keep every alert. Alerts are always kept when the engine reports no confidence.</small>
+          When the recogniser is unsure
+          {/* A raw 0–0.9 threshold means nothing to a narrator; the three
+            * choices people actually want do. Anything else stays as typed. */}
+          <select
+            value={confidenceChoice(draft.proof_confidence_floor)}
+            onChange={(event) => setDraft({
+              ...draft,
+              proof_confidence_floor: CONFIDENCE_CHOICES[event.target.value]
+                ?? draft.proof_confidence_floor,
+            })}
+          >
+            <option value="every">Show me every alert</option>
+            <option value="balanced">Skip the shakiest alerts · recommended</option>
+            <option value="strict">Only alerts it is confident about</option>
+            {confidenceChoice(draft.proof_confidence_floor) === "custom" ? (
+              <option value="custom">Custom · {draft.proof_confidence_floor.toFixed(2)}</option>
+            ) : null}
+          </select>
+          <small>
+            A shaky alert usually means the recogniser misheard, not that you misread. Alerts are
+            always kept when the engine reports no confidence at all.
+          </small>
         </label>
         <label>
           ACX target RMS (dBFS)
@@ -4282,9 +4586,9 @@ function SettingsPanel({
           <small>Default −20 dBFS; the measured pass window remains −23 to −18.</small>
         </label>
         <div className="settings-word-filter">
-          <span className="settings-word-filter-label">Words filtered for the whole book</span>
+          <span className="settings-word-filter-label">Words this book never flags</span>
           {draft.suppressed_words.length === 0 ? (
-            <small>None yet. Use “Ignore everywhere” on a pickup to add one.</small>
+            <small>None yet. A pickup’s “Never flag this word” adds one.</small>
           ) : (
             <ul>
               {draft.suppressed_words.map((word) => (
@@ -4292,19 +4596,20 @@ function SettingsPanel({
                   <span>{word}</span>
                   <button
                     type="button"
-                    aria-label={`Stop filtering ${word}`}
+                    title={`Flag ${word} again`}
+                    aria-label={`Flag ${word} again`}
                     onClick={() => setDraft({
                       ...draft,
                       suppressed_words: draft.suppressed_words.filter((candidate) => candidate !== word),
                     })}
                   >
-                    Remove
+                    ×
                   </button>
                 </li>
               ))}
             </ul>
           )}
-          <small>Filtered words are skipped when a chapter is checked. Re-check a chapter to apply a change there.</small>
+          <small>Skipped when a chapter is checked. Re-check a chapter to apply a change there.</small>
         </div>
         <label>
           Teleprompter theme
@@ -4331,16 +4636,18 @@ function SettingsPanel({
         </div>
       </div>
       <div className="settings-actions">
-        <button className="primary-button" type="button" disabled={!dirty || busyAction !== null} onClick={() => onChange(draft)}>
+        <button className="action-button primary" type="button" disabled={!dirty || busyAction !== null} onClick={() => onChange(draft)}>
           {busyAction === "settings" ? "Saving…" : "Save settings"}
         </button>
-        <button className="table-action" type="button" disabled={!dirty || busyAction !== null} onClick={() => setDraft(settings)}>Discard changes</button>
+        <button className="action-button" type="button" disabled={!dirty || busyAction !== null} onClick={() => setDraft(settings)}>
+          Discard changes
+        </button>
       </div>
     </section>
   );
 }
 
-function CollaborationPanel({
+export function CollaborationPanel({
   project,
   identity,
   identityLoaded,
@@ -4446,7 +4753,7 @@ function CollaborationPanel({
         </div>
 
         <div className="collaboration-card">
-          <h4>Share the book</h4>
+          <h4>Send the book out</h4>
           <label>
             Voice mode
             <select value={project.mode} onChange={(event) => onMode(event.target.value as "solo" | "duet")}>
@@ -4459,8 +4766,8 @@ function CollaborationPanel({
             Smaller copy: leave out exports and unused recordings
           </label>
           <p>Scripts, proof alignment, notes, project roles, and glossary clips stay included.</p>
-          <button type="button" disabled={busyAction !== null} onClick={onShare}>
-            {busyAction === "share" ? "Preparing…" : "Create shareable copy"}
+          <button className="action-button primary" type="button" disabled={busyAction !== null} onClick={onShare}>
+            {busyAction === "share" ? "Preparing the copy…" : "Create a copy to send"}
           </button>
           {project.mode === "duet" ? (
             <div className="status-actions">
@@ -4470,40 +4777,74 @@ function CollaborationPanel({
           ) : null}
         </div>
 
-        <div className="collaboration-card">
+        <div className={`collaboration-card${packReview ? " wide" : ""}`}>
           <h4>Take a pack back in</h4>
           <p>
             Open the copy your author or narrator sent back. Nothing is written until you have read
             what it would change.
           </p>
-          <button type="button" disabled={busyAction !== null} onClick={onOpenPack}>
-            {busyAction === "pack-review" ? "Reading…" : "Open a pack"}
+          <button className="action-button" type="button" disabled={busyAction !== null} onClick={onOpenPack}>
+            {busyAction === "pack-review" ? "Reading the pack…" : "Open a pack"}
           </button>
           {packReview ? (
             <div className="pack-review">
               <p className="pack-review-summary">
                 <strong>{packReview.packName}</strong>
-                <span>{packReview.summary}</span>
+                <span>From {packReview.incomingName}. Nothing is written yet.</span>
               </p>
+
+              <div className="book-tally">
+                <span>
+                  <strong>{packReview.plan.audioToAdopt.length}</strong>
+                  {packReview.plan.audioToAdopt.length === 1 ? " recording" : " recordings"}
+                </span>
+                <span>
+                  <strong>{packReview.plan.decisions.length}</strong>
+                  {packReview.plan.decisions.length === 1 ? " flag decision" : " flag decisions"}
+                </span>
+                <span>
+                  <strong>{packReview.plan.notesToAdd.length}</strong>
+                  {packReview.plan.notesToAdd.length === 1 ? " note" : " notes"}
+                </span>
+                <span>
+                  <strong>
+                    {packReview.plan.glossaryToAdd.length
+                      + packReview.plan.glossaryRespells.length
+                      + packReview.plan.glossaryVoiceNotes.length}
+                  </strong>
+                  {" pronunciation edits"}
+                </span>
+              </div>
+
               {packReview.plan.audioToAdopt.length > 0 ? (
                 <ul className="pack-review-list">
                   {packReview.plan.audioToAdopt.map((entry) => (
                     <li key={entry.chapterId}>
-                      Recording for {entry.chapterTitle}
+                      Recording for <strong>{entry.chapterTitle}</strong>
                       {entry.withAlignment ? ", with their proof pass" : ""}
                     </li>
                   ))}
                 </ul>
               ) : null}
+
               {packReview.plan.conflicts.length > 0 ? (
-                <ul className="pack-review-list conflicts">
-                  {packReview.plan.conflicts.map((conflict, index) => (
-                    <li key={`${conflict.kind}-${conflict.chapterId}-${index}`}>
-                      {conflictLabel(conflict)}
-                    </li>
-                  ))}
-                </ul>
+                <div className="pack-conflicts">
+                  <h5>
+                    {packReview.plan.conflicts.length}
+                    {packReview.plan.conflicts.length === 1 ? " disagreement" : " disagreements"}
+                    {" · your copy wins"}
+                  </h5>
+                  <ul className="pack-review-list conflicts">
+                    {packReview.plan.conflicts.map((conflict, index) => (
+                      <li key={`${conflict.kind}-${conflict.chapterId}-${index}`}>
+                        {conflictLabel(conflict)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p>Change any of these by hand afterwards, in the chapter it belongs to.</p>
+                </div>
               ) : null}
+
               {packReview.plan.skipped.unknownChapters.length > 0 ? (
                 <p className="pack-review-skipped">
                   Not in this book, so left out: {packReview.plan.skipped.unknownChapters.join(", ")}.
@@ -4515,16 +4856,18 @@ function CollaborationPanel({
                   were left out. Their proof run found different words.
                 </p>
               ) : null}
-              <div className="status-actions">
+
+              <div className="pack-review-actions">
                 <button
+                  className="action-button primary"
                   type="button"
                   disabled={busyAction !== null || packReview.plan.empty}
                   onClick={onApplyPack}
                 >
-                  {busyAction === "pack-apply" ? "Bringing it in…" : "Bring it in"}
+                  {busyAction === "pack-apply" ? "Bringing it in…" : "Bring all of this in"}
                 </button>
-                <button type="button" disabled={busyAction !== null} onClick={onDiscardPack}>
-                  Discard
+                <button className="action-button" type="button" disabled={busyAction !== null} onClick={onDiscardPack}>
+                  Leave it out
                 </button>
               </div>
             </div>
@@ -4541,14 +4884,24 @@ function CollaborationPanel({
                   {project.chapters.map((chapter) => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
                 </select>
               </label>
-              <p>Current status: <strong>{selected ? authorStatusLabel(selected.author_status) : "Draft"}</strong></p>
-              <div className="status-actions">
+              {/* A chapter is in one state, so show which one it is in. */}
+              <div className="segmented" role="group" aria-label="Chapter status">
                 {(["needs_pickup", "approved", "ignore_this_flag"] as const).map((status) => (
-                  <button key={status} type="button" disabled={!authorCanApprove || busyAction !== null} onClick={() => onStatus(status)}>
-                    {status === "needs_pickup" ? "Needs pickup" : status === "approved" ? "Approve" : "Ignore"}
+                  <button
+                    key={status}
+                    type="button"
+                    className={selected?.author_status === status ? "selected" : ""}
+                    aria-pressed={selected?.author_status === status}
+                    disabled={!authorCanApprove || busyAction !== null}
+                    onClick={() => onStatus(status)}
+                  >
+                    {status === "needs_pickup" ? "Needs a pickup" : status === "approved" ? "Approved" : "Leave as is"}
                   </button>
                 ))}
               </div>
+              {selected && selected.author_status === "draft" ? (
+                <p className="segmented-note">Not marked yet.</p>
+              ) : null}
               {!authorCanApprove ? <p className="permission-note">Narrators can read notes and status, but only authors can approve the book.</p> : null}
               <label>
                 Author note
@@ -5402,7 +5755,7 @@ function PickupComparisonPanel({ folder, comparisons }: { folder: string; compar
   );
 }
 
-function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+export function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -5430,9 +5783,23 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportRepo
             </select>
           </label>
           <span className="result-count">{openCount} open</span>
-          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportReport}>{busyAction === "proof-report" ? "Exporting…" : "Export report"}</button>
-          <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportMarkers}>Export markers</button>
-          <button className="table-action" type="button" disabled={busyAction !== null} title="A web page with a clip for every flag, plus a spreadsheet" onClick={onExportPacket}>{busyAction === "pickup-packet" ? "Building…" : "Export packet"}</button>
+          <details className="export-menu">
+            <summary className="action-button small">Send these…</summary>
+            <div className="export-menu-list">
+              <button className="export-menu-item" type="button" disabled={busyAction !== null} onClick={onExportPacket}>
+                <strong>{busyAction === "pickup-packet" ? "Building the packet…" : "Packet for the author"}</strong>
+                <span>A web page with a clip for every flag, plus a spreadsheet.</span>
+              </button>
+              <button className="export-menu-item" type="button" disabled={busyAction !== null} onClick={onExportMarkers}>
+                <strong>Markers for a DAW</strong>
+                <span>Drop them on the timeline in Reaper, Audition, or Audacity.</span>
+              </button>
+              <button className="export-menu-item" type="button" disabled={busyAction !== null} onClick={onExportReport}>
+                <strong>{busyAction === "proof-report" ? "Exporting the list…" : "Plain list (CSV)"}</strong>
+                <span>Every flag with its timecode, for a spreadsheet.</span>
+              </button>
+            </div>
+          </details>
         </div>
       </div>
       {visiblePickups.length === 0 ? (
@@ -5445,39 +5812,85 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportRepo
         <ul className="pickup-list">
           {visiblePickups.map((pickup) => (
             <li key={pickup.id} className={`pickup-row ${pickup.status}`}>
-              <span className="pickup-actions">
-                <button type="button" disabled={busyAction !== null} onClick={() => onPlay(pickup)}>Play</button>
-                {pickup.status === "open" ? <button type="button" disabled={busyAction !== null} onClick={() => onPunch(pickup)}>Record pickup</button> : null}
+              <time>{formatTime(pickup.t_start)}</time>
+              <div className="pickup-reading">{pickupReading(pickup)}</div>
+              <span className="kind-badge">{PICKUP_KIND_LABELS[pickup.kind]}</span>
+              {pickup.status === "open" ? null : (
+                <span className={`pickup-state ${pickup.status}`}>
+                  {pickup.status === "done" ? "Fixed" : "Fine as read"}
+                </span>
+              )}
+              <div className="pickup-actions">
+                <button
+                  className="action-button small"
+                  type="button"
+                  disabled={busyAction !== null}
+                  onClick={() => onPlay(pickup)}
+                >
+                  Listen
+                </button>
                 {pickup.status === "open" ? (
                   <>
-                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "done" })}>Resolved</button>
-                    <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
-                    {pickup.kind === "pause" ? null : (
-                      <button
-                        type="button"
-                        disabled={busyAction !== null}
-                        title="Stop flagging this word anywhere in the book"
-                        onClick={() => onSuppress(pickup)}
-                      >
-                        Ignore everywhere
-                      </button>
-                    )}
+                    <button
+                      className="action-button small accent"
+                      type="button"
+                      disabled={busyAction !== null}
+                      onClick={() => onPunch(pickup)}
+                    >
+                      Record pickup
+                    </button>
+                    <button
+                      className="action-button small"
+                      type="button"
+                      title="The read was fine here"
+                      disabled={busyAction !== null}
+                      onClick={() => onUpdate(pickup, { status: "ignored" })}
+                    >
+                      Fine as read
+                    </button>
                   </>
                 ) : (
-                  <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "open" })}>Open again</button>
+                  <button
+                    className="action-button small"
+                    type="button"
+                    disabled={busyAction !== null}
+                    onClick={() => onUpdate(pickup, { status: "open" })}
+                  >
+                    Reopen
+                  </button>
                 )}
-              </span>
-              <time>{formatTime(pickup.t_start)}</time>
-              <div>
-                <span className="expected">{pickup.expected || "—"}</span>
-                <span className="arrow" aria-hidden="true">→</span>
-                <span className="heard">{pickup.heard || "—"}</span>
+                <details className="pickup-more">
+                  <summary aria-label={`More for ${pickup.expected || "this flag"}`}>More</summary>
+                  <div className="pickup-more-menu">
+                    {pickup.status === "open" ? (
+                      <button
+                        className="action-button small plain"
+                        type="button"
+                        disabled={busyAction !== null}
+                        onClick={() => onUpdate(pickup, { status: "done" })}
+                      >
+                        Mark fixed elsewhere
+                      </button>
+                    ) : null}
+                    {pickup.status === "open" && pickup.kind !== "pause" && pickup.expected ? (
+                      <button
+                        className="action-button small danger"
+                        type="button"
+                        disabled={busyAction !== null}
+                        onClick={() => onSuppress(pickup)}
+                      >
+                        Never flag “{pickup.expected}” in this book
+                      </button>
+                    ) : null}
+                    <PickupNoteEditor
+                      pickup={pickup}
+                      busy={busyAction !== null}
+                      onSave={(note) => onUpdate(pickup, { note })}
+                    />
+                  </div>
+                </details>
               </div>
-              <span className="kind-badge">{pickup.kind === "pause" ? "Pause" : "Word"}</span>
-              <details className="pickup-note">
-                <summary>{pickup.note ? "Edit note" : "Note"}</summary>
-                <PickupNoteEditor pickup={pickup} busy={busyAction !== null} onSave={(note) => onUpdate(pickup, { note })} />
-              </details>
+              {pickup.note ? <p className="pickup-note-text">{pickup.note}</p> : null}
             </li>
           ))}
         </ul>
@@ -5486,18 +5899,49 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportRepo
   );
 }
 
+/** What a flag actually says, in words rather than arrows and em dashes. */
+function pickupReading(pickup: Pickup) {
+  if (pickup.kind === "pause") {
+    const seconds = Math.max(0, pickup.t_end - pickup.t_start);
+    return <span className="pickup-pause">{seconds.toFixed(1)} s of silence mid-sentence</span>;
+  }
+  if (pickup.kind === "skip") {
+    return (
+      <>
+        <span className="expected">{pickup.expected || "a word"}</span>
+        <span className="pickup-reading-note">on the page, not heard</span>
+      </>
+    );
+  }
+  if (pickup.kind === "insert") {
+    return (
+      <>
+        <span className="heard">{pickup.heard || "a word"}</span>
+        <span className="pickup-reading-note">heard, not on the page</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="expected">{pickup.expected || "—"}</span>
+      <span className="arrow" aria-hidden="true">→</span>
+      <span className="heard">{pickup.heard || "—"}</span>
+    </>
+  );
+}
+
 function PickupNoteEditor({ pickup, busy, onSave }: { pickup: Pickup; busy: boolean; onSave: (note: string) => void }) {
   const [note, setNote] = useState(pickup.note ?? "");
   useEffect(() => setNote(pickup.note ?? ""), [pickup.id, pickup.note]);
   return (
     <div className="pickup-note-editor">
-      <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Human note for the collaborator" />
+      <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="A note for whoever fixes this" />
       <button type="button" disabled={busy || note.trim().length === 0} onClick={() => onSave(note)}>Save note</button>
     </div>
   );
 }
 
-function AcxMeter({
+export function AcxMeter({
   report,
   onPlayNoiseFloor,
   presetId,
@@ -5511,7 +5955,7 @@ function AcxMeter({
   const targets = presetTargets(resolvePreset(report.preset_id));
   const rows = [
     ["RMS", targets.rms, formatDb(report.rms_dbfs), report.checks.rms],
-    ["Loudness", targets.loudness, `${formatDb(report.lufs_integrated)} LUFS`, report.checks.loudness],
+    ["Loudness", targets.loudness, formatLufs(report.lufs_integrated), report.checks.loudness],
     ["True peak", targets.true_peak, formatDb(report.true_peak_dbfs), report.checks.true_peak],
     ["Noise floor", targets.noise_floor, formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
     ["Sample rate", targets.sample_rate, `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
@@ -5525,10 +5969,13 @@ function AcxMeter({
         : "Not applicable to source",
       report.checks.format,
     ],
-    ["Duration", targets.duration, `${(report.duration_seconds / 60).toFixed(2)} min`, report.checks.duration],
+    ["Duration", targets.duration, formatLength(report.duration_seconds), report.checks.duration],
     ["Head room tone", targets.head_room_tone, `${report.head_room_tone_s.toFixed(2)} s`, report.checks.head_room_tone],
     ["Tail room tone", targets.tail_room_tone, `${report.tail_room_tone_s.toFixed(2)} s`, report.checks.tail_room_tone],
   ] as const;
+
+  const trouble = rows.filter(([, , , status]) => status === "fail" || status === "warn");
+  const judged = rows.filter(([, , , status]) => status !== "unspecified");
 
   return (
     <section className="result-panel" aria-labelledby="acx-title">
@@ -5537,55 +5984,87 @@ function AcxMeter({
           <p className="card-kicker">Audio check</p>
           <h4 id="acx-title">{report.preset_label} check</h4>
         </div>
+        {onPresetChange ? (
+          <label className="meter-target-select">
+            <span>Delivery target</span>
+            <select
+              value={presetId ?? report.preset_id}
+              onChange={(event) => onPresetChange(event.target.value)}
+            >
+              {BUILTIN_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      {/* The verdict first. Eleven measurements are the evidence, not the answer. */}
+      <div className={`meter-verdict ${report.traffic_light}`}>
         <span className={`traffic-light ${report.traffic_light}`}>
           {checkStatusLabel(report.traffic_light)}
         </span>
-      </div>
-      {onPresetChange ? (
-        <label className="meter-target-select">
-          <span>Delivery target</span>
-          <select
-            value={presetId ?? report.preset_id}
-            onChange={(event) => onPresetChange(event.target.value)}
-          >
-            {BUILTIN_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>{preset.label}</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-      <table className="meter-table">
-        <thead>
-          <tr><th>Check</th><th>Target</th><th>Result</th><th /></tr>
-        </thead>
-        <tbody>
-          {rows.map(([label, required, measured, status]) => (
-            <tr key={label}>
-              <td>{label}</td>
-              <td>{required}</td>
-              <td>{measured}</td>
-              <td><span className={`check-dot ${status}`}>{checkStatusLabel(status)}</span></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="meter-evidence">
         <div>
-          <strong>Noise-floor evidence</strong>
-          <span>
-            Measured from {report.noise_floor_start_seconds.toFixed(2)}–{(report.noise_floor_start_seconds + report.noise_floor_duration_seconds).toFixed(2)} s, the quietest sustained section found. Listen to confirm it is voice-free.
-          </span>
+          <strong>
+            {trouble.length === 0
+              ? `This file meets every ${report.preset_label} level and format rule.`
+              : trouble.length === 1
+                ? `One thing to settle before ${report.preset_label} will take this.`
+                : `${trouble.length} things to settle before ${report.preset_label} will take this.`}
+          </strong>
+          {trouble.length === 0 ? (
+            <span>
+              {judged.length} checks measured and passed. Export writes the mastered file.
+            </span>
+          ) : (
+            <ul className="meter-trouble">
+              {trouble.map(([label, required, measured, status]) => (
+                <li key={label} className={status}>
+                  <strong>{label}</strong> is {measured}; {report.preset_label} wants {required}.
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-        {onPlayNoiseFloor ? (
-          <button className="table-action" type="button" onClick={onPlayNoiseFloor}>
-            Listen to this section
-          </button>
-        ) : null}
       </div>
-      <p className="meter-honesty">
-        These checks cover levels and format. Listen once for clicks and room noise.
-        {" "}Rows marked “Not specified” are measured but not judged, because {report.preset_label} sets no limit for them.
-      </p>
+
+      <details className="meter-details" open={trouble.length > 0}>
+        <summary>
+          {trouble.length > 0 ? "All measurements" : `Show all ${rows.length} measurements`}
+        </summary>
+        <table className="meter-table">
+          <thead>
+            <tr><th>Check</th><th>Target</th><th>Measured</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            {rows.map(([label, required, measured, status]) => (
+              <tr key={label}>
+                <td>{label}</td>
+                <td>{required}</td>
+                <td>{measured}</td>
+                <td><span className={`check-dot ${status}`}>{checkStatusLabel(status)}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="meter-evidence">
+          <div>
+            <strong>Where the noise floor was measured</strong>
+            <span>
+              {report.noise_floor_start_seconds.toFixed(2)}–{(report.noise_floor_start_seconds + report.noise_floor_duration_seconds).toFixed(2)} s, the quietest sustained section found. Listen to confirm it is voice-free.
+            </span>
+          </div>
+          {onPlayNoiseFloor ? (
+            <button className="action-button small" type="button" onClick={onPlayNoiseFloor}>
+              Listen to it
+            </button>
+          ) : null}
+        </div>
+        <p className="meter-honesty">
+          These checks cover levels and format. Listen once for clicks and room noise.
+          {" "}Rows marked “Not judged” are measured but carry no verdict, because {report.preset_label} sets no limit for them.
+        </p>
+      </details>
     </section>
   );
 }
@@ -5851,6 +6330,21 @@ function formatTime(seconds: number): string {
 
 function formatDb(value: number): string {
   return value === -Infinity ? "−∞ dBFS" : `${value.toFixed(1).replace("-", "−")} dBFS`;
+}
+
+function formatLufs(value: number): string {
+  return value === -Infinity ? "−∞ LUFS" : `${value.toFixed(1).replace("-", "−")} LUFS`;
+}
+
+function formatLength(seconds: number): string {
+  const whole = Math.max(0, Math.round(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = whole % 60;
+  if (hours > 0) {
+    return `${hours} hr ${String(minutes).padStart(2, "0")} min`;
+  }
+  return minutes > 0 ? `${minutes} min ${String(rest).padStart(2, "0")} s` : `${rest} s`;
 }
 
 function messageFor(reason: unknown, fallback: string): string {
