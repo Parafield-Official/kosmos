@@ -47,4 +47,16 @@ describe("packaged renderer configuration", () => {
     expect(step).toContain("49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a");
     expect(step).not.toContain("Visual Studio 17 2022");
   });
+
+  it("points README download buttons at the tagged installers, not /releases/latest", () => {
+    const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
+    const version = packageJson.version;
+    expect(readme).not.toContain("releases/latest");
+    expect(readme).toContain(
+      `https://github.com/Manishram-ai/kosmos/releases/download/v${version}/Kosmos-${version}-mac-arm64.dmg`,
+    );
+    expect(readme).toContain(
+      `https://github.com/Manishram-ai/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
+    );
+  });
 });

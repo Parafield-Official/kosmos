@@ -1,6 +1,6 @@
 # Kosmos
 
-[Download for Mac](https://github.com/Manishram-ai/kosmos/releases/latest) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/latest)
+[Download for Mac](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.0/Kosmos-0.1.0-mac-arm64.dmg) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.0/Kosmos-0.1.0-win-x64.exe)
 
 Kosmos is a free, offline desktop app for turning a manuscript and human
 recordings into proofed, ACX-ready audiobook files. Your book and your voice
