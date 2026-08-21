@@ -57,18 +57,24 @@ export function proofMergeWindowSeconds(settings: ProjectSettings): number {
 }
 
 /** A filter list has to survive a hand-edited project.json. */
+/**
+ * The words a narrator has cleared for the whole book. Matching ignores case,
+ * so two spellings of one word would be two rows that behave as one; keep the
+ * first spelling a person typed and drop the rest.
+ */
 function normalizeWordList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  const seen = new Set<string>();
+  const seen = new Map<string, string>();
   for (const entry of value) {
     const word = typeof entry === "string" ? entry.trim() : "";
-    if (word !== "" && word.length <= 80) {
-      seen.add(word);
+    const key = word.toLocaleLowerCase("en-US");
+    if (word !== "" && word.length <= 80 && !seen.has(key)) {
+      seen.set(key, word);
     }
   }
-  return [...seen].sort((left, right) => left.localeCompare(right));
+  return [...seen.values()].sort((left, right) => left.localeCompare(right));
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

@@ -806,18 +806,20 @@ function nextSplitChapterId(project, baseId) {
   return `${baseId}-part${suffix}`;
 }
 
+/** Matching ignores case, so one word must not become two rows. */
 function normalizeWordList(value) {
   if (!Array.isArray(value)) {
     return [];
   }
-  const seen = new Set();
+  const seen = new Map();
   for (const entry of value) {
     const word = typeof entry === "string" ? entry.trim() : "";
-    if (word !== "" && word.length <= 80) {
-      seen.add(word);
+    const key = word.toLocaleLowerCase("en-US");
+    if (word !== "" && word.length <= 80 && !seen.has(key)) {
+      seen.set(key, word);
     }
   }
-  return [...seen].sort((left, right) => left.localeCompare(right));
+  return [...seen.values()].sort((left, right) => left.localeCompare(right));
 }
 
 function durationWarning(minutes) {

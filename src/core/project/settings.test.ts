@@ -39,6 +39,20 @@ describe("project settings", () => {
     });
   });
 
+  it("keeps one row per cleared word, however it was typed", () => {
+    // Matching ignores case, so two spellings would be two rows that behave
+    // as one and cannot be told apart in the settings list.
+    expect(normalizeProjectSettings({
+      suppressed_words: ["  Leominster ", "leominster", "LEOMINSTER", "", "   ", "Siobhan"],
+    }).suppressed_words).toEqual(["Leominster", "Siobhan"]);
+  });
+
+  it("drops filter words nobody could have typed", () => {
+    expect(normalizeProjectSettings({
+      suppressed_words: [42, null, "x".repeat(81), "keep"],
+    }).suppressed_words).toEqual(["keep"]);
+  });
+
   it("keeps proof sensitivity separate from the live precision path", () => {
     expect(proofMergeWindowSeconds({ ...DEFAULT_PROJECT_SETTINGS, proof_sensitivity: "conservative" })).toBe(0.25);
     expect(proofMergeWindowSeconds({ ...DEFAULT_PROJECT_SETTINGS, proof_sensitivity: "aggressive" })).toBe(0.6);
