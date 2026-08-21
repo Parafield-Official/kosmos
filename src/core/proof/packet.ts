@@ -128,9 +128,7 @@ export function buildPacketHtml(input: PacketInput): string {
       `        <td class="index">${index + 1}</td>`,
       `        <td class="time"><code>${escapeText(formatTimestamp(pickup.t_start))}</code></td>`,
       `        <td>${escapeText(KIND_LABELS[pickup.kind])}</td>`,
-      `        <td class="words"><span class="written">${escapeText(pickup.expected || "—")}</span>`
-        + `<span class="arrow"> → </span>`
-        + `<span class="heard">${escapeText(pickup.heard || "—")}</span></td>`,
+      `        <td class="words">${wordsCell(pickup)}</td>`,
       `        <td class="clip">${player}</td>`,
       `        <td>${escapeText(STATUS_LABELS[pickup.status])}</td>`,
       `        <td>${escapeText(pickup.note ?? "")}</td>`,
@@ -261,6 +259,20 @@ export function buildPacketWorkbookParts(input: PacketInput): WorkbookPart[] {
   ];
 }
 
+/**
+ * A pause has no misread word, so printing "— → —" tells the reader nothing.
+ * Show how long the silence ran instead.
+ */
+function wordsCell(pickup: Pickup): string {
+  if (pickup.kind === "pause") {
+    const length = Math.max(0, pickup.t_end - pickup.t_start);
+    return `<span class="silence">${escapeText(`${length.toFixed(1)}s of silence`)}</span>`;
+  }
+  return `<span class="written">${escapeText(pickup.expected || "—")}</span>`
+    + `<span class="arrow"> → </span>`
+    + `<span class="heard">${escapeText(pickup.heard || "nothing heard")}</span>`;
+}
+
 interface SheetCell {
   kind: "text" | "number";
   value: string | number;
@@ -318,8 +330,25 @@ function summaryLine(input: {
   if (Number.isFinite(input.durationSeconds) && (input.durationSeconds ?? 0) > 0) {
     parts.push(`Recording: ${formatTimestamp(input.durationSeconds as number)}`);
   }
-  parts.push(`Prepared ${input.generatedAt}`);
+  parts.push(`Prepared ${readableDate(input.generatedAt)}`);
   return parts.join(" · ");
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** A date a person can read, stated in UTC so the page says which clock it used. */
+function readableDate(value: string): string {
+  const stamp = new Date(value);
+  if (Number.isNaN(stamp.getTime())) {
+    return value;
+  }
+  const day = String(stamp.getUTCDate());
+  const month = MONTHS[stamp.getUTCMonth()];
+  const time = `${String(stamp.getUTCHours()).padStart(2, "0")}:${String(stamp.getUTCMinutes()).padStart(2, "0")}`;
+  return `${day} ${month} ${stamp.getUTCFullYear()}, ${time} UTC`;
 }
 
 function timeSlug(seconds: number): string {
@@ -371,6 +400,7 @@ const PACKET_CSS = [
   ".time code{font-size:12px}",
   ".written{text-decoration:line-through;color:#8a7d72}",
   ".heard{font-weight:600}",
+  ".silence{color:#766a60}",
   ".clip audio{width:220px;height:32px}",
   ".missing{color:#a09488;font-size:12px}",
   ".empty,footer{max-width:1040px;margin:24px auto 0;color:#766a60;font-size:13px}",

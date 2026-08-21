@@ -159,6 +159,49 @@ describe("buildPacketHtml", () => {
     expect(html).toContain("src=\"clips/he&quot;llo.mp3\"");
   });
 
+  it("says how long a pause ran instead of printing empty words", () => {
+    const html = buildPacketHtml({
+      chapterIndex: 1,
+      chapterTitle: "One",
+      pickups: [pickup({ id: "p", kind: "pause", expected: "", heard: "", t_start: 42, t_end: 44.2 })],
+      clips: [],
+    });
+    expect(html).toContain("2.2s of silence");
+    expect(html).not.toContain("— → —");
+  });
+
+  it("says plainly when a written word was not heard at all", () => {
+    const html = buildPacketHtml({
+      chapterIndex: 1,
+      chapterTitle: "One",
+      pickups: [pickup({ id: "s", kind: "skip", expected: "end", heard: "" })],
+      clips: [],
+    });
+    expect(html).toContain("nothing heard");
+  });
+
+  it("prints a date a person can read", () => {
+    const html = buildPacketHtml({
+      chapterIndex: 1,
+      chapterTitle: "One",
+      generatedAt: "2026-08-21T00:41:49.447Z",
+      pickups: [],
+      clips: [],
+    });
+    expect(html).toContain("Prepared 21 Aug 2026, 00:41 UTC");
+  });
+
+  it("falls back to the raw stamp rather than printing an invalid date", () => {
+    const html = buildPacketHtml({
+      chapterIndex: 1,
+      chapterTitle: "One",
+      generatedAt: "not a date",
+      pickups: [],
+      clips: [],
+    });
+    expect(html).toContain("Prepared not a date");
+  });
+
   it("counts what is still open in the header", () => {
     const html = buildPacketHtml({
       chapterIndex: 1,
@@ -172,7 +215,7 @@ describe("buildPacketHtml", () => {
       clips: [],
     });
     expect(html).toContain("1 open of 3 flagged");
-    expect(html).toContain("2026-08-20T00:00:00.000Z");
+    expect(html).toContain("Prepared 20 Aug 2026, 00:00 UTC");
   });
 
   it("says a clean chapter is clean rather than printing an empty table", () => {
