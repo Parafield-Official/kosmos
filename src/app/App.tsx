@@ -5,7 +5,13 @@ import { BUILTIN_PRESETS, presetTargets, resolvePreset } from "../core/acx/prese
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
-import { alignTranscript, preservePickupWorkflow, type TranscriptWord } from "../core/proof/align";
+import {
+  alignTranscript,
+  isSuppressedPickup,
+  normalizeSuppressedWords,
+  preservePickupWorkflow,
+  type TranscriptWord,
+} from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
 import { findWordOccurrences, type WordOccurrence } from "../core/proof/occurrences";
 import {
@@ -704,6 +710,7 @@ function ProjectHome({
         mergeWindowSeconds: proofMergeWindowSeconds(projectSettings),
         pauseThresholdSeconds: projectSettings.pause_threshold_seconds,
         minConfidence: projectSettings.proof_confidence_floor,
+        suppressedWords: projectSettings.suppressed_words,
       });
       const freshPickups = project.mode === "duet"
         ? assignPickupSeats(
@@ -1022,6 +1029,33 @@ function ProjectHome({
         setPromptTheme(settings.teleprompter_theme);
       }
       setNotice("Preferences saved.");
+    });
+  }
+
+  async function suppressPickupWord(pickup: Pickup) {
+    const word = (pickup.expected || pickup.heard).trim();
+    if (word === "") {
+      setNotice("There is no word here to filter.");
+      return;
+    }
+    if (projectSettings.suppressed_words.includes(word)) {
+      setNotice(`“${word}” is already filtered for the whole book.`);
+      return;
+    }
+    const suppressed = [...projectSettings.suppressed_words, word];
+    await runAction("settings", async () => {
+      const settings = normalizeProjectSettings({ ...projectSettings, suppressed_words: suppressed });
+      await persistProject({ ...project, settings, updated_at: new Date().toISOString() });
+      // Drop it from the list on screen too, so the effect is visible without
+      // re-checking the chapter.
+      setProof((current) => current
+        ? {
+          ...current,
+          pickups: current.pickups.filter((candidate) =>
+            !isSuppressedPickup(candidate, normalizeSuppressedWords(settings.suppressed_words))),
+        }
+        : current);
+      setNotice(`“${word}” is filtered for the whole book. Re-check other chapters to clear it there.`);
     });
   }
 
@@ -1637,6 +1671,7 @@ function ProjectHome({
                 onExportReport={() => void exportProofReport()}
                 onPunchPickup={setPunchPickup}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
+                onSuppressPickup={(pickup) => void suppressPickupWord(pickup)}
                 pickupSeatFilter={pickupSeatFilter}
                 onPickupSeatFilter={setPickupSeatFilter}
                 comparisonFolder={folder}
@@ -3740,6 +3775,31 @@ function SettingsPanel({
           <input type="number" min="-23" max="-18" step="0.5" value={draft.acx_target_rms_dbfs} onChange={(event) => setDraft({ ...draft, acx_target_rms_dbfs: Number(event.target.value) })} />
           <small>Default −20 dBFS; the measured pass window remains −23 to −18.</small>
         </label>
+        <div className="settings-word-filter">
+          <span className="settings-word-filter-label">Words filtered for the whole book</span>
+          {draft.suppressed_words.length === 0 ? (
+            <small>None yet. Use “Ignore everywhere” on a pickup to add one.</small>
+          ) : (
+            <ul>
+              {draft.suppressed_words.map((word) => (
+                <li key={word}>
+                  <span>{word}</span>
+                  <button
+                    type="button"
+                    aria-label={`Stop filtering ${word}`}
+                    onClick={() => setDraft({
+                      ...draft,
+                      suppressed_words: draft.suppressed_words.filter((candidate) => candidate !== word),
+                    })}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <small>Filtered words are skipped when a chapter is checked. Re-check a chapter to apply a change there.</small>
+        </div>
         <label>
           Teleprompter theme
           <select value={draft.teleprompter_theme} onChange={(event) => setDraft({ ...draft, teleprompter_theme: event.target.value as ProjectSettings["teleprompter_theme"] })}>
@@ -4337,6 +4397,7 @@ function ReviewPage({
   onExportReport,
   onPunchPickup,
   onUpdatePickup,
+  onSuppressPickup,
   pickupSeatFilter,
   onPickupSeatFilter,
   comparisonFolder,
@@ -4360,6 +4421,7 @@ function ReviewPage({
   onExportReport: () => void;
   onPunchPickup: (pickup: Pickup) => void;
   onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
+  onSuppressPickup: (pickup: Pickup) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
   onPickupSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void;
   comparisonFolder: string;
@@ -4427,6 +4489,7 @@ function ReviewPage({
             onExportReport={onExportReport}
             onPunch={onPunchPickup}
             onUpdate={onUpdatePickup}
+            onSuppress={onSuppressPickup}
             seatFilter={pickupSeatFilter}
             onSeatFilter={onPickupSeatFilter}
           />
@@ -4748,7 +4811,7 @@ function PickupComparisonPanel({ folder, comparisons }: { folder: string; compar
   );
 }
 
-function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onPunch, onUpdate, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -4797,6 +4860,16 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportRepo
                   <>
                     <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "done" })}>Resolved</button>
                     <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "ignored" })}>Ignore</button>
+                    {pickup.kind === "pause" ? null : (
+                      <button
+                        type="button"
+                        disabled={busyAction !== null}
+                        title="Stop flagging this word anywhere in the book"
+                        onClick={() => onSuppress(pickup)}
+                      >
+                        Ignore everywhere
+                      </button>
+                    )}
                   </>
                 ) : (
                   <button type="button" disabled={busyAction !== null} onClick={() => onUpdate(pickup, { status: "open" })}>Open again</button>

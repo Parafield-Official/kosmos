@@ -2,6 +2,7 @@ import type { Pickup, Seat } from "../project/types";
 import {
   manuscriptMatchUnits,
   normalizeToken,
+  spokenPieces,
   tokenizeManuscript,
   transcriptMatchUnits,
   type ManuscriptToken,
@@ -30,6 +31,11 @@ export interface AlignTranscriptInput {
    * without confidences is never silently emptied.
    */
   minConfidence?: number;
+  /**
+   * Words the narrator has decided are fine everywhere in this book, so the
+   * same pickup does not have to be dismissed once per chapter.
+   */
+  suppressedWords?: readonly string[];
 }
 
 export interface AlignmentResult {
@@ -127,6 +133,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   const minConfidence = Number.isFinite(input.minConfidence)
     ? clamp(input.minConfidence as number, 0, 1)
     : 0;
+  const suppressed = normalizeSuppressedWords(input.suppressedWords);
   const pickups: Pickup[] = [];
   let operationIndex = 0;
   let pickupOrdinal = 0;
@@ -187,7 +194,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
       && run.confidenceKnown
       && minConfidence > 0
       && pickup.confidence < minConfidence;
-    if (pickup && !gated) {
+    if (pickup && !gated && !isSuppressedPickup(pickup, suppressed)) {
       pickups.push(pickup);
       pickupOrdinal += 1;
     }
@@ -396,6 +403,38 @@ function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
     };
   }
   return merged;
+}
+
+/** Normalize the filter list the same way tokens are, so it matches them. */
+export function normalizeSuppressedWords(words: readonly string[] | undefined): Set<string> {
+  const set = new Set<string>();
+  for (const word of words ?? []) {
+    for (const piece of spokenPieces(word)) {
+      set.add(piece);
+    }
+  }
+  return set;
+}
+
+/**
+ * A pickup is suppressed when every manuscript word in it is on the filter
+ * list. Requiring all of them keeps a filtered word from hiding the real
+ * problem beside it when nearby pickups were merged into one trip to the booth.
+ */
+export function isSuppressedPickup(
+  pickup: Pick<Pickup, "expected" | "heard" | "kind">,
+  suppressed: Set<string>,
+): boolean {
+  if (suppressed.size === 0 || pickup.kind === "pause") {
+    return false;
+  }
+  const expected = spokenPieces(pickup.expected);
+  if (expected.length > 0) {
+    return expected.every((word) => suppressed.has(word));
+  }
+  // An insert has no manuscript side, so judge it by what was heard.
+  const heard = spokenPieces(pickup.heard);
+  return heard.length > 0 && heard.every((word) => suppressed.has(word));
 }
 
 function firstWordOfUnit(words: TranscriptWord[], unit: MatchUnit | undefined): TranscriptWord | undefined {

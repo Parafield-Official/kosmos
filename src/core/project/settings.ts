@@ -6,6 +6,7 @@ export const DEFAULT_PROJECT_SETTINGS: Readonly<ProjectSettings> = Object.freeze
   acx_target_rms_dbfs: -20,
   spec_preset_id: "acx",
   proof_confidence_floor: 0.35,
+  suppressed_words: [],
   teleprompter_theme: "cream",
   teleprompter_font_size: 28,
   teleprompter_preset_version: 2,
@@ -30,6 +31,7 @@ export function normalizeProjectSettings(value: unknown): ProjectSettings {
       ? candidate.spec_preset_id.trim()
       : "acx",
     proof_confidence_floor: clampNumber(candidate.proof_confidence_floor, 0, 0.9, 0.35),
+    suppressed_words: normalizeWordList(candidate.suppressed_words),
     teleprompter_theme: legacyTeleprompterDefaults
       ? "cream"
       : candidate.teleprompter_theme === "dark"
@@ -52,6 +54,21 @@ export function proofMergeWindowSeconds(settings: ProjectSettings): number {
     return 0.6;
   }
   return 0.4;
+}
+
+/** A filter list has to survive a hand-edited project.json. */
+function normalizeWordList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set<string>();
+  for (const entry of value) {
+    const word = typeof entry === "string" ? entry.trim() : "";
+    if (word !== "" && word.length <= 80) {
+      seen.add(word);
+    }
+  }
+  return [...seen].sort((left, right) => left.localeCompare(right));
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

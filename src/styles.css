@@ -1612,6 +1612,48 @@ button {
   color: #766a60;
 }
 
+.settings-word-filter {
+  display: grid;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.settings-word-filter-label {
+  color: #6d6259;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-word-filter ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-word-filter li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 9px;
+  border: 1px solid #e0d7cd;
+  border-radius: 999px;
+  background: #fffdfa;
+  font-size: 12px;
+}
+
+.settings-word-filter li button {
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #f0e7dc;
+  color: #6d6259;
+  font-size: 10px;
+  cursor: pointer;
+}
+
 .check-dot.unspecified {
   color: #8b7e71;
   background: #ece4da;

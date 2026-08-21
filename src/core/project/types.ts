@@ -19,6 +19,8 @@ export interface ProjectSettings {
   spec_preset_id: string;
   /** Drop word pickups the recogniser was less sure than this about. */
   proof_confidence_floor: number;
+  /** Words to leave alone everywhere in this book. */
+  suppressed_words: string[];
   teleprompter_theme: "dark" | "sepia" | "cream";
   teleprompter_font_size: number;
   /** Versioned first-run defaults; used to migrate older books once. */

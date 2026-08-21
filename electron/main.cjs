@@ -173,6 +173,7 @@ async function createProjectFolder() {
       acx_target_rms_dbfs: -20,
       spec_preset_id: "acx",
       proof_confidence_floor: 0.35,
+      suppressed_words: [],
       teleprompter_theme: "cream",
       teleprompter_font_size: 28,
       teleprompter_preset_version: 2,
@@ -800,6 +801,20 @@ function nextSplitChapterId(project, baseId) {
   return `${baseId}-part${suffix}`;
 }
 
+function normalizeWordList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seen = new Set();
+  for (const entry of value) {
+    const word = typeof entry === "string" ? entry.trim() : "";
+    if (word !== "" && word.length <= 80) {
+      seen.add(word);
+    }
+  }
+  return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
 function durationWarning(minutes) {
   return minutes > 120
     ? "Estimated narration is over 120 minutes; ACX requires a chapter split."
@@ -825,6 +840,7 @@ function normalizeProjectSettings(value) {
       ? candidate.spec_preset_id.trim()
       : "acx",
     proof_confidence_floor: numberOr(candidate.proof_confidence_floor, 0, 0.9, 0.35),
+    suppressed_words: normalizeWordList(candidate.suppressed_words),
     teleprompter_theme: legacyTeleprompterDefaults
       ? "cream"
       : candidate.teleprompter_theme === "dark"
