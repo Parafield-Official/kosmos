@@ -12,6 +12,7 @@ describe("packaged renderer configuration", () => {
   it("packages the verified Whisper model and the live follow model for zero-setup speech checking", () => {
     expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
     expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
+    expect(packageJson.scripts.pretest).toBe("npm run build:core");
     expect(packageJson.build.extraResources).toContainEqual({
       from: "vendor/models",
       to: "models",
