@@ -181,15 +181,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p vendor/bin
+          # GitHub sets RUNNER_TEMP to a backslash path on Windows. Git Bash
+          # curl/cmake die on that in seconds. GITHUB_WORKSPACE is already a
+          # Unix path in this shell.
+          runtime_dir="$GITHUB_WORKSPACE/.ci-runtime"
+          mkdir -p "$runtime_dir"
+          echo "Windows runtime staging at $runtime_dir"
+
           ffmpeg_archive='ffmpeg-n8.1-latest-win64-lgpl-8.1.zip'
-          curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${ffmpeg_archive}" -o "$RUNNER_TEMP/${ffmpeg_archive}"
+          echo "Downloading $ffmpeg_archive"
+          curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
           expected_sha="$(curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256 | awk -v asset="$ffmpeg_archive" '$2 == asset {print $1}')"
           test -n "$expected_sha"
-          actual_sha="$(sha256sum "$RUNNER_TEMP/${ffmpeg_archive}" | awk '{print $1}')"
+          actual_sha="$(sha256sum "$runtime_dir/${ffmpeg_archive}" | awk '{print $1}')"
+          echo "ffmpeg sha256 expected=$expected_sha actual=$actual_sha"
           test "$expected_sha" = "$actual_sha"
-          unzip -q "$RUNNER_TEMP/${ffmpeg_archive}" -d "$RUNNER_TEMP/ffmpeg-unpacked"
-          ffmpeg_path="$(find "$RUNNER_TEMP/ffmpeg-unpacked" -type f -iname ffmpeg.exe | head -n 1)"
-          ffprobe_path="$(find "$RUNNER_TEMP/ffmpeg-unpacked" -type f -iname ffprobe.exe | head -n 1)"
+          unzip -q "$runtime_dir/${ffmpeg_archive}" -d "$runtime_dir/ffmpeg-unpacked"
+          ffmpeg_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffmpeg.exe | head -n 1)"
+          ffprobe_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffprobe.exe | head -n 1)"
           test -n "$ffmpeg_path"
           test -n "$ffprobe_path"
           cp "$ffmpeg_path" vendor/bin/ffmpeg.exe
@@ -200,26 +209,28 @@ jobs:
             'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
-          whisper_source="$RUNNER_TEMP/whisper.cpp"
+          whisper_source="$runtime_dir/whisper.cpp"
+          echo "Fetching whisper.cpp $WHISPER_CPP_COMMIT"
           git init "$whisper_source"
           git -C "$whisper_source" remote add origin https://github.com/ggerganov/whisper.cpp.git
           git -C "$whisper_source" fetch --depth 1 origin "$WHISPER_CPP_COMMIT"
           git -C "$whisper_source" checkout --detach FETCH_HEAD
-          cmake -S "$RUNNER_TEMP/whisper.cpp" -B "$RUNNER_TEMP/whisper-build" \
+          cmake -S "$runtime_dir/whisper.cpp" -B "$runtime_dir/whisper-build" \
+            -G "Visual Studio 17 2022" -A x64 \
             -DBUILD_SHARED_LIBS=OFF \
             -DWHISPER_BUILD_TESTS=OFF \
             -DWHISPER_BUILD_EXAMPLES=ON \
             -DWHISPER_BUILD_SERVER=ON
-          cmake --build "$RUNNER_TEMP/whisper-build" --config Release --parallel 2
-          whisper_cli="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
-          whisper_server="$(find "$RUNNER_TEMP/whisper-build" -type f -iname 'whisper-server.exe' | head -n 1)"
+          cmake --build "$runtime_dir/whisper-build" --config Release --parallel 2
+          whisper_cli="$(find "$runtime_dir/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
+          whisper_server="$(find "$runtime_dir/whisper-build" -type f -iname 'whisper-server.exe' | head -n 1)"
           test -n "$whisper_cli"
           test -n "$whisper_server"
           cp "$whisper_cli" vendor/bin/whisper-cli.exe
           cp "$whisper_server" vendor/bin/whisper-server.exe
           # Static builds normally need no whisper DLLs, but retain any
           # toolchain-side DLLs emitted by the selected Windows generator.
-          find "$RUNNER_TEMP/whisper-build" -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
+          find "$runtime_dir/whisper-build" -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
             'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \

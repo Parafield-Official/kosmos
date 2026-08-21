@@ -29,5 +29,6 @@ vendor/bin/FFMPEG_AUDIT.json
 vendor/models/*
 !vendor/models/README.md
 .qc-eval-cache/
+.ci-runtime/
 .live-run/
 design/shots/

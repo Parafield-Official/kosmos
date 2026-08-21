@@ -32,4 +32,16 @@ describe("packaged renderer configuration", () => {
     const plist = readFileSync(resolve(__dirname, "../../build/entitlements.mac.plist"), "utf8");
     expect(plist).toContain("com.apple.security.device.audio-input");
   });
+
+  it("stages Windows ffmpeg and whisper under GITHUB_WORKSPACE, not RUNNER_TEMP", () => {
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    const start = yaml.indexOf("- name: Prepare Windows runtime assets");
+    expect(start).toBeGreaterThan(-1);
+    const next = yaml.indexOf("\n      - name:", start + 1);
+    const step = yaml.slice(start, next === -1 ? undefined : next);
+    expect(step).toContain("GITHUB_WORKSPACE");
+    expect(step).not.toMatch(/\$RUNNER_TEMP/);
+    expect(step).toContain("ffmpeg-n8.1-latest-win64-lgpl-8.1.zip");
+    expect(step).toContain("Visual Studio 17 2022");
+  });
 });
