@@ -115,12 +115,18 @@ export function planProjectMerge(input: MergeInput): MergePlan {
       plan.conflicts.push({ kind: "script", chapterId: local.id, chapterTitle: local.title });
     }
 
+    // Their proof pass travels with their recording, and only where we have no
+    // pass of our own: a person's decisions are not ours to replace.
+    const takeTheirAlignment = Boolean(incoming.audioPath)
+      && !local.audio_path
+      && Boolean(incoming.hasAlignment)
+      && !aligned.has(local.id);
     if (incoming.audioPath && !local.audio_path) {
       plan.audioToAdopt.push({
         chapterId: local.id,
         chapterTitle: local.title,
         relativePath: incoming.audioPath,
-        withAlignment: Boolean(incoming.hasAlignment),
+        withAlignment: takeTheirAlignment,
       });
     } else if (incoming.audioPath && local.audio_path && incoming.audioPath !== local.audio_path) {
       plan.conflicts.push({
@@ -133,9 +139,8 @@ export function planProjectMerge(input: MergeInput): MergePlan {
     }
 
     const mine = new Map((localPickups[local.id] ?? []).map((pickup) => [pickup.id, pickup]));
-    const adoptingWholesale = Boolean(incoming.hasAlignment) && !aligned.has(local.id);
     for (const theirs of incoming.pickups ?? []) {
-      if (adoptingWholesale) {
+      if (takeTheirAlignment) {
         // Their whole proof pass is being taken, so individual decisions come
         // with it rather than being planned one by one.
         continue;

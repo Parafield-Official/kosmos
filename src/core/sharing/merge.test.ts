@@ -193,6 +193,49 @@ describe("planProjectMerge", () => {
     expect(plan.skipped.unknownPickups).toBe(0);
   });
 
+  it("takes their recording without writing over a proof pass we already have", () => {
+    // Adopting a take used to carry their whole alignment file with it, which
+    // replaced our own flags — including the ones a person had dismissed.
+    const plan = planProjectMerge(input({
+      localPickups: { ch01: [pickup({ id: "p1", status: "ignored" })] },
+      localAlignedChapters: ["ch01"],
+      incomingChapters: [{
+        chapterId: "ch01",
+        title: "Chapter 1",
+        index: 1,
+        audioPath: "audio/01.wav",
+        hasAlignment: true,
+        pickups: [pickup({ id: "p1", status: "done" })],
+      }],
+    }));
+    expect(plan.audioToAdopt[0]).toMatchObject({ relativePath: "audio/01.wav", withAlignment: false });
+    expect(plan.decisions).toEqual([]);
+    expect(plan.conflicts).toEqual([{
+      kind: "pickup",
+      chapterId: "ch01",
+      chapterTitle: "Chapter 1",
+      pickupId: "p1",
+      expected: "dawn",
+      mine: "ignored",
+      theirs: "done",
+    }]);
+  });
+
+  it("counts their flags as skipped when their pass is not coming with a take", () => {
+    const plan = planProjectMerge(input({
+      incomingChapters: [{
+        chapterId: "ch01",
+        title: "Chapter 1",
+        index: 1,
+        hasAlignment: true,
+        pickups: [pickup({ id: "p1", status: "done" })],
+      }],
+    }));
+    expect(plan.audioToAdopt).toEqual([]);
+    expect(plan.decisions).toEqual([]);
+    expect(plan.skipped.unknownPickups).toBe(1);
+  });
+
   it("brings over notes we have not seen and skips notes for chapters we lack", () => {
     const plan = planProjectMerge(input({
       local: project({
