@@ -18,6 +18,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "verify": "npm run build:core && npm run verify:acx && npm run verify:loudness && npm run verify:markers && npm run verify:packet && npm run verify:collab && npm run verify:proof && npm run verify:book",
+    "verify:acx": "node scripts/verify-acx.mjs",
+    "verify:loudness": "node scripts/verify-loudness.mjs",
+    "verify:markers": "node scripts/verify-markers.mjs",
+    "verify:packet": "node scripts/verify-packet.mjs",
+    "verify:collab": "node scripts/verify-collab.mjs",
+    "verify:proof": "jiti scripts/verify-proof.ts",
+    "verify:book": "jiti scripts/verify-book.ts",
     "audit:runtime": "node scripts/audit-runtime.cjs",
     "prepare:model": "node scripts/prepare-model.cjs",
     "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac",
@@ -42,17 +50,26 @@
       {
         "from": "vendor/bin",
         "to": "bin",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "vendor/models",
         "to": "models",
-        "filter": ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf"]
+        "filter": [
+          "ggml-small.en.bin",
+          "realtime_eou_120m-v1-f16.gguf"
+        ]
       },
       {
         "from": "vendor/cmudict",
         "to": "cmudict",
-        "filter": ["cmudict.dict", "README", "SOURCE.md"]
+        "filter": [
+          "cmudict.dict",
+          "README",
+          "SOURCE.md"
+        ]
       }
     ],
     "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",
@@ -86,6 +103,7 @@
     "electron": "^40.10.2",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "jiti": "2.7.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
     "vitest": "^4.1.4",

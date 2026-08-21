@@ -96,6 +96,26 @@ npm run typecheck
 npm run dev
 ```
 
+### Verifying against other tools
+
+`npm test` checks our code against our own expectations, which cannot catch a
+mistake we made twice. `npm run verify` checks the parts that make a claim about
+the outside world against tools that were not written here, on real audio:
+
+| Command | What it proves, and who says so |
+|---|---|
+| `verify:acx` | The mastered MP3 meets ACX's numbers, measured by ffmpeg's `astats` and `volumedetect` rather than by us — and an unfixable take is refused instead of shipped. |
+| `verify:loudness` | Our LUFS meter agrees with ffmpeg's `ebur128` on sines, noise and gated speech at both sample rates. |
+| `verify:markers` | Every marker export parses as the editor that imports it expects, read back with Python's `csv` module. |
+| `verify:packet` | The pickup packet's clips are playable MP3s (`ffprobe`), its spreadsheet opens in `openpyxl`, and its page is well-formed HTML. |
+| `verify:collab` | A pack written by the app's own ZIP writer opens in Python's `zipfile` and imports back with the right merge, checked against the bytes on disk. |
+| `verify:proof` | The proof pass scores precision and recall against takes spoken by the macOS voices and decoded by the bundled whisper build. |
+| `verify:book` | The occurrence scan, the whole-book pickup list and the word filter hold up on those real recordings, and the bundled dictionary's respellings are the ones a narrator wants. |
+
+`verify:proof` and `verify:book` need the speech model (`npm run prepare:model`)
+and macOS `say`; the rest run anywhere the vendored ffmpeg does. `verify:packet`
+also needs Python with `openpyxl`.
+
 For contributors testing a locally built whisper.cpp engine, point the desktop
 shell at it without changing the project format:
 
