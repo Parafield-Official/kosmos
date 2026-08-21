@@ -73,4 +73,44 @@ function applyPickupDecision(pickups, ids, status) {
   return { pickups: next, changed };
 }
 
-module.exports = { collectBookProof, applyPickupDecision };
+/**
+ * Apply a collaborator's decisions to saved flags: the status they set, and
+ * the note they left with it. Anything they did not mention is untouched.
+ *
+ * @param {object[]} pickups saved pickups for one chapter
+ * @param {Array<{ id: string, status?: string, note?: string }>} updates
+ */
+function applyPickupUpdates(pickups, updates) {
+  const wanted = new Map();
+  for (const update of Array.isArray(updates) ? updates : []) {
+    if (update?.id) {
+      wanted.set(update.id, update);
+    }
+  }
+  let changed = false;
+  const next = (pickups ?? []).map((pickup) => {
+    const update = wanted.get(pickup.id);
+    if (!update) {
+      return pickup;
+    }
+    const decided = { ...pickup };
+    if (update.status !== undefined) {
+      if (!PICKUP_STATUSES.has(update.status)) {
+        throw new Error(`Unknown pickup status: ${String(update.status)}`);
+      }
+      decided.status = update.status;
+    }
+    const note = typeof update.note === "string" ? update.note.trim() : "";
+    if (note !== "") {
+      decided.note = note;
+    }
+    if (decided.status === pickup.status && decided.note === pickup.note) {
+      return pickup;
+    }
+    changed = true;
+    return decided;
+  });
+  return { pickups: next, changed };
+}
+
+module.exports = { collectBookProof, applyPickupDecision, applyPickupUpdates };

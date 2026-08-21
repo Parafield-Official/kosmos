@@ -54,6 +54,9 @@ contextBridge.exposeInMainWorld("boothDesk", {
     return () => modelProgressListeners.delete(listener);
   },
   exportAcx: (payload) => ipcRenderer.invoke("acx:export", payload),
+  reviewPack: (payload) => ipcRenderer.invoke("project:review-pack", payload),
+  applyPack: (payload) => ipcRenderer.invoke("project:apply-pack", payload),
+  discardPack: (payload) => ipcRenderer.invoke("project:discard-pack", payload),
   shareZip: (payload) => ipcRenderer.invoke("project:share-zip", payload),
   shareSeatPack: (payload) => ipcRenderer.invoke("project:share-seat-pack", payload),
   getIdentity: (projectId) => ipcRenderer.invoke("identity:get", { projectId }),

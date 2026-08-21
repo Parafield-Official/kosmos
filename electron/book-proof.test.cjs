@@ -1,4 +1,4 @@
-const { collectBookProof, applyPickupDecision } = require("./book-proof.cjs");
+const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 
 const project = {
   chapters: [
@@ -134,5 +134,52 @@ describe("bulk pickup decisions", () => {
 
   it("survives a chapter with no saved flags", () => {
     expect(applyPickupDecision(undefined, ["p1"], "done")).toEqual({ pickups: [], changed: false });
+  });
+});
+
+describe("incoming pickup decisions", () => {
+  const saved = [
+    { id: "p1", status: "open", expected: "dawn" },
+    { id: "p2", status: "open", expected: "road", note: "mine" },
+  ];
+
+  it("takes the status and the note that came with it", () => {
+    const result = applyPickupUpdates(saved, [{ id: "p1", status: "done", note: "re-recorded" }]);
+    expect(result.changed).toBe(true);
+    expect(result.pickups[0]).toEqual({
+      id: "p1",
+      status: "done",
+      expected: "dawn",
+      note: "re-recorded",
+    });
+  });
+
+  it("leaves flags nobody mentioned alone", () => {
+    const result = applyPickupUpdates(saved, [{ id: "p1", status: "done" }]);
+    expect(result.pickups[1]).toBe(saved[1]);
+  });
+
+  it("keeps an existing note when the incoming decision has none", () => {
+    const result = applyPickupUpdates(saved, [{ id: "p2", status: "ignored" }]);
+    expect(result.pickups[1]).toEqual({ id: "p2", status: "ignored", expected: "road", note: "mine" });
+  });
+
+  it("ignores a blank note rather than erasing what is there", () => {
+    const result = applyPickupUpdates(saved, [{ id: "p2", note: "   " }]);
+    expect(result.changed).toBe(false);
+    expect(result.pickups[1].note).toBe("mine");
+  });
+
+  it("reports no change when the decision matches what is saved", () => {
+    const result = applyPickupUpdates(saved, [{ id: "p1", status: "open" }]);
+    expect(result.changed).toBe(false);
+  });
+
+  it("refuses a status the workflow does not define", () => {
+    expect(() => applyPickupUpdates(saved, [{ id: "p1", status: "maybe" }])).toThrow(/status/i);
+  });
+
+  it("ignores updates without an id", () => {
+    expect(applyPickupUpdates(saved, [{ status: "done" }]).changed).toBe(false);
   });
 });

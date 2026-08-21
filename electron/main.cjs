@@ -11,6 +11,8 @@ const { PersistentParakeetLive } = require("./parakeet-live.cjs");
 const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { strToU8, zipSync } = require("fflate");
+const { extractArchive } = require("./unzip.cjs");
+const { applyPack, reviewPack } = require("./pack-import.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand } = require("./process.cjs");
@@ -26,7 +28,7 @@ const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
-const { collectBookProof, applyPickupDecision } = require("./book-proof.cjs");
+const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 const {
   assertDuetMixRouting,
   chapterAfterDuetRoutingChange,
@@ -1125,6 +1127,109 @@ async function resolveBookPickups(folder, project, requests, status) {
     changedChapters += 1;
   }
   return { folder, project: current, changedChapters };
+}
+
+const importStaging = new Map();
+const IMPORT_STAGING_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Read a collaborator's pack and report what it would change here, without
+ * changing anything. Sharing a book was one-way until now: a pack could be
+ * sent, but whatever came back had to be re-entered by hand.
+ */
+async function reviewCollaboratorPack(folder, project) {
+  await assertProjectEnvelope(folder, project);
+  const result = await dialog.showOpenDialog({
+    title: "Open a collaborator pack",
+    properties: ["openFile"],
+    filters: [{ name: "Collaborator pack", extensions: ["zip"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+  const archivePath = result.filePaths[0];
+  const archiveStat = await fs.lstat(archivePath);
+  if (!archiveStat.isFile()) {
+    throw new Error("A collaborator pack must be a regular .zip file");
+  }
+
+  await pruneImportStaging();
+  const stagingId = crypto.randomUUID();
+  const stagingPath = path.join(app.getPath("temp"), `kosmos-import-${stagingId}`);
+  await extractArchive({ archivePath, destination: stagingPath });
+  importStaging.set(stagingId, { folder, stagingPath, createdAt: Date.now() });
+
+  try {
+    const review = await reviewPack({
+      folder,
+      project,
+      stagingPath,
+      hooks: packImportHooks(),
+    });
+    return {
+      stagingId,
+      packName: path.basename(archivePath),
+      summary: review.summary,
+      plan: review.plan,
+      incomingName: review.incomingName,
+    };
+  } catch (error) {
+    await discardImportStaging(stagingId);
+    throw error;
+  }
+}
+
+/** Copy in everything the reviewed plan described, then forget the pack. */
+async function applyCollaboratorPack(folder, project, stagingId) {
+  await assertProjectEnvelope(folder, project);
+  const staging = importStaging.get(stagingId);
+  if (!staging || staging.folder !== folder) {
+    throw new Error("That pack is no longer open. Choose it again.");
+  }
+  const result = await applyPack({
+    folder,
+    project,
+    stagingPath: staging.stagingPath,
+    hooks: packImportHooks(),
+  });
+  await discardImportStaging(stagingId);
+  return result;
+}
+
+/** The project reads and writes the import needs, bound to this process. */
+function packImportHooks() {
+  return {
+    core: loadCoreModule("sharing"),
+    readAlignment,
+    saveAlignment,
+    saveProject: saveProjectFolder,
+    readChapterDocument,
+    validateIncomingProject: (incoming) => {
+      loadCoreModule("project").validateProject({
+        ...incoming,
+        settings: normalizeProjectSettings(incoming.settings),
+      });
+    },
+  };
+}
+
+async function pruneImportStaging() {
+  const cutoff = Date.now() - IMPORT_STAGING_TTL_MS;
+  for (const [id, entry] of [...importStaging]) {
+    if (entry.createdAt <= cutoff) {
+      await discardImportStaging(id);
+    }
+  }
+}
+
+async function discardImportStaging(stagingId) {
+  const entry = importStaging.get(stagingId);
+  if (!entry) {
+    return { discarded: false };
+  }
+  importStaging.delete(stagingId);
+  await fs.rm(entry.stagingPath, { recursive: true, force: true }).catch(() => undefined);
+  return { discarded: true };
 }
 
 async function exportMarkerFiles(folder, project, chapterId, pickups) {
@@ -2887,6 +2992,24 @@ ipcMain.handle("acx:export", (_event, payload) => {
     throw new Error("Invalid ACX export request");
   }
   return exportAcxPack(payload.folder, payload.project);
+});
+ipcMain.handle("project:review-pack", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid pack review request");
+  }
+  return reviewCollaboratorPack(payload.folder, payload.project);
+});
+ipcMain.handle("project:apply-pack", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.stagingId) {
+    throw new Error("Invalid pack import request");
+  }
+  return applyCollaboratorPack(payload.folder, payload.project, payload.stagingId);
+});
+ipcMain.handle("project:discard-pack", (_event, payload) => {
+  if (!payload?.stagingId) {
+    throw new Error("Invalid pack discard request");
+  }
+  return discardImportStaging(payload.stagingId);
 });
 ipcMain.handle("project:share-zip", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {

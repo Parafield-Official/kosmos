@@ -47,6 +47,9 @@ interface BoothDeskBridge {
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
   exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
+  reviewPack: (payload: ProjectEnvelope) => Promise<PackReview | null>;
+  applyPack: (payload: ProjectEnvelope & { stagingId: string }) => Promise<PackImportResult>;
+  discardPack: (payload: { stagingId: string }) => Promise<{ discarded: boolean }>;
   shareZip: (payload: ProjectEnvelope & { lightPack: boolean }) => Promise<ShareZipResult | null>;
   shareSeatPack: (payload: ProjectEnvelope & { seat: "N1" | "N2" }) => Promise<ShareZipResult | null>;
   getIdentity: (projectId: string) => Promise<LocalIdentity | null>;
@@ -149,6 +152,28 @@ interface AudioMetadata {
   durationSeconds: number;
   bitrateKbps?: number;
   vbr?: boolean;
+}
+
+interface PackReview {
+  stagingId: string;
+  packName: string;
+  summary: string;
+  incomingName: string;
+  plan: import("./core/sharing/merge").MergePlan;
+}
+
+interface PackImportResult {
+  folder: string;
+  project: import("./core/project/types").ProjectFile;
+  applied: {
+    recordings: number;
+    decisions: number;
+    decidedChapters: number;
+    notes: number;
+    glossary: number;
+    statuses: number;
+    conflicts: number;
+  };
 }
 
 interface PickupPacketResult {

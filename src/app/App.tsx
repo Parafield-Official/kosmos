@@ -14,6 +14,7 @@ import {
 } from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
 import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
+import type { MergeConflict } from "../core/sharing/merge";
 import {
   summarizeBookPickups,
   type BookPickupRow,
@@ -274,6 +275,7 @@ function ProjectHome({
   const [scanWord, setScanWord] = useState("");
   const [scanReport, setScanReport] = useState<BookScanReport | null>(null);
   const [bookPickups, setBookPickups] = useState<BookPickupSummary | null>(null);
+  const [packReview, setPackReview] = useState<PackReview | null>(null);
   const [studioNavOpen, setStudioNavOpen] = useState(true);
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
@@ -1026,6 +1028,54 @@ function ProjectHome({
         );
       }
     });
+  }
+
+  async function openCollaboratorPack() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Opening a collaborator pack is available in the desktop app.");
+      return;
+    }
+    await runAction("pack-review", async () => {
+      const review = await window.boothDesk?.reviewPack(envelope);
+      if (!review) {
+        return;
+      }
+      setPackReview(review);
+      setNotice(`${review.packName}: ${review.summary}`);
+    });
+  }
+
+  async function applyCollaboratorPack() {
+    if (!packReview || !window.boothDesk) {
+      return;
+    }
+    const stagingId = packReview.stagingId;
+    await runAction("pack-apply", async () => {
+      const result = await window.boothDesk?.applyPack({ ...envelope, stagingId });
+      if (!result) {
+        return;
+      }
+      onChange({ folder: result.folder, project: result.project });
+      setPackReview(null);
+      setProof(null);
+      setChapterReloadVersion((version) => version + 1);
+      const applied = result.applied;
+      setNotice(
+        `Brought in ${applied.recordings} recording${applied.recordings === 1 ? "" : "s"}, `
+        + `${applied.decisions} flag decision${applied.decisions === 1 ? "" : "s"}, `
+        + `${applied.notes} note${applied.notes === 1 ? "" : "s"} and `
+        + `${applied.glossary} pronunciation entr${applied.glossary === 1 ? "y" : "ies"}.`,
+      );
+    });
+  }
+
+  async function discardCollaboratorPack() {
+    const stagingId = packReview?.stagingId;
+    setPackReview(null);
+    if (!stagingId || !window.boothDesk) {
+      return;
+    }
+    await window.boothDesk.discardPack({ stagingId }).catch(() => undefined);
   }
 
   async function changeProjectMode(mode: "solo" | "duet") {
@@ -1916,6 +1966,10 @@ function ProjectHome({
               onChapterNote={setChapterNote}
               onSaveIdentity={() => void saveLocalIdentity()}
               onShare={() => void shareProject()}
+              onOpenPack={() => void openCollaboratorPack()}
+              onApplyPack={() => void applyCollaboratorPack()}
+              onDiscardPack={() => void discardCollaboratorPack()}
+              packReview={packReview}
               onSaveNote={() => void saveNote()}
               onStatus={(status) => void changeAuthorStatus(status)}
               onSelectChapter={setSelectedChapterId}
@@ -4231,6 +4285,10 @@ function CollaborationPanel({
   onChapterNote,
   onSaveIdentity,
   onShare,
+  onOpenPack,
+  onApplyPack,
+  onDiscardPack,
+  packReview,
   onSaveNote,
   onStatus,
   onSelectChapter,
@@ -4254,6 +4312,10 @@ function CollaborationPanel({
   onChapterNote: (value: string) => void;
   onSaveIdentity: () => void;
   onShare: () => void;
+  onOpenPack: () => void;
+  onApplyPack: () => void;
+  onDiscardPack: () => void;
+  packReview: PackReview | null;
   onSaveNote: () => void;
   onStatus: (status: AuthorStatus) => void;
   onSelectChapter: (id: string) => void;
@@ -4331,6 +4393,67 @@ function CollaborationPanel({
             <div className="status-actions">
               <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N1")}>Export N1 seat pack</button>
               <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N2")}>Export N2 seat pack</button>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="collaboration-card">
+          <h4>Take a pack back in</h4>
+          <p>
+            Open the copy your author or narrator sent back. Nothing is written until you have read
+            what it would change.
+          </p>
+          <button type="button" disabled={busyAction !== null} onClick={onOpenPack}>
+            {busyAction === "pack-review" ? "Reading…" : "Open a pack"}
+          </button>
+          {packReview ? (
+            <div className="pack-review">
+              <p className="pack-review-summary">
+                <strong>{packReview.packName}</strong>
+                <span>{packReview.summary}</span>
+              </p>
+              {packReview.plan.audioToAdopt.length > 0 ? (
+                <ul className="pack-review-list">
+                  {packReview.plan.audioToAdopt.map((entry) => (
+                    <li key={entry.chapterId}>
+                      Recording for {entry.chapterTitle}
+                      {entry.withAlignment ? ", with their proof pass" : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {packReview.plan.conflicts.length > 0 ? (
+                <ul className="pack-review-list conflicts">
+                  {packReview.plan.conflicts.map((conflict, index) => (
+                    <li key={`${conflict.kind}-${conflict.chapterId}-${index}`}>
+                      {conflictLabel(conflict)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {packReview.plan.skipped.unknownChapters.length > 0 ? (
+                <p className="pack-review-skipped">
+                  Not in this book, so left out: {packReview.plan.skipped.unknownChapters.join(", ")}.
+                </p>
+              ) : null}
+              {packReview.plan.skipped.unknownPickups > 0 ? (
+                <p className="pack-review-skipped">
+                  {packReview.plan.skipped.unknownPickups} of their flags do not line up with ours and
+                  were left out. Their proof run found different words.
+                </p>
+              ) : null}
+              <div className="status-actions">
+                <button
+                  type="button"
+                  disabled={busyAction !== null || packReview.plan.empty}
+                  onClick={onApplyPack}
+                >
+                  {busyAction === "pack-apply" ? "Bringing it in…" : "Bring it in"}
+                </button>
+                <button type="button" disabled={busyAction !== null} onClick={onDiscardPack}>
+                  Discard
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -4978,6 +5101,19 @@ function FinishPage({
       </article>
     </div>
   );
+}
+
+function conflictLabel(conflict: MergeConflict): string {
+  switch (conflict.kind) {
+    case "audio":
+      return `${conflict.chapterTitle}: both sides have a recording. Yours was kept.`;
+    case "script":
+      return `${conflict.chapterTitle}: their script differs from yours, so their timings may not line up.`;
+    case "status":
+      return `${conflict.chapterTitle}: they set ${authorStatusLabel(conflict.theirs)}, you have ${authorStatusLabel(conflict.mine)}. Yours was kept.`;
+    default:
+      return `${conflict.chapterTitle}: “${conflict.expected}” — they marked it ${conflict.theirs}, you marked it ${conflict.mine}. Yours was kept.`;
+  }
 }
 
 function MissingChapter({ onAdd }: { onAdd: () => void }) {

@@ -1612,6 +1612,40 @@ button {
   color: #766a60;
 }
 
+.pack-review {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #ece4da;
+  border-radius: 10px;
+  background: #fffdfa;
+}
+
+.pack-review-summary {
+  display: grid;
+  gap: 3px;
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.pack-review-list {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #4a423b;
+}
+
+.pack-review-list.conflicts {
+  color: #8a5a2b;
+}
+
+.pack-review-skipped {
+  margin: 0 0 8px;
+  color: #766a60;
+  font-size: 12px;
+}
+
 .book-repeats,
 .book-pickup-list,
 .book-progress {
