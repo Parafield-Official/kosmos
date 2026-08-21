@@ -130,7 +130,7 @@ async function applyPack({ folder, project, stagingPath, hooks }) {
       decisions: plan.decisions.length,
       decidedChapters,
       notes: plan.notesToAdd.length,
-      glossary: plan.glossaryToAdd.length + plan.glossaryRespells.length,
+      glossary: plan.glossaryToAdd.length + plan.glossaryRespells.length + plan.glossaryVoiceNotes.length,
       statuses: plan.statusChanges.length,
       conflicts: plan.conflicts.length,
     },

@@ -13,11 +13,14 @@ export type CandidateReason =
   | "uncommon"
   | "name-pattern"
   | "unusual-spelling"
-  | "ambiguous-pronunciation";
+  | "ambiguous-pronunciation"
+  | "unexpected-pronunciation";
 
 export interface PronunciationLexicon {
   has(word: string): boolean;
   pronunciationCount(word: string): number;
+  /** The first pronunciation listed for a word, in ARPAbet phones. */
+  pronunciation(word: string): string | undefined;
 }
 
 export interface CandidateOptions {
@@ -64,6 +67,7 @@ const REASON_ORDER: GlossaryCandidate["reasons"][number][] = [
   "uncommon",
   "unusual-spelling",
   "ambiguous-pronunciation",
+  "unexpected-pronunciation",
 ];
 
 /** Extract a bounded, explainable candidate list without leaving the machine. */
@@ -149,7 +153,13 @@ export function extractGlossaryCandidates(
     );
     const ambiguousSignal = HETERONYM_WORDS.has(canonical)
       && (lexicon ? lexicon.pronunciationCount(canonical) > 1 : false);
-    if (!nameSignal && !unknownSignal && !ambiguousSignal) {
+    // A proper noun the dictionary says with a different number of syllables
+    // than its spelling suggests is the classic trap: Worcester, Gloucester,
+    // Hermione. The dictionary knows these, so no other signal catches them.
+    const unexpectedSignal = !titleOrRole
+      && aggregate.capitalizedMidSentenceFrequency > 0
+      && saidUnlikeItsSpelling(canonical, lexicon);
+    if (!nameSignal && !unknownSignal && !ambiguousSignal && !unexpectedSignal) {
       return null;
     }
     const reasons = new Set<CandidateReason>();
@@ -170,6 +180,9 @@ export function extractGlossaryCandidates(
     }
     if (ambiguousSignal) {
       reasons.add("ambiguous-pronunciation");
+    }
+    if (unexpectedSignal) {
+      reasons.add("unexpected-pronunciation");
     }
     return {
       spelling: representativeSpelling(aggregate.variants, canonical),
@@ -195,6 +208,7 @@ export function extractGlossaryCandidates(
 /** Parse the line-oriented CMUdict format into the small interface extraction needs. */
 export function parsePronouncingDictionary(contents: string): PronunciationLexicon {
   const pronunciations = new Map<string, Set<string>>();
+  const first = new Map<string, string>();
   for (const line of contents.split(/\r?\n/u)) {
     const trimmed = line.trim();
     if (trimmed.length === 0 || trimmed.startsWith(";;")) {
@@ -205,13 +219,18 @@ export function parsePronouncingDictionary(contents: string): PronunciationLexic
       continue;
     }
     const spelling = match[1].replace(/\(\d+\)$/u, "").toLocaleLowerCase("en-US");
+    const phones = match[2].trim();
     const pronunciationsForWord = pronunciations.get(spelling) ?? new Set<string>();
-    pronunciationsForWord.add(match[2].trim());
+    pronunciationsForWord.add(phones);
     pronunciations.set(spelling, pronunciationsForWord);
+    if (!first.has(spelling)) {
+      first.set(spelling, phones);
+    }
   }
   return {
     has: (word) => pronunciations.has(word.toLocaleLowerCase("en-US")),
     pronunciationCount: (word) => pronunciations.get(word.toLocaleLowerCase("en-US"))?.size ?? 0,
+    pronunciation: (word) => first.get(word.toLocaleLowerCase("en-US")),
   };
 }
 
@@ -283,7 +302,7 @@ export function replaceAutoGlossaryCandidates(
   candidates: GlossaryCandidate[],
 ): GlossaryEntry[] {
   const result = existing
-    .filter((entry) => entry.source === "user" || Boolean(entry.respell || entry.clip_path || entry.seats?.length))
+    .filter((entry) => entry.source === "user" || Boolean(entry.respell || entry.voice_note || entry.clip_path || entry.seats?.length))
     .map((entry) => ({
       ...entry,
       ...(entry.seats ? { seats: [...entry.seats] } : {}),
@@ -318,8 +337,8 @@ function prefersGlossaryEntry(candidate: GlossaryEntry, current: GlossaryEntry):
   if (candidate.source !== current.source) {
     return candidate.source === "user";
   }
-  const candidateEdited = Boolean(candidate.respell || candidate.clip_path);
-  const currentEdited = Boolean(current.respell || current.clip_path);
+  const candidateEdited = Boolean(candidate.respell || candidate.voice_note || candidate.clip_path);
+  const currentEdited = Boolean(current.respell || current.voice_note || current.clip_path);
   return candidateEdited && !currentEdited;
 }
 
@@ -367,6 +386,7 @@ export function renameGlossaryEntry(
   id: string,
   spelling: string,
   respell?: string,
+  voiceNote?: string,
 ): GlossaryEntry[] {
   const clean = spelling.trim();
   if (clean.length === 0) {
@@ -378,7 +398,13 @@ export function renameGlossaryEntry(
       return entry;
     }
     found = true;
-    return { ...entry, spelling: clean, respell: respell?.trim() || undefined, source: "user" as const };
+    return {
+      ...entry,
+      spelling: clean,
+      respell: respell?.trim() || undefined,
+      voice_note: voiceNote === undefined ? entry.voice_note : voiceNote.trim() || undefined,
+      source: "user" as const,
+    };
   });
   if (!found) {
     throw new Error(`Unknown glossary entry: ${id}`);
@@ -409,6 +435,7 @@ export function mergeGlossaryEntries(
             ...entry,
             spelling: spelling?.trim() || entry.spelling,
             respell: entry.respell || source.respell,
+            voice_note: entry.voice_note || source.voice_note,
             clip_path: entry.clip_path || source.clip_path,
             seats: seats.length > 0 ? seats : undefined,
             frequency: entry.frequency + source.frequency,
@@ -555,11 +582,39 @@ function hasUnusualSpelling(word: string): boolean {
   return /(?:cest|chester|cestershire|eaux|ough|sch|tz|cz)/iu.test(word);
 }
 
+/**
+ * True when the dictionary says a word with a different number of syllables
+ * than its spelling suggests — "Worcester" is spelled with three and said with
+ * two. Counting syllables is cheap and, unlike comparing letters to sounds,
+ * does not fire on every name that merely looks foreign.
+ */
+function saidUnlikeItsSpelling(word: string, lexicon: PronunciationLexicon | undefined): boolean {
+  const phones = lexicon?.pronunciation?.(word);
+  if (!phones || word.includes("-") || word.includes("'")) {
+    return false;
+  }
+  const spoken = (phones.match(/\d/gu) ?? []).length;
+  if (spoken === 0) {
+    return false;
+  }
+  return countSpelledSyllables(word) !== spoken;
+}
+
+/** Vowel groups, less the endings English writes but does not say. */
+function countSpelledSyllables(word: string): number {
+  const letters = word
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z]/gu, "")
+    .replace(/(?:es|e)$/u, "");
+  return (letters.match(/[aeiouy]+/gu) ?? []).length || 1;
+}
+
 function candidateScore(candidate: GlossaryCandidate): number {
   return candidate.reasons.reduce((score, reason) => score + (
     reason === "name-pattern" ? 5
       : reason === "unusual-spelling" ? 4
         : reason === "ambiguous-pronunciation" ? 4
+          : reason === "unexpected-pronunciation" ? 4
           : reason === "capitalized" ? 3
             : reason === "repeated-capitalized" ? 2
               : reason === "uncommon" ? 1

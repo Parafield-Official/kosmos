@@ -59,6 +59,8 @@ export interface MergePlan {
   notesToAdd: ChapterNote[];
   glossaryToAdd: GlossaryEntry[];
   glossaryRespells: Array<{ id: string; spelling: string; respell: string }>;
+  /** Their notes on how a name should sound, where we have none. */
+  glossaryVoiceNotes: Array<{ id: string; spelling: string; voiceNote: string }>;
   decisions: PickupDecision[];
   statusChanges: Array<{ chapterId: string; chapterTitle: string; from: AuthorStatus; to: AuthorStatus }>;
   audioToAdopt: AudioAdoption[];
@@ -94,6 +96,7 @@ export function planProjectMerge(input: MergeInput): MergePlan {
     notesToAdd: [],
     glossaryToAdd: [],
     glossaryRespells: [],
+    glossaryVoiceNotes: [],
     decisions: [],
     statusChanges: [],
     audioToAdopt: [],
@@ -220,11 +223,16 @@ export function planProjectMerge(input: MergeInput): MergePlan {
     if (respell && !existing.respell?.trim()) {
       plan.glossaryRespells.push({ id: existing.id, spelling: existing.spelling, respell });
     }
+    const voiceNote = entry.voice_note?.trim();
+    if (voiceNote && !existing.voice_note?.trim()) {
+      plan.glossaryVoiceNotes.push({ id: existing.id, spelling: existing.spelling, voiceNote });
+    }
   }
 
   plan.empty = plan.notesToAdd.length === 0
     && plan.glossaryToAdd.length === 0
     && plan.glossaryRespells.length === 0
+    && plan.glossaryVoiceNotes.length === 0
     && plan.decisions.length === 0
     && plan.statusChanges.length === 0
     && plan.audioToAdopt.length === 0;
@@ -269,7 +277,15 @@ export function applyMergePlan(
 
   const glossary = [...(local.glossary ?? [])].map((entry) => {
     const respell = plan.glossaryRespells.find((candidate) => candidate.id === entry.id);
-    return respell ? { ...entry, respell: respell.respell } : entry;
+    const voiceNote = plan.glossaryVoiceNotes.find((candidate) => candidate.id === entry.id);
+    if (!respell && !voiceNote) {
+      return entry;
+    }
+    return {
+      ...entry,
+      ...(respell ? { respell: respell.respell } : {}),
+      ...(voiceNote ? { voice_note: voiceNote.voiceNote } : {}),
+    };
   });
 
   return {
@@ -297,9 +313,9 @@ export function describeMergePlan(plan: MergePlan): string {
   if (plan.notesToAdd.length > 0) {
     parts.push(`${plan.notesToAdd.length} ${plan.notesToAdd.length === 1 ? "note" : "notes"}`);
   }
-  if (plan.glossaryToAdd.length + plan.glossaryRespells.length > 0) {
-    const count = plan.glossaryToAdd.length + plan.glossaryRespells.length;
-    parts.push(`${count} pronunciation ${count === 1 ? "entry" : "entries"}`);
+  const glossaryCount = plan.glossaryToAdd.length + plan.glossaryRespells.length + plan.glossaryVoiceNotes.length;
+  if (glossaryCount > 0) {
+    parts.push(`${glossaryCount} pronunciation ${glossaryCount === 1 ? "entry" : "entries"}`);
   }
   if (plan.statusChanges.length > 0) {
     parts.push(`${plan.statusChanges.length} chapter ${plan.statusChanges.length === 1 ? "status" : "statuses"}`);

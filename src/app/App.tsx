@@ -1282,9 +1282,9 @@ function ProjectHome({
     });
   }
 
-  async function editGlossary(id: string, spelling: string, respell: string) {
+  async function editGlossary(id: string, spelling: string, respell: string, voiceNote: string) {
     await runAction(`glossary-${id}`, async () => {
-      const glossary = renameGlossaryEntry(project.glossary ?? [], id, spelling, respell);
+      const glossary = renameGlossaryEntry(project.glossary ?? [], id, spelling, respell, voiceNote);
       await persistGlossary(glossary);
     });
   }
@@ -1306,6 +1306,40 @@ function ProjectHome({
       if (result) {
         onChange(result);
         setNotice(`${result.project.glossary?.length ?? 0} pronunciation suggestions remain after the lexicon check.`);
+      }
+    });
+  }
+
+  async function fillGlossaryRespells() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Dictionary pronunciations are available in the desktop app.");
+      return;
+    }
+    await runAction("glossary-suggest", async () => {
+      const result = await window.boothDesk?.suggestGlossaryRespells(envelope);
+      if (!result) {
+        return;
+      }
+      onChange({ folder: result.folder, project: result.project });
+      const unknown = result.unknown.length;
+      setNotice(
+        result.filled === 0
+          ? `The dictionary does not know ${unknown === 1 ? "that name" : `any of those ${unknown} names`}. Write the pronunciation yourself.`
+          : `Filled ${result.filled} pronunciation${result.filled === 1 ? "" : "s"} from the dictionary.`
+            + (unknown > 0 ? ` ${unknown} still need${unknown === 1 ? "s" : ""} a person: ${result.unknown.slice(0, 6).join(", ")}${unknown > 6 ? "…" : ""}.` : ""),
+      );
+    });
+  }
+
+  async function exportVoiceGuide() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Voice guide export is available in the desktop app.");
+      return;
+    }
+    await runAction("glossary-export-guide", async () => {
+      const result = await window.boothDesk?.exportVoiceGuide(envelope);
+      if (result) {
+        setNotice(`Wrote ${result.files.length} file${result.files.length === 1 ? "" : "s"} to ${result.folder}.`);
       }
     });
   }
@@ -1928,7 +1962,9 @@ function ProjectHome({
               onRespell={setGlossaryRespell}
               onAdd={() => void addGlossary()}
               onRefresh={() => void refreshGlossarySuggestions()}
-              onRename={(id, spelling, respell) => void editGlossary(id, spelling, respell)}
+              onSuggestRespells={() => void fillGlossaryRespells()}
+              onExportGuide={() => void exportVoiceGuide()}
+              onRename={(id, spelling, respell, voiceNote) => void editGlossary(id, spelling, respell, voiceNote)}
               onDelete={(id) => void removeGlossary(id)}
               onAttachClip={(id) => void attachGlossaryClip(id)}
               onPlayClip={(entry) => void playGlossaryClip(entry)}
@@ -4032,6 +4068,8 @@ function GlossaryPanel({
   onRespell,
   onAdd,
   onRefresh,
+  onSuggestRespells,
+  onExportGuide,
   onRename,
   onDelete,
   onAttachClip,
@@ -4046,12 +4084,15 @@ function GlossaryPanel({
   onRespell: (value: string) => void;
   onAdd: () => void;
   onRefresh: () => void;
-  onRename: (id: string, spelling: string, respell: string) => void;
+  onSuggestRespells: () => void;
+  onExportGuide: () => void;
+  onRename: (id: string, spelling: string, respell: string, voiceNote: string) => void;
   onDelete: (id: string) => void;
   onAttachClip: (id: string) => void;
   onPlayClip: (entry: GlossaryEntry) => void;
   onRecordClip: (entry: GlossaryEntry) => void;
 }) {
+  const undecided = glossary.filter((entry) => !entry.respell?.trim()).length;
   return (
     <section className="phase-panel glossary-panel" aria-labelledby="glossary-panel-title">
       <header className="panel-heading">
@@ -4060,12 +4101,31 @@ function GlossaryPanel({
           <h3 id="glossary-panel-title">Pronunciation guide</h3>
         </div>
         <div className="panel-heading-actions">
-          <span className="result-count">{glossary.length} entries</span>
+          <span className="result-count">
+            {glossary.length} entries{undecided > 0 ? ` · ${undecided} unsaid` : ""}
+          </span>
           <button type="button" className="table-action" disabled={busyAction !== null} onClick={onRefresh}>Refresh suggestions</button>
+          <button
+            type="button"
+            className="table-action"
+            disabled={busyAction !== null || undecided === 0}
+            onClick={onSuggestRespells}
+          >
+            Fill from dictionary
+          </button>
+          <button
+            type="button"
+            className="table-action"
+            disabled={busyAction !== null || glossary.length === 0}
+            onClick={onExportGuide}
+          >
+            Export voice guide
+          </button>
         </div>
       </header>
       <p className="panel-honesty">
-        Add names and tricky words so everyone says them the same way.
+        Add names and tricky words so everyone says them the same way. The voice note is for
+        how a name should sound — accent, age, attitude — and rides along to the narrator.
       </p>
 
       <div className="glossary-add-row">
@@ -4086,7 +4146,7 @@ function GlossaryPanel({
         <div className="glossary-table-wrap">
           <table className="glossary-table">
             <thead>
-              <tr><th>Spelling</th><th>Respell</th><th>Count</th><th>Source</th><th /></tr>
+              <tr><th>Spelling</th><th>Respell</th><th>Voice</th><th>Count</th><th>Source</th><th /></tr>
             </thead>
             <tbody>
               {glossary.map((entry) => (
@@ -4120,7 +4180,7 @@ function GlossaryRow({
 }: {
   entry: GlossaryEntry;
   busy: boolean;
-  onRename: (id: string, spelling: string, respell: string) => void;
+  onRename: (id: string, spelling: string, respell: string, voiceNote: string) => void;
   onDelete: (id: string) => void;
   onAttachClip: (id: string) => void;
   onPlayClip: (entry: GlossaryEntry) => void;
@@ -4128,23 +4188,32 @@ function GlossaryRow({
 }) {
   const [spelling, setSpelling] = useState(entry.spelling);
   const [respell, setRespell] = useState(entry.respell ?? "");
+  const [voiceNote, setVoiceNote] = useState(entry.voice_note ?? "");
 
   useEffect(() => {
     setSpelling(entry.spelling);
     setRespell(entry.respell ?? "");
-  }, [entry.spelling, entry.respell]);
+    setVoiceNote(entry.voice_note ?? "");
+  }, [entry.spelling, entry.respell, entry.voice_note]);
 
   return (
     <tr>
       <td><input value={spelling} onChange={(event) => setSpelling(event.target.value)} /></td>
       <td><input value={respell} onChange={(event) => setRespell(event.target.value)} placeholder="Human pronunciation" /></td>
+      <td>
+        <input
+          value={voiceNote}
+          onChange={(event) => setVoiceNote(event.target.value)}
+          placeholder="Clipped, northern, wry"
+        />
+      </td>
       <td>{entry.frequency}</td>
       <td>{entry.source}</td>
       <td className="glossary-actions">
         <button
           type="button"
           disabled={busy || spelling.trim().length === 0}
-          onClick={() => onRename(entry.id, spelling, respell)}
+          onClick={() => onRename(entry.id, spelling, respell, voiceNote)}
         >
           Save
         </button>

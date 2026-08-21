@@ -232,6 +232,28 @@ describe("planProjectMerge", () => {
     expect(plan.glossaryToAdd.map((entry) => entry.spelling)).toEqual(["Siobhan"]);
   });
 
+  it("takes an author's voice note where we have none, and keeps ours where we do", () => {
+    const plan = planProjectMerge(input({
+      local: project({
+        glossary: [
+          { id: "g1", spelling: "Leominster", frequency: 3, source: "auto" },
+          { id: "g2", spelling: "Siobhan", voice_note: "Warm.", frequency: 1, source: "user" },
+        ],
+      }),
+      incoming: project({
+        glossary: [
+          { id: "g1", spelling: "Leominster", voice_note: "Local: clipped.", frequency: 3, source: "user" },
+          { id: "g2", spelling: "Siobhan", voice_note: "Cold.", frequency: 1, source: "user" },
+        ],
+      }),
+    }));
+    expect(plan.glossaryVoiceNotes).toEqual([
+      { id: "g1", spelling: "Leominster", voiceNote: "Local: clipped." },
+    ]);
+    expect(plan.empty).toBe(false);
+    expect(describeMergePlan(plan)).toContain("1 pronunciation entry");
+  });
+
   it("keeps an incoming pronunciation from landing on one of our ids", () => {
     const plan = planProjectMerge(input({
       local: project({ glossary: [{ id: "g1", spelling: "Leominster", frequency: 1, source: "auto" }] }),
@@ -392,6 +414,34 @@ describe("applyMergePlan", () => {
       respell: "LEM-ster",
       frequency: 4,
       source: "auto",
+    });
+  });
+
+  it("writes a voice note onto the entry we already had", () => {
+    const local = project({
+      glossary: [{ id: "g1", spelling: "Leominster", respell: "LEM-ster", frequency: 4, source: "user" }],
+    });
+    const plan = planProjectMerge(input({
+      local,
+      incoming: project({
+        glossary: [{
+          id: "gx",
+          spelling: "Leominster",
+          respell: "LEM-in-ster",
+          voice_note: "Local: clipped.",
+          frequency: 1,
+          source: "user",
+        }],
+      }),
+    }));
+    const merged = applyMergePlan(local, plan);
+    expect(merged.glossary?.[0]).toEqual({
+      id: "g1",
+      spelling: "Leominster",
+      respell: "LEM-ster",
+      voice_note: "Local: clipped.",
+      frequency: 4,
+      source: "user",
     });
   });
 

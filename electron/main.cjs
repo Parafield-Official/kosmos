@@ -13,6 +13,7 @@ const { zipProjectFolder } = require("./share.cjs");
 const { strToU8, zipSync } = require("fflate");
 const { extractArchive } = require("./unzip.cjs");
 const { applyPack, reviewPack } = require("./pack-import.cjs");
+const { exportVoiceGuide: exportVoiceGuideFiles } = require("./voice-guide.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand } = require("./process.cjs");
@@ -1016,6 +1017,40 @@ async function refreshGlossary(folder, project) {
     await writeChapterDocument(folder, chapter.text_path, { ...document, spans });
   }
   return saveProjectFolder(folder, { ...project, glossary, updated_at: new Date().toISOString() });
+}
+
+/**
+ * Fill in the pronunciations the bundled dictionary already knows, so a narrator
+ * only hand-writes the names no dictionary has. Rows someone has already
+ * answered are left alone.
+ */
+async function suggestGlossaryRespells(folder, project) {
+  await assertProjectEnvelope(folder, project);
+  const glossaryCore = loadCoreModule("glossary");
+  const lexicon = loadPronunciationLexicon();
+  if (!lexicon) {
+    throw new Error("The pronouncing dictionary is not bundled with this build.");
+  }
+  const { glossary, filled, unknown } = glossaryCore.fillGlossaryRespells(project.glossary ?? [], lexicon);
+  const saved = filled > 0
+    ? await saveProjectFolder(folder, { ...project, glossary, updated_at: new Date().toISOString() })
+    : { folder, project };
+  return { ...saved, filled, unknown };
+}
+
+/**
+ * Two files a narrator can actually read from: the guide of every name with how
+ * to say it and how it should sound, and the script itself with pronunciations
+ * dropped in beside the names.
+ */
+async function exportVoiceGuide(folder, project, options = {}) {
+  await assertProjectEnvelope(folder, project);
+  return exportVoiceGuideFiles({
+    folder,
+    project,
+    frequency: options.frequency,
+    hooks: { readChapterDocument, core: loadCoreModule("glossary") },
+  });
 }
 
 async function readChapterText(folder, project, chapterId) {
@@ -2822,6 +2857,18 @@ ipcMain.handle("glossary:refresh", (_event, payload) => {
     throw new Error("Invalid glossary refresh request");
   }
   return refreshGlossary(payload.folder, payload.project);
+});
+ipcMain.handle("glossary:suggest-respells", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid respelling request");
+  }
+  return suggestGlossaryRespells(payload.folder, payload.project);
+});
+ipcMain.handle("glossary:export-guide", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid voice guide export request");
+  }
+  return exportVoiceGuide(payload.folder, payload.project, { frequency: payload.frequency });
 });
 ipcMain.handle("project:chapter-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

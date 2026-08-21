@@ -21,6 +21,8 @@ interface BoothDeskBridge {
   attachGlossaryClip: (payload: ProjectEnvelope & { glossaryId: string }) => Promise<GlossaryClipAttachment | null>;
   relinkGlossary: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
   refreshGlossary: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
+  suggestGlossaryRespells: (payload: ProjectEnvelope) => Promise<RespellSuggestionResult>;
+  exportVoiceGuide: (payload: ProjectEnvelope & { frequency?: "paragraph" | "all" }) => Promise<VoiceGuideResult>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
   saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
@@ -112,6 +114,18 @@ interface MarkerExportResult {
 }
 
 interface ProofReportResult {
+  folder: string;
+  files: string[];
+}
+
+interface RespellSuggestionResult extends ProjectEnvelope {
+  /** Rows the dictionary could answer. */
+  filled: number;
+  /** Names no dictionary knows; these still need a person. */
+  unknown: string[];
+}
+
+interface VoiceGuideResult {
   folder: string;
   files: string[];
 }

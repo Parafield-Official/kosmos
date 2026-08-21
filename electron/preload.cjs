@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("boothDesk", {
   attachGlossaryClip: (payload) => ipcRenderer.invoke("glossary:attach-clip", payload),
   relinkGlossary: (payload) => ipcRenderer.invoke("glossary:relink", payload),
   refreshGlossary: (payload) => ipcRenderer.invoke("glossary:refresh", payload),
+  suggestGlossaryRespells: (payload) => ipcRenderer.invoke("glossary:suggest-respells", payload),
+  exportVoiceGuide: (payload) => ipcRenderer.invoke("glossary:export-guide", payload),
   readChapterText: (payload) => ipcRenderer.invoke("project:chapter-text", payload),
   saveAlignment: (payload) => ipcRenderer.invoke("project:save-alignment", payload),
   readAlignment: (payload) => ipcRenderer.invoke("project:read-alignment", payload),

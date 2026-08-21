@@ -74,6 +74,42 @@ describe("offline glossary candidates", () => {
     ]);
   });
 
+  it("flags a name the dictionary says with fewer syllables than it is spelled with", () => {
+    const lexicon = parsePronouncingDictionary(`
+      worcester W UH1 S T ER0
+      hermione HH ER0 M IY0 OW1 N IY0
+      london L AH1 N D AH0 N
+      michael M AY1 K AH0 L
+      the DH AH0
+      from F R AH1 M
+      to T UW1
+      train T R EY1 N
+      drove D R OW1 V
+      us AH1 S
+    `);
+
+    const candidates = extractGlossaryCandidates(
+      "The train from Worcester to London. Michael drove Hermione to us.",
+      { lexicon },
+    );
+
+    expect(candidates.map((candidate) => candidate.spelling).sort()).toEqual(["Hermione", "Worcester"]);
+    expect(candidates.find((candidate) => candidate.spelling === "Worcester")?.reasons)
+      .toContain("unexpected-pronunciation");
+  });
+
+  it("does not flag an unexpected pronunciation when the word only starts sentences", () => {
+    const lexicon = parsePronouncingDictionary(`
+      worcester W UH1 S T ER0
+      was W AA1 Z
+      quiet K W AY1 AH0 T
+    `);
+
+    const candidates = extractGlossaryCandidates("Worcester was quiet.", { lexicon });
+
+    expect(candidates.map((candidate) => candidate.spelling)).toEqual([]);
+  });
+
   it("refreshes auto suggestions without deleting authored pronunciation work", () => {
     const refreshed = replaceAutoGlossaryCandidates(
       [

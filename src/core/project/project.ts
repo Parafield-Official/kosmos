@@ -284,7 +284,7 @@ function validateGlossary(value: unknown): void {
     if (!entry || typeof entry !== "object") {
       throw new Error(`project.json glossary entry ${position + 1} must be an object`);
     }
-    const candidate = entry as { id?: unknown; spelling?: unknown; respell?: unknown; clip_path?: unknown; frequency?: unknown; source?: unknown; seats?: unknown };
+    const candidate = entry as { id?: unknown; spelling?: unknown; respell?: unknown; voice_note?: unknown; clip_path?: unknown; frequency?: unknown; source?: unknown; seats?: unknown };
     if (typeof candidate.id !== "string" || candidate.id.length === 0 || !isSafeIdentifier(candidate.id) || typeof candidate.spelling !== "string" || candidate.spelling.trim().length === 0) {
       throw new Error(`project.json glossary entry ${position + 1} is malformed`);
     }
@@ -294,6 +294,9 @@ function validateGlossary(value: unknown): void {
     ids.add(candidate.id);
     if (candidate.respell !== undefined && typeof candidate.respell !== "string") {
       throw new Error(`project.json glossary entry ${candidate.id} has an invalid respell`);
+    }
+    if (candidate.voice_note !== undefined && typeof candidate.voice_note !== "string") {
+      throw new Error(`project.json glossary entry ${candidate.id} has an invalid voice note`);
     }
     if (candidate.clip_path !== undefined && !isAudioPath(candidate.clip_path)) {
       throw new Error(`project.json glossary entry ${candidate.id} has an unsafe clip path`);

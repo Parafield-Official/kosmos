@@ -75,6 +75,8 @@ export interface GlossaryEntry {
   id: string;
   spelling: string;
   respell?: string;
+  /** How this name should sound in the read: accent, age, attitude. */
+  voice_note?: string;
   clip_path?: string;
   seats?: Seat[];
   frequency: number;

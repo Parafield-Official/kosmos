@@ -974,6 +974,11 @@ button {
   text-transform: uppercase;
 }
 
+/* Keep the text columns typeable once the row carries a voice note too. */
+.glossary-table td input {
+  min-width: 128px;
+}
+
 .glossary-table tbody tr:last-child td {
   border-bottom: 0;
 }

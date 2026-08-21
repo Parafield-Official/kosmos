@@ -215,6 +215,7 @@ This is **not** Pozotron’s “AI researched the name.” We build a **candidat
    - It appears **3+ times** capitalized (`Kael`, `Bistritz`).
    - It is **not** in the English list (`Worcester` is in some lists — also keep if it has unusual letter patterns or the user later adds it).
    - Optional cheap pattern: `said Elena` / `Elena said` → treat `Elena` as a name.
+   - It is capitalized mid-sentence and the bundled dictionary says it with a different number of syllables than its spelling suggests (`Worcester`, `Gloucester`, `Hermione`). These are in every word list, so nothing else catches them.
 4. Merge case variants (`ELENA` / `Elena` → one entry).
 5. Sort by frequency. Cap the auto-list (e.g. top 80) so a novel doesn’t dump 400 false hits.
 6. **User is the editor:** add, delete, merge, rename. The auto-list is a draft. Empty glossary is valid.
@@ -225,10 +226,15 @@ This is **not** Pozotron’s “AI researched the name.” We build a **candidat
 |---|---|
 | spelling | `Leominster` |
 | respell (optional) | `LEM-ster` |
+| voice_note (optional) | how it should sound: `Local: clipped, flat a` |
 | clip | 3–10s WAV the author/narrator records in-app |
 | seats | optional: this name is usually N1 |
 
 **In the teleprompter:** those words are underlined. Click → play **the clip** if it exists, else show the respell. Never generate the audiobook with TTS. Optional dictionary beep for *common* English only, never for invented names.
+
+**Respell suggestions:** “Fill from dictionary” converts the bundled CMU pronunciation into a readable respelling (`W UH1 S T ER0` → `WUU-ster`). It only fills rows nobody has answered, and it reports the names no dictionary knows — those still need a person.
+
+**Voice guide export** (`export/voice-guide/`): `voice-guide.md` lists every name with its respelling, voice note, how many times it appears and in which chapters, and separates the names still without a pronunciation. Alongside it, one marked-up script per chapter with the respelling dropped in beside the first appearance of each name in every paragraph, so the narrator reads from one page.
 
 **Honesty in the UI:** “We guessed names from capitals. Fix this list. Record a clip for anything a stranger would misread.”
 
