@@ -96,6 +96,7 @@ describe("ACX master chain", () => {
     const failure = masteringStructuralFailure({
       checks: {
         rms: "pass",
+        loudness: "unspecified",
         true_peak: "pass",
         noise_floor: "pass",
         sample_rate: "pass",
@@ -110,6 +111,7 @@ describe("ACX master chain", () => {
     expect(masteringStructuralFailure({
       checks: {
         rms: "pass",
+        loudness: "unspecified",
         true_peak: "pass",
         noise_floor: "pass",
         sample_rate: "pass",

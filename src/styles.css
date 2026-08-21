@@ -1612,6 +1612,35 @@ button {
   color: #766a60;
 }
 
+.check-dot.unspecified {
+  color: #8b7e71;
+  background: #ece4da;
+}
+
+.meter-target-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #8b7f74;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meter-target-select select {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #e0d7cd;
+  border-radius: 7px;
+  background: #fffdfa;
+  color: #3f3630;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .check-dot {
   display: inline-block;
   padding: 3px 5px;

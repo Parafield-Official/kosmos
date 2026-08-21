@@ -88,7 +88,11 @@ describe("ACX export plan", () => {
 
 function fakeReport(rms: number) {
   return {
+    preset_id: "acx",
+    preset_label: "ACX / Audible",
+    preset_source: "test fixture",
     rms_dbfs: rms,
+    lufs_integrated: rms + 1,
     true_peak_dbfs: -4,
     sample_peak_dbfs: -4.2,
     noise_floor_dbfs: -65,
@@ -104,6 +108,7 @@ function fakeReport(rms: number) {
     tail_room_tone_is_digital_silence: false,
     checks: {
       rms: "pass" as const,
+      loudness: "unspecified" as const,
       true_peak: "pass" as const,
       noise_floor: "pass" as const,
       sample_rate: "pass" as const,

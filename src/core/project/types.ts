@@ -15,6 +15,8 @@ export interface ProjectSettings {
   proof_sensitivity: ProofSensitivity;
   pause_threshold_seconds: number;
   acx_target_rms_dbfs: number;
+  /** Which delivery target the meter judges against. */
+  spec_preset_id: string;
   teleprompter_theme: "dark" | "sepia" | "cream";
   teleprompter_font_size: number;
   /** Versioned first-run defaults; used to migrate older books once. */

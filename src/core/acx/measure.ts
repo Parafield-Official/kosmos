@@ -1,4 +1,6 @@
-import { ACX_SPEC, type CheckStatus, trafficLight, type TrafficLight } from "./spec";
+import { integratedLufs } from "./loudness";
+import { ACX_PRESET, type SpecPreset } from "./presets";
+import { type CheckStatus, trafficLight, type TrafficLight } from "./spec";
 
 export type AudioFormat = "wav" | "mp3" | "flac" | "m4a" | "aiff" | "unknown";
 
@@ -14,10 +16,18 @@ export interface PcmAudio {
 export interface MeasureOptions {
   /** Retail samples begin on narration and intentionally have no room-tone pad. */
   requireRoomTone?: boolean;
+  /** Delivery target to judge against. Defaults to ACX. */
+  preset?: SpecPreset;
 }
 
 export interface AcxReport {
+  preset_id: string;
+  preset_label: string;
+  preset_source: string;
   rms_dbfs: number;
+  /** Integrated loudness per BS.1770. Reported for every preset, judged only
+   * by presets that publish a LUFS window. */
+  lufs_integrated: number;
   true_peak_dbfs: number;
   sample_peak_dbfs: number;
   noise_floor_dbfs: number;
@@ -37,6 +47,7 @@ export interface AcxReport {
   tail_room_tone_is_digital_silence: boolean;
   checks: {
     rms: CheckStatus;
+    loudness: CheckStatus;
     true_peak: CheckStatus;
     noise_floor: CheckStatus;
     sample_rate: CheckStatus;
@@ -120,34 +131,38 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
   const truePeak = truePeakDbfs(samples, channels > 0 ? channels : 1);
   const format = audio.format ?? "unknown";
   const requireRoomTone = options.requireRoomTone !== false;
+  const preset = options.preset ?? ACX_PRESET;
+  const lufs = integratedLufs(samples, sampleRate, channels > 0 ? channels : 1);
 
   const checks = {
-    rms: rangeStatus(
-      rmsDbfs(samples),
-      ACX_SPEC.rms_dbfs.min,
-      ACX_SPEC.rms_dbfs.max,
-      0.5,
-    ),
-    true_peak: upperBoundStatus(truePeak, ACX_SPEC.true_peak_dbfs_max, 0.5),
-    noise_floor: upperBoundStatus(noiseFloor, ACX_SPEC.noise_floor_dbfs_max, 0.5, true),
-    sample_rate: sampleRate === ACX_SPEC.sample_rate ? "pass" : "fail",
+    rms: preset.rms_dbfs
+      ? rangeStatus(rmsDbfs(samples), preset.rms_dbfs.min, preset.rms_dbfs.max, 0.5)
+      : "unspecified",
+    loudness: preset.lufs ? rangeStatus(lufs, preset.lufs.min, preset.lufs.max, 0.2) : "unspecified",
+    true_peak: preset.true_peak_dbfs_max === null
+      ? "unspecified"
+      : upperBoundStatus(truePeak, preset.true_peak_dbfs_max, 0.5),
+    noise_floor: preset.noise_floor_dbfs_max === null
+      ? "unspecified"
+      : upperBoundStatus(noiseFloor, preset.noise_floor_dbfs_max, 0.5, true),
+    sample_rate: preset.sample_rate === null
+      ? "unspecified"
+      : sampleRate === preset.sample_rate ? "pass" : "fail",
     channels: (channels === 1 || channels === 2) && samples.length % channels === 0 ? "pass" : "fail",
-    duration: durationSeconds <= ACX_SPEC.max_file_seconds ? "pass" : "fail",
-    format: formatStatus(audio),
-    head_room_tone: !requireRoomTone || (roomTone.head.seconds >= ACX_SPEC.room_tone_head_s.min &&
-      roomTone.head.seconds <= ACX_SPEC.room_tone_head_s.max &&
-      !roomTone.head.digitalSilence)
-      ? "pass"
-      : "fail",
-    tail_room_tone: !requireRoomTone || (roomTone.tail.seconds >= ACX_SPEC.room_tone_tail_s.min &&
-      roomTone.tail.seconds <= ACX_SPEC.room_tone_tail_s.max &&
-      !roomTone.tail.digitalSilence)
-      ? "pass"
-      : "fail",
+    duration: preset.max_file_seconds === null
+      ? "unspecified"
+      : durationSeconds <= preset.max_file_seconds ? "pass" : "fail",
+    format: formatStatus(audio, preset),
+    head_room_tone: roomToneStatus(preset.room_tone_head_s, roomTone.head, requireRoomTone),
+    tail_room_tone: roomToneStatus(preset.room_tone_tail_s, roomTone.tail, requireRoomTone),
   } satisfies AcxReport["checks"];
 
   return {
+    preset_id: preset.id,
+    preset_label: preset.label,
+    preset_source: preset.source,
     rms_dbfs: rmsDbfs(samples),
+    lufs_integrated: lufs,
     true_peak_dbfs: truePeak,
     sample_peak_dbfs: samplePeak,
     noise_floor_dbfs: noiseFloor,
@@ -168,17 +183,36 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
   };
 }
 
-function formatStatus(audio: PcmAudio): CheckStatus {
+function roomToneStatus(
+  limit: { min: number; max: number } | null,
+  measured: { seconds: number; digitalSilence: boolean },
+  requireRoomTone: boolean,
+): CheckStatus {
+  if (limit === null) {
+    return "unspecified";
+  }
+  if (!requireRoomTone) {
+    return "pass";
+  }
+  return measured.seconds >= limit.min && measured.seconds <= limit.max && !measured.digitalSilence
+    ? "pass"
+    : "fail";
+}
+
+function formatStatus(audio: PcmAudio, preset: SpecPreset): CheckStatus {
   if (audio.format === undefined || audio.format === "unknown") {
     return "warn";
   }
   if (!("wav" === audio.format || "mp3" === audio.format || "flac" === audio.format || "m4a" === audio.format || "aiff" === audio.format)) {
     return "fail";
   }
+  if (preset.min_bitrate_cbr === null) {
+    return "pass";
+  }
   if (audio.format === "mp3" && (audio.bitrate_kbps === undefined || audio.vbr === undefined)) {
     return "warn";
   }
-  if (audio.format === "mp3" && (audio.vbr === true || (audio.bitrate_kbps ?? Infinity) < ACX_SPEC.min_bitrate_cbr)) {
+  if (audio.format === "mp3" && ((audio.vbr === true && !preset.vbr_allowed) || (audio.bitrate_kbps ?? Infinity) < preset.min_bitrate_cbr)) {
     return "fail";
   }
   // Bitrate and VBR rules are submission rules for MP3. A source WAV/FLAC

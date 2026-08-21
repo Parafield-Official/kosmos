@@ -18,11 +18,12 @@ export interface AcxSpec {
 
 export const ACX_SPEC = rawSpec as AcxSpec;
 
-export type CheckStatus = "pass" | "warn" | "fail";
+/** "unspecified" is a dimension the chosen delivery target sets no limit for. */
+export type CheckStatus = "pass" | "warn" | "fail" | "unspecified";
 export type TrafficLight = "green" | "yellow" | "red";
 
 export function trafficLight(checks: Record<string, CheckStatus>): TrafficLight {
-  const statuses = Object.values(checks);
+  const statuses = Object.values(checks).filter((status) => status !== "unspecified");
   if (statuses.includes("fail")) {
     return "red";
   }

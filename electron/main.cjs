@@ -171,6 +171,7 @@ async function createProjectFolder() {
       proof_sensitivity: "default",
       pause_threshold_seconds: 4,
       acx_target_rms_dbfs: -20,
+      spec_preset_id: "acx",
       teleprompter_theme: "cream",
       teleprompter_font_size: 28,
       teleprompter_preset_version: 2,
@@ -819,6 +820,9 @@ function normalizeProjectSettings(value) {
       : "default",
     pause_threshold_seconds: numberOr(candidate.pause_threshold_seconds, 2, 12, 4),
     acx_target_rms_dbfs: numberOr(candidate.acx_target_rms_dbfs, -23, -18, -20),
+    spec_preset_id: typeof candidate.spec_preset_id === "string" && candidate.spec_preset_id.trim() !== ""
+      ? candidate.spec_preset_id.trim()
+      : "acx",
     teleprompter_theme: legacyTeleprompterDefaults
       ? "cream"
       : candidate.teleprompter_theme === "dark"
@@ -1649,6 +1653,10 @@ async function warmLiveTranscription() {
 async function measureAudioFile(folder, relativePath, options = {}) {
   const decoded = await decodeAudioPcm(folder, relativePath);
   const masterCore = loadCoreModule("master");
+  const preset = masterCore.resolvePreset(
+    options.presetId,
+    masterCore.normalizeCustomPresets(options.customPresets),
+  );
   return masterCore.measurePcm({
     samples: float32View(decoded.pcm),
     sampleRate: decoded.sampleRate,
@@ -1656,7 +1664,7 @@ async function measureAudioFile(folder, relativePath, options = {}) {
     format: decoded.format,
     bitrate_kbps: decoded.bitrateKbps,
     vbr: decoded.vbr,
-  }, options);
+  }, { requireRoomTone: options.requireRoomTone, preset });
 }
 
 async function decodeMono44100(audioPath) {
@@ -2620,6 +2628,8 @@ ipcMain.handle("audio:measure", (_event, payload) => {
   }
   return measureAudioFile(payload.folder, payload.relativePath, {
     requireRoomTone: payload.requireRoomTone !== false,
+    presetId: payload.presetId,
+    customPresets: payload.customPresets,
   });
 });
 ipcMain.handle("proof:transcribe", async (_event, payload) => {

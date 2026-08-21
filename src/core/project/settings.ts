@@ -4,6 +4,7 @@ export const DEFAULT_PROJECT_SETTINGS: Readonly<ProjectSettings> = Object.freeze
   proof_sensitivity: "default",
   pause_threshold_seconds: 4,
   acx_target_rms_dbfs: -20,
+  spec_preset_id: "acx",
   teleprompter_theme: "cream",
   teleprompter_font_size: 28,
   teleprompter_preset_version: 2,
@@ -24,6 +25,9 @@ export function normalizeProjectSettings(value: unknown): ProjectSettings {
       : "default",
     pause_threshold_seconds: clampNumber(candidate.pause_threshold_seconds, 2, 12, 4),
     acx_target_rms_dbfs: clampNumber(candidate.acx_target_rms_dbfs, -23, -18, -20),
+    spec_preset_id: typeof candidate.spec_preset_id === "string" && candidate.spec_preset_id.trim() !== ""
+      ? candidate.spec_preset_id.trim()
+      : "acx",
     teleprompter_theme: legacyTeleprompterDefaults
       ? "cream"
       : candidate.teleprompter_theme === "dark"

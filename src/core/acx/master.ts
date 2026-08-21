@@ -1,6 +1,15 @@
 import { measurePcm, rmsDbfs, truePeakDbfs, type AcxReport } from "./measure";
 
 export { measurePcm } from "./measure";
+export { integratedLufs } from "./loudness";
+export {
+  ACX_PRESET,
+  BUILTIN_PRESETS,
+  normalizeCustomPresets,
+  presetTargets,
+  resolvePreset,
+  type SpecPreset,
+} from "./presets";
 
 export interface MasterPcmInput {
   samples: Float32Array | number[];

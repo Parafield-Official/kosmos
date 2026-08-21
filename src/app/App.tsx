@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
 import { getExportReadiness, type ExportReadiness } from "../core/acx/export";
+import { BUILTIN_PRESETS, presetTargets, resolvePreset } from "../core/acx/presets";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
@@ -590,7 +591,7 @@ function ProjectHome({
     });
   }
 
-  async function runAcxCheck(chapter: ChapterFile) {
+  async function runAcxCheck(chapter: ChapterFile, presetId?: string) {
     if (!chapter.audio_path || !window.boothDesk) {
       setNotice("Attach an audio file before running the ACX check.");
       return;
@@ -600,6 +601,7 @@ function ProjectHome({
       const report = await window.boothDesk?.measureAudio({
         folder,
         relativePath: chapter.audio_path as string,
+        presetId: presetId ?? projectSettings.spec_preset_id,
       });
       if (!report) {
         return;
@@ -610,6 +612,7 @@ function ProjectHome({
         chapters: project.chapters.map((candidate) => candidate.id === chapter.id
           ? { ...candidate, acx_traffic_light: report.traffic_light, updated_at: new Date().toISOString() }
           : candidate),
+        settings: { ...projectSettings, spec_preset_id: report.preset_id },
         updated_at: new Date().toISOString(),
       });
     });
@@ -1653,7 +1656,8 @@ function ProjectHome({
                 exportResult={exportResult}
                 audioUrl={audioUrl}
                 audioRef={audioRef}
-                onMeasure={() => void runAcxCheck(selectedChapter)}
+                onMeasure={(presetId) => void runAcxCheck(selectedChapter, presetId)}
+                specPresetId={projectSettings.spec_preset_id}
                 onExport={() => void exportAcx()}
                 onShare={() => void shareProject()}
                 onPlayRange={playRange}
@@ -4441,6 +4445,7 @@ function FinishPage({
   audioUrl,
   audioRef,
   onMeasure,
+  specPresetId,
   onExport,
   onShare,
   onPlayRange,
@@ -4452,7 +4457,8 @@ function FinishPage({
   exportResult: AcxExportResult | null;
   audioUrl: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
-  onMeasure: () => void;
+  onMeasure: (presetId?: string) => void;
+  specPresetId: string;
   onExport: () => void;
   onShare: () => void;
   onPlayRange: (start: number, end?: number) => void;
@@ -4471,7 +4477,7 @@ function FinishPage({
         </header>
         <p className="panel-honesty">Measurable ACX specs only. Listen once for clicks, echo, and a wrong read.</p>
         <div className="desk-actions">
-          <button className="primary-button" type="button" disabled={!chapter.audio_path || busyAction !== null} onClick={onMeasure}>
+          <button className="primary-button" type="button" disabled={!chapter.audio_path || busyAction !== null} onClick={() => onMeasure()}>
             {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
           </button>
         </div>
@@ -4483,6 +4489,8 @@ function FinishPage({
               acxReport.noise_floor_start_seconds,
               acxReport.noise_floor_start_seconds + acxReport.noise_floor_duration_seconds,
             ) : undefined}
+            presetId={specPresetId}
+            onPresetChange={(presetId) => onMeasure(presetId)}
           />
         ) : null}
       </article>
@@ -4818,25 +4826,37 @@ function PickupNoteEditor({ pickup, busy, onSave }: { pickup: Pickup; busy: bool
   );
 }
 
-function AcxMeter({ report, onPlayNoiseFloor }: { report: AcxReport; onPlayNoiseFloor?: () => void }) {
+function AcxMeter({
+  report,
+  onPlayNoiseFloor,
+  presetId,
+  onPresetChange,
+}: {
+  report: AcxReport;
+  onPlayNoiseFloor?: () => void;
+  presetId?: string;
+  onPresetChange?: (presetId: string) => void;
+}) {
+  const targets = presetTargets(resolvePreset(report.preset_id));
   const rows = [
-    ["RMS", "−23 to −18 dBFS", formatDb(report.rms_dbfs), report.checks.rms],
-    ["True peak", "≤ −3.0 dBTP", formatDb(report.true_peak_dbfs), report.checks.true_peak],
-    ["Noise floor", "≤ −60 dBFS RMS", formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
-    ["Sample rate", "44.1 kHz", `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
-    ["Channels", "Mono or stereo", String(report.channels), report.checks.channels],
+    ["RMS", targets.rms, formatDb(report.rms_dbfs), report.checks.rms],
+    ["Loudness", targets.loudness, `${formatDb(report.lufs_integrated)} LUFS`, report.checks.loudness],
+    ["True peak", targets.true_peak, formatDb(report.true_peak_dbfs), report.checks.true_peak],
+    ["Noise floor", targets.noise_floor, formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
+    ["Sample rate", targets.sample_rate, `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
+    ["Channels", targets.channels, String(report.channels), report.checks.channels],
     ["Format", "Supported audio file", report.format.toUpperCase(), report.checks.format],
     [
       "Bitrate",
-      "MP3 ≥ 192 kbps CBR",
+      targets.format,
       report.format === "mp3"
         ? `${report.bitrate_kbps?.toFixed(0) ?? "?"} kbps ${report.vbr === true ? "VBR" : report.vbr === false ? "CBR" : "mode unknown"}`
         : "Not applicable to source",
       report.checks.format,
     ],
-    ["Duration", "≤ 120 min", `${(report.duration_seconds / 60).toFixed(2)} min`, report.checks.duration],
-    ["Head room tone", "0.5–5.0 s", `${report.head_room_tone_s.toFixed(2)} s`, report.checks.head_room_tone],
-    ["Tail room tone", "0.5–5.0 s", `${report.tail_room_tone_s.toFixed(2)} s`, report.checks.tail_room_tone],
+    ["Duration", targets.duration, `${(report.duration_seconds / 60).toFixed(2)} min`, report.checks.duration],
+    ["Head room tone", targets.head_room_tone, `${report.head_room_tone_s.toFixed(2)} s`, report.checks.head_room_tone],
+    ["Tail room tone", targets.tail_room_tone, `${report.tail_room_tone_s.toFixed(2)} s`, report.checks.tail_room_tone],
   ] as const;
 
   return (
@@ -4844,12 +4864,25 @@ function AcxMeter({ report, onPlayNoiseFloor }: { report: AcxReport; onPlayNoise
       <div className="result-heading">
         <div>
           <p className="card-kicker">Audio check</p>
-          <h4 id="acx-title">ACX check</h4>
+          <h4 id="acx-title">{report.preset_label} check</h4>
         </div>
         <span className={`traffic-light ${report.traffic_light}`}>
           {checkStatusLabel(report.traffic_light)}
         </span>
       </div>
+      {onPresetChange ? (
+        <label className="meter-target-select">
+          <span>Delivery target</span>
+          <select
+            value={presetId ?? report.preset_id}
+            onChange={(event) => onPresetChange(event.target.value)}
+          >
+            {BUILTIN_PRESETS.map((preset) => (
+              <option key={preset.id} value={preset.id}>{preset.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <table className="meter-table">
         <thead>
           <tr><th>Check</th><th>Target</th><th>Result</th><th /></tr>
@@ -4880,6 +4913,7 @@ function AcxMeter({ report, onPlayNoiseFloor }: { report: AcxReport; onPlayNoise
       </div>
       <p className="meter-honesty">
         These checks cover levels and format. Listen once for clicks and room noise.
+        {" "}Rows marked “Not specified” are measured but not judged, because {report.preset_label} sets no limit for them.
       </p>
     </section>
   );
@@ -5105,6 +5139,8 @@ function checkStatusLabel(status: string): string {
     case "red":
     case "fail":
       return "Needs attention";
+    case "unspecified":
+      return "Not judged";
     default:
       return status;
   }

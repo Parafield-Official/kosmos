@@ -118,10 +118,20 @@ export function chapterFileName(chapter: Pick<ChapterFile, "index">): string {
 }
 
 export function reportText(entries: ReportEntry[]): string {
+  const target = entries.find((entry) => entry.after ?? entry.before);
+  const measured = target?.after ?? target?.before;
   const lines = [
-    "Kosmos ACX export report",
+    "Kosmos audio spec report",
     "============================",
     "Measurable specs only. Human QC still matters for clicks, echo, and a wrong read.",
+    ...(measured
+      ? [
+        `Delivery target: ${measured.preset_label}`,
+        `Target source:   ${measured.preset_source}`,
+        "Loudness is integrated LUFS per ITU-R BS.1770. A dimension the target does",
+        "not specify is reported but not judged.",
+      ]
+      : []),
     "",
   ];
 
@@ -144,6 +154,7 @@ export function reportText(entries: ReportEntry[]): string {
 function summary(report: AcxReport): string {
   return [
     `RMS ${format(report.rms_dbfs)} dBFS`,
+    `loudness ${format(report.lufs_integrated)} LUFS`,
     `TP ${format(report.true_peak_dbfs)} dBTP`,
     `floor ${format(report.noise_floor_dbfs)} dBFS RMS`,
     `floor window ${formatSeconds(report.noise_floor_start_seconds)}–${formatSeconds(report.noise_floor_start_seconds + report.noise_floor_duration_seconds)} s`,
