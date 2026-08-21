@@ -79,7 +79,13 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.music"
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Kosmos listens to the microphone to follow the page, check the room, and record a take. Audio stays on this computer."
+      }
     },
     "win": {
       "target": [

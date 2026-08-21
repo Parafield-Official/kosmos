@@ -3,7 +3,7 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
-const { app, BrowserWindow, dialog, ipcMain, protocol } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, systemPreferences } = require("electron");
 const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
@@ -18,6 +18,7 @@ const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand } = require("./process.cjs");
 const { convertWithMarkItDown } = require("./markitdown.cjs");
+const { isMicrophonePermission, ensureMicrophoneAccess } = require("./media-access.cjs");
 const {
   assertProjectFolder,
   ensureProjectDirectory,
@@ -3128,8 +3129,15 @@ ipcMain.handle("project:save", (_event, payload) => {
   return saveProjectFolder(payload.folder, payload.project);
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   protocol.handle("booth-audio", handleAudioStreamRequest);
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(isMicrophonePermission(permission));
+  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => (
+    isMicrophonePermission(permission) || permission !== "media"
+  ));
+  await ensureMicrophoneAccess(systemPreferences);
   createWindow();
 
   app.on("activate", () => {

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import viteConfig from "../../vite.config";
 import packageJson from "../../package.json";
 
@@ -20,5 +22,13 @@ describe("packaged renderer configuration", () => {
   it("uses Kosmos as the installer and window product name", () => {
     expect(packageJson.build.productName).toBe("Kosmos");
     expect(packageJson.build.artifactName).toContain("Kosmos-");
+  });
+
+  it("signs the Mac app with microphone access so a hardened runtime can hear the booth", () => {
+    const mac = packageJson.build.mac as { entitlements?: string; entitlementsInherit?: string };
+    expect(mac.entitlements).toBe("build/entitlements.mac.plist");
+    expect(mac.entitlementsInherit).toBe("build/entitlements.mac.plist");
+    const plist = readFileSync(resolve(__dirname, "../../build/entitlements.mac.plist"), "utf8");
+    expect(plist).toContain("com.apple.security.device.audio-input");
   });
 });
