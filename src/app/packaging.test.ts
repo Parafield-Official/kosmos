@@ -42,6 +42,7 @@ describe("packaged renderer configuration", () => {
     expect(step).toContain("GITHUB_WORKSPACE");
     expect(step).not.toMatch(/\$RUNNER_TEMP/);
     expect(step).toContain("ffmpeg-n8.1-latest-win64-lgpl-8.1.zip");
+    expect(step).toContain('sha256sum "$ffmpeg_archive"');
     expect(step).toContain("Visual Studio 17 2022");
   });
 });
