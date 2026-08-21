@@ -1504,6 +1504,30 @@ function ProjectHome({
     });
   }
 
+  async function exportPickupPacket() {
+    if (!selectedChapter || !proof) {
+      setNotice("Check the chapter first so there is something to put in a packet.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Packets are built in the desktop app.");
+      return;
+    }
+    await runAction("pickup-packet", async () => {
+      const result = await window.boothDesk?.exportPickupPacket({
+        ...envelope,
+        chapterId: selectedChapter.id,
+        transcript: proof.transcript,
+        pickups: proof.pickups,
+      });
+      if (result) {
+        setNotice(
+          `Packet saved to ${result.folder}: ${result.pickupCount} ${result.pickupCount === 1 ? "flag" : "flags"}, ${result.clipCount} ${result.clipCount === 1 ? "clip" : "clips"}. Open index.html to review it anywhere.`,
+        );
+      }
+    });
+  }
+
   async function runAction(name: string, action: () => Promise<void>): Promise<boolean> {
     if (actionLockRef.current) {
       return false;
@@ -1798,6 +1822,7 @@ function ProjectHome({
                 onPlayRange={playRange}
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
+                onExportPacket={() => void exportPickupPacket()}
                 onPunchPickup={setPunchPickup}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 onSuppressPickup={(pickup) => void suppressPickupWord(pickup)}
@@ -4749,6 +4774,7 @@ function ReviewPage({
   onPlayRange,
   onExportMarkers,
   onExportReport,
+  onExportPacket,
   onPunchPickup,
   onUpdatePickup,
   onSuppressPickup,
@@ -4773,6 +4799,7 @@ function ReviewPage({
   onPlayRange: (start: number, end?: number) => void;
   onExportMarkers: () => void;
   onExportReport: () => void;
+  onExportPacket: () => void;
   onPunchPickup: (pickup: Pickup) => void;
   onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
   onSuppressPickup: (pickup: Pickup) => void;
@@ -4841,6 +4868,7 @@ function ReviewPage({
             onPlay={onPlayPickup}
             onExportMarkers={onExportMarkers}
             onExportReport={onExportReport}
+            onExportPacket={onExportPacket}
             onPunch={onPunchPickup}
             onUpdate={onUpdatePickup}
             onSuppress={onSuppressPickup}
@@ -5165,7 +5193,7 @@ function PickupComparisonPanel({ folder, comparisons }: { folder: string; compar
   );
 }
 
-function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -5195,6 +5223,7 @@ function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportRepo
           <span className="result-count">{openCount} open</span>
           <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportReport}>{busyAction === "proof-report" ? "Exporting…" : "Export report"}</button>
           <button className="table-action" type="button" disabled={busyAction !== null} onClick={onExportMarkers}>Export markers</button>
+          <button className="table-action" type="button" disabled={busyAction !== null} title="A web page with a clip for every flag, plus a spreadsheet" onClick={onExportPacket}>{busyAction === "pickup-packet" ? "Building…" : "Export packet"}</button>
         </div>
       </div>
       {visiblePickups.length === 0 ? (

@@ -10,6 +10,7 @@ const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
 const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
+const { strToU8, zipSync } = require("fflate");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand } = require("./process.cjs");
@@ -1190,6 +1191,113 @@ async function exportProofReportFiles(folder, project, chapterId, transcript, pi
     await writeFileAtomic(projectAssetPath(folder, path.relative(folder, path.join(outputFolder, file.fileName))), file.contents, "utf8");
   }
   return { folder: outputFolder, files: outputFiles.map((file) => file.fileName) };
+}
+
+/**
+ * Write a packet the other side can open without this app: one page per
+ * chapter with a playable clip beside every flag, plus the same list as a
+ * spreadsheet. Proofers and publishers work in a browser and in Excel, not in
+ * a narrator's editor.
+ */
+async function exportPickupPacket(folder, project, chapterId, transcript, pickups) {
+  await assertProjectEnvelope(folder, project);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
+  if (!chapter) {
+    throw new Error("Chapter not found");
+  }
+  if (!chapter.audio_path) {
+    throw new Error("Attach the chapter recording before exporting a packet");
+  }
+  const packetCore = loadCoreModule("proof-packet");
+  const reportCore = loadCoreModule("proof-report");
+  const normalized = normalizeAlignment(
+    { transcript: Array.isArray(transcript) ? transcript : [], pickups: Array.isArray(pickups) ? pickups : [] },
+    chapterId,
+  );
+  const audioPath = projectAudioPath(folder, chapter.audio_path);
+  let durationSeconds;
+  try {
+    durationSeconds = (await probeAudio(audioPath)).duration;
+  } catch {
+    durationSeconds = undefined;
+  }
+
+  const clips = packetCore.planPacketClips(normalized.pickups, { durationSeconds });
+  const baseName = `${String(chapter.index).padStart(2, "0")}_${slugFileName(chapter.title)}`;
+  const packetRelative = `export/packet/${baseName}`;
+  await ensureProjectDirectory(folder, packetRelative);
+  const clipsRelative = `${packetRelative}/clips`;
+  if (clips.length > 0) {
+    await ensureProjectDirectory(folder, clipsRelative);
+  }
+
+  for (const clip of clips) {
+    const destination = projectAssetPath(folder, `${clipsRelative}/${clip.fileName}`);
+    await encodeClipMp3(audioPath, destination, clip.start, Math.max(0.25, clip.end - clip.start));
+  }
+
+  const narrator = [project.narrator_n1, project.narrator_n2].filter(Boolean).join(" & ");
+  const packetInput = {
+    chapterIndex: chapter.index,
+    chapterTitle: chapter.title,
+    projectName: project.name,
+    narrator: narrator || undefined,
+    audioDurationSeconds: durationSeconds,
+    pickups: normalized.pickups,
+    clips,
+  };
+  const reportFiles = reportCore.buildProofReportFiles({
+    chapterIndex: chapter.index,
+    chapterTitle: chapter.title,
+    audioPath: chapter.audio_path,
+    audioDurationSeconds: durationSeconds,
+    transcript: normalized.transcript,
+    pickups: normalized.pickups,
+  });
+
+  const workbookParts = packetCore.buildPacketWorkbookParts(packetInput);
+  const workbookFiles = {};
+  for (const part of workbookParts) {
+    workbookFiles[part.path] = strToU8(part.contents);
+  }
+  const workbook = Buffer.from(zipSync(workbookFiles, { level: 6 }));
+
+  await writeFileAtomic(
+    projectAssetPath(folder, `${packetRelative}/index.html`),
+    packetCore.buildPacketHtml(packetInput),
+    "utf8",
+  );
+  await writeFileAtomic(
+    projectAssetPath(folder, `${packetRelative}/pickups.csv`),
+    reportFiles.csv,
+    "utf8",
+  );
+  await writeFileAtomic(
+    projectAssetPath(folder, `${packetRelative}/pickups.xlsx`),
+    workbook,
+  );
+
+  return {
+    folder: projectAssetPath(folder, packetRelative),
+    files: ["index.html", "pickups.xlsx", "pickups.csv"],
+    clipCount: clips.length,
+    pickupCount: normalized.pickups.length,
+  };
+}
+
+async function encodeClipMp3(inputPath, outputPath, startSeconds, durationSeconds) {
+  await runFfmpeg([
+    "-y", "-v", "error",
+    "-ss", String(Math.max(0, startSeconds)),
+    "-i", inputPath,
+    "-t", String(Math.max(0.25, durationSeconds)),
+    "-map_metadata", "-1",
+    "-codec:a", "libmp3lame",
+    "-b:a", "96k",
+    "-ar", "44100",
+    "-ac", "1",
+    outputPath,
+  ]);
 }
 
 async function saveRecordingWav(folder, project, payload) {
@@ -2645,6 +2753,18 @@ ipcMain.handle("project:export-markers", (_event, payload) => {
     throw new Error("Invalid marker export request");
   }
   return exportMarkerFiles(payload.folder, payload.project, payload.chapterId, payload.pickups);
+});
+ipcMain.handle("project:export-pickup-packet", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid packet export request");
+  }
+  return exportPickupPacket(
+    payload.folder,
+    payload.project,
+    payload.chapterId,
+    payload.transcript,
+    payload.pickups,
+  );
 });
 ipcMain.handle("project:export-proof-report", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

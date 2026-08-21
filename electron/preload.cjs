@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   readAlignment: (payload) => ipcRenderer.invoke("project:read-alignment", payload),
   exportMarkers: (payload) => ipcRenderer.invoke("project:export-markers", payload),
   exportProofReport: (payload) => ipcRenderer.invoke("project:export-proof-report", payload),
+  exportPickupPacket: (payload) => ipcRenderer.invoke("project:export-pickup-packet", payload),
   saveRecordingWav: (payload) => ipcRenderer.invoke("recording:save-wav", payload),
   applyPunchRecording: (payload) => ipcRenderer.invoke("recording:apply-punch", payload),
   mixDuetChapter: (payload) => ipcRenderer.invoke("duet:mix-chapter", payload),
