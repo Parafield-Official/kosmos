@@ -1981,6 +1981,33 @@ async function measureAudioFile(folder, relativePath, options = {}) {
   }, { requireRoomTone: options.requireRoomTone, preset });
 }
 
+/** Sample rate for silence measurement; speech energy needs no more than this. */
+const SILENCE_SAMPLE_RATE = 8000;
+
+/**
+ * Measure the quiet stretches in a recording.
+ *
+ * Pause flags used to be read from the recogniser's word timings, which are an
+ * even division of each segment rather than a record of when the words were
+ * said: five seconds of silence mid-sentence can arrive as a half-second gap.
+ * The audio is the only honest source.
+ */
+async function measureSilences(audioPath, options = {}) {
+  const pcm = await runFfmpeg([
+    "-v", "error", "-i", audioPath,
+    "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", String(SILENCE_SAMPLE_RATE), "pipe:1",
+  ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
+  if (pcm.length === 0 || pcm.length % 4 !== 0) {
+    return [];
+  }
+  return loadCoreModule("proof-silence").findSilences(
+    float32View(pcm),
+    SILENCE_SAMPLE_RATE,
+    1,
+    { minSeconds: options.minSeconds },
+  );
+}
+
 async function decodeMono44100(audioPath) {
   const pcm = await runFfmpeg([
     "-v", "error", "-i", audioPath,
@@ -2987,14 +3014,24 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
     throw new Error("Invalid transcription request");
   }
   await assertProjectFolder(payload.folder);
-  return transcribeAudio({
-    audioPath: projectAudioPath(payload.folder, payload.relativePath),
+  const audioPath = projectAudioPath(payload.folder, payload.relativePath);
+  const transcription = await transcribeAudio({
+    audioPath,
     userDataPath: app.getPath("userData"),
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
     language: payload.language || "en",
     requireBundled: app.isPackaged,
   });
+  let silences = [];
+  try {
+    silences = await measureSilences(audioPath);
+  } catch (error) {
+    // A transcript without measured silence still proofs words; only the pause
+    // flags fall back to the recogniser's timings.
+    console.warn(`Silence measurement skipped: ${error?.message ?? error}`);
+  }
+  return { ...transcription, silences };
 });
 ipcMain.handle("proof:start-live", async () => {
   try {

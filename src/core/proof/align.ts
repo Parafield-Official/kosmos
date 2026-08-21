@@ -8,6 +8,7 @@ import {
   type ManuscriptToken,
   type MatchUnit,
 } from "./normalize";
+import type { SilenceRange } from "./silence";
 
 export interface TranscriptWord {
   text: string;
@@ -36,6 +37,13 @@ export interface AlignTranscriptInput {
    * same pickup does not have to be dismissed once per chapter.
    */
   suppressedWords?: readonly string[];
+  /**
+   * Quiet stretches measured from the recording. Recognisers spread a segment's
+   * words evenly across its span, so a long silence can arrive as a half-second
+   * gap between words; when the audio has been measured, that is what pauses
+   * are read from instead.
+   */
+  silences?: readonly SilenceRange[];
 }
 
 export interface AlignmentResult {
@@ -181,13 +189,15 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
       run.nextTranscript = firstWordOfUnit(transcriptWords, transcriptUnits[next.transcriptIndex]);
     }
 
-    const pickup = runToPickup(
-      run,
-      input.chapterId,
-      durationSeconds,
-      input.seat ?? "narration",
-      pickupOrdinal,
-    );
+    const pickup = sameWordsDifferentlySpaced(run)
+      ? null
+      : runToPickup(
+        run,
+        input.chapterId,
+        durationSeconds,
+        input.seat ?? "narration",
+        pickupOrdinal,
+      );
     // A recogniser that reports low confidence is telling us it may have
     // misheard, which makes the mismatch its fault rather than the narrator's.
     const gated = pickup !== null
@@ -216,6 +226,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     seat: input.seat ?? "narration",
     durationSeconds,
     startOrdinal: pickupOrdinal,
+    silences: input.silences,
   });
   return {
     pickups: mergePickups(
@@ -239,6 +250,7 @@ interface PauseDetectionInput {
   seat: Seat;
   durationSeconds: number;
   startOrdinal: number;
+  silences?: readonly SilenceRange[];
 }
 
 /** Detect only long, mid-sentence gaps; normal breaths and paragraph breaks stay quiet. */
@@ -268,13 +280,10 @@ function detectPausePickups(input: PauseDetectionInput): Pickup[] {
   }
 
   const pauses: Pickup[] = [];
-  for (let index = 0; index < input.transcriptWords.length - 1; index += 1) {
+  for (const gap of pauseCandidates(input, threshold)) {
+    const index = gap.index;
     const previous = input.transcriptWords[index];
     const next = input.transcriptWords[index + 1];
-    const gap = next.start - previous.end;
-    if (!Number.isFinite(gap) || gap <= threshold) {
-      continue;
-    }
     const previousRange = alignedTokens.get(index);
     const nextRange = alignedTokens.get(index + 1);
     if (
@@ -301,13 +310,13 @@ function detectPausePickups(input: PauseDetectionInput): Pickup[] {
         "pause",
         `>${threshold}s`,
         "",
-        previous.end,
-        next.start,
+        gap.start,
+        gap.end,
         input.startOrdinal + pauses.length,
       ),
       chapter_id: input.chapterId,
-      t_start: Math.max(0, previous.end),
-      t_end: Math.max(Math.max(0, previous.end), next.start),
+      t_start: Math.max(0, gap.start),
+      t_end: Math.max(Math.max(0, gap.start), gap.end),
       expected: `Pause > ${threshold}s`,
       heard: "",
       kind: "pause",
@@ -317,6 +326,79 @@ function detectPausePickups(input: PauseDetectionInput): Pickup[] {
     });
   }
   return pauses;
+}
+
+interface PauseCandidate {
+  /** Index of the transcript word the silence follows. */
+  index: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Where the narrator stopped talking. Measured silence wins when we have it,
+ * because a recogniser's word timings are an even division of a segment rather
+ * than a record of when each word was said.
+ */
+function pauseCandidates(input: PauseDetectionInput, threshold: number): PauseCandidate[] {
+  const words = input.transcriptWords;
+  if (input.silences && input.silences.length > 0) {
+    const firstStart = words[0].start;
+    const lastEnd = words[words.length - 1].end;
+    const candidates: PauseCandidate[] = [];
+    for (const silence of input.silences) {
+      const length = silence.end - silence.start;
+      if (!Number.isFinite(length) || length <= threshold) {
+        continue;
+      }
+      // Room tone before the first word or after the last is not a pause in
+      // the read.
+      if (silence.end <= firstStart || silence.start >= lastEnd) {
+        continue;
+      }
+      let index = -1;
+      for (let candidate = 0; candidate < words.length - 1; candidate += 1) {
+        if (words[candidate].start <= silence.start) {
+          index = candidate;
+        }
+      }
+      if (index < 0) {
+        continue;
+      }
+      candidates.push({ index, start: silence.start, end: silence.end });
+    }
+    return candidates;
+  }
+
+  const candidates: PauseCandidate[] = [];
+  for (let index = 0; index < words.length - 1; index += 1) {
+    const gap = words[index + 1].start - words[index].end;
+    if (Number.isFinite(gap) && gap > threshold) {
+      candidates.push({ index, start: words[index].end, end: words[index + 1].start });
+    }
+  }
+  return candidates;
+}
+
+/**
+ * True when the two sides are the same letters and only the spaces moved:
+ * "half-empty" written, "halfempty" heard, or "any more" read as "anymore".
+ * Where the break falls is the recogniser's guess, not something the narrator
+ * did, so there is nothing to fix.
+ */
+function sameWordsDifferentlySpaced(run: PickupRun): boolean {
+  if (run.manuscript.length === 0 || run.transcript.length === 0) {
+    return false;
+  }
+  const written = joinedLetters(run.manuscript.map((token) => token.text));
+  const heard = joinedLetters(run.transcript.map((word) => word.text));
+  return written.length > 0 && written === heard;
+}
+
+function joinedLetters(parts: string[]): string {
+  return parts
+    .map((part) => normalizeToken(part).replace(/[^\p{L}\p{N}]+/gu, ""))
+    .join("");
 }
 
 function runToPickup(

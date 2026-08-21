@@ -216,6 +216,8 @@ interface TranscriptionResult {
   engine: "whisper.cpp";
   modelPath: string;
   words: import("./core/proof/align").TranscriptWord[];
+  /** Quiet stretches measured from the audio, when the file was on disk. */
+  silences?: import("./core/proof/silence").SilenceRange[];
 }
 
 interface ModelStatus {

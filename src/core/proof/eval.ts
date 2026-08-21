@@ -1,4 +1,5 @@
 import { alignTranscript, type TranscriptWord } from "./align";
+import type { SilenceRange } from "./silence";
 
 /**
  * A scored run of the aligner against a hand-labelled case. Precision matters
@@ -17,6 +18,8 @@ export interface EvalCase {
   durationSeconds?: number;
   minConfidence?: number;
   pauseThresholdSeconds?: number;
+  /** Quiet stretches as the audio measured them, when a case has any. */
+  silences?: SilenceRange[];
 }
 
 export interface CaseResult {
@@ -52,6 +55,7 @@ export function runEvalCase(testCase: EvalCase): CaseResult {
     durationSeconds: testCase.durationSeconds,
     minConfidence: testCase.minConfidence,
     pauseThresholdSeconds: testCase.pauseThresholdSeconds,
+    silences: testCase.silences,
   });
 
   const wantedWords = testCase.expected.map((word) => word.toLowerCase());

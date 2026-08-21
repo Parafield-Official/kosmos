@@ -124,6 +124,32 @@ export const PROOF_CORPUS: EvalCase[] = [
     expected: [],
   },
   {
+    name: "British spelling written, American spelling heard",
+    // Every recogniser we can ship writes American spellings, so a book set in
+    // England would otherwise flag a word per line.
+    manuscript: "The harbour master signalled towards the grey theatre.",
+    heard: read("The harbor master signaled towards the gray theater"),
+    expected: [],
+  },
+  {
+    name: "compound heard as one word",
+    manuscript: "The half-empty carriage rattled on.",
+    heard: read("The halfempty carriage rattled on"),
+    expected: [],
+  },
+  {
+    name: "compound written open, heard closed",
+    manuscript: "He sat in the court yard until dusk.",
+    heard: read("He sat in the courtyard until dusk"),
+    expected: [],
+  },
+  {
+    name: "a real misread inside a compound still counts",
+    manuscript: "The half-empty carriage rattled on.",
+    heard: read("The half full carriage rattled on"),
+    expected: ["empty"],
+  },
+  {
     name: "long mid-sentence pause",
     manuscript: "She turned the key and waited for the engine.",
     heard: [
@@ -132,6 +158,27 @@ export const PROOF_CORPUS: EvalCase[] = [
     ],
     expected: [],
     expectedPauses: [2.1],
+    durationSeconds: 12,
+    pauseThresholdSeconds: 4,
+  },
+  {
+    name: "pause the recogniser's timings hid",
+    // whisper.cpp divides a segment's span evenly among its words, so a real
+    // stop can arrive as a tenth of a second. The measured audio is the source.
+    manuscript: "She turned the key and waited for the engine.",
+    heard: read("She turned the key and waited for the engine"),
+    expected: [],
+    expectedPauses: [1.7],
+    silences: [{ start: 1.7, end: 8.4 }],
+    durationSeconds: 12,
+    pauseThresholdSeconds: 4,
+  },
+  {
+    name: "room tone before the first word is not a pause",
+    manuscript: "She turned the key.",
+    heard: read("She turned the key", { from: 6 }),
+    expected: [],
+    silences: [{ start: 0, end: 5.9 }],
     durationSeconds: 12,
     pauseThresholdSeconds: 4,
   },

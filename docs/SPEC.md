@@ -247,6 +247,17 @@ This is the Pozotron-shaped job. Local only.
 **Input:** chapter text + audio file (WAV preferred; MP3/FLAC/M4A/AIFF accepted).  
 **Output:** list of `Pickup` objects + word-level alignment stored in the project.
 
+**What is not a mistake.** A proofing tool dies of false alarms, so before the diff runs both sides are folded to the same shape. Every fold is symmetric — applied to the manuscript and the transcript alike — so no real misread can hide inside one:
+
+| The page says | The recogniser writes | Why we agree |
+|---|---|---|
+| `1999`, `27` | `nineteen ninety-nine`, `twenty-seven` | Numbers fold to digits, including year shapes (`nineteen oh five`). Non-adjacent figures (`One. Three.`) never join. |
+| `twenty-first`, `half-empty` | `21st`, `halfempty` | Hyphenated compounds split into their spoken words; a difference of spacing alone is not a pickup. |
+| `their`, `there` | any of the group | Curated homophone groups. Heteronyms (`read`/`red`, `lead`) are deliberately excluded — those are real misreads. |
+| `harbour`, `signalled` | `harbor`, `signaled` | British spellings fold to American, which is what the model writes. |
+
+Below `proof_confidence_floor` (default 0.35) a recogniser's word is not trusted enough to accuse the narrator with, and words the narrator has cleared for the whole book (`suppressed_words`) never come back. `src/core/proof/eval.ts` scores the diff against a hand-labelled corpus; `scripts/verify-proof.ts` scores it against real synthesised speech run through the bundled whisper build, and both must come back with no false alarms.
+
 Each pickup:
 
 | Field | Meaning |
@@ -267,6 +278,8 @@ Each pickup:
 **Done** when user says they fixed it (or re-proof no longer finds it).
 
 **Pause pickups:** silence longer than N seconds in the middle of a sentence/paragraph (default 4s, user setting). Do not flag normal breaths (~0.3–1s).
+
+Pauses are measured from the audio, not from the transcript. whisper.cpp spreads a segment's words evenly across its span, so a five-second stop mid-sentence can come back as a tenth of a second between two words. We decode the chapter to mono, take the level of each 20ms frame, and call anything within `marginDb` of the recording's own tenth-percentile level (its room tone) silence. Room tone before the first word and after the last is not a pause in the read. When there is no audio to measure — a pasted transcript — we fall back to the transcript's own gaps.
 
 **Copy:** “We catch words that don’t match the page. We do not catch acting, accents, or mouth noise.”
 

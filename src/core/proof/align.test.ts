@@ -76,6 +76,96 @@ describe("alignTranscript", () => {
     });
   });
 
+  it("flags a pause the recogniser's timings hid, using the measured silence", () => {
+    // whisper.cpp spreads a segment's words evenly across its span, so a five
+    // second stop mid-sentence comes back as a tenth of a second between words.
+    const transcript = words([
+      ["The", 0.1, 0.4],
+      ["fox", 0.5, 0.8],
+      ["waited", 0.9, 1.2],
+      ["then", 1.3, 1.6],
+      ["jumped", 1.7, 2.0],
+    ]);
+    const withoutAudio = alignTranscript({
+      chapterId: "ch-hidden-pause",
+      manuscript: "The fox waited then jumped.",
+      transcript,
+      durationSeconds: 8,
+    });
+    expect(withoutAudio.pickups.filter((pickup) => pickup.kind === "pause")).toHaveLength(0);
+
+    const withAudio = alignTranscript({
+      chapterId: "ch-hidden-pause",
+      manuscript: "The fox waited then jumped.",
+      transcript,
+      durationSeconds: 8,
+      silences: [{ start: 1.25, end: 6.4 }],
+    });
+    const pauses = withAudio.pickups.filter((pickup) => pickup.kind === "pause");
+    expect(pauses).toHaveLength(1);
+    expect(pauses[0]).toMatchObject({ t_start: 1.25, t_end: 6.4 });
+  });
+
+  it("ignores room tone before the first word and after the last", () => {
+    const result = alignTranscript({
+      chapterId: "ch-room-tone",
+      manuscript: "The fox jumped.",
+      transcript: words([
+        ["The", 6.0, 6.3],
+        ["fox", 6.4, 6.7],
+        ["jumped", 6.8, 7.1],
+      ]),
+      durationSeconds: 14,
+      silences: [
+        { start: 0, end: 5.9 },
+        { start: 7.2, end: 14 },
+      ],
+    });
+    expect(result.pickups.filter((pickup) => pickup.kind === "pause")).toHaveLength(0);
+  });
+
+  it("keeps ignoring a measured silence that lands on a sentence boundary", () => {
+    const result = alignTranscript({
+      chapterId: "ch-measured-boundary",
+      manuscript: "The fox jumped. Then it slept.",
+      transcript: words([
+        ["The", 0.1, 0.4],
+        ["fox", 0.5, 0.8],
+        ["jumped", 0.9, 1.2],
+        ["Then", 1.3, 1.6],
+        ["it", 1.7, 2.0],
+        ["slept", 2.1, 2.4],
+      ]),
+      durationSeconds: 10,
+      silences: [{ start: 1.25, end: 7.0 }],
+    });
+    expect(result.pickups.filter((pickup) => pickup.kind === "pause")).toHaveLength(0);
+  });
+
+  it("prefers the measured silence over the recogniser's own gaps", () => {
+    // The transcript claims a gap the audio says was filled; only the real
+    // silence should be flagged.
+    const result = alignTranscript({
+      chapterId: "ch-measured-wins",
+      manuscript: "The fox waited quietly, then it jumped over.",
+      transcript: words([
+        ["The", 0.1, 0.4],
+        ["fox", 0.5, 0.8],
+        ["waited", 0.9, 1.2],
+        ["quietly", 9.0, 9.3],
+        ["then", 9.4, 9.7],
+        ["it", 9.8, 10.1],
+        ["jumped", 10.2, 10.5],
+        ["over", 10.6, 10.9],
+      ]),
+      durationSeconds: 16,
+      silences: [{ start: 9.9, end: 15.0 }],
+    });
+    const pauses = result.pickups.filter((pickup) => pickup.kind === "pause");
+    expect(pauses).toHaveLength(1);
+    expect(pauses[0]).toMatchObject({ t_start: 9.9, t_end: 15.0 });
+  });
+
   it("carries a human's done/ignored state into a re-proof", () => {
     const previous: Pickup[] = [{
       id: "old-id",

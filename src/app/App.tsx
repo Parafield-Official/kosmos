@@ -13,6 +13,7 @@ import {
   type TranscriptWord,
 } from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
+import type { SilenceRange } from "../core/proof/silence";
 import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
 import type { MergeConflict } from "../core/sharing/merge";
 import {
@@ -726,6 +727,7 @@ function ProjectHome({
         duration = audioRef.current?.duration;
       }
       let transcript: TranscriptWord[];
+      let silences: SilenceRange[] | undefined;
       if (transcriptText.trim().length > 0) {
         transcript = timedTranscript(transcriptText, duration || 1);
       } else if (window.boothDesk) {
@@ -735,6 +737,7 @@ function ProjectHome({
           language: "en",
         });
         transcript = local.words;
+        silences = local.silences;
         setTranscriptText(local.words.map((word) => word.text).join(" "));
       } else {
         throw new Error("Audio checking is available in the desktop app. Paste a transcript here to continue.");
@@ -748,6 +751,7 @@ function ProjectHome({
         pauseThresholdSeconds: projectSettings.pause_threshold_seconds,
         minConfidence: projectSettings.proof_confidence_floor,
         suppressedWords: projectSettings.suppressed_words,
+        silences,
       });
       const freshPickups = project.mode === "duet"
         ? assignPickupSeats(

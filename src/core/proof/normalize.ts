@@ -1,5 +1,6 @@
 import { homophoneClass } from "./homophones";
 import { foldNumberRun } from "./numbers";
+import { americanSpelling } from "./spelling";
 
 export interface ManuscriptToken {
   text: string;
@@ -53,8 +54,9 @@ export function toMatchUnits(pieces: Array<{ value: string; source: number }>): 
       index += number.length;
       continue;
     }
+    const spelling = americanSpelling(values[index]);
     units.push({
-      key: homophoneClass(values[index]) ?? values[index],
+      key: homophoneClass(spelling) ?? spelling,
       from: pieces[index].source,
       to: pieces[index].source,
     });
