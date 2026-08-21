@@ -43,6 +43,8 @@ describe("packaged renderer configuration", () => {
     expect(step).not.toMatch(/\$RUNNER_TEMP/);
     expect(step).toContain("ffmpeg-n8.1-latest-win64-lgpl-8.1.zip");
     expect(step).toContain('sha256sum "$ffmpeg_archive"');
-    expect(step).toContain("Visual Studio 17 2022");
+    expect(step).toContain("whisper-bin-x64.zip");
+    expect(step).toContain("49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a");
+    expect(step).not.toContain("Visual Studio 17 2022");
   });
 });

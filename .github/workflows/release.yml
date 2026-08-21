@@ -19,9 +19,6 @@ jobs:
           - os: macos-14
             target: mac
             arch: arm64
-          - os: macos-13
-            target: mac
-            arch: x64
           - os: windows-latest
             target: win
             arch: x64
@@ -210,31 +207,27 @@ jobs:
             'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
-          whisper_source="$runtime_dir/whisper.cpp"
-          echo "Fetching whisper.cpp $WHISPER_CPP_COMMIT"
-          git init "$whisper_source"
-          git -C "$whisper_source" remote add origin https://github.com/ggerganov/whisper.cpp.git
-          git -C "$whisper_source" fetch --depth 1 origin "$WHISPER_CPP_COMMIT"
-          git -C "$whisper_source" checkout --detach FETCH_HEAD
-          cmake -S "$runtime_dir/whisper.cpp" -B "$runtime_dir/whisper-build" \
-            -G "Visual Studio 17 2022" -A x64 \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=ON \
-            -DWHISPER_BUILD_SERVER=ON
-          cmake --build "$runtime_dir/whisper-build" --config Release --parallel 2
-          whisper_cli="$(find "$runtime_dir/whisper-build" -type f -iname 'whisper-cli.exe' | head -n 1)"
-          whisper_server="$(find "$runtime_dir/whisper-build" -type f -iname 'whisper-server.exe' | head -n 1)"
+          whisper_archive='whisper-bin-x64.zip'
+          whisper_url='https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip'
+          whisper_sha='49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a'
+          echo "Downloading official whisper.cpp v1.9.2 Windows binaries"
+          curl -fL --retry 3 --retry-delay 2 "$whisper_url" -o "$runtime_dir/$whisper_archive"
+          actual_whisper_sha="$(cd "$runtime_dir" && sha256sum "$whisper_archive" | awk '{print $1}')"
+          actual_whisper_sha="${actual_whisper_sha#\\}"
+          echo "whisper zip sha256 expected=$whisper_sha actual=$actual_whisper_sha"
+          test "$whisper_sha" = "$actual_whisper_sha"
+          unzip -q "$runtime_dir/$whisper_archive" -d "$runtime_dir/whisper-unpacked"
+          whisper_cli="$(find "$runtime_dir/whisper-unpacked" -type f -iname 'whisper-cli.exe' | head -n 1)"
+          whisper_server="$(find "$runtime_dir/whisper-unpacked" -type f -iname 'whisper-server.exe' | head -n 1)"
           test -n "$whisper_cli"
           test -n "$whisper_server"
           cp "$whisper_cli" vendor/bin/whisper-cli.exe
           cp "$whisper_server" vendor/bin/whisper-server.exe
-          # Static builds normally need no whisper DLLs, but retain any
-          # toolchain-side DLLs emitted by the selected Windows generator.
-          find "$runtime_dir/whisper-build" -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
+          # Official Windows zip is shared; the exe will not start without these DLLs.
+          find "$(dirname "$whisper_cli")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
             'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
-            'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            'whisper.cpp v1.9.2 official Windows x64 binaries, MIT, https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.2' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
       - name: Verify staged native runtime
