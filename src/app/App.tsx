@@ -703,6 +703,7 @@ function ProjectHome({
         durationSeconds: duration || 1,
         mergeWindowSeconds: proofMergeWindowSeconds(projectSettings),
         pauseThresholdSeconds: projectSettings.pause_threshold_seconds,
+        minConfidence: projectSettings.proof_confidence_floor,
       });
       const freshPickups = project.mode === "duet"
         ? assignPickupSeats(
@@ -3728,6 +3729,11 @@ function SettingsPanel({
           Pause threshold (seconds)
           <input type="number" min="2" max="12" step="0.5" value={draft.pause_threshold_seconds} onChange={(event) => setDraft({ ...draft, pause_threshold_seconds: Number(event.target.value) })} />
           <small>Only a mid-sentence gap longer than this is listed as a pause pickup.</small>
+        </label>
+        <label>
+          Ignore below confidence
+          <input type="number" min="0" max="0.9" step="0.05" value={draft.proof_confidence_floor} onChange={(event) => setDraft({ ...draft, proof_confidence_floor: Number(event.target.value) })} />
+          <small>Skips word alerts the recogniser was this unsure about, since it probably misheard rather than you misreading. Set 0 to keep every alert. Alerts are always kept when the engine reports no confidence.</small>
         </label>
         <label>
           ACX target RMS (dBFS)

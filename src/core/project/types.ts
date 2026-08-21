@@ -17,6 +17,8 @@ export interface ProjectSettings {
   acx_target_rms_dbfs: number;
   /** Which delivery target the meter judges against. */
   spec_preset_id: string;
+  /** Drop word pickups the recogniser was less sure than this about. */
+  proof_confidence_floor: number;
   teleprompter_theme: "dark" | "sepia" | "cream";
   teleprompter_font_size: number;
   /** Versioned first-run defaults; used to migrate older books once. */
