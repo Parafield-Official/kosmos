@@ -56,6 +56,7 @@ interface BoothDeskBridge {
   shareSeatPack: (payload: ProjectEnvelope & { seat: "N1" | "N2" }) => Promise<ShareZipResult | null>;
   getIdentity: (projectId: string) => Promise<LocalIdentity | null>;
   setIdentity: (identity: LocalIdentity) => Promise<LocalIdentity>;
+  collabIceServers: () => Promise<{ iceServers: RTCIceServer[]; turn: boolean }>;
   collabEncodeInvite: (payload: { project: import("./core/project/types").ProjectFile; sdp: string }) => Promise<CollabSnapshot>;
   collabDecodeInvite: (text: string) => Promise<{ projectId: string; projectName: string; secret: string; sdp?: string; words: string }>;
   collabEncodeReply: (payload: { sdp: string }) => Promise<string>;

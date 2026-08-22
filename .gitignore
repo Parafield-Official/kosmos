@@ -31,4 +31,5 @@ vendor/models/*
 .qc-eval-cache/
 .ci-runtime/
 .live-run/
+.local/
 design/shots/

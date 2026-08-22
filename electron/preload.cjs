@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   shareSeatPack: (payload) => ipcRenderer.invoke("project:share-seat-pack", payload),
   getIdentity: (projectId) => ipcRenderer.invoke("identity:get", { projectId }),
   setIdentity: (identity) => ipcRenderer.invoke("identity:set", identity),
+  collabIceServers: () => ipcRenderer.invoke("collab:ice-servers"),
   collabEncodeInvite: (payload) => ipcRenderer.invoke("collab:encode-invite", payload),
   collabDecodeInvite: (text) => ipcRenderer.invoke("collab:decode-invite", { text }),
   collabEncodeReply: (payload) => ipcRenderer.invoke("collab:encode-reply", payload),

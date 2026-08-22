@@ -1173,7 +1173,8 @@ function ProjectHome({
       return;
     }
     await runAction("collab-invite", async () => {
-      const offer = await createHostOffer();
+      const minted = await window.boothDesk?.collabIceServers();
+      const offer = await createHostOffer(minted?.iceServers);
       const snapshot = await window.boothDesk?.collabEncodeInvite({ project, sdp: offer });
       if (!snapshot) {
         return;
@@ -1204,7 +1205,8 @@ function ProjectHome({
       if (!decoded?.sdp) {
         throw new Error("That invite is missing a connection offer.");
       }
-      const answer = await acceptHostOffer(decoded.sdp);
+      const minted = await window.boothDesk?.collabIceServers();
+      const answer = await acceptHostOffer(decoded.sdp, minted?.iceServers);
       const reply = await window.boothDesk?.collabEncodeReply({ sdp: answer });
       await window.boothDesk?.collabAttach({
         folder,

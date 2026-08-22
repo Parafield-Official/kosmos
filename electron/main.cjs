@@ -14,6 +14,7 @@ const { strToU8, zipSync } = require("fflate");
 const { extractArchive } = require("./unzip.cjs");
 const { applyPack, reviewPack } = require("./pack-import.cjs");
 const { CollabDesk } = require("./collab.cjs");
+const { loadTurnSecrets, mintIceServers } = require("./turn.cjs");
 const { exportVoiceGuide: exportVoiceGuideFiles } = require("./voice-guide.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
@@ -3130,6 +3131,16 @@ ipcMain.handle("identity:set", (_event, payload) => {
     throw new Error("Invalid local identity request");
   }
   return saveIdentity(app.getPath("userData"), payload);
+});
+ipcMain.handle("collab:ice-servers", async () => {
+  const secrets = loadTurnSecrets([
+    path.join(app.getPath("userData"), "cloudflare-turn.json"),
+  ]);
+  try {
+    return await mintIceServers({ secrets });
+  } catch {
+    return mintIceServers({ secrets: null });
+  }
 });
 ipcMain.handle("collab:encode-invite", (_event, payload) => {
   if (!payload?.project) {

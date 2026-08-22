@@ -1,7 +1,16 @@
-const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+/**
+ * Public STUN first. If main mints Cloudflare TURN, hotel / hotspot
+ * can fall through to the locker. iceTransportPolicy stays "all".
+ * The long-lived TURN key never lives in the renderer.
+ */
+export const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+];
+
 const ICE_GATHER_MS = 12_000;
 const ICE_CONNECT_MS = 20_000;
-const REACH_FAIL = "Couldn't reach them. Try the same Wi-Fi, or a home network instead of a hotel or hotspot.";
+const REACH_FAIL = "Couldn't reach them. Check the invite wasn't cut off, then try again.";
 
 let peer: RTCPeerConnection | null = null;
 let channel: RTCDataChannel | null = null;
@@ -36,9 +45,9 @@ export function closeCollabLink(): void {
   peer = null;
 }
 
-export async function createHostOffer(): Promise<string> {
+export async function createHostOffer(iceServers: RTCIceServer[] = ICE_SERVERS): Promise<string> {
   closeCollabLink();
-  peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  peer = new RTCPeerConnection({ iceServers });
   channel = peer.createDataChannel("kosmos", { ordered: true });
   const offer = await peer.createOffer();
   await peer.setLocalDescription(offer);
@@ -46,9 +55,9 @@ export async function createHostOffer(): Promise<string> {
   return peer.localDescription?.sdp ?? "";
 }
 
-export async function acceptHostOffer(offerSdp: string): Promise<string> {
+export async function acceptHostOffer(offerSdp: string, iceServers: RTCIceServer[] = ICE_SERVERS): Promise<string> {
   closeCollabLink();
-  peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  peer = new RTCPeerConnection({ iceServers });
   await peer.setRemoteDescription({ type: "offer", sdp: offerSdp });
   const answer = await peer.createAnswer();
   await peer.setLocalDescription(answer);
