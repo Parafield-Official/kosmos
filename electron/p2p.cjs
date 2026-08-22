@@ -10,6 +10,7 @@ const {
   fingerprintWords,
   parseFrame,
   parseInvite,
+  isSafeRelativePath,
 } = require("./p2p-protocol.cjs");
 
 /**
@@ -28,6 +29,19 @@ const SNAPSHOT_EXCLUDE = new Set([".git", ".ci-runtime", "export"]);
 
 function sha256Hex(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+/** Resolve a relative project path or refuse anything that leaves the folder. */
+function safeProjectPath(folder, relativePath) {
+  if (!isSafeRelativePath(relativePath)) {
+    throw new Error("That path is not part of the book");
+  }
+  const root = path.resolve(folder);
+  const resolved = path.resolve(root, ...relativePath.split("/").filter(Boolean));
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error("That path is not part of the book");
+  }
+  return resolved;
 }
 
 /** Collect snapshot-worthy files under a project folder, POSIX-relative. */
@@ -124,6 +138,8 @@ class PeerSession {
     this.incomingFiles = new Map();
     this.openTransfers = new Map();
     this.appliedSummary = null;
+    this.lastOffered = new Set();
+    this.projectUpdated = false;
 
     host.on("message", (text) => {
       void this.handleMessage(text).catch(() => {
@@ -140,14 +156,17 @@ class PeerSession {
     return this.host.send(JSON.stringify(frame));
   }
 
-  start() {
-    void this.sendFrame({
+  announce() {
+    return this.sendFrame({
       type: "hello",
       name: this.identity.name,
       role: this.identity.role,
       projectId: this.projectId,
     });
-    return this.sendManifest();
+  }
+
+  start() {
+    return Promise.resolve(this.announce()).then(() => this.sendManifest());
   }
 
   async sendManifest() {
@@ -156,6 +175,7 @@ class PeerSession {
       const buffer = await fs.readFile(path.join(this.folder, ...entry.path.split("/")));
       files.push({ ...entry, sha256: sha256Hex(buffer) });
     }
+    this.lastOffered = new Set(files.map((entry) => entry.path));
     await this.sendFrame({
       type: "snapshot-manifest",
       project: this.project,
@@ -167,7 +187,10 @@ class PeerSession {
   /** Serve everything the peer says it lacks. */
   async handleNeed(frame) {
     for (const relativePath of frame.paths) {
-      const absolute = path.join(this.folder, ...relativePath.split("/"));
+      if (!this.lastOffered.has(relativePath)) {
+        throw new Error("That file was not offered");
+      }
+      const absolute = safeProjectPath(this.folder, relativePath);
       const content = await fs.readFile(absolute);
       const total = Math.ceil(content.length / MAX_CHUNK_BYTES);
       for (let index = 0; index < total; index += 1) {
@@ -377,6 +400,7 @@ class PeerSession {
     await copyTree(this.stagingRoot, this.folder);
     const saved = await this.hooks.saveProject(this.folder, this.incomingProject);
     this.project = saved.project;
+    this.projectUpdated = true;
     this.appliedSummary = { firstJoin: true };
     this.lastReview = {
       plan: { decisions: [], conflicts: [], empty: false },
@@ -398,6 +422,7 @@ class PeerSession {
       hooks: this.hooks,
     });
     this.project = result.project;
+    this.projectUpdated = true;
     this.appliedSummary = result.applied ?? {};
     await fs.rm(this.stagingRoot, { recursive: true, force: true }).catch(() => undefined);
     this.stagingRoot = null;
@@ -435,4 +460,5 @@ module.exports = {
   buildInvite,
   collectSnapshotFiles,
   sha256Hex,
+  safeProjectPath,
 };

@@ -51,6 +51,7 @@ import {
   closeCollabLink,
   createHostOffer,
   sendCollabFrame,
+  watchCollabConnection,
 } from "./collab-link";
 import {
   bookDashboardStats,
@@ -278,6 +279,7 @@ function ProjectHome({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const actionLockRef = useRef(false);
+  const collabOutboundUnsub = useRef<null | (() => void)>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
@@ -1117,13 +1119,15 @@ function ProjectHome({
     setCollabWords(snapshot.words);
     setCollabPeer(snapshot.peer);
     setCollabConflicts(snapshot.lastReview?.plan.conflicts ?? []);
-    if (snapshot.project && snapshot.folder) {
+    if (snapshot.projectUpdated && snapshot.project && snapshot.folder) {
       onChange({ folder: snapshot.folder, project: snapshot.project });
+      setChapterReloadVersion((version) => version + 1);
     }
   }
 
   function wireCollabChannel(asHost: boolean) {
-    window.boothDesk?.onCollabOutbound((text) => sendCollabFrame(text));
+    collabOutboundUnsub.current?.();
+    collabOutboundUnsub.current = window.boothDesk?.onCollabOutbound((text) => sendCollabFrame(text)) ?? null;
     bindCollabChannel({
       onOpen: () => {
         if (asHost) {
@@ -1134,6 +1138,7 @@ function ProjectHome({
             setNotice("They are on the book with you.");
           });
         } else {
+          void window.boothDesk?.collabAnnounce();
           setCollabPhase("connected");
           setNotice("Connected. Waiting for their book…");
         }
@@ -1207,6 +1212,10 @@ function ProjectHome({
         identity: { name: identity.personName, role: identity.role },
       });
       wireCollabChannel(false);
+      watchCollabConnection((message) => {
+        setNotice(message);
+        void hangUpLive();
+      });
       setCollabWords(decoded.words);
       setCollabReply(reply ?? null);
       setCollabPhase("joining");
@@ -1224,11 +1233,17 @@ function ProjectHome({
         return;
       }
       await acceptGuestAnswer(parsed.sdp);
+      watchCollabConnection((message) => {
+        setNotice(message);
+        void hangUpLive();
+      });
       setNotice("Reply accepted. Waiting for the line to open…");
     });
   }
 
   async function hangUpLive() {
+    collabOutboundUnsub.current?.();
+    collabOutboundUnsub.current = null;
     closeCollabLink();
     await window.boothDesk?.collabDisconnect().catch(() => undefined);
     setCollabPhase("idle");

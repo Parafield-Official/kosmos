@@ -63,6 +63,7 @@ class CollabDesk {
       error: this.error,
       project: this.session?.project ?? this.project,
       folder: this.folder,
+      projectUpdated: false,
     };
   }
 
@@ -147,6 +148,10 @@ class CollabDesk {
       throw new Error("No live session is open");
     }
     return this.session.handleMessage(text).then(() => {
+      const projectUpdated = Boolean(this.session.projectUpdated);
+      if (projectUpdated) {
+        this.session.projectUpdated = false;
+      }
       this.lastReview = this.session.lastReview ?? this.lastReview;
       if (this.session.peerHello) {
         this.peer = {
@@ -157,9 +162,18 @@ class CollabDesk {
       if (this.session.project) {
         this.project = this.session.project;
       }
-      this.phase = "connected";
-      return this.snapshot();
+      if (this.session.peerHello || projectUpdated) {
+        this.phase = "connected";
+      }
+      return { ...this.snapshot(), projectUpdated };
     });
+  }
+
+  announce() {
+    if (!this.session) {
+      throw new Error("No live session is open");
+    }
+    return Promise.resolve(this.session.announce()).then(() => this.snapshot());
   }
 
   start() {

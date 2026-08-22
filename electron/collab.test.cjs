@@ -42,4 +42,26 @@ describe("collab desk invites", () => {
     const reply = stranger.encodeReply({ sdp: "v=0 other" });
     expect(() => live.decodeReply(reply)).toThrow(/different invite/);
   });
+
+  it("lets the guest announce so the host learns their name", async () => {
+    const live = desk();
+    const guest = desk();
+    live.encodeInvite({ project: { id: "book-1", name: "The Pier" }, sdp: "v=0" });
+    guest.decodeInvite(live.invite);
+    live.attach({
+      folder: "/tmp/a",
+      project: { id: "book-1", name: "The Pier", schema: 1, chapters: [] },
+      identity: { name: "Alex", role: "author" },
+      send: (text) => guest.inbound(text),
+    });
+    guest.attach({
+      folder: "/tmp/b",
+      project: { id: "book-1", name: "The Pier", schema: 1, chapters: [] },
+      identity: { name: "Sam", role: "narrator" },
+      send: (text) => live.inbound(text),
+    });
+    await guest.announce();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(live.snapshot().peer).toEqual({ name: "Sam", role: "narrator" });
+  });
 });

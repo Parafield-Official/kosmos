@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   collabDecodeReply: (text) => ipcRenderer.invoke("collab:decode-reply", { text }),
   collabAttach: (payload) => ipcRenderer.invoke("collab:attach", payload),
   collabInbound: (text) => ipcRenderer.invoke("collab:inbound", text),
+  collabAnnounce: () => ipcRenderer.invoke("collab:announce"),
   collabStart: () => ipcRenderer.invoke("collab:start"),
   collabStatus: () => ipcRenderer.invoke("collab:status"),
   collabDisconnect: () => ipcRenderer.invoke("collab:disconnect"),

@@ -1,24 +1,35 @@
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+const ICE_GATHER_MS = 12_000;
+const ICE_CONNECT_MS = 20_000;
+const REACH_FAIL = "Couldn't reach them. Try the same Wi-Fi, or a home network instead of a hotel or hotspot.";
 
 let peer: RTCPeerConnection | null = null;
 let channel: RTCDataChannel | null = null;
+let connectionWatch: (() => void) | null = null;
 
 function waitForIce(connection: RTCPeerConnection): Promise<void> {
   if (connection.iceGatheringState === "complete") {
     return Promise.resolve();
   }
   return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      connection.removeEventListener("icegatheringstatechange", onChange);
+      resolve();
+    };
     const onChange = () => {
       if (connection.iceGatheringState === "complete") {
-        connection.removeEventListener("icegatheringstatechange", onChange);
-        resolve();
+        finish();
       }
     };
+    const timer = setTimeout(finish, ICE_GATHER_MS);
     connection.addEventListener("icegatheringstatechange", onChange);
   });
 }
 
 export function closeCollabLink(): void {
+  connectionWatch?.();
+  connectionWatch = null;
   channel?.close();
   peer?.close();
   channel = null;
@@ -50,6 +61,31 @@ export async function acceptGuestAnswer(answerSdp: string): Promise<void> {
     throw new Error("Create an invite first");
   }
   await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
+}
+
+export function watchCollabConnection(onFailed: (message: string) => void): void {
+  if (!peer) {
+    return;
+  }
+  connectionWatch?.();
+  const connection = peer;
+  const onState = () => {
+    const state = connection.iceConnectionState;
+    if (state === "failed") {
+      onFailed(REACH_FAIL);
+    }
+  };
+  const timer = setTimeout(() => {
+    const state = connection.iceConnectionState;
+    if (state !== "connected" && state !== "completed") {
+      onFailed(REACH_FAIL);
+    }
+  }, ICE_CONNECT_MS);
+  connection.addEventListener("iceconnectionstatechange", onState);
+  connectionWatch = () => {
+    clearTimeout(timer);
+    connection.removeEventListener("iceconnectionstatechange", onState);
+  };
 }
 
 export function bindCollabChannel(handlers: {

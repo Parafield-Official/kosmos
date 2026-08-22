@@ -166,6 +166,12 @@ function validateProjectId(projectId) {
   }
 }
 
+function isSafeRelativePath(value) {
+  return typeof value === "string"
+    && /^[\w][\w./ -]*$/u.test(value)
+    && !value.includes("..");
+}
+
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -201,8 +207,7 @@ function parseFrame(text) {
         if (
           !isPlainObject(entry)
           || typeof entry.path !== "string"
-          || !/^[\w][\w./ -]*$/u.test(entry.path)
-          || entry.path.includes("..")
+          || !isSafeRelativePath(entry.path)
           || typeof entry.sha256 !== "string"
           || !/^[a-f0-9]{64}$/u.test(entry.sha256)
           || !Number.isSafeInteger(entry.size)
@@ -220,13 +225,13 @@ function parseFrame(text) {
       if (!Array.isArray(frame.paths) || frame.paths.length > MAX_MANIFEST_FILES) {
         return null;
       }
-      if (!frame.paths.every((path) => typeof path === "string")) {
+      if (!frame.paths.every((relativePath) => isSafeRelativePath(relativePath))) {
         return null;
       }
       return frame;
     case "chunk":
       if (
-        typeof frame.path !== "string"
+        !isSafeRelativePath(frame.path)
         || !Number.isSafeInteger(frame.index)
         || frame.index < 0
         || typeof frame.data !== "string"
@@ -259,4 +264,5 @@ module.exports = {
   parseFrame,
   parseInvite,
   parseReply,
+  isSafeRelativePath,
 };

@@ -89,6 +89,8 @@ describe("wire frames", () => {
     expect(parseFrame(JSON.stringify({ type: "nope" }))).toBeNull();
     expect(parseFrame(JSON.stringify({ type: "hello", name: "", role: "author" }))).toBeNull();
     expect(parseFrame(JSON.stringify({ type: "hello", name: "x", role: "wizard" }))).toBeNull();
+    expect(parseFrame(JSON.stringify({ type: "need", paths: ["../secret.txt"] }))).toBeNull();
+    expect(parseFrame(JSON.stringify({ type: "chunk", path: "../secret.txt", index: 0, data: "x" }))).toBeNull();
     expect(parseFrame(JSON.stringify({
       type: "snapshot-manifest",
       project: {},

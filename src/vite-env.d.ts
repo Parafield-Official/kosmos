@@ -62,6 +62,7 @@ interface BoothDeskBridge {
   collabDecodeReply: (text: string) => Promise<{ secret: string; sdp: string }>;
   collabAttach: (payload: ProjectEnvelope & { identity: { name: string; role: "author" | "narrator" } }) => Promise<CollabSnapshot>;
   collabInbound: (text: string) => Promise<CollabSnapshot>;
+  collabAnnounce: () => Promise<CollabSnapshot>;
   collabStart: () => Promise<CollabSnapshot>;
   collabStatus: () => Promise<CollabSnapshot>;
   collabDisconnect: () => Promise<CollabSnapshot>;
@@ -276,6 +277,7 @@ interface CollabSnapshot {
   error: string | null;
   project: import("./core/project/types").ProjectFile | null;
   folder: string | null;
+  projectUpdated?: boolean;
 }
 
 interface Window {

@@ -3155,6 +3155,7 @@ ipcMain.handle("collab:attach", (event, payload) => {
   });
 });
 ipcMain.handle("collab:inbound", (_event, text) => collabDesk.inbound(text));
+ipcMain.handle("collab:announce", () => collabDesk.announce());
 ipcMain.handle("collab:start", () => collabDesk.start());
 ipcMain.handle("collab:status", () => collabDesk.snapshot());
 ipcMain.handle("collab:disconnect", () => collabDesk.disconnect());
