@@ -59,19 +59,92 @@ describe("offline glossary candidates", () => {
     expect(candidates.map((candidate) => candidate.spelling)).toEqual(["Werner"]);
   });
 
-  it("flags a known heteronym when the lexicon has multiple pronunciations", () => {
+  it("does not put everyday heteronyms on the pronunciation list", () => {
     const lexicon = parsePronouncingDictionary(`
       read R EH1 D
       read(2) R IY1 D
       this DH IH1 S
       please P L IY1 Z
+      insult IH2 N S AH1 L T
+      insult(2) IH1 N S AH0 L T
     `);
 
-    const candidates = extractGlossaryCandidates("Please read this. I read it.", { lexicon });
+    const candidates = extractGlossaryCandidates("Please read this. I read it. A scathing insult followed.", { lexicon });
 
-    expect(candidates).toEqual([
-      expect.objectContaining({ spelling: "read", reasons: expect.arrayContaining(["ambiguous-pronunciation"]) }),
-    ]);
+    expect(candidates.map((candidate) => candidate.spelling.toLocaleLowerCase("en-US"))).not.toContain("read");
+    expect(candidates.map((candidate) => candidate.spelling.toLocaleLowerCase("en-US"))).not.toContain("insult");
+  });
+
+  it("keeps names a narrator would actually trip on and drops common English", () => {
+    const lexicon = parsePronouncingDictionary(`
+      actually AE1 K CH UW2 AH0 L IY0
+      actually(2) AE1 K CH L IY0
+      read R EH1 D
+      read(2) R IY1 D
+      produce P R AH0 D UW1 S
+      produce(2) P R AA1 D UW0 S
+      record R AH0 K AO1 R D
+      record(2) R EH1 K ER0 D
+      wednesday W EH1 N Z D IY0
+      daphne D AE1 F N IY0
+      violet V AY1 AH0 L IH0 T
+      hyacinth HH AY1 AH0 S IH0 N TH
+      insult IH2 N S AH1 L T
+      insult(2) IH1 N S AH0 L T
+      the DH AH0
+      and AH0 N D
+      said S EH1 D
+      what W AH1 T
+      she SH IY1
+      it IH1 T
+      then DH EH1 N
+    `);
+    const text = [
+      "The Bridgertons are by far the most prolific family.",
+      "Anthony, Benedict, Colin, Daphne, Eloise, Francesca, Gregory, and Hyacinth.",
+      "Violet Bridgerton crumpled the paper. \"Did you read what she said?\"",
+      "\"Read it, then,\" Violet wailed.",
+      "\"Actually, what she said was that there could be no doubt.\"",
+      "It was delivered every Monday, Wednesday, and Friday.",
+      "\"Oooooooooohhhhhhhhhh!\"",
+      "She did not produce a single child. This Author never took the time to record eye color.",
+      "A mix of commentary and scathing insult.",
+      "Lady Whistledown named the Featheringtons in full.",
+    ].join(" ");
+
+    const candidates = extractGlossaryCandidates(text, { lexicon });
+    const spellings = candidates.map((candidate) => candidate.spelling);
+
+    expect(spellings).toEqual(expect.arrayContaining([
+      "Daphne",
+      "Violet",
+      "Hyacinth",
+      "Whistledown",
+      "Bridgertons",
+      "Featheringtons",
+    ]));
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "read")).toBe(false);
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "actually")).toBe(false);
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "wednesday")).toBe(false);
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "insult")).toBe(false);
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "produce")).toBe(false);
+    expect(spellings.some((spelling) => spelling.toLocaleLowerCase("en-US") === "record")).toBe(false);
+    expect(spellings.some((spelling) => /^(?:o|h)+$/iu.test(spelling))).toBe(false);
+  });
+
+  it("drops a dialogue-initial filler with a syllable mismatch even when it is not on a stoplist", () => {
+    const lexicon = parsePronouncingDictionary(`
+      fortunately F AO1 R CH AH0 N AH0 T L IY0
+      she SH IY1
+      left L EH1 F T
+      i AY1
+      agreed AH0 G R IY1 D
+    `);
+    const candidates = extractGlossaryCandidates(
+      "\"Fortunately, she left. I fortunately agreed.\"",
+      { lexicon },
+    );
+    expect(candidates.map((candidate) => candidate.spelling.toLocaleLowerCase("en-US"))).not.toContain("fortunately");
   });
 
   it("flags a name the dictionary says with fewer syllables than it is spelled with", () => {

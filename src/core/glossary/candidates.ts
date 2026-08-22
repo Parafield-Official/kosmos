@@ -94,7 +94,7 @@ export function extractGlossaryCandidates(
   >();
 
   tokens.forEach((token, index) => {
-    const known = lexicon ? lexicon.has(token.canonical) : commonWords.has(token.canonical);
+    const known = commonWords.has(token.canonical) || Boolean(lexicon?.has(token.canonical));
     const next = tokens[index + 1];
     const previous = tokens[index - 1];
     const namePattern = !token.canonical.includes("'") && token.capitalized && (
@@ -141,23 +141,27 @@ export function extractGlossaryCandidates(
 
   const candidates = Array.from(aggregates.entries()).map(([canonical, aggregate]) => {
     const titleOrRole = TITLE_OR_ROLE_WORDS.has(canonical);
-    const nameSignal = !titleOrRole && (
+    const noise = isElongatedInterjection(canonical);
+    const proper = looksLikeProperNoun(aggregate);
+    const nameSignal = !titleOrRole && !noise && (
       aggregate.namePatternFrequency > 0
-      || (!aggregate.known && aggregate.capitalizedMidSentenceFrequency >= 2)
-      || (aggregate.capitalizedFrequency > 0 && !aggregate.known)
+      || (!aggregate.known && aggregate.capitalizedFrequency > 0)
     );
     const unusualSignal = aggregate.unusualFrequency > 0 || aggregate.nonAsciiFrequency > 0;
-    const unknownSignal = !aggregate.known && !titleOrRole && (
+    const unknownSignal = !aggregate.known && !titleOrRole && !noise && (
       unusualSignal
       || aggregate.acronymFrequency > 0
     );
     const ambiguousSignal = HETERONYM_WORDS.has(canonical)
-      && (lexicon ? lexicon.pronunciationCount(canonical) > 1 : false);
-    // A proper noun the dictionary says with a different number of syllables
-    // than its spelling suggests is the classic trap: Worcester, Gloucester,
-    // Hermione. The dictionary knows these, so no other signal catches them.
+      && (lexicon ? lexicon.pronunciationCount(canonical) > 1 : false)
+      && aggregate.namePatternFrequency > 0;
+    // Syllable traps (Worcester, Hermione) only when the token behaves like a
+    // name. Dialogue-initial Actually / mixed-case read fail that test without
+    // a per-word stoplist.
     const unexpectedSignal = !titleOrRole
-      && aggregate.capitalizedMidSentenceFrequency > 0
+      && !noise
+      && proper
+      && !commonWords.has(canonical)
       && saidUnlikeItsSpelling(canonical, lexicon);
     if (!nameSignal && !unknownSignal && !ambiguousSignal && !unexpectedSignal) {
       return null;
@@ -559,7 +563,34 @@ function isSentenceStart(text: string, start: number): boolean {
     return true;
   }
   const last = withoutWhitespace.at(-1) ?? "";
-  return /[.!?。！？]/u.test(last);
+  if (/[.!?。！？:：—–]/.test(last)) {
+    return true;
+  }
+  if (!/[“"«‘']/.test(last)) {
+    return false;
+  }
+  // Only an opening quote starts a sentence. A closer after "then," does not.
+  const beforeQuote = withoutWhitespace.slice(0, -1).replace(/\s+$/u, "");
+  if (beforeQuote.length === 0) {
+    return true;
+  }
+  const previous = beforeQuote.at(-1) ?? "";
+  return /[.!?。！？:：—–]/.test(previous);
+}
+
+function looksLikeProperNoun(aggregate: {
+  frequency: number;
+  capitalizedFrequency: number;
+  capitalizedMidSentenceFrequency: number;
+  namePatternFrequency: number;
+}): boolean {
+  if (aggregate.namePatternFrequency > 0) {
+    return true;
+  }
+  if (aggregate.capitalizedMidSentenceFrequency === 0 || aggregate.frequency === 0) {
+    return false;
+  }
+  return aggregate.capitalizedFrequency / aggregate.frequency >= 0.75;
 }
 
 function representativeSpelling(variants: Map<string, number>, canonical: string): string {
@@ -580,6 +611,16 @@ function representativeSpelling(variants: Map<string, number>, canonical: string
 
 function hasUnusualSpelling(word: string): boolean {
   return /(?:cest|chester|cestershire|eaux|ough|sch|tz|cz)/iu.test(word);
+}
+
+/** Long howls and hums are not names, even when capitalized. */
+function isElongatedInterjection(word: string): boolean {
+  const letters = word.toLocaleLowerCase("en-US").replace(/[^a-z]/gu, "");
+  if (letters.length < 6) {
+    return false;
+  }
+  const unique = new Set(letters);
+  return unique.size <= 3 && [...unique].every((letter) => "aeiouhywm".includes(letter));
 }
 
 /**

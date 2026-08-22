@@ -209,16 +209,16 @@ This is **not** Pozotron’s “AI researched the name.” We build a **candidat
 **How we pull candidates (offline, deterministic):**
 
 1. Tokenize the manuscript.
-2. **Skip** a word if it is in a bundled common-English list (`the`, `said`, `Chapter`, months, etc.). Ship a word list in the repo; do not call the internet.
+2. **Skip** a word if it is in a bundled closed class (`the`, `said`, `Chapter`, months, weekdays). Ship that list in the repo; do not grow it with book-specific fillers, and do not call the internet.
 3. **Keep** a word if any of these is true:
-   - It is **Capitalized** and **not** only at the start of a sentence (so `Elena` stays, `The` at line start does not).
-   - It appears **3+ times** capitalized (`Kael`, `Bistritz`).
-   - It is **not** in the English list (`Worcester` is in some lists — also keep if it has unusual letter patterns or the user later adds it).
-   - Optional cheap pattern: `said Elena` / `Elena said` → treat `Elena` as a name.
-   - It is capitalized mid-sentence and the bundled dictionary says it with a different number of syllables than its spelling suggests (`Worcester`, `Gloucester`, `Hermione`). These are in every word list, so nothing else catches them.
-4. Merge case variants (`ELENA` / `Elena` → one entry).
-5. Sort by frequency. Cap the auto-list (e.g. top 80) so a novel doesn’t dump 400 false hits.
-6. **User is the editor:** add, delete, merge, rename. The auto-list is a draft. Empty glossary is valid.
+   - It is **unknown** to the bundled dictionary and capitalized (invented names).
+   - `said Elena` / `Elena said` → treat `Elena` as a name.
+   - Unusual letter patterns (`cester`, `ough`) even when the dictionary knows the word.
+   - It is capitalized mid-sentence, **behaves like a proper noun** (mostly capitalized, not a quote-initial sentence start), and the dictionary says it with a different syllable count (`Worcester`, `Hermione`). Everyday mixed-case or dialogue-initial words fail this test without a per-word stoplist.
+4. Everyday heteronyms (`read`, `record`) are not candidates unless they also look like a name.
+5. Merge case variants (`ELENA` / `Elena` → one entry).
+6. Sort by frequency. Cap the auto-list (e.g. top 80) so a novel doesn’t dump 400 false hits.
+7. **User is the editor:** add, delete, merge, rename. The auto-list is a draft. Empty glossary is valid.
 
 **Each glossary row:**
 
