@@ -80,6 +80,12 @@ import {
 import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
+import {
+  audioSourceForPickup,
+  concatLiveTape,
+  listenDisabledReason,
+  shouldKeepLiveTape,
+} from "../core/teleprompter/session-tape";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -330,6 +336,8 @@ function ProjectHome({
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pickupListenRef = useRef<HTMLAudioElement | null>(null);
+  const pickupListenPathRef = useRef<string | null>(null);
   const rangeStopRef = useRef<(() => void) | null>(null);
   const pendingSeekRef = useRef<{ chapterId: string; start: number } | null>(null);
   const glossaryAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1770,12 +1778,82 @@ function ProjectHome({
     });
   }
 
-  function playPickup(pickup: Pickup) {
-    if (!audioRef.current) {
+  function playOnElement(audio: HTMLAudioElement, start: number, end?: number) {
+    rangeStopRef.current?.();
+    audio.currentTime = Math.max(0, start - 0.5);
+    void audio.play();
+    if (end !== undefined && Number.isFinite(end) && end > start) {
+      const stop = () => {
+        if (audio.currentTime >= end + 0.5) {
+          audio.pause();
+          rangeStopRef.current?.();
+        }
+      };
+      audio.addEventListener("timeupdate", stop);
+      rangeStopRef.current = () => {
+        audio.removeEventListener("timeupdate", stop);
+        rangeStopRef.current = null;
+      };
+    }
+  }
+
+  async function playPickup(pickup: Pickup) {
+    if (!selectedChapter) {
       return;
     }
-    audioRef.current.currentTime = Math.max(0, pickup.t_start - 0.5);
-    void audioRef.current.play();
+    const source = audioSourceForPickup(pickup, selectedChapter);
+    if (!source) {
+      setNotice(listenDisabledReason(pickup, selectedChapter) ?? "Nothing to play.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Listening is available in the desktop app.");
+      return;
+    }
+    const audio = pickupListenRef.current;
+    if (!audio) {
+      setNotice("Listen player is not ready.");
+      return;
+    }
+    try {
+      if (pickupListenPathRef.current !== source.relativePath) {
+        const url = await window.boothDesk.audioUrl({ folder, relativePath: source.relativePath });
+        pickupListenPathRef.current = source.relativePath;
+        audio.src = url;
+        await new Promise<void>((resolve, reject) => {
+          const onReady = () => {
+            audio.removeEventListener("error", onError);
+            resolve();
+          };
+          const onError = () => {
+            audio.removeEventListener("loadedmetadata", onReady);
+            reject(new Error("Could not load the recording."));
+          };
+          audio.addEventListener("loadedmetadata", onReady, { once: true });
+          audio.addEventListener("error", onError, { once: true });
+          audio.load();
+        });
+      }
+      playOnElement(audio, source.start, source.end);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not play this flag."));
+    }
+  }
+
+  async function saveLiveTape(wavBase64: string, chapterId: string) {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      throw new Error("Booth tape save is available in the desktop app.");
+    }
+    const result = await window.boothDesk.saveRecordingWav({
+      ...envelope,
+      kind: "live",
+      chapterId,
+      wavBase64,
+    });
+    if (result) {
+      onChange(result);
+      setNotice("Kept a booth tape of this read. Listen plays it. It is not the chapter take.");
+    }
   }
 
   function playRange(start: number, end?: number) {
@@ -1929,6 +2007,7 @@ function ProjectHome({
       }}
       onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
       onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
+      onSaveLiveTape={(wavBase64, chapterId) => saveLiveTape(wavBase64, chapterId)}
     />
   ) : null;
 
@@ -2040,6 +2119,7 @@ function ProjectHome({
         </header> : null}
 
         {!teleprompterOpen && notice ? <div className="inline-notice" role="status">{notice}</div> : null}
+        <audio ref={pickupListenRef} preload="metadata" hidden />
 
         <section className={teleprompterOpen ? "studio-page reader-page" : "studio-page"} aria-labelledby="book-home-title">
           {teleprompterView}
@@ -2124,6 +2204,7 @@ function ProjectHome({
                 onDownloadModel={() => void downloadWhisperModel()}
                 onProof={() => void runProof(selectedChapter)}
                 onPlayPickup={playPickup}
+                listenDisabledReason={(pickup) => listenDisabledReason(pickup, selectedChapter)}
                 onPlayRange={playRange}
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
@@ -2372,6 +2453,7 @@ function Teleprompter({
   onClose,
   onFileLivePickup,
   onIgnoreLivePickup,
+  onSaveLiveTape,
 }: {
   projectName: string;
   chapter: ChapterFile;
@@ -2403,6 +2485,7 @@ function Teleprompter({
   onClose: () => void;
   onFileLivePickup: (pickup: Pickup) => void;
   onIgnoreLivePickup: (pickupId: string) => void;
+  onSaveLiveTape: (wavBase64: string, chapterId: string) => Promise<void>;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
@@ -2495,6 +2578,10 @@ function Teleprompter({
   const liveGainRef = useRef<GainNode | null>(null);
   const liveTapRef = useRef<LiveTap | null>(null);
   const liveSamplesRef = useRef<Float32Array[]>([]);
+  const liveTapeRef = useRef<Float32Array[]>([]);
+  const liveTapeSampleCountRef = useRef(0);
+  const liveTapeChapterIdRef = useRef(chapterId);
+  const onSaveLiveTapeRef = useRef(onSaveLiveTape);
   const liveSampleCountRef = useRef(0);
   const liveSampleRateRef = useRef(48_000);
   const liveCapturedSecondsRef = useRef(0);
@@ -2548,6 +2635,10 @@ function Teleprompter({
   useEffect(() => {
     chapterIdRef.current = chapterId;
   }, [chapterId]);
+
+  useEffect(() => {
+    onSaveLiveTapeRef.current = onSaveLiveTape;
+  }, [onSaveLiveTape]);
 
   useEffect(() => {
     liveStateRef.current = liveState;
@@ -2751,14 +2842,40 @@ function Teleprompter({
     setLiveStatus("off");
   }
 
+  function takeLiveTape() {
+    const tape = {
+      chunks: liveTapeRef.current,
+      sampleRate: liveSampleRateRef.current,
+      chapterId: liveTapeChapterIdRef.current,
+    };
+    liveTapeRef.current = [];
+    liveTapeSampleCountRef.current = 0;
+    return tape;
+  }
+
+  async function persistTakenTape(tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string }) {
+    const samples = concatLiveTape(tape.chunks);
+    if (!shouldKeepLiveTape(samples.length, tape.sampleRate)) {
+      return;
+    }
+    try {
+      const wav = encodeWavPcm16(samples, Math.round(tape.sampleRate), 1);
+      await onSaveLiveTapeRef.current(bytesToBase64(wav), tape.chapterId);
+    } catch (reason) {
+      setLiveError(messageFor(reason, "Could not keep a booth tape of this read."));
+    }
+  }
+
   function stopLiveCaptureImmediately() {
     liveStoppingRef.current = true;
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
     disconnectLiveInput();
+    const tape = takeLiveTape();
     void window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
+    void persistTakenTape(tape);
   }
 
   async function stopLiveCapture({ flushQc = false } = {}) {
@@ -2800,9 +2917,11 @@ function Teleprompter({
     }
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
+    const tape = takeLiveTape();
     await window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
+    await persistTakenTape(tape);
   }
 
   useEffect(() => () => {
@@ -3213,6 +3332,8 @@ function Teleprompter({
     }
     liveSamplesRef.current.push(samples);
     liveSampleCountRef.current += samples.length;
+    liveTapeRef.current.push(samples);
+    liveTapeSampleCountRef.current += samples.length;
     liveCapturedSecondsRef.current += samples.length / liveSampleRateRef.current;
     if (liveFollowStreamRef.current) {
       pumpLiveStream();
@@ -3369,6 +3490,9 @@ function Teleprompter({
       liveContextRef.current = context;
       liveSourceRef.current = source;
       liveSampleRateRef.current = context.sampleRate;
+      liveTapeChapterIdRef.current = chapterIdRef.current;
+      liveTapeRef.current = [];
+      liveTapeSampleCountRef.current = 0;
       liveSamplesRef.current = [];
       liveSampleCountRef.current = 0;
       liveCapturedSecondsRef.current = 0;
@@ -3808,7 +3932,7 @@ function Teleprompter({
                   ))}
                 </div>
                 <label className="booth-toggle">
-                  <span><strong>Flag possible word changes</strong><em>Listen-only. The microphone audio is not saved as a take.</em></span>
+                  <span><strong>Flag possible word changes</strong><em>Keeps a booth tape so you can Listen to flags. That tape is not the chapter take.</em></span>
                   <input type="checkbox" checked={liveState.enabled} disabled={liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
                 </label>
               </div>
@@ -5829,6 +5953,7 @@ function ReviewPage({
   onDownloadModel,
   onProof,
   onPlayPickup,
+  listenDisabledReason,
   onPlayRange,
   onExportMarkers,
   onExportReport,
@@ -5854,6 +5979,7 @@ function ReviewPage({
   onDownloadModel: () => void;
   onProof: () => void;
   onPlayPickup: (pickup: Pickup) => void;
+  listenDisabledReason?: (pickup: Pickup) => string | null;
   onPlayRange: (start: number, end?: number) => void;
   onExportMarkers: () => void;
   onExportReport: () => void;
@@ -5924,6 +6050,7 @@ function ReviewPage({
             pickups={proof.pickups}
             busyAction={busyAction}
             onPlay={onPlayPickup}
+            listenDisabledReason={listenDisabledReason}
             onExportMarkers={onExportMarkers}
             onExportReport={onExportReport}
             onExportPacket={onExportPacket}
@@ -6264,7 +6391,7 @@ function PickupComparisonPanel({ folder, comparisons }: { folder: string; compar
   );
 }
 
-export function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -6333,7 +6460,8 @@ export function PickupList({ pickups, busyAction, onPlay, onExportMarkers, onExp
                 <button
                   className="action-button small"
                   type="button"
-                  disabled={busyAction !== null}
+                  disabled={busyAction !== null || Boolean(listenDisabledReason?.(pickup))}
+                  title={listenDisabledReason?.(pickup) ?? undefined}
                   onClick={() => onPlay(pickup)}
                 >
                   Listen

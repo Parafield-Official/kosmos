@@ -219,6 +219,7 @@ function validateChapter(value: unknown, position: number): void {
     "audio_path",
     "raw_audio_path",
     "edited_audio_path",
+    "live_audio_path",
     "bed_audio_path",
     "overdub_audio_path",
     "duet_mix_path",

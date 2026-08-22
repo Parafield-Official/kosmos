@@ -30,6 +30,26 @@ describe("project folder model", () => {
     expect(decoded.settings?.pause_threshold_seconds).toBe(4);
   });
 
+  it("round-trips a booth tape without treating it as the chapter take", () => {
+    const original = createEmptyProject("A Small Book", {
+      now: "2026-08-18T00:00:00.000Z",
+      id: "project-1",
+    });
+    const withTape = addChapter(original, {
+      id: "ch01",
+      index: 1,
+      title: "Chapter 1",
+      text_path: "manuscript/chapters/01.json",
+      live_audio_path: "audio/live/ch01_session.wav",
+      pickups_path: "alignment/01.json",
+    });
+
+    expect(parseProject(serializeProject(withTape)).chapters[0]).toMatchObject({
+      live_audio_path: "audio/live/ch01_session.wav",
+    });
+    expect(parseProject(serializeProject(withTape)).chapters[0].audio_path).toBeUndefined();
+  });
+
   it("rejects malformed chapter records before they can crash a workflow", () => {
     const project = createEmptyProject("Book", { id: "book" });
     expect(() => parseProject(JSON.stringify({
@@ -125,6 +145,10 @@ describe("project folder model", () => {
       ...project,
       chapters: [{ ...chapter, audio_path: "acx_spec.json" }],
     }))).toThrow(/audio_path/i);
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      chapters: [{ ...chapter, live_audio_path: "acx_spec.json" }],
+    }))).toThrow(/live_audio_path/i);
     expect(() => parseProject(JSON.stringify({
       ...project,
       room_test_path: "project.json",

@@ -53,10 +53,23 @@ describe("chapter audio state transitions", () => {
       overdub_audio_path: "audio/duet/01_overdub.wav",
       audio_path: "audio/01_raw.wav",
     };
-    const reset = resetChapterAudioFields({ ...chapter, audio_path: "audio/01_new.wav" });
+    const reset = resetChapterAudioFields({
+      ...chapter,
+      audio_path: "audio/01_new.wav",
+      live_audio_path: "audio/live/ch01_session.wav",
+    });
     expect(reset.bed_audio_path).toBeUndefined();
     expect(reset.overdub_audio_path).toBeUndefined();
+    expect(reset.live_audio_path).toBe("audio/live/ch01_session.wav");
     expect(chapterHasAudio(reset)).toBe(true);
+  });
+
+  it("does not treat a booth tape as the chapter take", () => {
+    expect(chapterHasAudio({
+      id: "ch01",
+      index: 1,
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toBe(false);
   });
 
   it("can update one duet track without dropping its counterpart", () => {

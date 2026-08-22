@@ -1466,8 +1466,8 @@ async function encodeClipMp3(inputPath, outputPath, startSeconds, durationSecond
 async function saveRecordingWav(folder, project, payload) {
   await assertProjectEnvelope(folder, project);
   const kind = payload?.kind;
-  if (kind !== "chapter" && kind !== "punch" && kind !== "room" && kind !== "glossary") {
-    throw new Error("Recording kind must be chapter, punch, room, or glossary");
+  if (kind !== "chapter" && kind !== "punch" && kind !== "room" && kind !== "glossary" && kind !== "live") {
+    throw new Error("Recording kind must be chapter, punch, room, glossary, or live");
   }
   if (typeof payload?.wavBase64 !== "string" || payload.wavBase64.length < 44) {
     throw new Error("Recording did not contain a WAV file");
@@ -1516,6 +1516,8 @@ async function saveRecordingWav(folder, project, payload) {
     relativePath = `audio/room_test_${stamp}.wav`;
   } else if (kind === "glossary") {
     relativePath = `audio/glossary/${slugFileName(glossaryEntry.spelling)}_${stamp}.wav`;
+  } else if (kind === "live") {
+    relativePath = `audio/live/${chapter.id}_session_${stamp}.wav`;
   } else if (kind === "punch") {
     const pickup = typeof payload.pickupId === "string" ? payload.pickupId : "manual";
     relativePath = `audio/pickups/${chapter.id}-${slugFileName(pickup)}-${stamp}.wav`;
@@ -1534,6 +1536,10 @@ async function saveRecordingWav(folder, project, payload) {
     nextProject.glossary = (project.glossary ?? []).map((entry) => entry.id === glossaryEntry.id
       ? { ...entry, clip_path: relativePath }
       : entry);
+  } else if (kind === "live") {
+    nextProject.chapters = project.chapters.map((candidate) => candidate.id === chapter.id
+      ? { ...candidate, live_audio_path: relativePath, updated_at: now }
+      : candidate);
   } else if (kind === "chapter") {
     await clearChapterAlignment(folder, chapter);
     nextProject.chapters = project.chapters.map((candidate) => candidate.id === chapter.id
