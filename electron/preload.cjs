@@ -49,6 +49,14 @@ contextBridge.exposeInMainWorld("boothDesk", {
   startLiveTranscription: () => ipcRenderer.invoke("proof:start-live"),
   stopLiveTranscription: () => ipcRenderer.invoke("proof:stop-live"),
   transcribeBuffer: (payload) => ipcRenderer.invoke("proof:transcribe-buffer", payload),
+  // Live follow ingest is one-way on purpose: waiting for a reply per block
+  // ties the cursor to a round trip and reports words a block late.
+  sendLivePcm: (payload) => ipcRenderer.send("live:pcm", payload),
+  onLiveWords: (listener) => {
+    const wrapped = (_event, payload) => listener(payload);
+    ipcRenderer.on("live:words", wrapped);
+    return () => ipcRenderer.removeListener("live:words", wrapped);
+  },
   modelStatus: () => ipcRenderer.invoke("proof:model-status"),
   downloadModel: () => ipcRenderer.invoke("proof:download-model"),
   onModelProgress: (listener) => {

@@ -70,9 +70,16 @@ import {
   remainingReadTimeLabel,
   teleprompterLayout,
   liveCursorForVisibleLine,
+  promptBandCovers,
+  promptHighlightRange,
+  promptWordRows,
+  type PromptHighlightMode,
   type PromptTheme,
+  type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
+import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -314,6 +321,7 @@ function ProjectHome({
   const [teleprompterOpen, setTeleprompterOpen] = useState(false);
   const [promptFontSize, setPromptFontSize] = useState(projectSettings.teleprompter_font_size);
   const [promptTheme, setPromptTheme] = useState<PromptTheme>(projectSettings.teleprompter_theme);
+  const [promptHighlight, setPromptHighlight] = useState<PromptHighlightMode>(projectSettings.teleprompter_highlight);
   const [roomTestOpen, setRoomTestOpen] = useState(false);
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
@@ -1291,7 +1299,30 @@ function ProjectHome({
       if (patch.teleprompter_theme !== undefined) {
         setPromptTheme(settings.teleprompter_theme);
       }
+      if (patch.teleprompter_highlight !== undefined) {
+        setPromptHighlight(settings.teleprompter_highlight);
+      }
       setNotice("Preferences saved.");
+    });
+  }
+
+  /**
+   * Save reading preferences changed inside the teleprompter. They are session
+   * state while reading so the controls stay instant, and are written once on
+   * the way out rather than on every tap.
+   */
+  function persistPromptPreferences() {
+    if (
+      promptFontSize === projectSettings.teleprompter_font_size
+      && promptTheme === projectSettings.teleprompter_theme
+      && promptHighlight === projectSettings.teleprompter_highlight
+    ) {
+      return;
+    }
+    void persistSettings({
+      teleprompter_font_size: promptFontSize,
+      teleprompter_theme: promptTheme,
+      teleprompter_highlight: promptHighlight,
     });
   }
 
@@ -1869,8 +1900,10 @@ function ProjectHome({
       busyAction={busyAction}
       fontSize={promptFontSize}
       theme={promptTheme}
+      highlight={promptHighlight}
       onFontSize={setPromptFontSize}
       onTheme={setPromptTheme}
+      onHighlight={setPromptHighlight}
       onPlayGlossary={(entry) => void playGlossaryClip(entry)}
       onSelectChapter={(id) => setSelectedChapterId(id)}
       onAttach={(id) => {
@@ -1888,27 +1921,11 @@ function ProjectHome({
       onReview={() => {
         setTeleprompterMode(false);
         setActivePanel("review");
-        if (
-          promptFontSize !== projectSettings.teleprompter_font_size
-          || promptTheme !== projectSettings.teleprompter_theme
-        ) {
-          void persistSettings({
-            teleprompter_font_size: promptFontSize,
-            teleprompter_theme: promptTheme,
-          });
-        }
+        persistPromptPreferences();
       }}
       onClose={() => {
         setTeleprompterMode(false);
-        if (
-          promptFontSize !== projectSettings.teleprompter_font_size
-          || promptTheme !== projectSettings.teleprompter_theme
-        ) {
-          void persistSettings({
-            teleprompter_font_size: promptFontSize,
-            teleprompter_theme: promptTheme,
-          });
-        }
+        persistPromptPreferences();
       }}
       onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
       onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
@@ -2318,6 +2335,12 @@ function ProjectHome({
   );
 }
 
+/** Row lists are re-measured often but rarely change; avoid pointless renders. */
+function sameWordRows(left: PromptWordRange[], right: PromptWordRange[]): boolean {
+  return left.length === right.length
+    && left.every((row, index) => row.from === right[index].from && row.to === right[index].to);
+}
+
 function Teleprompter({
   projectName,
   chapter,
@@ -2336,8 +2359,10 @@ function Teleprompter({
   busyAction,
   fontSize,
   theme,
+  highlight,
   onFontSize,
   onTheme,
+  onHighlight,
   onPlayGlossary,
   onSelectChapter,
   onAttach,
@@ -2365,8 +2390,10 @@ function Teleprompter({
   busyAction: string | null;
   fontSize: number;
   theme: PromptTheme;
+  highlight: PromptHighlightMode;
   onFontSize: (value: number) => void;
   onTheme: (value: PromptTheme) => void;
+  onHighlight: (value: PromptHighlightMode) => void;
   onPlayGlossary: (entry: GlossaryEntry) => void;
   onSelectChapter: (id: string) => void;
   onAttach: (chapterId: string) => void;
@@ -2420,6 +2447,11 @@ function Teleprompter({
   const [readingFont, setReadingFont] = useState<"serif" | "sans" | "hyperlegible">("serif");
   const [lineSpacing, setLineSpacing] = useState(1.8);
   const [progress, setProgress] = useState(0);
+  // Visual rows of the paragraph being read, for line-by-line highlighting.
+  const [wordRows, setWordRows] = useState<PromptWordRange[]>([]);
+  // Bumped whenever anything that could rewrap the text changes, so measured
+  // rows are discarded rather than banding the wrong words.
+  const [wrapEpoch, setWrapEpoch] = useState(0);
   const wordCount = useMemo(
     () => (spans.map((span) => span.text).join(" ").match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []).length,
     [spans],
@@ -2461,6 +2493,7 @@ function Teleprompter({
   const liveSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const liveProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const liveGainRef = useRef<GainNode | null>(null);
+  const liveTapRef = useRef<LiveTap | null>(null);
   const liveSamplesRef = useRef<Float32Array[]>([]);
   const liveSampleCountRef = useRef(0);
   const liveSampleRateRef = useRef(48_000);
@@ -2482,6 +2515,39 @@ function Teleprompter({
   const liveStoppingRef = useRef(false);
   const liveCursorAnimationRef = useRef<number | null>(null);
   const liveVisualCursorRef = useRef(0);
+  const liveLeadRef = useRef<LeadState>(createLeadState(0, 0));
+  // Seconds of audio handed to the follow model. Word timestamps are
+  // stream-relative, so this doubles as the clock for measuring follow lag.
+  const liveStreamSecondsRef = useRef(0);
+  /**
+   * Granularity, for the follow loop that runs outside React's render.
+   *
+   * The predictive lead only applies to word-by-word reading. At line and
+   * paragraph granularity a one-word projection can cross a boundary and light
+   * the *next* line before the narrator has finished the current one, which is a
+   * far bigger error than a single word being early. The wider modes also absorb
+   * the model's delay on their own — a ten-word line is only briefly wrong at
+   * its edges — so they read confirmed positions only and never guess ahead.
+   */
+  const liveHighlightModeRef = useRef<PromptHighlightMode>(highlight);
+  // Clock reading when speech was last heard. The predictive lead only coasts
+  // while this is recent, so a pause cannot carry the highlight past the last
+  // word the narrator actually read.
+  const liveSpeechAtRef = useRef<number | null>(null);
+  const expectedWordsRef = useRef<LiveExpectedWord[]>([]);
+  const chapterIdRef = useRef(chapterId);
+
+  useEffect(() => {
+    expectedWordsRef.current = expectedWords;
+  }, [expectedWords]);
+
+  useEffect(() => {
+    liveHighlightModeRef.current = highlight;
+  }, [highlight]);
+
+  useEffect(() => {
+    chapterIdRef.current = chapterId;
+  }, [chapterId]);
 
   useEffect(() => {
     liveStateRef.current = liveState;
@@ -2542,6 +2608,48 @@ function Teleprompter({
     return Math.min(expectedWords.length, liveCursorForVisibleLine(container.scrollTop, measured));
   }
 
+  const liveWordIndex = liveHighlightWordIndex(liveCursor, liveState.enabled);
+  const liveLineIndex = liveWordIndex >= 0 ? expectedWords[liveWordIndex]?.lineIndex : undefined;
+  const liveLineWordCount = liveLineIndex === undefined
+    ? 0
+    : promptWordCount(lines[liveLineIndex]?.text ?? "");
+
+  // Where the browser wrapped the current paragraph. Only that paragraph is
+  // measured, and only when the reader moves to a new one, so line-by-line
+  // highlighting costs one layout read per paragraph rather than per word.
+  useEffect(() => {
+    if (highlight !== "line" || liveLineIndex === undefined || liveLineWordCount === 0) {
+      setWordRows((rows) => (rows.length === 0 ? rows : []));
+      return;
+    }
+    const firstWord = lineWordStarts.get(liveLineIndex);
+    if (firstWord === undefined) {
+      return;
+    }
+    const tops: Array<number | null> = [];
+    for (let offset = 0; offset < liveLineWordCount; offset += 1) {
+      const node = wordRefs.current.get(firstWord + offset);
+      tops.push(node ? node.getBoundingClientRect().top : null);
+    }
+    const measured = promptWordRows(firstWord, tops);
+    setWordRows((rows) => (sameWordRows(rows, measured) ? rows : measured));
+  }, [highlight, liveLineIndex, liveLineWordCount, lineWordStarts, fontSize, lineSpacing, readingFont, wrapEpoch]);
+
+  // Resizing the window or the side rails rewraps the text, which moves every
+  // row boundary. Re-measure rather than band words that have moved.
+  useEffect(() => {
+    if (highlight !== "line") {
+      return;
+    }
+    const onResize = () => setWrapEpoch((epoch) => epoch + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [highlight]);
+
+  useEffect(() => {
+    setWrapEpoch((epoch) => epoch + 1);
+  }, [chaptersOpen, materialsOpen, spans]);
+
   useEffect(() => {
     if (!liveState.enabled) {
       return;
@@ -2564,19 +2672,48 @@ function Teleprompter({
   }, [expectedWords, liveCursor, liveState.enabled]);
 
   function commitLiveCursor(nextCursor: number) {
-    const safeNext = Math.min(expectedWords.length, Math.max(0, Math.floor(nextCursor)));
-    liveVisualCursorRef.current = safeNext;
-    setLiveCursor(safeNext);
+    const limit = expectedWordsRef.current.length || expectedWords.length;
+    const safeNext = Math.min(limit, Math.max(0, Math.floor(nextCursor)));
+    liveLeadRef.current = leadOnConfirm(liveLeadRef.current, safeNext, performance.now());
+    publishLiveCursor();
     // Whisper QC is deliberately delayed behind the follow cursor. Do not
     // erase a flag just because Parakeet advanced while that QC request was
     // in flight; the flag is tied to the frozen audio/gold checkpoint passed
     // to liveBackFlag and remains actionable until the narrator decides it.
   }
 
+  /**
+   * Publish the cursor the narrator should see. On the streaming path this
+   * coasts ahead of the last confirmed word at the narrator's measured pace,
+   * which covers the follow model's emission delay — but only while speech is
+   * still arriving, so stopping settles the highlight back onto the last word
+   * actually read. The slower Whisper-only fallback shows confirmed positions
+   * only, so it cannot outrun its evidence, and so do the line and paragraph
+   * modes.
+   */
+  function publishLiveCursor() {
+    const limit = expectedWordsRef.current.length || expectedWords.length;
+    const advanced = leadAdvance(
+      liveLeadRef.current,
+      performance.now(),
+      limit,
+      liveFollowStreamRef.current && liveHighlightModeRef.current === "word",
+      liveSpeechAtRef.current,
+    );
+    liveLeadRef.current = advanced.state;
+    if (advanced.cursor === liveVisualCursorRef.current) {
+      return;
+    }
+    liveVisualCursorRef.current = advanced.cursor;
+    setLiveCursor(advanced.cursor);
+  }
+
   function disconnectLiveInput() {
+    liveTapRef.current?.close();
     liveProcessorRef.current?.disconnect();
     liveSourceRef.current?.disconnect();
     liveGainRef.current?.disconnect();
+    liveTapRef.current = null;
     liveProcessorRef.current = null;
     liveSourceRef.current = null;
     liveGainRef.current = null;
@@ -2594,6 +2731,7 @@ function Teleprompter({
     liveSentRef.current = false;
     liveFollowStreamRef.current = false;
     liveWhisperBusyRef.current = false;
+    liveSpeechAtRef.current = null;
     if (liveQcFlushTimerRef.current !== null) {
       window.clearInterval(liveQcFlushTimerRef.current);
       liveQcFlushTimerRef.current = null;
@@ -2607,6 +2745,8 @@ function Teleprompter({
       liveCursorAnimationRef.current = null;
     }
     liveVisualCursorRef.current = liveCursor;
+    liveStreamSecondsRef.current = 0;
+    liveLeadRef.current = createLeadState(liveCursor, performance.now());
     setLiveSignalLevel(0);
     setLiveStatus("off");
   }
@@ -2672,10 +2812,65 @@ function Teleprompter({
     stopLiveCaptureImmediately();
   }, []);
 
+  // The follow model reports words when it has them, not when asked. Match
+  // each batch the moment it lands so the cursor is never waiting on a reply.
+  useEffect(() => {
+    const bridge = window.boothDesk;
+    if (!bridge?.onLiveWords) {
+      return;
+    }
+    return bridge.onLiveWords(({ words }) => {
+      if (!liveEnabledRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
+        return;
+      }
+      if (!Array.isArray(words) || words.length === 0) {
+        return;
+      }
+      const result = matchLiveWindow({
+        chapterId: chapterIdRef.current,
+        expected: expectedWordsRef.current,
+        transcript: words,
+        state: liveMatchStateRef.current,
+        flagsEnabled: false,
+        confidenceThreshold: 0.9,
+        dismissedIds: liveDismissedRef.current,
+      });
+      liveMatchStateRef.current = result.state;
+      commitLiveCursor(result.state.cursor);
+      setLiveCheckCount((count) => count + 1);
+      setLiveHeardText(words.slice(-5).map((word) => word.text).join(" "));
+      // Follow lag measured against the audio clock: how far behind the
+      // narrator the newest confirmed word is. This is the number to watch.
+      const heardThrough = words[words.length - 1]?.end;
+      if (Number.isFinite(heardThrough)) {
+        setLiveLatencyMs(Math.max(0, Math.round((liveStreamSecondsRef.current - heardThrough) * 1000)));
+      }
+      setLiveStatus("listening");
+      setLiveError(null);
+    });
+  }, []);
+
+  // Coast the highlight forward between confirmations. Only republishes when
+  // the whole-word position changes, so this stays cheap.
+  useEffect(() => {
+    if (!liveState.enabled) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      if (!liveEnabledRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
+        return;
+      }
+      publishLiveCursor();
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [liveState.enabled]);
+
   useEffect(() => {
     stopLiveCaptureImmediately();
     liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
     liveVisualCursorRef.current = 0;
+    liveLeadRef.current = createLeadState(0, performance.now());
+    liveStreamSecondsRef.current = 0;
     setLiveFlag(null);
     setLiveCursor(0);
     setLiveError(null);
@@ -2790,7 +2985,14 @@ function Teleprompter({
       startSeconds,
       coveredCursor,
     );
-    flushLiveQcWindow(sampleRate, sessionId);
+    // Encoding a QC clip is heavy and this runs from the audio callback on the
+    // streaming path. Hand it to a later task so capture never waits on it.
+    window.setTimeout(() => {
+      if (!liveEnabledRef.current || sessionId !== liveSessionRef.current) {
+        return;
+      }
+      flushLiveQcWindow(sampleRate, sessionId);
+    }, 0);
   }
 
   function flushLiveQcWindow(sampleRate: number, sessionId: number, force = false) {
@@ -2868,18 +3070,26 @@ function Teleprompter({
       // audio against the first stalled phrase. This is independent of the
       // manuscript/test vocabulary: matchLiveWindow only advances on a
       // nearby exact/similar/number match and never moves the cursor back.
-      const followBeforeWhisper = liveMatchStateRef.current;
-      const whisperFollow = matchLiveWindow({
-        chapterId,
-        expected: expectedWords,
-        transcript,
-        state: followBeforeWhisper,
-        flagsEnabled: false,
-        confidenceThreshold: 0.55,
-      });
-      if (whisperFollow.state.cursor > followBeforeWhisper.cursor) {
-        liveMatchStateRef.current = whisperFollow.state;
-        commitLiveCursor(whisperFollow.state.cursor);
+      //
+      // Only when there is no streaming follow model, though. This window is
+      // audio Parakeet already transcribed seconds ago, graded at a lower
+      // confidence bar, so against a live stream it can only push the cursor
+      // past where the narrator actually is — and one stray word here moves the
+      // highlight a whole line in line and paragraph modes.
+      if (!liveFollowStreamRef.current) {
+        const followBeforeWhisper = liveMatchStateRef.current;
+        const whisperFollow = matchLiveWindow({
+          chapterId,
+          expected: expectedWords,
+          transcript,
+          state: followBeforeWhisper,
+          flagsEnabled: false,
+          confidenceThreshold: 0.55,
+        });
+        if (whisperFollow.state.cursor > followBeforeWhisper.cursor) {
+          liveMatchStateRef.current = whisperFollow.state;
+          commitLiveCursor(whisperFollow.state.cursor);
+        }
       }
       // A single QC clip can contain two adjacent slips (for example a
       // dropped plural followed by a content-word substitution). Walk the
@@ -2927,6 +3137,89 @@ function Teleprompter({
       if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && !liveStateRef.current.dimmed) {
         flushLiveQcWindow(sampleRate, sessionId);
       }
+    }
+  }
+
+  /** Pull exactly `count` captured samples off the front of the queue. */
+  function takeLiveSamples(count: number): Float32Array {
+    const out = new Float32Array(count);
+    let filled = 0;
+    while (filled < count && liveSamplesRef.current.length > 0) {
+      const head = liveSamplesRef.current[0];
+      const need = count - filled;
+      if (head.length <= need) {
+        out.set(head, filled);
+        filled += head.length;
+        liveSamplesRef.current.shift();
+      } else {
+        out.set(head.subarray(0, need), filled);
+        liveSamplesRef.current[0] = head.subarray(need);
+        filled += need;
+      }
+    }
+    liveSampleCountRef.current = Math.max(0, liveSampleCountRef.current - filled);
+    return filled === count ? out : out.subarray(0, filled);
+  }
+
+  /**
+   * Hand the follow model every whole hop that has been captured, and nothing
+   * else. The helper reads fixed-size blocks, so a short or oversized write
+   * leaves the remainder sitting unprocessed until more audio arrives. Words
+   * come back over `onLiveWords` rather than as a reply, so a busy interface
+   * can never stall audio ingest.
+   */
+  function pumpLiveStream() {
+    const bridge = window.boothDesk;
+    if (!bridge?.sendLivePcm) {
+      return;
+    }
+    const sampleRate = liveSampleRateRef.current;
+    const hopSamples = Math.max(1, Math.round(sampleRate * LIVE_STREAM_HOP_SECONDS));
+    while (liveSampleCountRef.current >= hopSamples) {
+      const block = takeLiveSamples(hopSamples);
+      if (block.length < hopSamples) {
+        break;
+      }
+      const startSeconds = Math.max(
+        0,
+        liveCapturedSecondsRef.current - (liveSampleCountRef.current + block.length) / sampleRate,
+      );
+      const mono = resamplePcmToMono(block, sampleRate, 16_000);
+      liveStreamSecondsRef.current += mono.length / 16_000;
+      bridge.sendLivePcm({
+        pcmBase64: bytesToBase64(new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength)),
+      });
+      liveSentRef.current = true;
+      const cursor = liveMatchStateRef.current.cursor;
+      queueWhisperQc(block, sampleRate, liveSessionRef.current, cursor, cursor, startSeconds);
+    }
+  }
+
+  /**
+   * Take one captured block of microphone audio. Shared by the audio-thread tap
+   * and the main-thread fallback so both paths behave identically.
+   */
+  function handleLiveBlock(samples: Float32Array, rms: number) {
+    if (!liveEnabledRef.current) {
+      return;
+    }
+    const now = performance.now();
+    if (rms >= LIVE_SPEECH_RMS) {
+      liveSpeechAtRef.current = now;
+    }
+    if (now - liveMeterUpdateRef.current >= 250) {
+      liveMeterUpdateRef.current = now;
+      setLiveSignalLevel(Math.min(1, rms * 8));
+    }
+    liveSamplesRef.current.push(samples);
+    liveSampleCountRef.current += samples.length;
+    liveCapturedSecondsRef.current += samples.length / liveSampleRateRef.current;
+    if (liveFollowStreamRef.current) {
+      pumpLiveStream();
+      return;
+    }
+    if (shouldFlushLiveBuffer()) {
+      flushLiveWindow();
     }
   }
 
@@ -2991,6 +3284,48 @@ function Teleprompter({
     void transcribeLiveWindow(windowSamples, sampleRate, startSeconds, liveSessionRef.current);
   }
 
+  /**
+   * Start delivering microphone blocks. Preferred path is a tap on the audio
+   * rendering thread, which hands off each hop as soon as its last sample lands
+   * and keeps capture immune to whatever the interface is busy doing. A runtime
+   * without audio worklets falls back to the older main-thread processor.
+   */
+  async function attachLiveTap(context: AudioContext, source: MediaStreamAudioSourceNode) {
+    const hopSamples = Math.max(1, Math.round(context.sampleRate * LIVE_STREAM_HOP_SECONDS));
+    try {
+      liveTapRef.current = await createLiveTap({
+        context,
+        source,
+        hopSamples,
+        onBlock: ({ samples, rms }) => handleLiveBlock(samples, rms),
+      });
+      return;
+    } catch (reason) {
+      // Falling back is safe but changes follow latency, so say so rather than
+      // leaving the slower path to be mistaken for the faster one.
+      console.warn("Audio-thread capture unavailable; using main-thread tap.", reason);
+    }
+    const processor = context.createScriptProcessor(4096, 1, 1);
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    liveProcessorRef.current = processor;
+    liveGainRef.current = gain;
+    processor.onaudioprocess = (event) => {
+      const input = event.inputBuffer.getChannelData(0);
+      let sumSquares = 0;
+      for (const sample of input) {
+        sumSquares += sample * sample;
+      }
+      handleLiveBlock(
+        new Float32Array(input),
+        input.length > 0 ? Math.sqrt(sumSquares / input.length) : 0,
+      );
+    };
+    source.connect(processor);
+    processor.connect(gain);
+    gain.connect(context.destination);
+  }
+
   async function startLiveCapture() {
     if (liveStartingRef.current || liveStoppingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
       return;
@@ -3029,15 +3364,10 @@ function Teleprompter({
       });
       const context = new AudioContext();
       const source = context.createMediaStreamSource(stream);
-      const processor = context.createScriptProcessor(4096, 1, 1);
-      const gain = context.createGain();
-      gain.gain.value = 0;
       liveEnabledRef.current = true;
       liveStreamRef.current = stream;
       liveContextRef.current = context;
       liveSourceRef.current = source;
-      liveProcessorRef.current = processor;
-      liveGainRef.current = gain;
       liveSampleRateRef.current = context.sampleRate;
       liveSamplesRef.current = [];
       liveSampleCountRef.current = 0;
@@ -3055,6 +3385,9 @@ function Teleprompter({
       setLiveStartCursor(startingCursor);
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
       liveVisualCursorRef.current = startingCursor;
+      liveLeadRef.current = createLeadState(startingCursor, performance.now());
+      liveStreamSecondsRef.current = 0;
+      liveSpeechAtRef.current = null;
       setLiveCursor(startingCursor);
       liveDismissedRef.current = [];
       setLiveHeardText("");
@@ -3066,32 +3399,7 @@ function Teleprompter({
       setLiveWhisperLastError(null);
       setLiveWhisperLastWords("");
       setLiveDetectedFlags([]);
-      processor.onaudioprocess = (event) => {
-        if (!liveEnabledRef.current) {
-          return;
-        }
-        const input = event.inputBuffer.getChannelData(0);
-        const copy = new Float32Array(input);
-        let sumSquares = 0;
-        for (const sample of input) {
-          sumSquares += sample * sample;
-        }
-        const rms = input.length > 0 ? Math.sqrt(sumSquares / input.length) : 0;
-        const now = performance.now();
-        if (now - liveMeterUpdateRef.current >= 250) {
-          liveMeterUpdateRef.current = now;
-          setLiveSignalLevel(Math.min(1, rms * 8));
-        }
-        liveSamplesRef.current.push(copy);
-        liveSampleCountRef.current += copy.length;
-        liveCapturedSecondsRef.current += copy.length / liveSampleRateRef.current;
-        if (shouldFlushLiveBuffer()) {
-          flushLiveWindow();
-        }
-      };
-      source.connect(processor);
-      processor.connect(gain);
-      gain.connect(context.destination);
+      await attachLiveTap(context, source);
       await context.resume();
       const nextState = { ...createLiveFlagsState(), enabled: true };
       liveStateRef.current = nextState;
@@ -3182,8 +3490,15 @@ function Teleprompter({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const liveWordIndex = liveHighlightWordIndex(liveCursor, liveState.enabled);
-  const liveLineIndex = liveWordIndex >= 0 ? expectedWords[liveWordIndex]?.lineIndex : undefined;
+  // Word mode marks a single word; the wider modes band a range instead, so
+  // only one of the two is ever active.
+  const liveBand = promptHighlightRange({
+    mode: highlight,
+    wordIndex: liveWordIndex,
+    paragraphFirstWord: liveLineIndex === undefined ? undefined : lineWordStarts.get(liveLineIndex),
+    paragraphWordCount: liveLineWordCount,
+    rows: wordRows,
+  });
 
   return (
     <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
@@ -3301,7 +3616,7 @@ function Teleprompter({
                     <p
                       key={line.index}
                       ref={(node) => { if (node) lineRefs.current.set(line.index, node); else lineRefs.current.delete(line.index); }}
-                      className={`teleprompter-line${liveLineIndex === line.index ? " teleprompter-line-live" : ""}`}
+                      className={`teleprompter-line${liveLineIndex === line.index && highlight !== "paragraph" ? " teleprompter-line-live" : ""}`}
                       aria-current={liveLineIndex === line.index ? "location" : undefined}
                     >
                       {line.segments.map((segment, index) => {
@@ -3339,13 +3654,25 @@ function Teleprompter({
                             }}
                           >{segmentTokens.map((token, tokenIndex) => {
                             if (!token.isWord) {
-                              return <span key={`${line.index}-${index}-${tokenIndex}`}>{token.text}</span>;
+                              // Spacing inside the band carries it too, so the
+                              // highlight reads as one stripe.
+                              return (
+                                <span
+                                  key={`${line.index}-${index}-${tokenIndex}`}
+                                  className={promptBandCovers(liveBand, wordIndex, false) ? "teleprompter-band-live" : undefined}
+                                >{token.text}</span>
+                              );
                             }
                             const currentWordIndex = wordIndex;
                             wordIndex += 1;
                             const mark = liveWordMark(currentWordIndex, liveWordIndex, liveFlag?.expectedIndex);
                             const wordClass = [
-                              mark.follow ? "teleprompter-word-live" : "",
+                              // The single-word mark belongs to word mode. The
+                              // wider modes band a range instead, but the
+                              // reading position still drives scrolling and
+                              // assistive technology in every mode.
+                              mark.follow && highlight === "word" ? "teleprompter-word-live" : "",
+                              promptBandCovers(liveBand, currentWordIndex, true) ? "teleprompter-band-live" : "",
                               mark.flag ? "teleprompter-word-flag" : "",
                             ].filter(Boolean).join(" ") || undefined;
                             return (
@@ -3459,6 +3786,21 @@ function Teleprompter({
                     </button>
                   ))}
                 </div>
+                <p className="card-kicker">Highlight as you read</p>
+                <div className="booth-choice-grid" role="radiogroup" aria-label="Highlight as you read">
+                  {(["word", "line", "paragraph"] as const).map((value) => (
+                    <button key={value} type="button" role="radio" aria-checked={highlight === value} className={highlight === value ? "active" : ""} onClick={() => onHighlight(value)}>
+                      {value === "word" ? "Word" : value === "line" ? "Line" : "Paragraph"}
+                    </button>
+                  ))}
+                </div>
+                <p className="booth-settings-hint">
+                  {highlight === "word"
+                    ? "Marks the single word you are on."
+                    : highlight === "line"
+                      ? "Lights the line you are on. Easier to follow, and it never moves ahead of you."
+                      : "Lights the whole paragraph you are on. Steadiest, with the least movement."}
+                </p>
                 <p className="card-kicker">Line spacing</p>
                 <div className="booth-choice-grid" role="radiogroup" aria-label="Line spacing">
                   {[1.35, 1.55, 1.8].map((value) => (
@@ -4787,6 +5129,18 @@ export function SettingsPanel({
           Teleprompter font size · {draft.teleprompter_font_size}px
           <input type="range" min="20" max="96" step="1" value={draft.teleprompter_font_size} onChange={(event) => setDraft({ ...draft, teleprompter_font_size: Number(event.target.value) })} />
           <small>Manual Space/PageDown scrolling always remains available.</small>
+        </label>
+        <label>
+          Highlight as you read
+          <select value={draft.teleprompter_highlight} onChange={(event) => setDraft({ ...draft, teleprompter_highlight: event.target.value as ProjectSettings["teleprompter_highlight"] })}>
+            <option value="word">Word by word</option>
+            <option value="line">Line by line</option>
+            <option value="paragraph">Paragraph by paragraph</option>
+          </select>
+          <small>
+            Word by word is the most precise. The wider choices are easier to follow and never
+            move ahead of what you have read.
+          </small>
         </label>
         <div className="settings-readonly">
           <span>Audio format</span>

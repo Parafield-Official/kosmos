@@ -39,6 +39,16 @@ describe("project settings", () => {
     });
   });
 
+  it("defaults highlight granularity to word and keeps a valid choice", () => {
+    expect(normalizeProjectSettings({})).toMatchObject({ teleprompter_highlight: "word" });
+    expect(normalizeProjectSettings({ teleprompter_highlight: "line" }))
+      .toMatchObject({ teleprompter_highlight: "line" });
+    expect(normalizeProjectSettings({ teleprompter_highlight: "paragraph" }))
+      .toMatchObject({ teleprompter_highlight: "paragraph" });
+    expect(normalizeProjectSettings({ teleprompter_highlight: "sentence" }))
+      .toMatchObject({ teleprompter_highlight: "word" });
+  });
+
   it("keeps one row per cleared word, however it was typed", () => {
     // Matching ignores case, so two spellings would be two rows that behave
     // as one and cannot be told apart in the settings list.

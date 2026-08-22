@@ -45,6 +45,8 @@ interface BoothDeskBridge {
   startLiveTranscription: () => Promise<{ persistent: boolean; acceleration: string; engine?: string; streaming?: boolean; backcheck?: string }>;
   stopLiveTranscription: () => Promise<{ stopped: boolean }>;
   transcribeBuffer: (payload: { audioBase64?: string; pcmBase64?: string; mimeType?: string; language?: string; engine?: string }) => Promise<TranscriptionResult>;
+  sendLivePcm: (payload: { pcmBase64: string }) => void;
+  onLiveWords: (listener: (payload: { words: import("./core/proof/align").TranscriptWord[] }) => void) => () => void;
   modelStatus: () => Promise<ModelStatus>;
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;

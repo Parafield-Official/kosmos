@@ -23,6 +23,8 @@ export interface ProjectSettings {
   suppressed_words: string[];
   teleprompter_theme: "dark" | "sepia" | "cream";
   teleprompter_font_size: number;
+  /** How much of the script the voice-follow highlight covers as it advances. */
+  teleprompter_highlight: "word" | "line" | "paragraph";
   /** Versioned first-run defaults; used to migrate older books once. */
   teleprompter_preset_version?: 2;
 }

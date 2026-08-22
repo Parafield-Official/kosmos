@@ -158,6 +158,104 @@ export function liveHighlightWordIndex(cursor: number, enabled: boolean): number
   return Math.floor(cursor);
 }
 
+/**
+ * How much of the script the follow highlight covers.
+ *
+ * "line" means one visual row of wrapped text, which is what a narrator sees as
+ * a line — not a manuscript line. A manuscript line is a whole prose paragraph
+ * here, so it is what "paragraph" covers.
+ */
+export type PromptHighlightMode = "word" | "line" | "paragraph";
+
+/** An inclusive span of global word indexes. */
+export interface PromptWordRange {
+  from: number;
+  to: number;
+}
+
+/**
+ * Group a paragraph's words into visual rows using each word's measured
+ * vertical position. The browser decides where text wraps, so rows can only be
+ * discovered by measurement; words sharing a row share a top edge.
+ *
+ * `tops` is indexed from `firstWord`. Words that could not be measured extend
+ * the row in progress rather than starting a new one, so a missing measurement
+ * degrades the band's length instead of splitting it in the wrong place.
+ */
+export function promptWordRows(firstWord: number, tops: Array<number | null>): PromptWordRange[] {
+  const rows: PromptWordRange[] = [];
+  let rowTop: number | null = null;
+  for (let offset = 0; offset < tops.length; offset += 1) {
+    const index = firstWord + offset;
+    const top = tops[offset];
+    const last = rows.at(-1);
+    // Half a line of tolerance: subpixel layout and mixed font sizes shift a
+    // word's top slightly without moving it to another row.
+    const sameRow = last !== undefined
+      && (top === null || rowTop === null || Math.abs(top - rowTop) < 4);
+    if (sameRow) {
+      last.to = index;
+      continue;
+    }
+    rows.push({ from: index, to: index });
+    rowTop = top;
+  }
+  return rows;
+}
+
+/** The row containing `wordIndex`, or null when it falls outside every row. */
+export function promptRowAt(rows: PromptWordRange[], wordIndex: number): PromptWordRange | null {
+  return rows.find((row) => wordIndex >= row.from && wordIndex <= row.to) ?? null;
+}
+
+/**
+ * The word range the band should cover, or null when nothing should be banded.
+ *
+ * Word mode returns null because a single word is highlighted directly rather
+ * than banded. Line mode also returns null until the active paragraph's rows
+ * have been measured, which costs one frame at a paragraph boundary and avoids
+ * flashing a paragraph-wide band before it narrows to a row.
+ */
+export function promptHighlightRange(input: {
+  mode: PromptHighlightMode;
+  wordIndex: number;
+  paragraphFirstWord: number | undefined;
+  paragraphWordCount: number;
+  rows: PromptWordRange[];
+}): PromptWordRange | null {
+  const { mode, wordIndex, paragraphFirstWord, paragraphWordCount, rows } = input;
+  if (mode === "word" || wordIndex < 0 || paragraphFirstWord === undefined) {
+    return null;
+  }
+  if (mode === "line") {
+    return promptRowAt(rows, wordIndex);
+  }
+  return paragraphWordCount > 0
+    ? { from: paragraphFirstWord, to: paragraphFirstWord + paragraphWordCount - 1 }
+    : null;
+}
+
+/**
+ * Should this token carry the band highlight?
+ *
+ * `wordsBefore` is how many of the paragraph's words have already been emitted,
+ * so a word token is at that index and a spacing token sits just after it.
+ * Including spacing that falls between two banded words is what makes the band
+ * read as one continuous stripe rather than a row of separate word chips.
+ */
+export function promptBandCovers(
+  range: PromptWordRange | null,
+  wordsBefore: number,
+  isWord: boolean,
+): boolean {
+  if (!range) {
+    return false;
+  }
+  return isWord
+    ? wordsBefore >= range.from && wordsBefore <= range.to
+    : wordsBefore > range.from && wordsBefore <= range.to;
+}
+
 export function remainingReadTimeLabel(totalMinutes: number, progress: number): string {
   const safeProgress = Math.min(1, Math.max(0, progress));
   if (safeProgress >= 1) {

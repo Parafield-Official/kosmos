@@ -78,6 +78,16 @@ const liveAsrServer = new PersistentWhisperServer();
 const liveFollowServer = new PersistentParakeetServer();
 const liveFollowStream = new PersistentParakeetLive();
 
+// Words leave the follow model on its own schedule, so broadcast them the
+// moment they appear rather than attaching them to an audio request.
+liveFollowStream.onWords((words) => {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send("live:words", { words });
+    }
+  }
+});
+
 // Kosmos is a product rename, not a data migration. Keep the established
 // application-data folder so existing model caches, identities, and recent
 // project state remain available after the update.
@@ -3068,6 +3078,18 @@ ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
     throw new Error("Invalid listen-only transcription request");
   }
   return transcribeAudioBuffer(payload);
+});
+ipcMain.on("live:pcm", (_event, payload) => {
+  if (!payload?.pcmBase64 || !liveFollowStream.running) {
+    return;
+  }
+  try {
+    liveFollowStream.write(decodePcmBase64(payload.pcmBase64));
+  } catch (error) {
+    // Dropping a block costs a moment of follow accuracy; throwing here would
+    // surface as an unhandled rejection in the audio path.
+    console.warn(`Live follow ingest failed: ${error?.message ?? error}`);
+  }
 });
 ipcMain.handle("proof:model-status", async () => {
   const cached = await modelStatus(app.getPath("userData"));

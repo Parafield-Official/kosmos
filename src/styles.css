@@ -3365,6 +3365,26 @@ button {
   transition: background 120ms ease, box-shadow 120ms ease;
 }
 
+/*
+ * Line and paragraph follow. This lands on every token in the range, spacing
+ * included, so adjacent spans join into one stripe — hence no corner radius,
+ * which would scallop the seams. Vertical padding paints outside the line box
+ * without changing layout, so the band cannot reflow the text it highlights.
+ * Text colour is left alone: recolouring a whole paragraph is jarring, and
+ * unlike the single-word mark this can cover thirty words.
+ */
+.teleprompter-band-live {
+  padding: 0.1em 0;
+  background: rgba(236, 190, 88, 0.26);
+  transition: background 140ms ease;
+}
+
+/* Sepia's page is already tan, so gold on gold barely separates. Paper-white
+ * reads as a band against it where more gold would not. */
+.teleprompter-sepia .teleprompter-band-live {
+  background: rgba(255, 251, 240, 0.52);
+}
+
 .teleprompter-word-flag {
   position: relative;
   box-shadow: inset 0 -0.12em 0 #8b3b31;
@@ -4914,6 +4934,15 @@ button {
   border-color: var(--accent);
   color: var(--accent-ink);
   background: var(--accent-soft);
+}
+
+/* Explains what the choice above it does; sits in place of that group's
+ * bottom margin rather than adding to it. */
+.booth-settings-hint {
+  margin: -8px 0 14px;
+  opacity: 0.62;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .booth-materials-heading {

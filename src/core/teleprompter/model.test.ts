@@ -16,6 +16,10 @@ import {
   teleprompterLayout,
   liveHighlightWordIndex,
   liveCursorForVisibleLine,
+  promptBandCovers,
+  promptHighlightRange,
+  promptRowAt,
+  promptWordRows,
   type PromptSegment,
 } from "./model";
 import type { ChapterFile, GlossaryEntry } from "../project/types";
@@ -196,6 +200,73 @@ describe("teleprompter model", () => {
     expect(liveCursorForVisibleLine(0, lines)).toBe(0);
     expect(liveCursorForVisibleLine(170, lines)).toBe(40);
     expect(liveCursorForVisibleLine(250, lines)).toBe(90);
+  });
+
+  it("groups a wrapped paragraph's words into visual rows by their top edge", () => {
+    // Five words on the first row, three on the second, two on the third.
+    const tops = [10, 10, 10, 10, 10, 52, 52, 52, 94, 94];
+    expect(promptWordRows(20, tops)).toEqual([
+      { from: 20, to: 24 },
+      { from: 25, to: 27 },
+      { from: 28, to: 29 },
+    ]);
+  });
+
+  it("tolerates subpixel drift within a row", () => {
+    expect(promptWordRows(0, [10, 10.4, 12.2, 48])).toEqual([
+      { from: 0, to: 2 },
+      { from: 3, to: 3 },
+    ]);
+  });
+
+  it("extends the row in progress when a word cannot be measured", () => {
+    // An unmeasured word must not open a row of its own at the wrong place.
+    expect(promptWordRows(0, [10, null, 10, 48])).toEqual([
+      { from: 0, to: 2 },
+      { from: 3, to: 3 },
+    ]);
+  });
+
+  it("finds the row holding the cursor", () => {
+    const rows = promptWordRows(0, [0, 0, 40, 40, 80]);
+    expect(promptRowAt(rows, 3)).toEqual({ from: 2, to: 3 });
+    expect(promptRowAt(rows, 99)).toBeNull();
+  });
+
+  it("bands nothing in word mode, the row in line mode, the paragraph in paragraph mode", () => {
+    const rows = promptWordRows(10, [0, 0, 0, 40, 40, 40]);
+    const base = { wordIndex: 12, paragraphFirstWord: 10, paragraphWordCount: 6, rows };
+    expect(promptHighlightRange({ ...base, mode: "word" })).toBeNull();
+    expect(promptHighlightRange({ ...base, mode: "line" })).toEqual({ from: 10, to: 12 });
+    expect(promptHighlightRange({ ...base, mode: "paragraph" })).toEqual({ from: 10, to: 15 });
+  });
+
+  it("bands nothing while follow is off or rows are unmeasured", () => {
+    const off = { wordIndex: -1, paragraphFirstWord: 10, paragraphWordCount: 6, rows: [] };
+    expect(promptHighlightRange({ ...off, mode: "paragraph" })).toBeNull();
+    // Line mode holds off for one frame rather than flashing a paragraph band.
+    expect(promptHighlightRange({
+      mode: "line", wordIndex: 12, paragraphFirstWord: 10, paragraphWordCount: 6, rows: [],
+    })).toBeNull();
+  });
+
+  it("bands the spacing between two banded words so the stripe is continuous", () => {
+    const range = { from: 4, to: 6 };
+    // Word tokens inside the range.
+    expect(promptBandCovers(range, 4, true)).toBe(true);
+    expect(promptBandCovers(range, 6, true)).toBe(true);
+    expect(promptBandCovers(range, 7, true)).toBe(false);
+    // Spacing after word 4 is inside; spacing before word 4 is not, so the
+    // band does not bleed into the previous row.
+    expect(promptBandCovers(range, 5, false)).toBe(true);
+    expect(promptBandCovers(range, 4, false)).toBe(false);
+    // Spacing after the last banded word stays clear.
+    expect(promptBandCovers(range, 7, false)).toBe(false);
+  });
+
+  it("bands nothing when there is no range", () => {
+    expect(promptBandCovers(null, 3, true)).toBe(false);
+    expect(promptBandCovers(null, 3, false)).toBe(false);
   });
 
   it("keeps the teleprompter in the current app view and frees reading space", () => {

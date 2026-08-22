@@ -3,6 +3,15 @@ const { spawn } = require("node:child_process");
 
 const DEFAULT_FEED_WAIT_MS = 1_500;
 const START_SETTLE_MS = 120;
+/**
+ * The helper reads exactly this many floats per iteration (see
+ * native/parakeet-live.c). Writing anything else leaves the remainder parked
+ * inside its blocking read, unprocessed, until more audio happens to arrive —
+ * so only ever hand it whole blocks and keep the remainder here.
+ */
+const HOP_SAMPLES = 2560;
+/** Cap the request/response backlog; push subscribers drain nothing. */
+const MAX_PENDING_LINES = 128;
 
 class PersistentParakeetLive {
   constructor({ spawnImpl = spawn } = {}) {
@@ -11,6 +20,8 @@ class PersistentParakeetLive {
     this.buffer = "";
     this.pending = [];
     this.waiters = [];
+    this.residual = new Float32Array(0);
+    this.wordListeners = new Set();
   }
 
   get running() {
@@ -32,6 +43,7 @@ class PersistentParakeetLive {
     this.child = child;
     this.buffer = "";
     this.pending = [];
+    this.residual = new Float32Array(0);
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
       this.buffer += String(chunk);
@@ -41,8 +53,12 @@ class PersistentParakeetLive {
         this.buffer = this.buffer.slice(newline + 1);
         if (line) {
           this.pending.push(line);
+          this.emitWords(parseLiveLine(line));
         }
         newline = this.buffer.indexOf("\n");
+      }
+      if (this.pending.length > MAX_PENDING_LINES) {
+        this.pending.splice(0, this.pending.length - MAX_PENDING_LINES);
       }
       this.flushWaiters();
     });
@@ -65,12 +81,64 @@ class PersistentParakeetLive {
     return { persistent: true, acceleration: "Metal", engine: "parakeet-live", streaming: true };
   }
 
+  /**
+   * Subscribe to words as the helper finalizes them. Returns an unsubscribe.
+   *
+   * Prefer this over `feed` for live follow: `feed` resolves with whatever
+   * lines happen to be queued, which is usually an earlier block's words
+   * rather than the audio just written, so it reports the cursor one block
+   * late no matter how fast the model runs.
+   */
+  onWords(listener) {
+    this.wordListeners.add(listener);
+    return () => {
+      this.wordListeners.delete(listener);
+    };
+  }
+
+  emitWords(words) {
+    if (words.length === 0 || this.wordListeners.size === 0) {
+      return;
+    }
+    for (const listener of this.wordListeners) {
+      try {
+        listener(words);
+      } catch {
+        // A failing subscriber must not stall audio ingest.
+      }
+    }
+  }
+
+  /**
+   * Hand the helper 16 kHz mono float PCM without waiting for a result. Only
+   * whole blocks are written; a short tail is held until the next call
+   * completes it. Words surface through `onWords`.
+   */
+  write(pcm) {
+    if (!this.running) {
+      throw new Error("Parakeet live stream is not running.");
+    }
+    let merged = pcm;
+    if (this.residual.length > 0) {
+      merged = new Float32Array(this.residual.length + pcm.length);
+      merged.set(this.residual, 0);
+      merged.set(pcm, this.residual.length);
+    }
+    const blocks = Math.floor(merged.length / HOP_SAMPLES);
+    const aligned = blocks * HOP_SAMPLES;
+    if (blocks > 0) {
+      const block = merged.subarray(0, aligned);
+      this.child.stdin.write(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+    }
+    this.residual = merged.slice(aligned);
+    return { blocks, buffered: this.residual.length };
+  }
+
   async feed(pcm, { waitMs = DEFAULT_FEED_WAIT_MS } = {}) {
     if (!this.running) {
       throw new Error("Parakeet live stream is not running.");
     }
-    const bytes = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-    this.child.stdin.write(bytes);
+    this.write(pcm);
     if (this.pending.length === 0) {
       await waitFor(waitMs, () => this.pending.length > 0 || !this.running);
     }
@@ -86,6 +154,7 @@ class PersistentParakeetLive {
     this.child = null;
     this.buffer = "";
     this.pending = [];
+    this.residual = new Float32Array(0);
     if (child && !child.killed) {
       try {
         child.stdin?.end();

@@ -403,6 +403,7 @@ function validateSettings(value: unknown): void {
     acx_target_rms_dbfs: unknown;
     teleprompter_theme: unknown;
     teleprompter_font_size: unknown;
+    teleprompter_highlight: unknown;
   }>;
   if (settings.proof_sensitivity !== undefined && !["conservative", "default", "aggressive"].includes(settings.proof_sensitivity as string)) {
     throw new Error("project.json settings have an invalid proof sensitivity");
@@ -418,6 +419,9 @@ function validateSettings(value: unknown): void {
   }
   if (settings.teleprompter_font_size !== undefined && (!Number.isFinite(settings.teleprompter_font_size) || (settings.teleprompter_font_size as number) < 20 || (settings.teleprompter_font_size as number) > 96)) {
     throw new Error("project.json settings have an invalid teleprompter font size");
+  }
+  if (settings.teleprompter_highlight !== undefined && !["word", "line", "paragraph"].includes(settings.teleprompter_highlight as string)) {
+    throw new Error("project.json settings have an invalid teleprompter highlight");
   }
 }
 

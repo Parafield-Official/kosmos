@@ -38,6 +38,36 @@ describe("teleprompter live matching", () => {
     expect(second.flag).toBeUndefined();
   });
 
+  it("stalls after the cursor is pushed past the narrator, because it only looks forward", () => {
+    // Why a second writer must never advance the follow cursor while the live
+    // model is running. Every resync path searches forward from the cursor and
+    // the cursor never moves back, so an overshoot cannot be corrected — the
+    // matcher goes dead until the narrator's voice reaches the wrong position.
+    const script: LiveExpectedWord[] = [
+      "the", "moon", "hangs", "small", "and", "yellow", "and", "gibbous",
+      "the", "sea", "glides", "along", "far", "below",
+    ].map((text, index) => ({ index, lineIndex: index < 8 ? 0 : 1, text }));
+
+    // The narrator has genuinely read four words, but the cursor was shoved to
+    // word 9 — which is on the next line.
+    let state = { cursor: 9, lastHeardEnd: 0.4 };
+    expect(script[state.cursor].lineIndex).toBe(1);
+
+    // They keep reading from word 4. None of it advances the cursor.
+    for (const [offset, text] of ["and", "yellow", "and", "gibbous"].entries()) {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: script,
+        transcript: [{ text, start: 0.5 + offset * 0.4, end: 0.8 + offset * 0.4, confidence: 0.97 }],
+        state,
+        flagsEnabled: false,
+        confidenceThreshold: 0.9,
+      });
+      state = result.state;
+    }
+    expect(state.cursor).toBe(9);
+  });
+
   it("emits a high-confidence full-word mismatch but hides low-confidence guesses", () => {
     const low = matchLiveWindow({
       chapterId: "ch01",
