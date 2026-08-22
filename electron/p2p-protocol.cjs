@@ -58,8 +58,8 @@ function fingerprintWords(secret) {
     throw new Error("An invite secret is required");
   }
   const digest = crypto.createHmac("sha256", "kosmos-collab-v1").update(secret).digest();
-  const first = WORDS[digest[0]];
-  const second = WORDS[digest[1]];
+  const first = WORDS[digest[0] % WORDS.length];
+  const second = WORDS[digest[1] % WORDS.length];
   const third = WORDS[digest[2] % WORDS.length];
   return `${first} ${second} ${third}`;
 }

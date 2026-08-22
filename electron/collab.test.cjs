@@ -64,4 +64,15 @@ describe("collab desk invites", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(live.snapshot().peer).toEqual({ name: "Sam", role: "narrator" });
   });
+
+  it("refuses to attach an invite to a different open book", () => {
+    const live = desk();
+    live.encodeInvite({ project: { id: "book-1", name: "The Pier" }, sdp: "v=0" });
+    expect(() => live.attach({
+      folder: "/tmp/a",
+      project: { id: "book-other", name: "Other", schema: 1, chapters: [] },
+      identity: { name: "Alex", role: "author" },
+      send: () => undefined,
+    })).toThrow(/different book/);
+  });
 });

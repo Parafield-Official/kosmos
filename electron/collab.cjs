@@ -45,6 +45,7 @@ class CollabDesk {
     this.invite = null;
     this.words = null;
     this.secret = null;
+    this.expectedProjectId = null;
     this.peer = null;
     this.lastReview = null;
     this.error = null;
@@ -72,6 +73,7 @@ class CollabDesk {
       throw new Error("Open a book before inviting someone");
     }
     this.secret = createSecret();
+    this.expectedProjectId = project.id;
     this.words = fingerprintWords(this.secret);
     this.invite = createInvite({
       projectId: project.id,
@@ -90,6 +92,7 @@ class CollabDesk {
       throw new Error("That does not look like a Kosmos invite");
     }
     this.secret = parsed.secret;
+    this.expectedProjectId = parsed.projectId;
     this.words = fingerprintWords(parsed.secret);
     this.phase = "joining";
     this.error = null;
@@ -117,6 +120,9 @@ class CollabDesk {
   attach({ folder, project, identity, send }) {
     if (!folder || !project || !identity?.name || !identity?.role) {
       throw new Error("Save your name and role before connecting");
+    }
+    if (this.expectedProjectId && project.id !== this.expectedProjectId) {
+      throw new Error("That invite is for a different book.");
     }
     this.resetKeepInvite();
     this.folder = folder;

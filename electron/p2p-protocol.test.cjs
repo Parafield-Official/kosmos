@@ -1,6 +1,7 @@
 const {
   INVITE_PREFIX,
   REPLY_PREFIX,
+  WORDS,
   MAX_CHUNK_BYTES,
   createInvite,
   createReply,
@@ -60,6 +61,12 @@ describe("collab invites", () => {
     expect(words.split(" ")).toHaveLength(3);
     expect(words).toBe(fingerprintWords(secret));
     expect(words).not.toBe(fingerprintWords(createSecret()));
+    expect(words.split(" ").every((word) => WORDS.includes(word))).toBe(true);
+    for (let index = 0; index < 200; index += 1) {
+      const sample = fingerprintWords(createSecret());
+      expect(sample.includes("undefined")).toBe(false);
+      expect(sample.split(" ")).toHaveLength(3);
+    }
     expect(() => fingerprintWords("short")).toThrow();
   });
 });

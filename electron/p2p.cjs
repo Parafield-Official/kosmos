@@ -81,7 +81,7 @@ async function copyTree(from, to) {
   const entries = await collectSnapshotFiles(from);
   for (const entry of entries) {
     const source = path.join(from, ...entry.path.split("/"));
-    const destination = path.join(to, ...entry.path.split("/"));
+    const destination = safeProjectPath(to, entry.path);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.copyFile(source, destination);
   }
@@ -140,6 +140,7 @@ class PeerSession {
     this.appliedSummary = null;
     this.lastOffered = new Set();
     this.projectUpdated = false;
+    this.inbox = Promise.resolve();
 
     host.on("message", (text) => {
       void this.handleMessage(text).catch(() => {
@@ -153,11 +154,11 @@ class PeerSession {
   }
 
   sendFrame(frame) {
-    return this.host.send(JSON.stringify(frame));
+    void this.host.send(JSON.stringify(frame));
   }
 
   announce() {
-    return this.sendFrame({
+    this.sendFrame({
       type: "hello",
       name: this.identity.name,
       role: this.identity.role,
@@ -166,7 +167,8 @@ class PeerSession {
   }
 
   start() {
-    return Promise.resolve(this.announce()).then(() => this.sendManifest());
+    this.announce();
+    return this.sendManifest();
   }
 
   async sendManifest() {
@@ -176,7 +178,7 @@ class PeerSession {
       files.push({ ...entry, sha256: sha256Hex(buffer) });
     }
     this.lastOffered = new Set(files.map((entry) => entry.path));
-    await this.sendFrame({
+    this.sendFrame({
       type: "snapshot-manifest",
       project: this.project,
       files,
@@ -192,13 +194,13 @@ class PeerSession {
       }
       const absolute = safeProjectPath(this.folder, relativePath);
       const content = await fs.readFile(absolute);
-      const total = Math.ceil(content.length / MAX_CHUNK_BYTES);
+      const total = Math.max(1, Math.ceil(content.length / MAX_CHUNK_BYTES));
       for (let index = 0; index < total; index += 1) {
         const slice = content.subarray(index * MAX_CHUNK_BYTES, (index + 1) * MAX_CHUNK_BYTES);
-        await this.sendFrame({ type: "chunk", path: relativePath, index, total, data: slice.toString("base64") });
+        this.sendFrame({ type: "chunk", path: relativePath, index, total, data: slice.toString("base64") });
       }
     }
-    await this.sendFrame({ type: "snapshot-done" });
+    this.sendFrame({ type: "snapshot-done" });
   }
 
   async stageChunk(frame) {
@@ -225,7 +227,7 @@ class PeerSession {
       this.openTransfers.delete(frame.path);
       throw new Error(`Checksum failed for ${frame.path}`);
     }
-    const destination = path.join(this.stagingRoot, ...frame.path.split("/"));
+    const destination = safeProjectPath(this.stagingRoot, frame.path);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.writeFile(destination, assembled);
     this.openTransfers.delete(frame.path);
@@ -237,8 +239,8 @@ class PeerSession {
     if (!this.stagingRoot) {
       return;
     }
-    const source = path.join(this.folder, ...relativePath.split("/"));
-    const destination = path.join(this.stagingRoot, ...relativePath.split("/"));
+    const source = safeProjectPath(this.folder, relativePath);
+    const destination = safeProjectPath(this.stagingRoot, relativePath);
     await fs.mkdir(path.dirname(destination), { recursive: true });
     await fs.copyFile(source, destination);
   }
@@ -252,6 +254,12 @@ class PeerSession {
   }
 
   async handleMessage(text) {
+    const next = this.inbox.then(() => this.dispatch(text));
+    this.inbox = next.catch(() => undefined);
+    return next;
+  }
+
+  async dispatch(text) {
     const frame = parseFrame(text);
     if (!frame) {
       return;
@@ -287,7 +295,7 @@ class PeerSession {
               needed.push(entry.path);
             }
           }
-          await this.sendFrame({ type: "need", paths: needed });
+          this.sendFrame({ type: "need", paths: needed });
           if (needed.length === 0) {
             this.finalized = true;
             await this.finalizeIncoming();
@@ -312,7 +320,7 @@ class PeerSession {
         if (complete && !this.finalized && this.allStaged()) {
           this.finalized = true;
           await this.finalizeIncoming();
-          await this.sendFrame({
+          this.sendFrame({
             type: "applied",
             summary: this.appliedSummary ?? {},
           });
@@ -323,7 +331,7 @@ class PeerSession {
         if (!this.finalized && this.allStaged()) {
           this.finalized = true;
           await this.finalizeIncoming();
-          await this.sendFrame({
+          this.sendFrame({
             type: "applied",
             summary: this.appliedSummary ?? {},
           });
@@ -388,11 +396,13 @@ class PeerSession {
   isFirstJoin() {
     const localChapters = this.project?.chapters ?? [];
     const incomingChapters = this.incomingProject?.chapters ?? [];
-    if (incomingChapters.length === 0) {
+    if (localChapters.length > 0 || incomingChapters.length === 0) {
       return false;
     }
-    const localIds = new Set(localChapters.map((chapter) => chapter.id));
-    return incomingChapters.every((chapter) => !localIds.has(chapter.id));
+    if (this.project?.id && this.incomingProject?.id && this.project.id !== this.incomingProject.id) {
+      throw new Error("That invite is for a different book.");
+    }
+    return true;
   }
 
   /** Empty local book: take the incoming tree as-is. */
