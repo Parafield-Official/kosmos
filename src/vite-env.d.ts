@@ -56,6 +56,16 @@ interface BoothDeskBridge {
   shareSeatPack: (payload: ProjectEnvelope & { seat: "N1" | "N2" }) => Promise<ShareZipResult | null>;
   getIdentity: (projectId: string) => Promise<LocalIdentity | null>;
   setIdentity: (identity: LocalIdentity) => Promise<LocalIdentity>;
+  collabEncodeInvite: (payload: { project: import("./core/project/types").ProjectFile; sdp: string }) => Promise<CollabSnapshot>;
+  collabDecodeInvite: (text: string) => Promise<{ projectId: string; projectName: string; secret: string; sdp?: string; words: string }>;
+  collabEncodeReply: (payload: { sdp: string }) => Promise<string>;
+  collabDecodeReply: (text: string) => Promise<{ secret: string; sdp: string }>;
+  collabAttach: (payload: ProjectEnvelope & { identity: { name: string; role: "author" | "narrator" } }) => Promise<CollabSnapshot>;
+  collabInbound: (text: string) => Promise<CollabSnapshot>;
+  collabStart: () => Promise<CollabSnapshot>;
+  collabStatus: () => Promise<CollabSnapshot>;
+  collabDisconnect: () => Promise<CollabSnapshot>;
+  onCollabOutbound: (listener: (text: string) => void) => () => void;
 }
 
 interface ProjectEnvelope {
@@ -255,6 +265,17 @@ interface LocalIdentity {
   personName: string;
   role: "author" | "narrator";
   seat?: "N1" | "N2";
+}
+
+interface CollabSnapshot {
+  phase: string;
+  invite: string | null;
+  words: string | null;
+  peer: { name: string; role: string } | null;
+  lastReview: { plan: import("./core/sharing/merge").MergePlan; summary?: string } | null;
+  error: string | null;
+  project: import("./core/project/types").ProjectFile | null;
+  folder: string | null;
 }
 
 interface Window {

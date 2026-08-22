@@ -359,11 +359,6 @@ class PeerSession {
       hooks: this.hooks,
     });
     this.lastReview = review;
-    if ((review.plan.conflicts?.length ?? 0) > 0) {
-      // A person already decided something different: hold, do not overwrite.
-      this.awaitingDecision = review;
-      return;
-    }
     await this.applyStaged();
   }
 

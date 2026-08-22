@@ -63,4 +63,18 @@ contextBridge.exposeInMainWorld("boothDesk", {
   shareSeatPack: (payload) => ipcRenderer.invoke("project:share-seat-pack", payload),
   getIdentity: (projectId) => ipcRenderer.invoke("identity:get", { projectId }),
   setIdentity: (identity) => ipcRenderer.invoke("identity:set", identity),
+  collabEncodeInvite: (payload) => ipcRenderer.invoke("collab:encode-invite", payload),
+  collabDecodeInvite: (text) => ipcRenderer.invoke("collab:decode-invite", { text }),
+  collabEncodeReply: (payload) => ipcRenderer.invoke("collab:encode-reply", payload),
+  collabDecodeReply: (text) => ipcRenderer.invoke("collab:decode-reply", { text }),
+  collabAttach: (payload) => ipcRenderer.invoke("collab:attach", payload),
+  collabInbound: (text) => ipcRenderer.invoke("collab:inbound", text),
+  collabStart: () => ipcRenderer.invoke("collab:start"),
+  collabStatus: () => ipcRenderer.invoke("collab:status"),
+  collabDisconnect: () => ipcRenderer.invoke("collab:disconnect"),
+  onCollabOutbound: (listener) => {
+    const wrapped = (_event, text) => listener(text);
+    ipcRenderer.on("collab:outbound", wrapped);
+    return () => ipcRenderer.removeListener("collab:outbound", wrapped);
+  },
 });

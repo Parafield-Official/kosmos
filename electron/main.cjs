@@ -13,6 +13,7 @@ const { zipProjectFolder } = require("./share.cjs");
 const { strToU8, zipSync } = require("fflate");
 const { extractArchive } = require("./unzip.cjs");
 const { applyPack, reviewPack } = require("./pack-import.cjs");
+const { CollabDesk } = require("./collab.cjs");
 const { exportVoiceGuide: exportVoiceGuideFiles } = require("./voice-guide.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
@@ -1250,6 +1251,14 @@ function packImportHooks() {
     },
   };
 }
+
+const collabDesk = new CollabDesk({
+  hooksFor: () => ({
+    ...packImportHooks(),
+    reviewPack,
+    applyPack,
+  }),
+});
 
 async function pruneImportStaging() {
   const cutoff = Date.now() - IMPORT_STAGING_TTL_MS;
@@ -3122,6 +3131,33 @@ ipcMain.handle("identity:set", (_event, payload) => {
   }
   return saveIdentity(app.getPath("userData"), payload);
 });
+ipcMain.handle("collab:encode-invite", (_event, payload) => {
+  if (!payload?.project) {
+    throw new Error("Open a book before inviting someone");
+  }
+  return collabDesk.encodeInvite(payload);
+});
+ipcMain.handle("collab:decode-invite", (_event, payload) => {
+  return collabDesk.decodeInvite(payload?.text ?? "");
+});
+ipcMain.handle("collab:encode-reply", (_event, payload) => {
+  return collabDesk.encodeReply(payload ?? {});
+});
+ipcMain.handle("collab:decode-reply", (_event, payload) => {
+  return collabDesk.decodeReply(payload?.text ?? "");
+});
+ipcMain.handle("collab:attach", (event, payload) => {
+  return collabDesk.attach({
+    folder: payload?.folder,
+    project: payload?.project,
+    identity: payload?.identity,
+    send: (text) => event.sender.send("collab:outbound", text),
+  });
+});
+ipcMain.handle("collab:inbound", (_event, text) => collabDesk.inbound(text));
+ipcMain.handle("collab:start", () => collabDesk.start());
+ipcMain.handle("collab:status", () => collabDesk.snapshot());
+ipcMain.handle("collab:disconnect", () => collabDesk.disconnect());
 ipcMain.handle("project:save", (_event, payload) => {
   if (!payload || typeof payload.folder !== "string" || !payload.project) {
     throw new Error("Invalid project save request");

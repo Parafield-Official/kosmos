@@ -45,6 +45,14 @@ import { assignPickupSeats, assignSpanSeat } from "../core/duet/seats";
 import { buildDuetTimeline } from "../core/duet/timeline";
 import { recordingElapsedSeconds } from "../core/recorder/timing";
 import {
+  acceptGuestAnswer,
+  acceptHostOffer,
+  bindCollabChannel,
+  closeCollabLink,
+  createHostOffer,
+  sendCollabFrame,
+} from "./collab-link";
+import {
   bookDashboardStats,
   buildPromptLines,
   clampFontSize,
@@ -279,6 +287,13 @@ function ProjectHome({
   const [scanReport, setScanReport] = useState<BookScanReport | null>(null);
   const [bookPickups, setBookPickups] = useState<BookPickupSummary | null>(null);
   const [packReview, setPackReview] = useState<PackReview | null>(null);
+  const [collabInvite, setCollabInvite] = useState<string | null>(null);
+  const [collabWords, setCollabWords] = useState<string | null>(null);
+  const [collabReply, setCollabReply] = useState<string | null>(null);
+  const [collabPaste, setCollabPaste] = useState("");
+  const [collabPhase, setCollabPhase] = useState("idle");
+  const [collabPeer, setCollabPeer] = useState<{ name: string; role: string } | null>(null);
+  const [collabConflicts, setCollabConflicts] = useState<MergeConflict[]>([]);
   const [studioNavOpen, setStudioNavOpen] = useState(true);
   const [identity, setIdentity] = useState<LocalIdentity | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
@@ -1094,6 +1109,134 @@ function ProjectHome({
       return;
     }
     await window.boothDesk.discardPack({ stagingId }).catch(() => undefined);
+  }
+
+  function applyCollabSnapshot(snapshot: CollabSnapshot) {
+    setCollabPhase(snapshot.phase);
+    setCollabInvite(snapshot.invite);
+    setCollabWords(snapshot.words);
+    setCollabPeer(snapshot.peer);
+    setCollabConflicts(snapshot.lastReview?.plan.conflicts ?? []);
+    if (snapshot.project && snapshot.folder) {
+      onChange({ folder: snapshot.folder, project: snapshot.project });
+    }
+  }
+
+  function wireCollabChannel(asHost: boolean) {
+    window.boothDesk?.onCollabOutbound((text) => sendCollabFrame(text));
+    bindCollabChannel({
+      onOpen: () => {
+        if (asHost) {
+          void window.boothDesk?.collabStart().then((snapshot) => {
+            if (snapshot) {
+              applyCollabSnapshot(snapshot);
+            }
+            setNotice("They are on the book with you.");
+          });
+        } else {
+          setCollabPhase("connected");
+          setNotice("Connected. Waiting for their book…");
+        }
+      },
+      onMessage: (text) => {
+        void window.boothDesk?.collabInbound(text).then((snapshot) => {
+          if (!snapshot) {
+            return;
+          }
+          applyCollabSnapshot(snapshot);
+          const conflicts = snapshot.lastReview?.plan.conflicts?.length ?? 0;
+          if (conflicts > 0) {
+            setNotice(`${conflicts} disagreement${conflicts === 1 ? "" : "s"} kept your copy.`);
+          }
+        });
+      },
+      onClose: () => {
+        setCollabPhase("idle");
+        setCollabPeer(null);
+        setNotice("The live session ended.");
+      },
+    });
+  }
+
+  async function createLiveInvite() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Live invite is available in the desktop app.");
+      return;
+    }
+    if (!identity) {
+      setNotice("Save your name and role first.");
+      return;
+    }
+    await runAction("collab-invite", async () => {
+      const offer = await createHostOffer();
+      const snapshot = await window.boothDesk?.collabEncodeInvite({ project, sdp: offer });
+      if (!snapshot) {
+        return;
+      }
+      await window.boothDesk?.collabAttach({
+        folder,
+        project,
+        identity: { name: identity.personName, role: identity.role },
+      });
+      wireCollabChannel(true);
+      applyCollabSnapshot(snapshot);
+      setCollabReply(null);
+      setNotice("Invite ready. Send it, then paste their reply.");
+    });
+  }
+
+  async function joinLiveInvite() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Joining is available in the desktop app.");
+      return;
+    }
+    if (!identity) {
+      setNotice("Save your name and role first.");
+      return;
+    }
+    await runAction("collab-join", async () => {
+      const decoded = await window.boothDesk?.collabDecodeInvite(collabPaste);
+      if (!decoded?.sdp) {
+        throw new Error("That invite is missing a connection offer.");
+      }
+      const answer = await acceptHostOffer(decoded.sdp);
+      const reply = await window.boothDesk?.collabEncodeReply({ sdp: answer });
+      await window.boothDesk?.collabAttach({
+        folder,
+        project,
+        identity: { name: identity.personName, role: identity.role },
+      });
+      wireCollabChannel(false);
+      setCollabWords(decoded.words);
+      setCollabReply(reply ?? null);
+      setCollabPhase("joining");
+      setNotice("Send this reply back. Say the three words out loud to check the line.");
+    });
+  }
+
+  async function acceptLiveReply() {
+    if (!window.boothDesk) {
+      return;
+    }
+    await runAction("collab-reply", async () => {
+      const parsed = await window.boothDesk?.collabDecodeReply(collabPaste);
+      if (!parsed) {
+        return;
+      }
+      await acceptGuestAnswer(parsed.sdp);
+      setNotice("Reply accepted. Waiting for the line to open…");
+    });
+  }
+
+  async function hangUpLive() {
+    closeCollabLink();
+    await window.boothDesk?.collabDisconnect().catch(() => undefined);
+    setCollabPhase("idle");
+    setCollabInvite(null);
+    setCollabReply(null);
+    setCollabPeer(null);
+    setCollabConflicts([]);
+    setNotice("You left the live session.");
   }
 
   async function changeProjectMode(mode: "solo" | "duet") {
@@ -1989,7 +2132,7 @@ function ProjectHome({
                 onMeasure={(presetId) => void runAcxCheck(selectedChapter, presetId)}
                 specPresetId={projectSettings.spec_preset_id}
                 onExport={() => void exportAcx()}
-                onShare={() => void shareProject()}
+                onShare={() => setActivePanel("people")}
                 onPlayRange={playRange}
               />
             ) : (
@@ -2040,26 +2183,30 @@ function ProjectHome({
               identityName={identityName}
               identityRole={identityRole}
               identitySeat={identitySeat}
-              lightPack={lightPack}
               chapterNote={chapterNote}
               selectedChapterId={selectedChapterId}
               busyAction={busyAction}
               onIdentityName={setIdentityName}
               onIdentityRole={setIdentityRole}
               onIdentitySeat={setIdentitySeat}
-              onLightPack={setLightPack}
               onChapterNote={setChapterNote}
               onSaveIdentity={() => void saveLocalIdentity()}
-              onShare={() => void shareProject()}
-              onOpenPack={() => void openCollaboratorPack()}
-              onApplyPack={() => void applyCollaboratorPack()}
-              onDiscardPack={() => void discardCollaboratorPack()}
-              packReview={packReview}
+              collabPhase={collabPhase}
+              collabInvite={collabInvite}
+              collabWords={collabWords}
+              collabReply={collabReply}
+              collabPaste={collabPaste}
+              collabPeer={collabPeer}
+              collabConflicts={collabConflicts}
+              onCollabPaste={setCollabPaste}
+              onCreateInvite={() => void createLiveInvite()}
+              onJoinInvite={() => void joinLiveInvite()}
+              onAcceptReply={() => void acceptLiveReply()}
+              onHangUp={() => void hangUpLive()}
               onSaveNote={() => void saveNote()}
               onStatus={(status) => void changeAuthorStatus(status)}
               onSelectChapter={setSelectedChapterId}
               onMode={(mode) => void changeProjectMode(mode)}
-              onSeatPack={(seat) => void shareSeatPack(seat)}
             />
           ) : null}
 
@@ -4654,26 +4801,30 @@ export function CollaborationPanel({
   identityName,
   identityRole,
   identitySeat,
-  lightPack,
   chapterNote,
   selectedChapterId,
   busyAction,
   onIdentityName,
   onIdentityRole,
   onIdentitySeat,
-  onLightPack,
   onChapterNote,
   onSaveIdentity,
-  onShare,
-  onOpenPack,
-  onApplyPack,
-  onDiscardPack,
-  packReview,
+  collabPhase,
+  collabInvite,
+  collabWords,
+  collabReply,
+  collabPaste,
+  collabPeer,
+  collabConflicts,
+  onCollabPaste,
+  onCreateInvite,
+  onJoinInvite,
+  onAcceptReply,
+  onHangUp,
   onSaveNote,
   onStatus,
   onSelectChapter,
   onMode,
-  onSeatPack,
 }: {
   project: ProjectFile;
   identity: LocalIdentity | null;
@@ -4681,26 +4832,30 @@ export function CollaborationPanel({
   identityName: string;
   identityRole: "author" | "narrator";
   identitySeat: "N1" | "N2";
-  lightPack: boolean;
   chapterNote: string;
   selectedChapterId: string | null;
   busyAction: string | null;
   onIdentityName: (value: string) => void;
   onIdentityRole: (value: "author" | "narrator") => void;
   onIdentitySeat: (value: "N1" | "N2") => void;
-  onLightPack: (value: boolean) => void;
   onChapterNote: (value: string) => void;
   onSaveIdentity: () => void;
-  onShare: () => void;
-  onOpenPack: () => void;
-  onApplyPack: () => void;
-  onDiscardPack: () => void;
-  packReview: PackReview | null;
+  collabPhase: string;
+  collabInvite: string | null;
+  collabWords: string | null;
+  collabReply: string | null;
+  collabPaste: string;
+  collabPeer: { name: string; role: string } | null;
+  collabConflicts: MergeConflict[];
+  onCollabPaste: (value: string) => void;
+  onCreateInvite: () => void;
+  onJoinInvite: () => void;
+  onAcceptReply: () => void;
+  onHangUp: () => void;
   onSaveNote: () => void;
   onStatus: (status: AuthorStatus) => void;
   onSelectChapter: (id: string) => void;
   onMode: (mode: "solo" | "duet") => void;
-  onSeatPack: (seat: "N1" | "N2") => void;
 }) {
   const selected = project.chapters.find((chapter) => chapter.id === selectedChapterId) ?? null;
   const authorCanApprove = Boolean(identity && canApproveChapters(project, identity.personName));
@@ -4713,10 +4868,14 @@ export function CollaborationPanel({
           <p className="card-kicker">Work together</p>
           <h3 id="collaboration-title">Author and narrator</h3>
         </div>
-        <span className="status-pill attached">{identity ? `${identity.personName} · ${identity.role}` : "Role not set"}</span>
+        <span className={`status-pill ${collabPhase === "connected" ? "attached" : ""}`}>
+          {collabPhase === "connected" && collabPeer
+            ? `${collabPeer.name} is here`
+            : identity ? `${identity.personName} · ${identity.role}` : "Role not set"}
+        </span>
       </header>
       <p className="panel-honesty">
-        Add your role so notes, approvals, and recordings stay clear for everyone.
+        Add your role, then invite the other desk. Flags and takes stay on this machine.
       </p>
 
       <div className="collaboration-grid">
@@ -4752,8 +4911,12 @@ export function CollaborationPanel({
           ) : null}
         </div>
 
-        <div className="collaboration-card">
-          <h4>Send the book out</h4>
+        <div className="collaboration-card live-collab-card wide">
+          <h4>Live together</h4>
+          <p>
+            Send an invite. They paste it. You both say the three words. Flags, notes, and
+            new takes appear on each desk while Kosmos is open. Nothing is uploaded.
+          </p>
           <label>
             Voice mode
             <select value={project.mode} onChange={(event) => onMode(event.target.value as "solo" | "duet")}>
@@ -4761,115 +4924,90 @@ export function CollaborationPanel({
               <option value="duet">Duet · characters keep their narrator</option>
             </select>
           </label>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={lightPack} onChange={(event) => onLightPack(event.target.checked)} />
-            Smaller copy: leave out exports and unused recordings
+          <div className="live-collab-status">
+            <span className={`status-pill ${collabPhase === "connected" ? "attached" : ""}`}>
+              {collabPhase === "connected" && collabPeer
+                ? `${collabPeer.name} is here`
+                : collabPhase === "inviting"
+                  ? "Waiting for their reply"
+                  : collabPhase === "joining"
+                    ? "Send the reply back"
+                    : "Not connected"}
+            </span>
+            {collabWords ? <span className="live-collab-words">{collabWords}</span> : null}
+          </div>
+          <div className="live-collab-actions">
+            <button
+              className="action-button primary"
+              type="button"
+              disabled={busyAction !== null || !identity}
+              onClick={onCreateInvite}
+            >
+              {busyAction === "collab-invite" ? "Preparing invite…" : "Create invite"}
+            </button>
+            <button
+              className="action-button"
+              type="button"
+              disabled={busyAction !== null || !identity || collabPaste.trim().length === 0}
+              onClick={collabPaste.trim().startsWith("KOSMOS1R") ? onAcceptReply : onJoinInvite}
+            >
+              {busyAction === "collab-join" || busyAction === "collab-reply"
+                ? "Connecting…"
+                : collabPaste.trim().startsWith("KOSMOS1R")
+                  ? "Paste their reply"
+                  : "Join with a code"}
+            </button>
+            {collabPhase !== "idle" ? (
+              <button className="action-button" type="button" onClick={onHangUp}>Leave</button>
+            ) : null}
+          </div>
+          <label>
+            Paste a code
+            <textarea
+              rows={3}
+              value={collabPaste}
+              onChange={(event) => onCollabPaste(event.target.value)}
+              placeholder="KOSMOS1-…"
+            />
           </label>
-          <p>Scripts, proof alignment, notes, project roles, and glossary clips stay included.</p>
-          <button className="action-button primary" type="button" disabled={busyAction !== null} onClick={onShare}>
-            {busyAction === "share" ? "Preparing the copy…" : "Create a copy to send"}
-          </button>
-          {project.mode === "duet" ? (
-            <div className="status-actions">
-              <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N1")}>Export N1 seat pack</button>
-              <button type="button" disabled={busyAction !== null} onClick={() => onSeatPack("N2")}>Export N2 seat pack</button>
+          {collabInvite ? (
+            <div className="live-collab-code">
+              <p>Send this invite</p>
+              <textarea readOnly rows={4} value={collabInvite} />
+              <button
+                type="button"
+                onClick={() => void navigator.clipboard.writeText(collabInvite)}
+              >
+                Copy invite
+              </button>
             </div>
           ) : null}
-        </div>
-
-        <div className={`collaboration-card${packReview ? " wide" : ""}`}>
-          <h4>Take a pack back in</h4>
-          <p>
-            Open the copy your author or narrator sent back. Nothing is written until you have read
-            what it would change.
-          </p>
-          <button className="action-button" type="button" disabled={busyAction !== null} onClick={onOpenPack}>
-            {busyAction === "pack-review" ? "Reading the pack…" : "Open a pack"}
-          </button>
-          {packReview ? (
-            <div className="pack-review">
-              <p className="pack-review-summary">
-                <strong>{packReview.packName}</strong>
-                <span>From {packReview.incomingName}. Nothing is written yet.</span>
-              </p>
-
-              <div className="book-tally">
-                <span>
-                  <strong>{packReview.plan.audioToAdopt.length}</strong>
-                  {packReview.plan.audioToAdopt.length === 1 ? " recording" : " recordings"}
-                </span>
-                <span>
-                  <strong>{packReview.plan.decisions.length}</strong>
-                  {packReview.plan.decisions.length === 1 ? " flag decision" : " flag decisions"}
-                </span>
-                <span>
-                  <strong>{packReview.plan.notesToAdd.length}</strong>
-                  {packReview.plan.notesToAdd.length === 1 ? " note" : " notes"}
-                </span>
-                <span>
-                  <strong>
-                    {packReview.plan.glossaryToAdd.length
-                      + packReview.plan.glossaryRespells.length
-                      + packReview.plan.glossaryVoiceNotes.length}
-                  </strong>
-                  {" pronunciation edits"}
-                </span>
-              </div>
-
-              {packReview.plan.audioToAdopt.length > 0 ? (
-                <ul className="pack-review-list">
-                  {packReview.plan.audioToAdopt.map((entry) => (
-                    <li key={entry.chapterId}>
-                      Recording for <strong>{entry.chapterTitle}</strong>
-                      {entry.withAlignment ? ", with their proof pass" : ""}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {packReview.plan.conflicts.length > 0 ? (
-                <div className="pack-conflicts">
-                  <h5>
-                    {packReview.plan.conflicts.length}
-                    {packReview.plan.conflicts.length === 1 ? " disagreement" : " disagreements"}
-                    {" · your copy wins"}
-                  </h5>
-                  <ul className="pack-review-list conflicts">
-                    {packReview.plan.conflicts.map((conflict, index) => (
-                      <li key={`${conflict.kind}-${conflict.chapterId}-${index}`}>
-                        {conflictLabel(conflict)}
-                      </li>
-                    ))}
-                  </ul>
-                  <p>Change any of these by hand afterwards, in the chapter it belongs to.</p>
-                </div>
-              ) : null}
-
-              {packReview.plan.skipped.unknownChapters.length > 0 ? (
-                <p className="pack-review-skipped">
-                  Not in this book, so left out: {packReview.plan.skipped.unknownChapters.join(", ")}.
-                </p>
-              ) : null}
-              {packReview.plan.skipped.unknownPickups > 0 ? (
-                <p className="pack-review-skipped">
-                  {packReview.plan.skipped.unknownPickups} of their flags do not line up with ours and
-                  were left out. Their proof run found different words.
-                </p>
-              ) : null}
-
-              <div className="pack-review-actions">
-                <button
-                  className="action-button primary"
-                  type="button"
-                  disabled={busyAction !== null || packReview.plan.empty}
-                  onClick={onApplyPack}
-                >
-                  {busyAction === "pack-apply" ? "Bringing it in…" : "Bring all of this in"}
-                </button>
-                <button className="action-button" type="button" disabled={busyAction !== null} onClick={onDiscardPack}>
-                  Leave it out
-                </button>
-              </div>
+          {collabReply ? (
+            <div className="live-collab-code">
+              <p>Send this reply back</p>
+              <textarea readOnly rows={4} value={collabReply} />
+              <button
+                type="button"
+                onClick={() => void navigator.clipboard.writeText(collabReply)}
+              >
+                Copy reply
+              </button>
+            </div>
+          ) : null}
+          {collabConflicts.length > 0 ? (
+            <div className="pack-conflicts">
+              <h5>
+                {collabConflicts.length}
+                {collabConflicts.length === 1 ? " disagreement" : " disagreements"}
+                {" · your copy kept"}
+              </h5>
+              <ul className="pack-review-list conflicts">
+                {collabConflicts.map((conflict, index) => (
+                  <li key={`${conflict.kind}-${conflict.chapterId}-${index}`}>
+                    {conflictLabel(conflict)}
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
         </div>
@@ -5498,7 +5636,7 @@ function FinishPage({
       <article className="surface-card">
         <p className="card-kicker">The pack</p>
         <h3>Export and share</h3>
-        <p className="panel-honesty">Write the ACX folder, or make a copy for the other seat.</p>
+        <p className="panel-honesty">Write the ACX folder, or invite the other seat on People.</p>
         <div className={`export-readiness ${exportReadiness.ready ? "ready" : "blocked"}`} role="status">
           <strong>{exportReadiness.ready ? "Ready to prepare" : "Audio still needed"}</strong>
           <span>{exportReadiness.attachedChapters} of {exportReadiness.totalChapters} chapters have audio</span>
@@ -5516,7 +5654,7 @@ function FinishPage({
             {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
           </button>
           <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShare}>
-            {busyAction === "share" ? "Preparing…" : "Create shareable copy"}
+            {busyAction === "share" ? "Preparing…" : "Invite on People"}
           </button>
         </div>
         {exportResult ? (

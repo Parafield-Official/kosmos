@@ -1380,6 +1380,41 @@ button {
   grid-column: 1 / -1;
 }
 
+.live-collab-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-collab-words {
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.live-collab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.live-collab-code {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--stone);
+}
+
+.live-collab-code textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
 .checkbox-label {
   display: flex !important;
   grid-template-columns: auto 1fr;

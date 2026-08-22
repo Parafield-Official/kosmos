@@ -1,11 +1,14 @@
 const {
   INVITE_PREFIX,
+  REPLY_PREFIX,
   MAX_CHUNK_BYTES,
   createInvite,
+  createReply,
   createSecret,
   fingerprintWords,
   parseFrame,
   parseInvite,
+  parseReply,
 } = require("./p2p-protocol.cjs");
 
 describe("collab invites", () => {
@@ -19,6 +22,21 @@ describe("collab invites", () => {
 
     // Survives the whitespace a chat app adds around a pasted link.
     expect(parseInvite(`  ${invite}\n`)).toEqual(parsed);
+  });
+
+  it("carries a connection offer and a reply in pasteable codes", () => {
+    const secret = createSecret();
+    const invite = createInvite({
+      projectId: "book-1",
+      projectName: "The Pier",
+      secret,
+      sdp: "v=0 offer-line",
+    });
+    expect(parseInvite(invite)).toMatchObject({ secret, sdp: "v=0 offer-line" });
+    const reply = createReply({ secret, sdp: "v=0 answer-line" });
+    expect(reply.startsWith(REPLY_PREFIX)).toBe(true);
+    expect(parseReply(reply)).toEqual({ secret, sdp: "v=0 answer-line" });
+    expect(parseReply("junk")).toBeNull();
   });
 
   it("rejects junk, tampering, and wrong books without throwing", () => {

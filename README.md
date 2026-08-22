@@ -19,7 +19,7 @@ folder and Journey A proof flow; ACX measurement, mastering, and named export;
 TXT/Markdown, DOCX (bold/italic/underline/highlight spans), EPUB, and text-layer
 PDF import with split/merge/rename; deterministic glossary candidates with
 human pronunciation clips; author/narrator roles, chapter notes, pickup status
-and notes, and light/full collaborator ZIPs; a styled manual teleprompter,
+and notes, and a live pasteable invite on People (no zip pack); a styled manual teleprompter,
 DAW marker export, listen-safe DIY recording review, one-line punch splicing,
 and room testing; plus duet seat painting, N1/N2 pickup filters, seat packs,
 bed/overdub mixing, and separate stems. The master runs gate → loudness →

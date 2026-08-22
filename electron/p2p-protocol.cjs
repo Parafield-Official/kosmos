@@ -14,6 +14,7 @@ const crypto = require("node:crypto");
  */
 
 const INVITE_PREFIX = "KOSMOS1";
+const REPLY_PREFIX = "KOSMOS1R";
 const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 256 * 1024;
 const MAX_MANIFEST_FILES = 5000;
@@ -63,7 +64,7 @@ function fingerprintWords(secret) {
   return `${first} ${second} ${third}`;
 }
 
-function createInvite({ projectId, projectName, secret }) {
+function createInvite({ projectId, projectName, secret, sdp }) {
   validateProjectId(projectId);
   if (typeof projectName !== "string" || projectName.trim().length === 0 || projectName.length > MAX_PROJECT_NAME_LENGTH) {
     throw new Error("An invite needs the book name");
@@ -71,13 +72,19 @@ function createInvite({ projectId, projectName, secret }) {
   if (typeof secret !== "string" || secret.length < 32) {
     throw new Error("An invite secret is required");
   }
-  const body = base64UrlEncode(JSON.stringify({
+  const body = {
     v: 1,
     projectId,
     projectName,
     secret,
-  }));
-  return `${INVITE_PREFIX}-${body}`;
+  };
+  if (typeof sdp === "string" && sdp.length > 0) {
+    if (sdp.length > 32 * 1024) {
+      throw new Error("That invite is too large to paste");
+    }
+    body.sdp = sdp;
+  }
+  return `${INVITE_PREFIX}-${base64UrlEncode(JSON.stringify(body))}`;
 }
 
 function parseInvite(text) {
@@ -105,7 +112,49 @@ function parseInvite(text) {
     if (body.projectName.trim().length === 0 || body.projectName.length > MAX_PROJECT_NAME_LENGTH) {
       return null;
     }
-    return { projectId: body.projectId, projectName: body.projectName, secret: body.secret };
+    const parsed = { projectId: body.projectId, projectName: body.projectName, secret: body.secret };
+    if (typeof body.sdp === "string" && body.sdp.length > 0 && body.sdp.length <= 32 * 1024) {
+      parsed.sdp = body.sdp;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function createReply({ secret, sdp }) {
+  if (typeof secret !== "string" || secret.length < 32) {
+    throw new Error("A reply needs the invite secret");
+  }
+  if (typeof sdp !== "string" || sdp.length === 0 || sdp.length > 32 * 1024) {
+    throw new Error("A reply needs a connection answer");
+  }
+  return `${REPLY_PREFIX}-${base64UrlEncode(JSON.stringify({ v: 1, secret, sdp }))}`;
+}
+
+function parseReply(text) {
+  if (typeof text !== "string") {
+    return null;
+  }
+  const trimmed = text.trim();
+  if (!trimmed.startsWith(`${REPLY_PREFIX}-`)) {
+    return null;
+  }
+  try {
+    const body = JSON.parse(base64UrlDecode(trimmed.slice(REPLY_PREFIX.length + 1)));
+    if (
+      !body
+      || typeof body !== "object"
+      || body.v !== 1
+      || typeof body.secret !== "string"
+      || body.secret.length < 32
+      || typeof body.sdp !== "string"
+      || body.sdp.length === 0
+      || body.sdp.length > 32 * 1024
+    ) {
+      return null;
+    }
+    return { secret: body.secret, sdp: body.sdp };
   } catch {
     return null;
   }
@@ -198,13 +247,16 @@ function parseFrame(text) {
 
 module.exports = {
   INVITE_PREFIX,
+  REPLY_PREFIX,
   MAX_CHUNK_BYTES,
   WORDS,
   base64UrlDecode,
   base64UrlEncode,
   createInvite,
+  createReply,
   createSecret,
   fingerprintWords,
   parseFrame,
   parseInvite,
+  parseReply,
 };
