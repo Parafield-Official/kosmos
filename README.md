@@ -3,7 +3,7 @@
 [Download for Mac](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe)
 
 Kosmos is a free, offline desktop app for turning a manuscript and human
-recordings into proofed, ACX-ready audiobook files. Your book and your voice
+recordings into proofed, delivery-ready audiobook files. Your book and your voice
 stay on this computer. There are no accounts, meters, analytics, or
 cloud-uploaded manuscripts.
 
@@ -22,9 +22,10 @@ human pronunciation clips; author/narrator roles, chapter notes, pickup status
 and notes, and a live pasteable invite on People (no zip pack); a styled manual teleprompter,
 DAW marker export, listen-safe DIY recording review, one-line punch splicing,
 and room testing; plus duet seat painting, N1/N2 pickup filters, seat packs,
-bed/overdub mixing, and separate stems. The master runs gate → loudness →
-true-peak limit → room-tone padding and refuses a take whose noise cannot be
-fixed without damaging the voice. The shipped proof fixture can be loaded
+bed/overdub mixing, and separate stems. The master applies conservative
+steady-noise cleanup when needed, then runs loudness → true-peak limiting →
+room-tone padding and refuses a take whose noise cannot be fixed without
+damaging the voice. The shipped proof fixture can be loaded
 without a network connection. Project settings expose batch proof sensitivity,
 the long-pause threshold, ACX target RMS, and teleprompter display defaults;
 the versioned ACX pass limits themselves remain pinned in `acx_spec.json`.
@@ -73,6 +74,42 @@ The target first-use flow is:
 5. Review timestamped word mismatches and check the ACX traffic light with RMS, true peak, noise floor, rate,
    channels, duration, and room-tone values.
 
+## ACX mastering and automatic noise cleanup
+
+Export is one click for work Kosmos can perform safely. It checks the selected
+delivery target, reconstructs detected clicks and clipped peaks, applies
+conservative steady-noise reduction when needed, normalizes level, limits
+peaks, resamples and mixes channels, adds compliant room tone, encodes the
+delivery file, then measures the encoded file again. The app shows one
+checklist of what was changed and what the delivered file actually passed.
+
+The graphs below come from the deterministic noisy-narration fixture used by
+`verify:delivery`. Time runs left to right, frequency runs bottom to top, and
+brighter colors mean more audio energy. In the first graph, the blue haze
+across the full height is broadband room noise:
+
+![Noisy narration before automatic cleanup](docs/images/acx-denoise/acx-noise-before.png)
+
+After automatic cleanup, that haze is darker while the bright speech shapes
+remain in the same places:
+
+![The same narration after automatic cleanup](docs/images/acx-denoise/acx-noise-after.png)
+
+FFmpeg independently measures the quiet window moving from −58.8 to
+−68.8 dBFS while the narration remains −31.4 dBFS before and after. That gives
+the delivered file more room under ACX's −60 dBFS noise-floor limit without
+turning down or sanding away the voice. Cleanup is capped at 12 dB; if a take
+needs more than that, Kosmos refuses to ship it instead of applying destructive
+processing.
+
+Kosmos uses the same scan → diagnose → repair candidate → preservation check →
+commit-or-pickup pattern across automatic restoration. Click and clipping repair
+now runs before noise reduction and mastering; plosive, dereverb, changing-room,
+and best-take selection workflows are specified in
+[`docs/AUTOMATIC_AUDIO_REPAIR.md`](docs/AUTOMATIC_AUDIO_REPAIR.md). A person
+still confirms the listening experience, but the app prepares the exact pickup
+only when a bounded repair cannot preserve the human voice.
+
 ## Working next to Reaper
 
 Record and edit in Reaper (or another DAW), then attach the finished WAV to a
@@ -108,6 +145,8 @@ the outside world against tools that were not written here, on real audio:
 | Command | What it proves, and who says so |
 |---|---|
 | `verify:acx` | The mastered MP3 meets ACX's numbers, measured by ffmpeg's `astats` and `volumedetect` rather than by us — and an unfixable take is refused instead of shipped. |
+| `verify:delivery` | FFmpeg's adaptive cleanup lowers steady noise without changing narration level, the cleanup cap is enforced, and an EBU R128 delivery is really 48 kHz mono 24-bit PCM WAV. |
+| `verify:restoration` | FFmpeg reconstructs planted clicks and clipped peaks, while a clean narration control stays sample- and level-neutral. |
 | `verify:loudness` | Our LUFS meter agrees with ffmpeg's `ebur128` on sines, noise and gated speech at both sample rates. |
 | `verify:markers` | Every marker export parses as the editor that imports it expects, read back with Python's `csv` module. |
 | `verify:packet` | The pickup packet's clips are playable MP3s (`ffprobe`), its spreadsheet opens in `openpyxl`, and its page is well-formed HTML. |

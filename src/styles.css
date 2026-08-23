@@ -884,11 +884,6 @@ button {
   margin-top: 0;
 }
 
-.export-summary.inline {
-  margin: 14px 0 0;
-  text-align: left;
-}
-
 .export-readiness {
   display: grid;
   gap: 4px;
@@ -921,12 +916,238 @@ button {
   background: var(--warn-soft);
 }
 
-.export-summary.success {
+/*
+ * The receipt for a pack already on disk. It spans both columns because it is
+ * the answer to the button that was pressed, not a sidebar note about it.
+ */
+.export-receipt {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 18px;
+  border-color: #cfe3d3;
+}
+
+.export-receipt.review {
+  border-color: #e8dcb4;
+}
+
+.receipt-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.receipt-heading h3 {
+  max-width: 58ch;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
+}
+
+.receipt-sub {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.receipt-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
+.receipt-actions button {
+  min-width: 120px;
+  padding: 10px 13px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.receipt-block {
+  display: grid;
+  gap: 2px;
+}
+
+.receipt-block h4 {
+  margin: 0;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.receipt-block.outstanding {
+  padding: 14px 16px;
+  border: 1px solid #e8dcb4;
+  border-radius: 12px;
+  background: #fdfaef;
+}
+
+.receipt-block.outstanding h4 {
+  color: var(--warn);
+}
+
+/* One line per dimension: the mark, what happened, then the two readings. */
+.fix-list {
+  display: grid;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fix-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid #ece4da;
+}
+
+.fix-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.fix-mark {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 999px;
+  color: var(--good);
+  background: var(--good-soft);
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.fix-row.outstanding .fix-mark {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.receipt-block.quiet .fix-mark {
+  color: var(--muted);
+  background: var(--stone);
+}
+
+.fix-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fix-body strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.fix-detail {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.fix-delta {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding-top: 1px;
+  font-family: var(--font-display);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fix-before {
+  color: var(--faint);
+}
+
+/*
+ * The reading that missed the target is tinted, so colour alone says which rows
+ * were blocking delivery. No second badge to read per row.
+ */
+.fix-row.fixed .fix-before,
+.fix-row.outstanding .fix-before {
+  color: var(--bad);
+}
+
+.fix-arrow {
+  color: #c3b8ab;
+}
+
+.fix-after {
+  color: var(--ink);
+}
+
+.fix-row.fixed .fix-after,
+.fix-row.adjusted .fix-after {
   color: var(--good);
 }
 
-.export-summary.warning {
+.fix-row.outstanding .fix-after {
   color: var(--warn);
+}
+
+.receipt-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.receipt-notes {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.receipt-notes strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.receipt-files {
+  margin-top: 0;
+}
+
+.receipt-file {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid #ece4da;
+}
+
+.receipt-file:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.receipt-file > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.receipt-file > header strong {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .project-shell {
@@ -1708,14 +1929,6 @@ button {
   font-weight: 800;
 }
 
-.export-summary {
-  max-width: 1240px;
-  margin: 12px auto 0;
-  color: #9c9188;
-  font-size: 11px;
-  text-align: right;
-}
-
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(270px, 0.85fr) minmax(0, 1.4fr);
@@ -2457,6 +2670,17 @@ button {
   background: var(--bad-soft);
 }
 
+/*
+ * Neither a pass nor a failure: a row that export settles on the way out. It
+ * carries the accent rather than a traffic-light colour, because it is a note
+ * about what happens next, not a verdict on the take.
+ */
+.traffic-light.in-hand,
+.check-dot.in-hand {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
 .meter-table {
   width: 100%;
   margin-top: 14px;
@@ -2953,6 +3177,11 @@ button {
   background: #fdf6f4;
 }
 
+.meter-verdict.in-hand {
+  border-color: #d9d1f6;
+  background: #f9f7ff;
+}
+
 .meter-verdict > div {
   display: grid;
   gap: 6px;
@@ -2990,6 +3219,16 @@ button {
 
 .meter-trouble li.fail {
   color: var(--bad);
+}
+
+.meter-trouble.in-hand {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.meter-trouble.in-hand li strong {
+  color: var(--ink);
+  font-size: 12px;
 }
 
 .meter-details {

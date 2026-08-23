@@ -50,8 +50,8 @@ interface BoothDeskBridge {
   modelStatus: () => Promise<ModelStatus>;
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
-  exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
-  showAcxPack: (payload: ProjectEnvelope) => Promise<{ folder: string; shown: boolean }>;
+  exportDelivery: (payload: ProjectEnvelope) => Promise<DeliveryExportResult>;
+  showDeliveryPack: (payload: ProjectEnvelope) => Promise<{ folder: string; shown: boolean }>;
   reviewPack: (payload: ProjectEnvelope) => Promise<PackReview | null>;
   applyPack: (payload: ProjectEnvelope & { stagingId: string }) => Promise<PackImportResult>;
   discardPack: (payload: { stagingId: string }) => Promise<{ discarded: boolean }>;
@@ -255,13 +255,23 @@ interface ModelProgress {
   fraction: number;
 }
 
-interface AcxExportResult {
+interface DeliveryExportResult {
   folder: string;
   files: string[];
-  entries: Array<{ fileName: string; status: string; note?: string }>;
+  /**
+   * Each entry carries the measurement of the source take and of the encoded
+   * delivered file, which lets Finish show the narrator what mastering
+   * settled instead of only how many files were written.
+   */
+  entries: import("./core/acx/export").ReportEntry[];
   report: string;
   status: "ready" | "ready_with_warnings";
   warningCount: number;
+  targetId: string;
+  targetLabel: string;
+  profileDescription: string;
+  container: "mp3" | "wav";
+  profile: import("./core/acx/presets").DeliveryProfile;
 }
 
 interface ShareZipResult {

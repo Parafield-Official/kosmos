@@ -63,8 +63,8 @@ contextBridge.exposeInMainWorld("boothDesk", {
     modelProgressListeners.add(listener);
     return () => modelProgressListeners.delete(listener);
   },
-  exportAcx: (payload) => ipcRenderer.invoke("acx:export", payload),
-  showAcxPack: (payload) => ipcRenderer.invoke("acx:show-pack", payload),
+  exportDelivery: (payload) => ipcRenderer.invoke("delivery:export", payload),
+  showDeliveryPack: (payload) => ipcRenderer.invoke("delivery:show-pack", payload),
   reviewPack: (payload) => ipcRenderer.invoke("project:review-pack", payload),
   applyPack: (payload) => ipcRenderer.invoke("project:apply-pack", payload),
   discardPack: (payload) => ipcRenderer.invoke("project:discard-pack", payload),

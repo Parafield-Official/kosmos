@@ -1,10 +1,28 @@
-import { measurePcm, rmsDbfs, truePeakDbfs, type AcxReport } from "./measure";
+import { measurePcm, rmsDbfs, truePeakDbfs, type AcxReport, type AudioFormat } from "./measure";
+import {
+  ACX_PRESET,
+  deliveryProfile,
+  type DeliveryProfile,
+  type SpecPreset,
+} from "./presets";
 
 export { measurePcm } from "./measure";
 export { integratedLufs } from "./loudness";
 export {
+  AUTOMATIC_DENOISE_CAP_DB,
+  afftdnFilter,
+  noiseReductionAttempts,
+} from "./denoise";
+export {
+  AUTOMATIC_REPAIR_FILTER,
+  AUTOMATIC_REPAIR_MAX_CHANGED_RATIO,
+  AUTOMATIC_REPAIR_MAX_LEVEL_SHIFT_DB,
+  assessRepairCandidate,
+} from "./repair";
+export {
   ACX_PRESET,
   BUILTIN_PRESETS,
+  deliveryProfile,
   normalizeCustomPresets,
   presetTargets,
   resolvePreset,
@@ -15,9 +33,15 @@ export interface MasterPcmInput {
   samples: Float32Array | number[];
   sampleRate: number;
   channels: number;
+  /** Container facts about the take, carried so the source report can judge it. */
+  format?: AudioFormat;
+  bitrate_kbps?: number;
+  vbr?: boolean;
 }
 
 export interface MasterOptions {
+  preset?: SpecPreset;
+  profile?: DeliveryProfile;
   targetRmsDbfs?: number;
   limiterCeilingDbfs?: number;
   noiseFloorMaxDbfs?: number;
@@ -28,8 +52,16 @@ export interface MasterOptions {
 export interface MasterResult {
   status: "ok" | "aborted";
   samples: Float32Array;
-  sampleRate: 44100;
+  sampleRate: number;
   channels: 1;
+  /**
+   * The take exactly as it arrived: its own rate, its own channel count, its own
+   * container. `before` is measured after the mix-down and resample, because the
+   * gain and gate maths need a mono 44.1 kHz picture, which means `before` always
+   * reads 44.1 kHz mono and can never show that either was changed. Anything
+   * telling the narrator what mastering fixed has to read this instead.
+   */
+  source: AcxReport;
   before: AcxReport;
   after?: AcxReport;
   gain_db?: number;
@@ -47,6 +79,7 @@ export interface MasterResult {
     "room_tone_pad",
   ];
   warnings: string[];
+  abort_code?: "no_speech" | "noise_floor" | "level" | "true_peak" | "structure";
   abort_reason?: string;
 }
 
@@ -66,7 +99,10 @@ const ORDER: MasterResult["processing_order"] = [
  * Format is intentionally excluded: the in-memory master has no container
  * yet, so its format check is expected to be a warning until encoding.
  */
-export function masteringStructuralFailure(report: Pick<AcxReport, "checks">): string | undefined {
+export function masteringStructuralFailure(
+  report: Pick<AcxReport, "checks">,
+  targetLabel = "delivery target",
+): string | undefined {
   const failed = ([
     ["sample rate", report.checks.sample_rate],
     ["channel count", report.checks.channels],
@@ -77,7 +113,7 @@ export function masteringStructuralFailure(report: Pick<AcxReport, "checks">): s
     .filter(([, status]) => status === "fail")
     .map(([label]) => label);
   return failed.length > 0
-    ? `Mastered output failed required ACX checks: ${failed.join(", ")}.`
+    ? `Mastered output failed required ${targetLabel} checks: ${failed.join(", ")}.`
     : undefined;
 }
 
@@ -104,103 +140,162 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
       throw new Error("Master PCM samples must be finite numbers");
     }
   }
-  const targetRms = finiteOr(options.targetRmsDbfs, -20);
-  const limiterCeiling = finiteOr(options.limiterCeilingDbfs, -3.2);
-  const noiseFloorMax = finiteOr(options.noiseFloorMaxDbfs, -60);
-  const headSeconds = clamp(finiteOr(options.headSeconds, 1.5), 0.5, 5);
-  const tailSeconds = clamp(finiteOr(options.tailSeconds, 1.5), 0.5, 5);
+  const preset = options.preset ?? ACX_PRESET;
+  const profile = options.profile ?? deliveryProfile(preset);
+  const level = profile.level?.standard === "rms" && options.targetRmsDbfs !== undefined
+    ? { ...profile.level, target: options.targetRmsDbfs }
+    : profile.level;
+  const limiterCeiling = finiteOr(options.limiterCeilingDbfs, profile.limiterCeilingDbfs);
+  const noiseFloorMax = options.noiseFloorMaxDbfs === undefined
+    ? profile.noiseFloorMaxDbfs
+    : finiteOr(options.noiseFloorMaxDbfs, profile.noiseFloorMaxDbfs ?? -60);
+  const headSeconds = clamp(finiteOr(options.headSeconds, profile.headSeconds), 0, 5);
+  const tailSeconds = clamp(finiteOr(options.tailSeconds, profile.tailSeconds), 0, 5);
+  const outputSampleRate = profile.sampleRate;
 
+  const source = measurePcm({
+    samples: input.samples,
+    sampleRate: input.sampleRate,
+    channels: input.channels,
+    format: input.format,
+    bitrate_kbps: input.bitrate_kbps,
+    vbr: input.vbr,
+  }, { preset });
   const mono = mixToMono(input.samples, input.channels);
-  const resampled = resampleLinear(mono, input.sampleRate, 44100);
-  const before = measurePcm({ samples: resampled, sampleRate: 44100, channels: 1 });
-  const analysis = analyzeSpeech(resampled, 44100, before.noise_floor_dbfs);
-  const speechBefore = rmsOfMaskedSamples(resampled, analysis.speechFrames, 44100);
-  const neededGain = targetRms - speechBefore;
+  const resampled = resampleLinear(mono, input.sampleRate, outputSampleRate);
+  const before = measurePcm(
+    { samples: resampled, sampleRate: outputSampleRate, channels: 1 },
+    { preset },
+  );
+  const analysis = analyzeSpeech(resampled, outputSampleRate, before.noise_floor_dbfs);
+  const speechBefore = rmsOfMaskedSamples(resampled, analysis.speechFrames, outputSampleRate);
+  const levelBefore = level?.standard === "lufs" ? before.lufs_integrated : speechBefore;
+  const neededGain = level ? level.target - levelBefore : 0;
   const predictedFloor = before.noise_floor_dbfs + neededGain;
   const warnings: string[] = [];
 
   if (!Number.isFinite(speechBefore)) {
-    return aborted(before, warnings, "No speech-like region was found; the master will not manufacture a voice.", predictedFloor, speechBefore);
+    return aborted(
+      source,
+      before,
+      warnings,
+      "No speech-like region was found; the master will not manufacture a voice.",
+      "no_speech",
+      predictedFloor,
+      speechBefore,
+      outputSampleRate,
+    );
   }
 
-  if (Number.isFinite(before.noise_floor_dbfs) &&
+  if (noiseFloorMax !== null &&
+      Number.isFinite(before.noise_floor_dbfs) &&
       predictedFloor > noiseFloorMax &&
       (analysis.quietSegments.length === 0 || analysis.speechFraction > 0.9)) {
     return aborted(
+      source,
       before,
       warnings,
-      `The measured floor would rise to ${formatDb(predictedFloor)} after the required gain. Treat the room before recording; Kosmos will not melt the voice with noise reduction.`,
+      `The noise floor would rise to ${formatDb(predictedFloor)} after the required gain.`,
+      "noise_floor",
       predictedFloor,
       speechBefore,
+      outputSampleRate,
     );
   }
 
-  let processed = applyGate(resampled, analysis, 44100, before.noise_floor_dbfs);
-  processed = compressLightly(processed, -28, 2);
-  const projected = padRoomTone(processed, analysis, 44100, headSeconds, tailSeconds);
-  const gainDb = targetRms - rmsDbfs(projected);
-  processed = applyGain(processed, gainDb);
+  let processed = noiseFloorMax === null
+    ? Array.from(resampled)
+    : applyGate(resampled, analysis, outputSampleRate, before.noise_floor_dbfs);
+  if (level?.standard === "rms") {
+    processed = compressLightly(processed, -28, 2);
+  }
+  const projected = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
+  const gainDb = level ? level.target - measuredLevel(projected, outputSampleRate, level.standard, preset) : 0;
+  processed = Number.isFinite(gainDb) ? applyGain(processed, gainDb) : processed;
   processed = limitTruePeak(processed, limiterCeiling);
-  const speechAfterMaster = rmsOfMaskedSamples(processed, analysis.speechFrames, 44100);
-  let padded = padRoomTone(processed, analysis, 44100, headSeconds, tailSeconds);
+  const speechAfterMaster = rmsOfMaskedSamples(processed, analysis.speechFrames, outputSampleRate);
+  let padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
 
-  // Limiting can shave a little off the target. One bounded correction keeps
-  // the whole-file RMS in the ACX window without changing processing order.
-  const firstPassRms = rmsDbfs(padded);
-  if (firstPassRms < -23 || firstPassRms > -18) {
-    processed = limitTruePeak(applyGain(processed, targetRms - firstPassRms), limiterCeiling);
-    padded = padRoomTone(processed, analysis, 44100, headSeconds, tailSeconds);
-  }
-
-  const after = measurePcm({ samples: padded, sampleRate: 44100, channels: 1 });
-  if (after.checks.rms === "fail") {
-    return aborted(
-      before,
-      [...warnings, `The mastered take measures ${formatDb(after.rms_dbfs)} RMS, outside ACX's -23 to -18 dBFS window after true-peak limiting.`],
-      "The take could not reach the ACX loudness window without exceeding the true-peak ceiling.",
-      predictedFloor,
-      speechBefore,
+  // Limiting can shave a little off the requested level. Two bounded
+  // corrections work for both RMS audiobook targets and integrated-LUFS
+  // broadcast targets without changing the processing order.
+  let after = measurePcm(
+    { samples: padded, sampleRate: outputSampleRate, channels: 1 },
+    { preset },
+  );
+  for (let attempt = 0; level && attempt < 2 && levelStatus(after, level.standard) === "fail"; attempt += 1) {
+    const correction = level.target - reportLevel(after, level.standard);
+    processed = limitTruePeak(applyGain(processed, correction), limiterCeiling);
+    padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
+    after = measurePcm(
+      { samples: padded, sampleRate: outputSampleRate, channels: 1 },
+      { preset },
     );
   }
-  if (after.checks.noise_floor === "fail") {
+
+  if (level && levelStatus(after, level.standard) === "fail") {
+    const measured = reportLevel(after, level.standard);
+    const unit = level.standard === "lufs" ? "LUFS" : "dBFS RMS";
     return aborted(
+      source,
+      before,
+      [...warnings, `The mastered take measures ${formatDb(measured)} ${unit} after true-peak limiting.`],
+      `The take could not reach ${preset.label}'s ${level.standard.toUpperCase()} target without exceeding the true-peak ceiling.`,
+      "level",
+      predictedFloor,
+      speechBefore,
+      outputSampleRate,
+    );
+  }
+  if (noiseFloorMax !== null && after.checks.noise_floor === "fail") {
+    return aborted(
+      source,
       before,
       [
         ...warnings,
         `The gated result still measures ${formatDb(after.noise_floor_dbfs)}. The voice was left intact; treat the room or use a clean take.`,
       ],
-      "The non-speech gate could not bring the noise floor under ACX's limit safely.",
+      `The first mastering pass could not bring the noise floor under ${preset.label}'s limit.`,
+      "noise_floor",
       predictedFloor,
       speechBefore,
+      outputSampleRate,
     );
   }
 
   if (after.checks.true_peak === "fail") {
     return aborted(
+      source,
       before,
       [...warnings, "The true-peak limiter could not reach its ceiling without another decode pass."],
       "True-peak limiting did not converge.",
+      "true_peak",
       predictedFloor,
       speechBefore,
+      outputSampleRate,
     );
   }
 
-  const structuralFailure = masteringStructuralFailure(after);
+  const structuralFailure = masteringStructuralFailure(after, preset.label);
   if (structuralFailure) {
     return aborted(
+      source,
       before,
       [...warnings, structuralFailure],
       structuralFailure,
+      "structure",
       predictedFloor,
       speechBefore,
+      outputSampleRate,
     );
   }
 
   return {
     status: "ok",
     samples: Float32Array.from(padded),
-    sampleRate: 44100,
+    sampleRate: outputSampleRate,
     channels: 1,
+    source,
     before,
     after,
     gain_db: gainDb,
@@ -213,24 +308,52 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
 }
 
 function aborted(
+  source: AcxReport,
   before: AcxReport,
   warnings: string[],
   reason: string,
+  code: NonNullable<MasterResult["abort_code"]>,
   predictedFloor: number,
   speechBefore: number,
+  sampleRate: number,
 ): MasterResult {
   return {
     status: "aborted",
     samples: new Float32Array(),
-    sampleRate: 44100,
+    sampleRate,
     channels: 1,
+    source,
     before,
     predicted_floor_dbfs: predictedFloor,
     speech_rms_before_dbfs: speechBefore,
     processing_order: ORDER,
     warnings,
+    abort_code: code,
     abort_reason: reason,
   };
+}
+
+function measuredLevel(
+  samples: number[],
+  sampleRate: number,
+  standard: "rms" | "lufs",
+  preset: SpecPreset,
+): number {
+  if (standard === "rms") {
+    return rmsDbfs(samples);
+  }
+  return measurePcm(
+    { samples, sampleRate, channels: 1 },
+    { preset, requireRoomTone: false },
+  ).lufs_integrated;
+}
+
+function reportLevel(report: AcxReport, standard: "rms" | "lufs"): number {
+  return standard === "rms" ? report.rms_dbfs : report.lufs_integrated;
+}
+
+function levelStatus(report: AcxReport, standard: "rms" | "lufs") {
+  return standard === "rms" ? report.checks.rms : report.checks.loudness;
 }
 
 interface SpeechAnalysis {

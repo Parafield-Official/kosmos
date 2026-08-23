@@ -18,10 +18,15 @@ import {
   BookPickupPanel,
   BookWordScanner,
   CollaborationPanel,
+  ExportReceipt,
+  FinishPage,
   GlossaryPanel,
   PickupList,
   SettingsPanel,
 } from "../app/App";
+import { summarizeExportFixes } from "../core/acx/fixes";
+import type { AcxReport } from "../core/acx/measure";
+import { ACX_PRESET, deliveryProfile } from "../core/acx/presets";
 import { AppUpdateNoticeCard } from "../app/AppUpdateNotice";
 import { updateNoticeView, type AppUpdateStatus } from "../app/app-update";
 import { DEFAULT_PROJECT_SETTINGS } from "../core/project/settings";
@@ -299,6 +304,101 @@ const ACX_REPORT = {
   traffic_light: "green" as const,
 };
 
+/** A take as it leaves the booth: 16 kHz, stereo, no room tone, peaks at zero. */
+const ROUGH_TAKE: AcxReport = {
+  ...ACX_REPORT,
+  rms_dbfs: -21.2,
+  lufs_integrated: -20.1,
+  true_peak_dbfs: 0,
+  sample_peak_dbfs: 0,
+  noise_floor_dbfs: -98.6,
+  sample_rate: 16000,
+  channels: 2,
+  duration_seconds: 434,
+  format: "wav",
+  bitrate_kbps: undefined,
+  vbr: undefined,
+  head_room_tone_s: 0.46,
+  tail_room_tone_s: 0,
+  checks: {
+    ...ACX_REPORT.checks,
+    true_peak: "fail",
+    sample_rate: "fail",
+    head_room_tone: "fail",
+    tail_room_tone: "fail",
+  },
+  traffic_light: "red",
+};
+
+/** The same take once mastering and the MP3 encoder are done with it. */
+const DELIVERED: AcxReport = {
+  ...ACX_REPORT,
+  rms_dbfs: -20,
+  lufs_integrated: -19.4,
+  true_peak_dbfs: -3.2,
+  sample_peak_dbfs: -3.3,
+  noise_floor_dbfs: -71.8,
+  duration_seconds: 437,
+  head_room_tone_s: 1.5,
+  tail_room_tone_s: 1.5,
+};
+
+const LOUD_ROOM: AcxReport = {
+  ...DELIVERED,
+  noise_floor_dbfs: -54.1,
+  checks: { ...DELIVERED.checks, noise_floor: "fail" },
+  traffic_light: "red",
+};
+
+const PACK_ENTRIES = [
+  {
+    fileName: "01_chapter_01.mp3",
+    before: ROUGH_TAKE,
+    after: DELIVERED,
+    status: "pass" as const,
+    processing: {
+      automaticRestoration: {
+        changedSamples: 24,
+        changedRatio: 0.0004,
+        levelShiftDb: 0.003,
+      },
+    },
+  },
+  {
+    fileName: "02_chapter_02.mp3",
+    before: { ...ROUGH_TAKE, sample_rate: 22050, rms_dbfs: -25.3, head_room_tone_s: 0.12 },
+    after: DELIVERED,
+    status: "pass" as const,
+  },
+  {
+    fileName: "99_retail_sample.mp3",
+    after: { ...DELIVERED, duration_seconds: 180 },
+    status: "pass" as const,
+    note: "Starts after the lead-in of The Road; 180.0 seconds selected. Review the range.",
+  },
+];
+const ACX_PROFILE = deliveryProfile(ACX_PRESET);
+const ACX_EXPORT_RESULT: DeliveryExportResult = {
+  folder: "/Books/The Long Pier/export/acx",
+  files: ["01_chapter_01.mp3", "02_chapter_02.mp3", "99_retail_sample.mp3"],
+  entries: PACK_ENTRIES,
+  report: "",
+  status: "ready",
+  warningCount: 0,
+  targetId: ACX_PRESET.id,
+  targetLabel: ACX_PRESET.label,
+  profileDescription: ACX_PROFILE.description,
+  container: ACX_PROFILE.container,
+  profile: ACX_PROFILE,
+};
+
+const EXPORT_READINESS = {
+  totalChapters: 3,
+  attachedChapters: 3,
+  missingAudio: [],
+  ready: true,
+};
+
 const PANELS: Array<{ id: string; title: string; node: ReactElement }> = [
   {
     id: "book-pickups",
@@ -429,6 +529,91 @@ const PANELS: Array<{ id: string; title: string; node: ReactElement }> = [
         presetId="acx"
         onPresetChange={noop}
         onPlayNoiseFloor={noop}
+      />
+    ),
+  },
+  {
+    id: "acx-mastering-plan",
+    title: "Delivery check on a rough take, before export",
+    node: <AcxMeter report={ROUGH_TAKE} presetId="acx" onPresetChange={noop} onPlayNoiseFloor={noop} masteringPlan />,
+  },
+  {
+    id: "export-receipt",
+    title: "What export fixed",
+    node: (
+      <ExportReceipt
+        summary={summarizeExportFixes(PACK_ENTRIES, ACX_PROFILE)}
+        fileCount={3}
+        result={ACX_EXPORT_RESULT}
+        busyAction={null}
+        onShowPack={noop}
+      />
+    ),
+  },
+  {
+    id: "finish-before",
+    title: "The Finish page before a pack exists",
+    node: (
+      <FinishPage
+        chapter={PROJECT.chapters[0]}
+        exportReadiness={EXPORT_READINESS}
+        busyAction={null}
+        acxReport={ROUGH_TAKE}
+        exportResult={null}
+        audioUrl={null}
+        audioRef={{ current: null }}
+        onMeasure={noop}
+        specPresetId="acx"
+        onExport={noop}
+        onShowPack={noop}
+        onShare={noop}
+        onPlayNoiseFloor={noop}
+      />
+    ),
+  },
+  {
+    id: "finish-after",
+    title: "The Finish page once the pack is written",
+    node: (
+      <FinishPage
+        chapter={{ ...PROJECT.chapters[0], acx_traffic_light: "green" }}
+        exportReadiness={EXPORT_READINESS}
+        busyAction={null}
+        acxReport={ROUGH_TAKE}
+        exportResult={ACX_EXPORT_RESULT}
+        audioUrl={null}
+        audioRef={{ current: null }}
+        onMeasure={noop}
+        specPresetId="acx"
+        onExport={noop}
+        onShowPack={noop}
+        onShare={noop}
+        onPlayNoiseFloor={noop}
+      />
+    ),
+  },
+  {
+    id: "export-receipt-review",
+    title: "What export fixed, and the room it could not",
+    node: (
+      <ExportReceipt
+        summary={summarizeExportFixes([
+          { fileName: "01_chapter_01.mp3", before: ROUGH_TAKE, after: DELIVERED, status: "pass" },
+          { fileName: "02_chapter_02.mp3", before: ROUGH_TAKE, after: LOUD_ROOM, status: "warn" },
+        ], ACX_PROFILE)}
+        fileCount={2}
+        result={{
+          ...ACX_EXPORT_RESULT,
+          files: ["01_chapter_01.mp3", "02_chapter_02.mp3"],
+          entries: [
+            { fileName: "01_chapter_01.mp3", before: ROUGH_TAKE, after: DELIVERED, status: "pass" },
+            { fileName: "02_chapter_02.mp3", before: ROUGH_TAKE, after: LOUD_ROOM, status: "warn" },
+          ],
+          status: "ready_with_warnings",
+          warningCount: 1,
+        }}
+        busyAction={null}
+        onShowPack={noop}
       />
     ),
   },

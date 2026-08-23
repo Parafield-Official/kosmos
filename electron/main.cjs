@@ -2195,16 +2195,18 @@ function resampleLinearArray(samples, fromRate, toRate) {
   return output;
 }
 
-async function exportAcxPack(folder, project) {
+async function exportDeliveryPack(folder, project) {
   await assertProjectEnvelope(folder, project);
   const masterCore = loadCoreModule("master");
   const exportCore = loadCoreModule("export");
   const settings = normalizeProjectSettings(project.settings);
+  const preset = masterCore.resolvePreset(settings.spec_preset_id);
+  const profile = masterCore.deliveryProfile(preset);
   await ensureProjectDirectory(folder, "export");
-  const outputFolder = projectAssetPath(folder, "export/acx");
+  const outputFolder = projectAssetPath(folder, path.join("export", profile.folderName));
   // Build beside the previous pack and swap only after every chapter and
   // report has succeeded. A failed retry must not erase a usable export.
-  const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), ".acx-staging-"));
+  const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), `.${profile.folderName}-staging-`));
   const temporaryFolder = await fs.mkdtemp(path.join(os.tmpdir(), "booth-desk-export-"));
   const entries = [];
   const outputFiles = [];
@@ -2214,7 +2216,7 @@ async function exportAcxPack(folder, project) {
   try {
     const chapters = [...(project.chapters ?? [])].sort((a, b) => a.index - b.index);
     if (chapters.length === 0) {
-      throw new Error("Add at least one chapter before exporting an ACX pack");
+      throw new Error("Add at least one chapter before exporting a delivery pack");
     }
 
     const readiness = exportCore.getExportReadiness(project);
@@ -2223,27 +2225,80 @@ async function exportAcxPack(folder, project) {
       const preview = titles.slice(0, 3).join(", ");
       const suffix = titles.length > 3 ? ` and ${titles.length - 3} more` : "";
       throw new Error(
-        `ACX export is blocked: attach audio for ${titles.length} chapter${titles.length === 1 ? "" : "s"} first (${preview}${suffix}).`,
+        `${preset.label} export is blocked: attach audio for ${titles.length} chapter${titles.length === 1 ? "" : "s"} first (${preview}${suffix}).`,
       );
     }
 
     for (const chapter of chapters) {
       const decoded = await decodeAudioPcm(folder, chapter.audio_path);
-      const samples = float32View(decoded.pcm);
-      const master = masterCore.masterPcm({
-        samples,
-        sampleRate: decoded.sampleRate,
-        channels: decoded.channels,
-      }, {
-        targetRmsDbfs: settings.acx_target_rms_dbfs,
-      });
-      const fileName = exportCore.chapterFileName(chapter);
-      if (master.status !== "ok") {
+      const sourceReport = measureDecodedAudio(masterCore, decoded, preset);
+      const fileName = exportCore.chapterFileName(chapter, profile.extension);
+      const repaired = await repairAudioFile(masterCore, folder, chapter.audio_path, decoded);
+      const repairAssessment = masterCore.assessRepairCandidate(
+        float32View(decoded.pcm),
+        float32View(repaired.pcm),
+      );
+      if (repairAssessment.applied && !repairAssessment.safe) {
         entries.push({
           fileName,
-          before: master.before,
+          before: sourceReport,
           status: "fail",
-          note: master.abort_reason,
+          note: `${repairAssessment.reason} Kosmos found click or clipping damage across ${(repairAssessment.changedRatio * 100).toFixed(1)}% of the take; record a cleaner pickup instead of applying a destructive whole-file repair.`,
+        });
+        continue;
+      }
+      const prepared = repairAssessment.applied ? repaired : decoded;
+      const automaticRestoration = repairAssessment.applied
+        ? {
+            changedSamples: repairAssessment.changedSamples,
+            changedRatio: repairAssessment.changedRatio,
+            levelShiftDb: repairAssessment.levelShiftDb,
+          }
+        : undefined;
+      const firstMaster = masterDecodedAudio(masterCore, prepared, preset, profile, settings);
+      let master = firstMaster;
+      let automaticNoiseReductionDb;
+
+      if (firstMaster.status !== "ok" && firstMaster.abort_code === "noise_floor" && profile.noiseFloorMaxDbfs !== null) {
+        const strengths = masterCore.noiseReductionAttempts(
+          firstMaster.predicted_floor_dbfs,
+          profile.noiseFloorMaxDbfs,
+        );
+        for (const strength of strengths) {
+          const cleaned = await denoiseAudioFile(
+            masterCore,
+            folder,
+            chapter.audio_path,
+            decoded,
+            firstMaster.before.noise_floor_dbfs,
+            strength,
+            repairAssessment.applied ? masterCore.AUTOMATIC_REPAIR_FILTER : undefined,
+          );
+          const candidate = masterDecodedAudio(masterCore, cleaned, preset, profile, settings);
+          master = candidate;
+          automaticNoiseReductionDb = strength;
+          if (candidate.status === "ok" || candidate.abort_code !== "noise_floor") {
+            break;
+          }
+        }
+      }
+
+      const processing = automaticRestoration || automaticNoiseReductionDb
+        ? {
+            ...(automaticRestoration ? { automaticRestoration } : {}),
+            ...(automaticNoiseReductionDb ? { automaticNoiseReductionDb } : {}),
+          }
+        : undefined;
+      if (master.status !== "ok") {
+        const cleanup = automaticNoiseReductionDb
+          ? ` Automatic cleanup tried ${automaticNoiseReductionDb} dB, the safe cap for unattended narration.`
+          : "";
+        entries.push({
+          fileName,
+          before: sourceReport,
+          status: "fail",
+          processing,
+          note: `${master.abort_reason ?? "Mastering stopped."}${cleanup}`,
         });
         continue;
       }
@@ -2259,7 +2314,13 @@ async function exportAcxPack(folder, project) {
         folder,
         path.relative(folder, path.join(stagingOutputFolder, fileName)),
       );
-      await encodeCbrMp3(temporaryPcm, destination, 0, master.samples.length / 44100);
+      await encodeDeliveryAudio(
+        temporaryPcm,
+        destination,
+        profile,
+        0,
+        master.samples.length / master.sampleRate,
+      );
       const measured = await decodeAudioPcmAtPath(
         folder,
         path.relative(folder, destination),
@@ -2270,22 +2331,30 @@ async function exportAcxPack(folder, project) {
           samples: measuredSamples,
           sampleRate: measured.sampleRate,
           channels: measured.channels,
-          format: "mp3",
+          format: profile.container,
           bitrate_kbps: measured.bitrateKbps,
           vbr: measured.vbr,
+      }, { preset });
+      // The take as it arrived, not the resampled mono the gain maths works on,
+      // so the report can show what mastering changed about the file.
+      entries.push({
+        fileName,
+        before: sourceReport,
+        after,
+        status: reportStatus(after),
+        processing,
       });
-      entries.push({ fileName, before: master.before, after, status: reportStatus(after) });
       outputFiles.push(fileName);
     }
 
     const failedEntries = entries.filter((entry) => entry.status === "fail");
     if (failedEntries.length > 0) {
-      const preview = failedEntries.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || "failed ACX checks"}`).join("; ");
+      const preview = failedEntries.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || `failed ${preset.label} checks`}`).join("; ");
       const suffix = failedEntries.length > 3 ? `; and ${failedEntries.length - 3} more` : "";
-      throw new Error(`ACX export stopped because ${failedEntries.length} chapter${failedEntries.length === 1 ? "" : "s"} failed: ${preview}${suffix}`);
+      throw new Error(`${preset.label} export stopped because ${failedEntries.length} chapter${failedEntries.length === 1 ? "" : "s"} failed: ${preview}${suffix}`);
     }
 
-    const plan = exportCore.buildExportPlan(project);
+    const plan = exportCore.buildExportPlan(project, { profile });
     for (const readme of plan.readmeFiles) {
       await writeFileAtomic(
         projectAssetPath(folder, path.relative(folder, path.join(stagingOutputFolder, readme.fileName))),
@@ -2295,27 +2364,29 @@ async function exportAcxPack(folder, project) {
     }
 
     const retailSpec = exportCore.ACX_SPEC?.retail_sample_s ?? { min: 60, max: 300 };
-    if (retailChapter && retailPcm) {
+    if (profile.includeRetailSample && retailChapter && retailPcm) {
       const samples = retailPcm;
-      const start = Math.min(samples.length, Math.round(1.5 * 44100));
+      const start = Math.min(samples.length, Math.round(profile.headSeconds * profile.sampleRate));
       const availableLength = Math.max(0, samples.length - start);
-      const minimumSamples = Math.round(retailSpec.min * 44100);
+      const minimumSamples = Math.round(retailSpec.min * profile.sampleRate);
       if (availableLength >= minimumSamples) {
-        const sampleLength = Math.min(availableLength, Math.round(retailSpec.max * 44100));
+        const sampleLength = Math.min(availableLength, Math.round(retailSpec.max * profile.sampleRate));
         const samplePath = path.join(temporaryFolder, "retail.f32le");
         const sampleBytes = samples.slice(start, start + sampleLength);
         await fs.writeFile(samplePath, Buffer.from(sampleBytes.buffer, sampleBytes.byteOffset, sampleBytes.byteLength));
+        const retailName = `99_retail_sample.${profile.extension}`;
         const retailOutput = projectAssetPath(
           folder,
-          path.relative(folder, path.join(stagingOutputFolder, "99_retail_sample.mp3")),
+          path.relative(folder, path.join(stagingOutputFolder, retailName)),
         );
-        await encodeCbrMp3(
+        await encodeDeliveryAudio(
           samplePath,
           retailOutput,
+          profile,
           0,
-          sampleLength / 44100,
+          sampleLength / profile.sampleRate,
         );
-        outputFiles.push("99_retail_sample.mp3");
+        outputFiles.push(retailName);
         const retailMeasured = await decodeAudioPcmAtPath(
           folder,
           path.relative(folder, retailOutput),
@@ -2325,25 +2396,25 @@ async function exportAcxPack(folder, project) {
           samples: float32View(retailMeasured.pcm),
           sampleRate: retailMeasured.sampleRate,
           channels: retailMeasured.channels,
-          format: "mp3",
+          format: profile.container,
           bitrate_kbps: retailMeasured.bitrateKbps,
           vbr: retailMeasured.vbr,
-        }, { requireRoomTone: false });
+        }, { requireRoomTone: false, preset });
         entries.push({
-          fileName: "99_retail_sample.mp3",
+          fileName: retailName,
           after: retailReport,
           status: reportStatus(retailReport),
-          note: `Starts after the lead-in of ${retailChapter.title}; ${(sampleLength / 44100).toFixed(1)} seconds selected. Review the range.`,
+          note: `Starts after the lead-in of ${retailChapter.title}; ${(sampleLength / profile.sampleRate).toFixed(1)} seconds selected. Review the range.`,
         });
       } else {
         entries.push({
-          fileName: "99_retail_sample.mp3",
+          fileName: `99_retail_sample.${profile.extension}`,
           status: "not_measured",
-          note: `${retailChapter.title} has only ${(availableLength / 44100).toFixed(1)} seconds after its lead-in; at least ${retailSpec.min} seconds are required.`,
+          note: `${retailChapter.title} has only ${(availableLength / profile.sampleRate).toFixed(1)} seconds after its lead-in; at least ${retailSpec.min} seconds are required.`,
         });
       }
-    } else {
-      entries.push({ fileName: "99_retail_sample.mp3", status: "not_measured", note: "Attach chapter audio to create a retail sample." });
+    } else if (profile.includeRetailSample) {
+      entries.push({ fileName: `99_retail_sample.${profile.extension}`, status: "not_measured", note: "Attach chapter audio to create a retail sample." });
     }
 
     const report = exportCore.reportText(entries);
@@ -2361,9 +2432,14 @@ async function exportAcxPack(folder, project) {
       report,
       status: warningCount > 0 ? "ready_with_warnings" : "ready",
       warningCount,
+      targetId: preset.id,
+      targetLabel: preset.label,
+      profileDescription: profile.description,
+      container: profile.container,
+      profile,
     };
     try {
-      revealAcxPack(folder, outputFiles);
+      revealDeliveryPack(folder, profile.folderName, outputFiles);
     } catch {
       // The pack is already on disk. Finder is a courtesy, not the export.
     }
@@ -2372,6 +2448,95 @@ async function exportAcxPack(folder, project) {
     await fs.rm(temporaryFolder, { recursive: true, force: true });
     await fs.rm(stagingOutputFolder, { recursive: true, force: true });
   }
+}
+
+function masterDecodedAudio(masterCore, decoded, preset, profile, settings) {
+  return masterCore.masterPcm({
+    samples: float32View(decoded.pcm),
+    sampleRate: decoded.sampleRate,
+    channels: decoded.channels,
+    format: decoded.format,
+    bitrate_kbps: decoded.bitrateKbps,
+    vbr: decoded.vbr,
+  }, {
+    preset,
+    profile,
+    targetRmsDbfs: preset.id === "acx" ? settings.acx_target_rms_dbfs : undefined,
+  });
+}
+
+function measureDecodedAudio(masterCore, decoded, preset) {
+  return masterCore.measurePcm({
+    samples: float32View(decoded.pcm),
+    sampleRate: decoded.sampleRate,
+    channels: decoded.channels,
+    format: decoded.format,
+    bitrate_kbps: decoded.bitrateKbps,
+    vbr: decoded.vbr,
+  }, { preset });
+}
+
+/**
+ * Repair clipped peaks and isolated impulses before any spectral or level
+ * processing can smear them. Overlap-save leaves every sample outside FFmpeg's
+ * detected regions untouched; `assessRepairCandidate` independently rejects a
+ * result that is widespread or changes programme level.
+ */
+async function repairAudioFile(masterCore, folder, relativePath, metadata) {
+  const audioPath = projectAudioPath(folder, relativePath);
+  const pcm = await runFfmpeg([
+    "-v", "error",
+    "-i", audioPath,
+    "-af", masterCore.AUTOMATIC_REPAIR_FILTER,
+    "-f", "f32le",
+    "-acodec", "pcm_f32le",
+    "-ac", String(metadata.channels),
+    "-ar", String(metadata.sampleRate),
+    "pipe:1",
+  ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
+  if (pcm.length === 0 || pcm.length % (4 * metadata.channels) !== 0) {
+    throw new Error("Automatic click and clipping repair returned no complete PCM frames.");
+  }
+  return {
+    ...metadata,
+    pcm,
+  };
+}
+
+/**
+ * FFmpeg's adaptive FFT denoiser is bundled with Kosmos. It tracks a steady
+ * floor and applies only the reduction required by the failed first pass,
+ * capped at 12 dB so unattended cleanup does not turn narration metallic.
+ */
+async function denoiseAudioFile(
+  masterCore,
+  folder,
+  relativePath,
+  metadata,
+  noiseFloorDbfs,
+  reductionDb,
+  repairFilter,
+) {
+  const audioPath = projectAudioPath(folder, relativePath);
+  const denoiseFilter = masterCore.afftdnFilter(noiseFloorDbfs, reductionDb);
+  const filter = repairFilter ? `${repairFilter},${denoiseFilter}` : denoiseFilter;
+  const pcm = await runFfmpeg([
+    "-v", "error",
+    "-i", audioPath,
+    "-af", filter,
+    "-f", "f32le",
+    "-acodec", "pcm_f32le",
+    "-ac", String(metadata.channels),
+    "-ar", String(metadata.sampleRate),
+    "pipe:1",
+  ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
+  if (pcm.length === 0 || pcm.length % (4 * metadata.channels) !== 0) {
+    throw new Error("Automatic noise reduction returned no complete PCM frames.");
+  }
+  return {
+    ...metadata,
+    pcm,
+  };
 }
 
 function reportStatus(report) {
@@ -2384,26 +2549,30 @@ function reportStatus(report) {
   return "pass";
 }
 
-function revealAcxPack(folder, files) {
+function revealDeliveryPack(folder, folderName, files) {
   const exportCore = loadCoreModule("export");
   const targetName = exportCore.revealTargetInExportPack(files ?? []);
-  const preferred = projectAssetPath(folder, path.join("export", "acx", targetName));
-  const fallback = projectAssetPath(folder, path.join("export", "acx"));
+  const preferred = projectAssetPath(folder, path.join("export", folderName, targetName));
+  const fallback = projectAssetPath(folder, path.join("export", folderName));
   const target = fsSync.existsSync(preferred) ? preferred : fallback;
   if (!fsSync.existsSync(target)) {
-    throw new Error("The ACX pack folder is missing.");
+    throw new Error("The delivery pack folder is missing.");
   }
   shell.showItemInFolder(target);
 }
 
-async function showAcxPack(folder, project) {
+async function showDeliveryPack(folder, project) {
   await assertProjectEnvelope(folder, project);
-  const packFolder = projectAssetPath(folder, path.join("export", "acx"));
+  const masterCore = loadCoreModule("master");
+  const settings = normalizeProjectSettings(project.settings);
+  const preset = masterCore.resolvePreset(settings.spec_preset_id);
+  const profile = masterCore.deliveryProfile(preset);
+  const packFolder = projectAssetPath(folder, path.join("export", profile.folderName));
   if (!fsSync.existsSync(packFolder)) {
-    throw new Error("Export an ACX pack first.");
+    throw new Error(`Export the ${preset.label} pack first.`);
   }
   const names = (await fs.readdir(packFolder)).filter((name) => !name.startsWith("."));
-  revealAcxPack(folder, names);
+  revealDeliveryPack(folder, profile.folderName, names);
   return { folder: packFolder, shown: true };
 }
 
@@ -2585,21 +2754,31 @@ async function collectProjectFiles(folder, current = "") {
   return files;
 }
 
-async function encodeCbrMp3(inputPath, outputPath, startSeconds, durationSeconds) {
+async function encodeDeliveryAudio(inputPath, outputPath, profile, startSeconds, durationSeconds) {
   const args = [
     "-y", "-v", "error",
-    "-f", "f32le", "-ar", "44100", "-ac", "1",
+    "-f", "f32le", "-ar", String(profile.sampleRate), "-ac", String(profile.channels),
     "-ss", String(Math.max(0, startSeconds)),
     "-t", String(Math.max(0, durationSeconds)),
     "-i", inputPath,
     "-map_metadata", "-1",
-    "-codec:a", "libmp3lame",
-    "-b:a", "192k",
-    "-ar", "44100",
-    "-ac", "1",
-    "-write_xing", "0",
-    outputPath,
   ];
+  if (profile.container === "mp3") {
+    args.push(
+      "-codec:a", "libmp3lame",
+      "-b:a", `${profile.bitrateKbps ?? 192}k`,
+      "-ar", String(profile.sampleRate),
+      "-ac", String(profile.channels),
+      "-write_xing", "0",
+    );
+  } else {
+    args.push(
+      "-codec:a", profile.pcmBitDepth === 24 ? "pcm_s24le" : "pcm_s16le",
+      "-ar", String(profile.sampleRate),
+      "-ac", String(profile.channels),
+    );
+  }
+  args.push(outputPath);
   await runFfmpeg(args);
 }
 
@@ -3164,18 +3343,23 @@ ipcMain.handle("proof:download-model", async (event) => {
     }
   });
 });
-ipcMain.handle("acx:export", (_event, payload) => {
+const handleDeliveryExport = (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
-    throw new Error("Invalid ACX export request");
+    throw new Error("Invalid delivery export request");
   }
-  return exportAcxPack(payload.folder, payload.project);
-});
-ipcMain.handle("acx:show-pack", (_event, payload) => {
+  return exportDeliveryPack(payload.folder, payload.project);
+};
+const handleShowDeliveryPack = (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
-    throw new Error("Invalid ACX pack request");
+    throw new Error("Invalid delivery pack request");
   }
-  return showAcxPack(payload.folder, payload.project);
-});
+  return showDeliveryPack(payload.folder, payload.project);
+};
+ipcMain.handle("delivery:export", handleDeliveryExport);
+ipcMain.handle("delivery:show-pack", handleShowDeliveryPack);
+// Keep the old channels for installed renderers during a hot update.
+ipcMain.handle("acx:export", handleDeliveryExport);
+ipcMain.handle("acx:show-pack", handleShowDeliveryPack);
 ipcMain.handle("project:review-pack", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
     throw new Error("Invalid pack review request");

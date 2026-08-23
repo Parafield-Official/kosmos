@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { masteringStructuralFailure, masterPcm } from "./master";
+import { EBU_R128_PRESET } from "./presets";
 
 describe("ACX master chain", () => {
   it("gates non-speech before gain and keeps the processing order explicit", () => {
@@ -25,6 +26,46 @@ describe("ACX master chain", () => {
     expect(result.after?.rms_dbfs).toBeLessThanOrEqual(-18);
     expect(result.speech_rms_after_dbfs).toBeGreaterThan(-24);
     expect(result.speech_rms_after_dbfs).toBeLessThan(-10);
+  });
+
+  it("keeps a report of the take as it arrived, not of the resampled mono copy", () => {
+    const stereo = new Float32Array(16_000 * 2 * 3);
+    const mono = audioBabbleFixture();
+    for (let frame = 0; frame < stereo.length / 2; frame += 1) {
+      const value = mono[Math.floor((frame * mono.length) / (stereo.length / 2))] ?? 0;
+      stereo[frame * 2] = value;
+      stereo[frame * 2 + 1] = value;
+    }
+
+    const result = masterPcm({ samples: stereo, sampleRate: 16_000, channels: 2, format: "wav" });
+
+    // `before` cannot show either change: the gain maths needs mono at 44.1 kHz.
+    expect(result.before.sample_rate).toBe(44_100);
+    expect(result.before.channels).toBe(1);
+    expect(result.source.sample_rate).toBe(16_000);
+    expect(result.source.channels).toBe(2);
+    expect(result.source.format).toBe("wav");
+    expect(result.source.checks.sample_rate).toBe("fail");
+    expect(result.after?.sample_rate).toBe(44_100);
+    expect(result.after?.channels).toBe(1);
+  });
+
+  it("masters EBU R 128 by LUFS at 48 kHz without ACX room-tone rules", () => {
+    const result = masterPcm({
+      samples: audioBabbleFixture(),
+      sampleRate: 44_100,
+      channels: 1,
+      format: "wav",
+    }, { preset: EBU_R128_PRESET });
+
+    expect(result.status).toBe("ok");
+    expect(result.sampleRate).toBe(48_000);
+    expect(result.after?.checks.loudness).toBe("pass");
+    expect(result.after?.lufs_integrated).toBeGreaterThanOrEqual(-23.5);
+    expect(result.after?.lufs_integrated).toBeLessThanOrEqual(-22.5);
+    expect(result.after?.checks.true_peak).toBe("pass");
+    expect(result.after?.checks.rms).toBe("unspecified");
+    expect(result.after?.checks.head_room_tone).toBe("unspecified");
   });
 
   it("does not destroy a take when the noise is present during every speech frame", () => {

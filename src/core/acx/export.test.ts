@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildExportPlan, getExportReadiness, reportText, revealTargetInExportPack } from "./export";
+import { EBU_R128_PRESET, deliveryProfile } from "./presets";
 import { createEmptyProject, addChapter } from "../project/project";
 
 describe("ACX export plan", () => {
@@ -37,8 +38,23 @@ describe("ACX export plan", () => {
   });
 
   it("writes before/after measurements into a readable report", () => {
-    const report = reportText([{ fileName: "01_chapter_01.mp3", status: "pass", note: "clean", before: fakeReport(-24), after: fakeReport(-20) }]);
+    const report = reportText([{
+      fileName: "01_chapter_01.mp3",
+      status: "pass",
+      note: "clean",
+      before: fakeReport(-24),
+      after: fakeReport(-20),
+      processing: {
+        automaticRestoration: {
+          changedSamples: 24,
+          changedRatio: 0.0004,
+          levelShiftDb: 0.003,
+        },
+      },
+    }]);
     expect(report).toContain("01_chapter_01.mp3 — PASS");
+    expect(report).toContain("automatic click/clipping repair: 24 samples reconstructed");
+    expect(report).toContain("0.040% of the take; 0.003 dB level shift");
     expect(report).toContain("before: RMS -24.0 dBFS");
     expect(report).toContain("after:  RMS -20.0 dBFS");
   });
@@ -89,6 +105,27 @@ describe("ACX export plan", () => {
     expect(revealTargetInExportPack(["01_chapter_01.mp3", "99_retail_sample.mp3"])).toBe("01_chapter_01.mp3");
     expect(revealTargetInExportPack([])).toBe("REPORT.txt");
     expect(revealTargetInExportPack(["../escape.mp3", "REPORT.txt"])).toBe("REPORT.txt");
+  });
+
+  it("builds a plain WAV chapter pack for EBU instead of ACX extras", () => {
+    let project = createEmptyProject("Broadcast", { id: "ebu-book", now: "2026-01-01T00:00:00.000Z" });
+    project = addChapter(project, {
+      id: "ch01",
+      index: 1,
+      title: "Programme",
+      text_path: "manuscript/chapters/01.json",
+      audio_path: "audio/01.wav",
+    });
+
+    const plan = buildExportPlan(project, { profile: deliveryProfile(EBU_R128_PRESET) });
+
+    expect(plan.folderName).toBe("ebu-r128");
+    expect(plan.items.map((item) => item.fileName)).toEqual(["01_chapter_01.wav"]);
+    expect(plan.readmeFiles).toEqual([]);
+  });
+
+  it("can reveal a WAV delivery master", () => {
+    expect(revealTargetInExportPack(["01_chapter_01.wav", "REPORT.txt"])).toBe("01_chapter_01.wav");
   });
 });
 

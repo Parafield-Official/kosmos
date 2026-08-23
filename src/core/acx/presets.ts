@@ -5,6 +5,37 @@ export interface Range {
   max: number;
 }
 
+export type DeliveryContainer = "mp3" | "wav";
+export type LevelStandard = "rms" | "lufs";
+
+/**
+ * The file Kosmos writes for a measurement preset.
+ *
+ * A spec and a container are separate facts. EBU R 128, for example, defines
+ * programme loudness and true peak but deliberately does not mandate WAV,
+ * sample rate, or channel count. Kosmos therefore pairs it with a documented
+ * production-master default instead of quietly reusing ACX's MP3 recipe.
+ */
+export interface DeliveryProfile {
+  targetId: string;
+  targetLabel: string;
+  folderName: string;
+  container: DeliveryContainer;
+  extension: DeliveryContainer;
+  sampleRate: number;
+  channels: 1;
+  bitrateKbps?: number;
+  pcmBitDepth?: 24;
+  level: { standard: LevelStandard; target: number } | null;
+  limiterCeilingDbfs: number;
+  noiseFloorMaxDbfs: number | null;
+  headSeconds: number;
+  tailSeconds: number;
+  includeCreditSlots: boolean;
+  includeRetailSample: boolean;
+  description: string;
+}
+
 /**
  * A delivery target. Every limit is optional: a null limit means the target says
  * nothing about that dimension, and the meter reports it without judging it.
@@ -78,6 +109,89 @@ export const EBU_R128_PRESET: SpecPreset = {
  * builtins we guessed at.
  */
 export const BUILTIN_PRESETS: readonly SpecPreset[] = Object.freeze([ACX_PRESET, EBU_R128_PRESET]);
+
+/**
+ * Turn a judgement preset into an actual file recipe.
+ *
+ * Custom presets that specify a CBR bitrate produce MP3; presets without an
+ * encoded-audio requirement produce a 24-bit WAV master. This gives a custom
+ * target a useful export without inventing a distributor requirement.
+ */
+export function deliveryProfile(preset: SpecPreset): DeliveryProfile {
+  if (preset.id === ACX_PRESET.id) {
+    return {
+      targetId: preset.id,
+      targetLabel: preset.label,
+      folderName: "acx",
+      container: "mp3",
+      extension: "mp3",
+      sampleRate: ACX_SPEC.sample_rate,
+      channels: 1,
+      bitrateKbps: ACX_SPEC.min_bitrate_cbr,
+      level: { standard: "rms", target: ACX_SPEC.rms_dbfs.target },
+      limiterCeilingDbfs: ACX_SPEC.true_peak_limiter_ceiling,
+      noiseFloorMaxDbfs: ACX_SPEC.noise_floor_dbfs_max,
+      headSeconds: ACX_SPEC.room_tone_head_s.target,
+      tailSeconds: ACX_SPEC.room_tone_tail_s.target,
+      includeCreditSlots: true,
+      includeRetailSample: true,
+      description: "44.1 kHz mono, 192 kbps CBR MP3, with ACX room tone and retail sample.",
+    };
+  }
+
+  if (preset.id === EBU_R128_PRESET.id) {
+    return {
+      targetId: preset.id,
+      targetLabel: preset.label,
+      folderName: "ebu-r128",
+      container: "wav",
+      extension: "wav",
+      sampleRate: 48_000,
+      channels: 1,
+      pcmBitDepth: 24,
+      level: { standard: "lufs", target: -23 },
+      limiterCeilingDbfs: -1.2,
+      noiseFloorMaxDbfs: null,
+      headSeconds: 0,
+      tailSeconds: 0,
+      includeCreditSlots: false,
+      includeRetailSample: false,
+      description: "48 kHz, 24-bit mono WAV production master at −23 LUFS. EBU R 128 itself does not mandate a container.",
+    };
+  }
+
+  const encoded = preset.min_bitrate_cbr !== null;
+  const level = preset.lufs
+    ? { standard: "lufs" as const, target: midpoint(preset.lufs) }
+    : preset.rms_dbfs
+      ? { standard: "rms" as const, target: midpoint(preset.rms_dbfs) }
+      : null;
+  const sampleRate = preset.sample_rate ?? (encoded ? 44_100 : 48_000);
+  const bitrateKbps = encoded ? Math.max(64, preset.min_bitrate_cbr ?? 192) : undefined;
+  return {
+    targetId: preset.id,
+    targetLabel: preset.label,
+    folderName: safeFolderName(preset.id),
+    container: encoded ? "mp3" : "wav",
+    extension: encoded ? "mp3" : "wav",
+    sampleRate,
+    channels: 1,
+    bitrateKbps,
+    pcmBitDepth: encoded ? undefined : 24,
+    level,
+    limiterCeilingDbfs: preset.true_peak_dbfs_max === null
+      ? -1
+      : preset.true_peak_dbfs_max - 0.2,
+    noiseFloorMaxDbfs: preset.noise_floor_dbfs_max,
+    headSeconds: midpoint(preset.room_tone_head_s),
+    tailSeconds: midpoint(preset.room_tone_tail_s),
+    includeCreditSlots: false,
+    includeRetailSample: false,
+    description: encoded
+      ? `${(sampleRate / 1000).toFixed(1)} kHz mono, ${bitrateKbps} kbps CBR MP3.`
+      : `${(sampleRate / 1000).toFixed(1)} kHz, 24-bit mono WAV master.`,
+  };
+}
 
 export function resolvePreset(id: string | undefined, custom: SpecPreset[] = []): SpecPreset {
   if (!id) {
@@ -177,6 +291,18 @@ export function presetTargets(preset: SpecPreset): Record<string, string> {
 
 function rangeText(value: Range | null): string {
   return value ? `${value.min.toFixed(1)}–${value.max.toFixed(1)} s` : "Not specified";
+}
+
+function midpoint(value: Range | null): number {
+  return value ? (value.min + value.max) / 2 : 0;
+}
+
+function safeFolderName(value: string): string {
+  return value
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48) || "delivery";
 }
 
 /** Minus signs, so a target reads the same as the measured value beside it. */

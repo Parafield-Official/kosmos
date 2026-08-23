@@ -1,4 +1,5 @@
 import type { AcxReport } from "./measure";
+import { ACX_PRESET, deliveryProfile, type DeliveryProfile } from "./presets";
 import type { ChapterFile, ProjectFile } from "../project/types";
 
 // Keep desktop export decisions tied to the same versioned specification used
@@ -9,6 +10,7 @@ export interface ExportPlanOptions {
   includeOpeningCredits?: boolean;
   includeClosingCredits?: boolean;
   retailSampleChapterId?: string;
+  profile?: DeliveryProfile;
 }
 
 export interface ExportPlanItem {
@@ -20,7 +22,7 @@ export interface ExportPlanItem {
 }
 
 export interface ExportPlan {
-  folderName: "acx";
+  folderName: string;
   items: ExportPlanItem[];
   readmeFiles: Array<{ fileName: string; contents: string }>;
 }
@@ -55,7 +57,7 @@ export function getExportReadiness(project: Pick<ProjectFile, "chapters">): Expo
  */
 export function revealTargetInExportPack(files: string[]): string {
   const names = files.filter((name) => typeof name === "string" && name.length > 0 && !name.includes("/") && !name.includes("\\"));
-  return names.find((name) => name.toLowerCase().endsWith(".mp3")) ?? names[0] ?? "REPORT.txt";
+  return names.find((name) => /\.(mp3|wav|flac|m4a|aiff?)$/i.test(name)) ?? names[0] ?? "REPORT.txt";
 }
 
 export interface ReportEntry {
@@ -63,6 +65,14 @@ export interface ReportEntry {
   before?: AcxReport;
   after?: AcxReport;
   status: "pass" | "warn" | "fail" | "not_measured";
+  processing?: {
+    automaticRestoration?: {
+      changedSamples: number;
+      changedRatio: number;
+      levelShiftDb: number;
+    };
+    automaticNoiseReductionDb?: number;
+  };
   note?: string;
 }
 
@@ -70,16 +80,17 @@ export function buildExportPlan(
   project: ProjectFile,
   options: ExportPlanOptions = {},
 ): ExportPlan {
+  const profile = options.profile ?? deliveryProfile(ACX_PRESET);
   const items: ExportPlanItem[] = [];
   const readmeFiles: ExportPlan["readmeFiles"] = [];
 
-  if (options.includeOpeningCredits) {
+  if (profile.includeCreditSlots && options.includeOpeningCredits) {
     items.push({
       kind: "opening_credits",
-      fileName: "00_opening_credits.mp3",
+      fileName: `00_opening_credits.${profile.extension}`,
       note: "Provide a recorded opening-credit slot; Kosmos never generates spoken credits.",
     });
-  } else {
+  } else if (profile.includeCreditSlots) {
     readmeFiles.push({
       fileName: "00_opening_credits_README.txt",
       contents: creditTemplate("opening"),
@@ -89,41 +100,46 @@ export function buildExportPlan(
   for (const chapter of [...project.chapters].sort((a, b) => a.index - b.index)) {
     items.push({
       kind: "chapter",
-      fileName: chapterFileName(chapter),
+      fileName: chapterFileName(chapter, profile.extension),
       chapterId: chapter.id,
       sourcePath: chapter.audio_path,
     });
   }
 
-  if (options.includeClosingCredits) {
+  if (profile.includeCreditSlots && options.includeClosingCredits) {
     items.push({
       kind: "closing_credits",
-      fileName: "98_closing_credits.mp3",
+      fileName: `98_closing_credits.${profile.extension}`,
       note: "Provide a recorded closing-credit slot; Kosmos never generates spoken credits.",
     });
-  } else {
+  } else if (profile.includeCreditSlots) {
     readmeFiles.push({
       fileName: "98_closing_credits_README.txt",
       contents: creditTemplate("closing"),
     });
   }
 
-  const sampleChapter = options.retailSampleChapterId
-    ? project.chapters.find((chapter) => chapter.id === options.retailSampleChapterId)
-    : project.chapters[0];
-  items.push({
-    kind: "retail_sample",
-    fileName: "99_retail_sample.mp3",
-    chapterId: sampleChapter?.id,
-    sourcePath: sampleChapter?.audio_path,
-    note: sampleChapter ? "Select a 1–5 minute range beginning on narration." : "Add a chapter before creating a retail sample.",
-  });
+  if (profile.includeRetailSample) {
+    const sampleChapter = options.retailSampleChapterId
+      ? project.chapters.find((chapter) => chapter.id === options.retailSampleChapterId)
+      : project.chapters[0];
+    items.push({
+      kind: "retail_sample",
+      fileName: `99_retail_sample.${profile.extension}`,
+      chapterId: sampleChapter?.id,
+      sourcePath: sampleChapter?.audio_path,
+      note: sampleChapter ? "Select a 1–5 minute range beginning on narration." : "Add a chapter before creating a retail sample.",
+    });
+  }
 
-  return { folderName: "acx", items, readmeFiles };
+  return { folderName: profile.folderName, items, readmeFiles };
 }
 
-export function chapterFileName(chapter: Pick<ChapterFile, "index">): string {
-  return `${String(chapter.index).padStart(2, "0")}_chapter_${String(chapter.index).padStart(2, "0")}.mp3`;
+export function chapterFileName(
+  chapter: Pick<ChapterFile, "index">,
+  extension: DeliveryProfile["extension"] = "mp3",
+): string {
+  return `${String(chapter.index).padStart(2, "0")}_chapter_${String(chapter.index).padStart(2, "0")}.${extension}`;
 }
 
 export function reportText(entries: ReportEntry[]): string {
@@ -132,7 +148,7 @@ export function reportText(entries: ReportEntry[]): string {
   const lines = [
     "Kosmos audio spec report",
     "============================",
-    "Measurable specs only. Human QC still matters for clicks, echo, and a wrong read.",
+    "Measured delivery specs plus automatic restoration actions. Human QC still confirms the listening experience.",
     ...(measured
       ? [
         `Delivery target: ${measured.preset_label}`,
@@ -148,6 +164,16 @@ export function reportText(entries: ReportEntry[]): string {
     lines.push(`${entry.fileName} — ${entry.status.toUpperCase()}`);
     if (entry.note) {
       lines.push(`  note: ${entry.note}`);
+    }
+    if (entry.processing?.automaticRestoration) {
+      const repair = entry.processing.automaticRestoration;
+      lines.push(
+        `  automatic click/clipping repair: ${repair.changedSamples} samples reconstructed `
+        + `(${(repair.changedRatio * 100).toFixed(3)}% of the take; ${repair.levelShiftDb.toFixed(3)} dB level shift)`,
+      );
+    }
+    if (entry.processing?.automaticNoiseReductionDb) {
+      lines.push(`  automatic noise reduction: ${entry.processing.automaticNoiseReductionDb.toFixed(0)} dB`);
     }
     if (entry.before) {
       lines.push(`  before: ${summary(entry.before)}`);

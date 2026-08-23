@@ -2,7 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
 import { noiseFloorListenRange } from "../core/acx/measure";
 import { getExportReadiness, type ExportReadiness } from "../core/acx/export";
-import { BUILTIN_PRESETS, presetTargets, resolvePreset } from "../core/acx/presets";
+import {
+  checkDefinition,
+  exportSettles,
+  summarizeExportFixes,
+  type AggregateChange,
+  type CheckKey,
+  type ExportFixSummary,
+} from "../core/acx/fixes";
+import {
+  formatChannels,
+  formatDb,
+  formatLength,
+  formatLufs,
+  formatRoomTone,
+  formatSampleRate,
+} from "../core/acx/format";
+import { BUILTIN_PRESETS, deliveryProfile, presetTargets, resolvePreset } from "../core/acx/presets";
+import type { CheckStatus } from "../core/acx/spec";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
@@ -142,7 +159,7 @@ const STUDIO_TABS: Array<{ id: Exclude<StudioTab, "settings">; label: string; hi
   { id: "book", label: "Book", hint: "Chapters" },
   { id: "record", label: "Record", hint: "Booth" },
   { id: "review", label: "Review", hint: "Pickups" },
-  { id: "finish", label: "Finish", hint: "ACX" },
+  { id: "finish", label: "Finish", hint: "Delivery" },
   { id: "words", label: "Words", hint: "Pronounce" },
   { id: "people", label: "People", hint: "Roles" },
 ];
@@ -252,7 +269,7 @@ export function App() {
           <h2 id="welcome-title">Make your next chapter sound right.</h2>
           <p className="lede">
             A quiet desk for one book: manuscript, human recordings, pickups,
-            and the ACX check — all on this computer.
+            and the delivery check — all on this computer.
           </p>
 
           <div className="actions" aria-label="Project actions">
@@ -343,7 +360,7 @@ function ProjectHome({
   const [notice, setNotice] = useState<string | null>(null);
   const [modelAvailable, setModelAvailable] = useState<boolean | null>(null);
   const [modelProgress, setModelProgress] = useState(0);
-  const [exportResult, setExportResult] = useState<AcxExportResult | null>(null);
+  const [exportResult, setExportResult] = useState<DeliveryExportResult | null>(null);
   const [activePanel, setActivePanel] = useState<StudioTab>("book");
   const [scanWord, setScanWord] = useState("");
   const [scanReport, setScanReport] = useState<BookScanReport | null>(null);
@@ -761,7 +778,7 @@ function ProjectHome({
 
   async function runAcxCheck(chapter: ChapterFile, presetId?: string) {
     if (!chapter.audio_path || !window.boothDesk) {
-      setNotice("Attach an audio file before running the ACX check.");
+      setNotice("Attach an audio file before running the delivery check.");
       return;
     }
 
@@ -775,6 +792,7 @@ function ProjectHome({
         return;
       }
       setAcxReport(report);
+      setExportResult((current) => current?.targetId === report.preset_id ? current : null);
       await persistProject({
         ...project,
         chapters: project.chapters.map((candidate) => candidate.id === chapter.id
@@ -930,9 +948,10 @@ function ProjectHome({
     });
   }
 
-  async function exportAcx() {
+  async function exportDelivery() {
+    const target = resolvePreset(projectSettings.spec_preset_id);
     if (!window.boothDesk || folder === "(browser preview)") {
-      setNotice("ACX export is available in the desktop app after the master core is built.");
+      setNotice(`${target.label} export is available in the desktop app after the master core is built.`);
       return;
     }
     if (!exportReadiness.ready) {
@@ -943,27 +962,27 @@ function ProjectHome({
       return;
     }
     await runAction("export", async () => {
-      const result = await window.boothDesk?.exportAcx(envelope);
+      const result = await window.boothDesk?.exportDelivery(envelope);
       if (result) {
         setExportResult(result);
         setNotice(
           result.status === "ready_with_warnings"
-            ? `ACX pack is ready with ${result.warningCount} item${result.warningCount === 1 ? "" : "s"} to review. Finder should now show the MP3s.`
-            : "ACX pack is ready. Finder should now show the MP3s. Listen once before delivery.",
+            ? `${result.targetLabel} pack is ready with ${result.warningCount} item${result.warningCount === 1 ? "" : "s"} to review.`
+            : `${result.targetLabel} pack is ready. Listen once before delivery.`,
         );
       }
     });
   }
 
-  async function showAcxPack() {
+  async function showDeliveryPack() {
     if (!window.boothDesk || folder === "(browser preview)") {
       setNotice("The pack folder is available in the desktop app.");
       return;
     }
     try {
-      await window.boothDesk.showAcxPack(envelope);
+      await window.boothDesk.showDeliveryPack(envelope);
     } catch (reason) {
-      setNotice(messageFor(reason, "Could not open the ACX pack folder."));
+      setNotice(messageFor(reason, "Could not open the delivery pack folder."));
     }
   }
 
@@ -2556,8 +2575,8 @@ function ProjectHome({
                 audioRef={audioRef}
                 onMeasure={(presetId) => void runAcxCheck(selectedChapter, presetId)}
                 specPresetId={projectSettings.spec_preset_id}
-                onExport={() => void exportAcx()}
-                onShowPack={() => void showAcxPack()}
+                onExport={() => void exportDelivery()}
+                onShowPack={() => void showDeliveryPack()}
                 onShare={() => setActivePanel("people")}
                 onPlayNoiseFloor={() => void playNoiseFloor()}
               />
@@ -7288,7 +7307,7 @@ function ReviewPage({
   );
 }
 
-function FinishPage({
+export function FinishPage({
   chapter,
   exportReadiness,
   busyAction,
@@ -7307,7 +7326,7 @@ function FinishPage({
   exportReadiness: ExportReadiness;
   busyAction: string | null;
   acxReport: AcxReport | null;
-  exportResult: AcxExportResult | null;
+  exportResult: DeliveryExportResult | null;
   audioUrl: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onMeasure: (presetId?: string) => void;
@@ -7317,8 +7336,26 @@ function FinishPage({
   onShare: () => void;
   onPlayNoiseFloor: () => void;
 }) {
+  const target = resolvePreset(specPresetId);
+  const profile = deliveryProfile(target);
+  const currentExport = exportResult?.targetId === target.id ? exportResult : null;
+  const delivered = useMemo(
+    () => (currentExport ? summarizeExportFixes(currentExport.entries, currentExport.profile) : null),
+    [currentExport],
+  );
+
   return (
     <div className="finish-page">
+      {delivered && currentExport ? (
+        <ExportReceipt
+          summary={delivered}
+          fileCount={currentExport.files.length}
+          result={currentExport}
+          busyAction={busyAction}
+          onShowPack={onShowPack}
+        />
+      ) : null}
+
       <article className="surface-card">
         <header className="chapter-desk-heading">
           <div>
@@ -7329,7 +7366,7 @@ function FinishPage({
             {chapter.acx_traffic_light ? checkStatusLabel(chapter.acx_traffic_light) : "Not checked"}
           </span>
         </header>
-        <p className="panel-honesty">Measurable ACX specs only. Listen once for clicks, echo, and a wrong read.</p>
+        <p className="panel-honesty">Measurable specs only. Listen once for clicks, echo, and a wrong read.</p>
         <div className="desk-actions">
           <button className="primary-button" type="button" disabled={!chapter.audio_path || busyAction !== null} onClick={() => onMeasure()}>
             {busyAction === `meter-${chapter.id}` ? "Measuring…" : "Check audio"}
@@ -7342,14 +7379,19 @@ function FinishPage({
             onPlayNoiseFloor={chapter.audio_path ? onPlayNoiseFloor : undefined}
             presetId={specPresetId}
             onPresetChange={(presetId) => onMeasure(presetId)}
+            masteringPlan
           />
         ) : null}
       </article>
 
       <article className="surface-card">
         <p className="card-kicker">The pack</p>
-        <h3>Export and share</h3>
-        <p className="panel-honesty">Write the ACX folder, or invite the other seat on People.</p>
+        <h3>{currentExport ? "Export again" : "Export and share"}</h3>
+        <p className="panel-honesty">
+          {currentExport
+            ? "Re-run the master after a pickup, or invite the other seat on People."
+            : `Write the ${target.label} delivery folder, or invite the other seat on People.`}
+        </p>
         <div className={`export-readiness ${exportReadiness.ready ? "ready" : "blocked"}`} role="status">
           <strong>{exportReadiness.ready ? "Ready to prepare" : "Audio still needed"}</strong>
           <span>{exportReadiness.attachedChapters} of {exportReadiness.totalChapters} chapters have audio</span>
@@ -7357,32 +7399,198 @@ function FinishPage({
             <p>
               Record or import: {exportReadiness.missingAudio.slice(0, 3).map((missing) => missing.title).join(", ")}
               {exportReadiness.missingAudio.length > 3 ? ` and ${exportReadiness.missingAudio.length - 3} more` : ""}.
+              {currentExport ? " The pack on disk is behind the book until you export again." : ""}
             </p>
           ) : (
-            <p>Every chapter will be mastered, re-measured after MP3 encoding, and listed in the report.</p>
+            <p>
+              {currentExport
+                ? `Every chapter is mastered and measured again from the delivered ${profile.container.toUpperCase()}. The checklist above confirms what happened.`
+                : `Every chapter will be mastered for ${target.label}, then measured again from the delivered ${profile.container.toUpperCase()}.`}
+            </p>
           )}
         </div>
         <div className="desk-actions">
           <button className="primary-button" type="button" disabled={!exportReadiness.ready || busyAction !== null} onClick={onExport}>
-            {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
+            {busyAction === "export" ? "Exporting…" : currentExport ? "Export again" : `Export ${target.label} pack`}
           </button>
-          {exportResult ? (
-            <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShowPack}>
-              Show pack
-            </button>
-          ) : null}
           <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShare}>
             {busyAction === "share" ? "Preparing…" : "Invite on People"}
           </button>
         </div>
-        {exportResult ? (
-          <p className={`export-summary inline ${exportResult.status === "ready_with_warnings" ? "warning" : "success"}`}>
-            {exportResult.status === "ready_with_warnings" ? "Ready with items to review" : "Ready for delivery"}: {exportResult.files.length} MP3 file{exportResult.files.length === 1 ? "" : "s"}
-          </p>
-        ) : null}
       </article>
     </div>
   );
+}
+
+/**
+ * The receipt for a pack that has already been written.
+ *
+ * Export masters every chapter, so the numbers the narrator read before pressing
+ * the button describe a file that no longer exists. This says what changed on the
+ * way to delivery, in the order mastering did it, with the reading before and
+ * after each fix — and keeps the things mastering cannot settle at the top, where
+ * a claim of "ready" would otherwise bury them.
+ */
+export function ExportReceipt({
+  summary,
+  fileCount,
+  result,
+  busyAction,
+  onShowPack,
+}: {
+  summary: ExportFixSummary;
+  fileCount: number;
+  result: DeliveryExportResult;
+  busyAction: string | null;
+  onShowPack: () => void;
+}) {
+  const completed = summary.completed;
+  const outstanding = summary.outstanding;
+
+  return (
+    <article className={`surface-card export-receipt ${summary.ready ? "ready" : "review"}`} aria-labelledby="receipt-title">
+      <header className="receipt-heading">
+        <div>
+          <p className="card-kicker">Mastered pack</p>
+          <h3 id="receipt-title">
+            {outstanding.length > 0
+              ? `Delivered, with ${countOf(outstanding.length, "check")} to settle by hand.`
+              : "Delivery complete. Every applicable check is confirmed."}
+          </h3>
+          <p className="receipt-sub">
+            {countOf(fileCount, `${result.container.toUpperCase()} file`)} written to export/{result.profile.folderName}.
+            {" "}{result.profileDescription}
+          </p>
+        </div>
+        <div className="receipt-actions">
+          <button className="primary-button" type="button" disabled={busyAction !== null} onClick={onShowPack}>
+            Show pack
+          </button>
+        </div>
+      </header>
+
+      {outstanding.length > 0 ? (
+        <section className="receipt-block outstanding">
+          <h4>Only you can settle these</h4>
+          <ul className="fix-list">
+            {outstanding.map((row) => <FixRow key={row.key} row={row} />)}
+          </ul>
+        </section>
+      ) : null}
+
+      <section className="receipt-block">
+        <h4>Delivery checklist</h4>
+        {completed.length > 0 ? (
+          <ul className="fix-list">
+            {completed.map((row) => <FixRow key={row.key} row={row} />)}
+          </ul>
+        ) : (
+          <p className="receipt-note">No processing changes were needed. The takes already met this delivery target.</p>
+        )}
+      </section>
+
+      {summary.held.length > 0 || summary.unjudged.length > 0 ? (
+        <p className="receipt-note">
+          {summary.held.length > 0 ? `Left alone, already inside the target: ${sentenceList(summary.held)}. ` : ""}
+          {summary.unjudged.length > 0
+            ? `Measured but not judged, because the delivery target sets no limit: ${sentenceList(summary.unjudged)}.`
+            : ""}
+        </p>
+      ) : null}
+
+      {summary.notes.length > 0 ? (
+        <section className="receipt-block">
+          <h4>Notes on the pack</h4>
+          <ul className="receipt-notes">
+            {summary.notes.map((note) => (
+              <li key={note.fileName}><strong>{note.fileName}</strong> — {note.note}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <details className="meter-details receipt-files">
+        <summary>Every measurement, file by file ({summary.files.length})</summary>
+        {summary.files.map((file) => (
+          <section className="receipt-file" key={file.fileName}>
+            <header>
+              <strong>{file.fileName}</strong>
+              <span className={file.trafficLight ? `traffic-light compact ${file.trafficLight}` : "status-pill"}>
+                {file.trafficLight ? checkStatusLabel(file.trafficLight) : "Not measured"}
+              </span>
+            </header>
+            {file.measured ? (
+              <table className="meter-table">
+                <thead>
+                  <tr><th>Check</th><th>Take</th><th>Delivered</th><th>Verdict</th></tr>
+                </thead>
+                <tbody>
+                  {file.changes.map((change) => (
+                    <tr key={change.key}>
+                      <td>{change.label}</td>
+                      <td>{change.before ?? "Not measured"}</td>
+                      <td>{change.after}</td>
+                      <td><span className={`check-dot ${change.afterStatus}`}>{checkStatusLabel(change.afterStatus)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : null}
+          </section>
+        ))}
+        <p className="meter-honesty">
+          The delivered column is measured from the final {result.container.toUpperCase()}, so it is what the file contains rather than what mastering
+          intended. The same numbers are in REPORT.txt beside the audio.
+        </p>
+      </details>
+    </article>
+  );
+}
+
+function FixRow({ row }: { row: AggregateChange }) {
+  const settled = row.outcome !== "outstanding";
+  return (
+    <li className={`fix-row ${row.outcome}`}>
+      <span className="fix-mark" role="img" aria-label={settled ? "Confirmed" : "Still outside the target"}>
+        {settled ? <CheckGlyph /> : "!"}
+      </span>
+      <span className="fix-body">
+        <strong>{row.label}</strong>
+        <span className="fix-detail">
+          {row.detail}
+          {row.fileCount < row.ofFiles ? ` In ${row.fileCount} of ${row.ofFiles} files.` : ""}
+        </span>
+      </span>
+      <span className="fix-delta" aria-label={row.before ? `${row.before} became ${row.after}` : row.after}>
+        {row.before ? (
+          <>
+            <span className="fix-before" aria-hidden="true">{row.before}</span>
+            <span className="fix-arrow" aria-hidden="true">→</span>
+          </>
+        ) : null}
+        <span className="fix-after" aria-hidden="true">{row.after}</span>
+      </span>
+    </li>
+  );
+}
+
+function CheckGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.2 6.4 4.6 8.8 9.8 3.4" />
+    </svg>
+  );
+}
+
+function countOf(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+function sentenceList(items: string[]): string {
+  if (items.length <= 1) {
+    return items.join("");
+  }
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 function conflictLabel(conflict: MergeConflict): string {
@@ -7808,41 +8016,68 @@ function PickupNoteEditor({ pickup, busy, onSave }: { pickup: Pickup; busy: bool
   );
 }
 
+interface MeterRow {
+  id: string;
+  key: CheckKey;
+  label: string;
+  target: string;
+  measured: string;
+  status: CheckStatus;
+}
+
 export function AcxMeter({
   report,
   onPlayNoiseFloor,
   presetId,
   onPresetChange,
+  masteringPlan = false,
 }: {
   report: AcxReport;
   onPlayNoiseFloor?: () => void;
   presetId?: string;
   onPresetChange?: (presetId: string) => void;
+  /**
+   * Set where export follows the check. A take measured before mastering fails
+   * rows that export settles unasked, and calling those failures would send the
+   * narrator back to the booth to fix something the button already fixes.
+   */
+  masteringPlan?: boolean;
 }) {
-  const targets = presetTargets(resolvePreset(report.preset_id));
-  const rows = [
-    ["RMS", targets.rms, formatDb(report.rms_dbfs), report.checks.rms],
-    ["Loudness", targets.loudness, formatLufs(report.lufs_integrated), report.checks.loudness],
-    ["True peak", targets.true_peak, formatDb(report.true_peak_dbfs), report.checks.true_peak],
-    ["Noise floor", targets.noise_floor, formatDb(report.noise_floor_dbfs), report.checks.noise_floor],
-    ["Sample rate", targets.sample_rate, `${(report.sample_rate / 1000).toFixed(1)} kHz`, report.checks.sample_rate],
-    ["Channels", targets.channels, String(report.channels), report.checks.channels],
-    ["Format", "Supported audio file", report.format.toUpperCase(), report.checks.format],
-    [
-      "Bitrate",
-      targets.format,
-      report.format === "mp3"
+  const preset = resolvePreset(report.preset_id);
+  const profile = deliveryProfile(preset);
+  const targets = presetTargets(preset);
+  const rows: MeterRow[] = ([
+    { id: "rms", key: "rms", label: "RMS", target: targets.rms, measured: formatDb(report.rms_dbfs) },
+    { id: "loudness", key: "loudness", label: "Loudness", target: targets.loudness, measured: formatLufs(report.lufs_integrated) },
+    { id: "true_peak", key: "true_peak", label: "True peak", target: targets.true_peak, measured: formatDb(report.true_peak_dbfs) },
+    { id: "noise_floor", key: "noise_floor", label: "Noise floor", target: targets.noise_floor, measured: formatDb(report.noise_floor_dbfs) },
+    { id: "sample_rate", key: "sample_rate", label: "Sample rate", target: targets.sample_rate, measured: formatSampleRate(report.sample_rate) },
+    { id: "channels", key: "channels", label: "Channels", target: targets.channels, measured: formatChannels(report.channels) },
+    { id: "format", key: "format", label: "Format", target: "Supported audio file", measured: report.format.toUpperCase() },
+    {
+      id: "bitrate",
+      key: "format",
+      label: "Bitrate",
+      target: targets.format,
+      measured: report.format === "mp3"
         ? `${report.bitrate_kbps?.toFixed(0) ?? "?"} kbps ${report.vbr === true ? "VBR" : report.vbr === false ? "CBR" : "mode unknown"}`
         : "Not applicable to source",
-      report.checks.format,
-    ],
-    ["Duration", targets.duration, formatLength(report.duration_seconds), report.checks.duration],
-    ["Head room tone", targets.head_room_tone, `${report.head_room_tone_s.toFixed(2)} s`, report.checks.head_room_tone],
-    ["Tail room tone", targets.tail_room_tone, `${report.tail_room_tone_s.toFixed(2)} s`, report.checks.tail_room_tone],
-  ] as const;
+    },
+    { id: "duration", key: "duration", label: "Duration", target: targets.duration, measured: formatLength(report.duration_seconds) },
+    { id: "head_room_tone", key: "head_room_tone", label: "Head room tone", target: targets.head_room_tone, measured: formatRoomTone(report.head_room_tone_s) },
+    { id: "tail_room_tone", key: "tail_room_tone", label: "Tail room tone", target: targets.tail_room_tone, measured: formatRoomTone(report.tail_room_tone_s) },
+  ] satisfies Array<Omit<MeterRow, "status">>).map((row) => ({ ...row, status: report.checks[row.key] }));
 
-  const trouble = rows.filter(([, , , status]) => status === "fail" || status === "warn");
-  const judged = rows.filter(([, , , status]) => status !== "unspecified");
+  const trouble = rows.filter((row) => row.status === "fail" || row.status === "warn");
+  const judged = rows.filter((row) => row.status !== "unspecified");
+  // Format and bitrate read one status between them, so a single problem would
+  // otherwise be listed twice in the verdict.
+  const distinct = trouble.filter((row, index) => trouble.findIndex((other) => other.key === row.key) === index);
+  const inHand = masteringPlan ? distinct.filter((row) => exportSettles(row.key, profile)) : [];
+  const yours = distinct.filter((row) => !inHand.includes(row));
+  const settledIds = new Set(masteringPlan
+    ? trouble.filter((row) => exportSettles(row.key, profile)).map((row) => row.id)
+    : []);
 
   return (
     <section className="result-panel" aria-labelledby="acx-title">
@@ -7867,49 +8102,68 @@ export function AcxMeter({
       </div>
 
       {/* The verdict first. Eleven measurements are the evidence, not the answer. */}
-      <div className={`meter-verdict ${report.traffic_light}`}>
-        <span className={`traffic-light ${report.traffic_light}`}>
-          {checkStatusLabel(report.traffic_light)}
+      <div className={`meter-verdict ${yours.length === 0 && inHand.length > 0 ? "in-hand" : report.traffic_light}`}>
+        <span className={`traffic-light ${yours.length === 0 && inHand.length > 0 ? "in-hand" : report.traffic_light}`}>
+          {yours.length === 0 && inHand.length > 0 ? "Export handles" : checkStatusLabel(report.traffic_light)}
         </span>
         <div>
           <strong>
-            {trouble.length === 0
+            {distinct.length === 0
               ? `This file meets every ${report.preset_label} level and format rule.`
-              : trouble.length === 1
-                ? `One thing to settle before ${report.preset_label} will take this.`
-                : `${trouble.length} things to settle before ${report.preset_label} will take this.`}
+              : yours.length === 0
+                ? `Nothing here needs the booth. Export settles ${countOf(inHand.length, "thing")} while it masters.`
+                : `${countOf(yours.length, "thing")} only you can settle before ${report.preset_label} will take this.`}
           </strong>
-          {trouble.length === 0 ? (
+          {distinct.length === 0 ? (
             <span>
-              {judged.length} checks measured and passed. Export writes the mastered file.
+              {judged.length} checks measured and passed. Export still masters and re-measures the file.
             </span>
           ) : (
-            <ul className="meter-trouble">
-              {trouble.map(([label, required, measured, status]) => (
-                <li key={label} className={status}>
-                  <strong>{label}</strong> is {measured}; {report.preset_label} wants {required}.
-                </li>
-              ))}
-            </ul>
+            <>
+              {yours.length > 0 ? (
+                <ul className="meter-trouble">
+                  {yours.map((row) => (
+                    <li key={row.id} className={row.status}>
+                      <strong>{row.label}</strong> is {row.measured}; {report.preset_label} wants {row.target}.
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {inHand.length > 0 ? (
+                <ul className="meter-trouble in-hand">
+                  {inHand.map((row) => (
+                    <li key={row.id}>
+                      <strong>{row.label}</strong> is {row.measured}. {checkDefinition(row.key, profile).promise}.
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
           )}
         </div>
       </div>
 
-      <details className="meter-details" open={trouble.length > 0}>
+      <details className="meter-details" open={distinct.length > 0}>
         <summary>
-          {trouble.length > 0 ? "All measurements" : `Show all ${rows.length} measurements`}
+          {distinct.length > 0 ? "All measurements" : `Show all ${rows.length} measurements`}
         </summary>
         <table className="meter-table">
           <thead>
             <tr><th>Check</th><th>Target</th><th>Measured</th><th>Verdict</th></tr>
           </thead>
           <tbody>
-            {rows.map(([label, required, measured, status]) => (
-              <tr key={label}>
-                <td>{label}</td>
-                <td>{required}</td>
-                <td>{measured}</td>
-                <td><span className={`check-dot ${status}`}>{checkStatusLabel(status)}</span></td>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <td>{row.label}</td>
+                <td>{row.target}</td>
+                <td>{row.measured}</td>
+                <td>
+                  {settledIds.has(row.id) ? (
+                    <span className="check-dot in-hand">Export handles</span>
+                  ) : (
+                    <span className={`check-dot ${row.status}`}>{checkStatusLabel(row.status)}</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -7928,7 +8182,10 @@ export function AcxMeter({
           ) : null}
         </div>
         <p className="meter-honesty">
-          These checks cover levels and format. Listen once for clicks and room noise.
+          Measured from this take, not from the delivered file. Listen once for clicks and room noise.
+          {settledIds.size > 0
+            ? " Rows marked “Export handles” are settled by one-click mastering and verified from the delivered file."
+            : ""}
           {" "}Rows marked “Not judged” are measured but carry no verdict, because {report.preset_label} sets no limit for them.
         </p>
       </details>
@@ -8099,7 +8356,7 @@ function nextBoothStep(project: ProjectFile, chapter: ChapterFile | null, proof:
       detail: `${current.title} has a take. The next chapter does not.`,
     };
   }
-  return { tab: "finish", label: "Export ACX pack", detail: "Chapters are recorded. Package the book." };
+  return { tab: "finish", label: "Export delivery pack", detail: "Chapters are recorded. Package the book." };
 }
 
 function NavIcon({ name }: { name: StudioTab }) {
@@ -8193,25 +8450,6 @@ function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = Math.max(0, seconds - minutes * 60);
   return `${minutes}:${remainder.toFixed(1).padStart(4, "0")}`;
-}
-
-function formatDb(value: number): string {
-  return value === -Infinity ? "−∞ dBFS" : `${value.toFixed(1).replace("-", "−")} dBFS`;
-}
-
-function formatLufs(value: number): string {
-  return value === -Infinity ? "−∞ LUFS" : `${value.toFixed(1).replace("-", "−")} LUFS`;
-}
-
-function formatLength(seconds: number): string {
-  const whole = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(whole / 3600);
-  const minutes = Math.floor((whole % 3600) / 60);
-  const rest = whole % 60;
-  if (hours > 0) {
-    return `${hours} hr ${String(minutes).padStart(2, "0")} min`;
-  }
-  return minutes > 0 ? `${minutes} min ${String(rest).padStart(2, "0")} s` : `${rest} s`;
 }
 
 function messageFor(reason: unknown, fallback: string): string {

@@ -4,6 +4,7 @@ import {
   ACX_PRESET,
   BUILTIN_PRESETS,
   EBU_R128_PRESET,
+  deliveryProfile,
   emptyCustomPreset,
   normalizeCustomPresets,
   presetTargets,
@@ -84,6 +85,45 @@ describe("delivery target presets", () => {
     expect(presetTargets(EBU_R128_PRESET).loudness).toBe("−23.5 to −22.5 LUFS");
     expect(presetTargets(EBU_R128_PRESET).rms).toBe("Not specified");
     expect(presetTargets(EBU_R128_PRESET).head_room_tone).toBe("Not specified");
+  });
+
+  it("keeps ACX packaging separate from an EBU production master", () => {
+    expect(deliveryProfile(ACX_PRESET)).toMatchObject({
+      folderName: "acx",
+      container: "mp3",
+      sampleRate: 44_100,
+      bitrateKbps: 192,
+      level: { standard: "rms", target: -20 },
+      includeRetailSample: true,
+    });
+    expect(deliveryProfile(EBU_R128_PRESET)).toMatchObject({
+      folderName: "ebu-r128",
+      container: "wav",
+      sampleRate: 48_000,
+      pcmBitDepth: 24,
+      level: { standard: "lufs", target: -23 },
+      includeRetailSample: false,
+    });
+  });
+
+  it("gives a custom target an honest container recipe", () => {
+    const wav = {
+      ...emptyCustomPreset("House WAV", "House WAV"),
+      sample_rate: 96_000,
+      lufs: { min: -18.5, max: -17.5 },
+    };
+    expect(deliveryProfile(wav)).toMatchObject({
+      folderName: "house-wav",
+      container: "wav",
+      sampleRate: 96_000,
+      level: { standard: "lufs", target: -18 },
+    });
+
+    const mp3 = { ...wav, id: "house-mp3", min_bitrate_cbr: 256 };
+    expect(deliveryProfile(mp3)).toMatchObject({
+      container: "mp3",
+      bitrateKbps: 256,
+    });
   });
 });
 
