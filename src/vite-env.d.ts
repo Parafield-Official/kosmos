@@ -70,6 +70,11 @@ interface BoothDeskBridge {
   collabStatus: () => Promise<CollabSnapshot>;
   collabDisconnect: () => Promise<CollabSnapshot>;
   onCollabOutbound: (listener: (text: string) => void) => () => void;
+  appUpdateStatus: () => Promise<import("./app/app-update").AppUpdateStatus>;
+  checkAppUpdate: () => Promise<import("./app/app-update").AppUpdateStatus | null>;
+  installAppUpdate: () => Promise<{ installed: boolean }>;
+  openKosmosRelease: () => Promise<void>;
+  onAppUpdate: (listener: (status: import("./app/app-update").AppUpdateStatus) => void) => () => void;
 }
 
 interface ProjectEnvelope {

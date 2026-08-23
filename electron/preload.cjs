@@ -87,4 +87,13 @@ contextBridge.exposeInMainWorld("boothDesk", {
     ipcRenderer.on("collab:outbound", wrapped);
     return () => ipcRenderer.removeListener("collab:outbound", wrapped);
   },
+  appUpdateStatus: () => ipcRenderer.invoke("app:update-status"),
+  checkAppUpdate: () => ipcRenderer.invoke("app:update-check"),
+  installAppUpdate: () => ipcRenderer.invoke("app:update-install"),
+  openKosmosRelease: () => ipcRenderer.invoke("app:open-release"),
+  onAppUpdate: (listener) => {
+    const wrapped = (_event, payload) => listener(payload);
+    ipcRenderer.on("app:update", wrapped);
+    return () => ipcRenderer.removeListener("app:update", wrapped);
+  },
 });

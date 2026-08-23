@@ -1,6 +1,6 @@
 # Kosmos
 
-[Download for Mac](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.0/Kosmos-0.1.0-mac-arm64.dmg) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.0/Kosmos-0.1.0-win-x64.exe)
+[Download for Mac](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe)
 
 Kosmos is a free, offline desktop app for turning a manuscript and human
 recordings into proofed, ACX-ready audiobook files. Your book and your voice
@@ -52,6 +52,9 @@ development.
    Gatekeeper blocks an unsigned build, right-click the app and choose Open.
 3. Windows: run the installer. If SmartScreen appears for an unsigned build,
    choose More info → Run anyway.
+4. If you still have the first public installer, download the current Mac or
+   Windows file once and replace that app. Later versions then arrive in
+   Kosmos; restart when you are not recording. Your book folder is unchanged.
 
 Whisper CLI, the persistent Whisper server, and the checksum-verified
 `small.en` model are already included in the installer. Proof and listen-only

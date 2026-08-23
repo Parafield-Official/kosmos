@@ -59,4 +59,26 @@ describe("packaged renderer configuration", () => {
       `https://github.com/Manishram-ai/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
     );
   });
+
+  it("publishes a GitHub updater feed so already-installed copies can keep current", () => {
+    expect(packageJson.dependencies["electron-updater"]).toBeTruthy();
+    expect("electron-updater" in packageJson.devDependencies).toBe(false);
+    expect(packageJson.build.publish).toMatchObject({
+      provider: "github",
+      owner: "Manishram-ai",
+      repo: "kosmos",
+    });
+    const macTargets = packageJson.build.mac.target;
+    expect(macTargets).toEqual(expect.arrayContaining(["dmg", "zip"]));
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("dist/latest*.yml");
+    expect(yaml).toMatch(/prerelease:\s*false/);
+  });
+
+  it("tells people on the first public installer to download once, then stay current in-app", () => {
+    const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
+    expect(readme).toMatch(/download (this|the current)[\s\S]+once/i);
+    expect(readme).toMatch(/later versions/i);
+  });
 });
+

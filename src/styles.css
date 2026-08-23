@@ -942,6 +942,51 @@ button {
   line-height: 1.45;
 }
 
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  max-width: 1120px;
+  margin: 0 auto 16px;
+  padding: 11px 14px;
+  border: 1px solid #e4d2b4;
+  border-radius: 12px;
+  color: #69472f;
+  background: #f7eddf;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.update-banner p {
+  margin: 0;
+  flex: 1 1 16rem;
+}
+
+.studio-main > .update-banner {
+  max-width: none;
+  margin: 0 0 16px;
+}
+
+.update-banner.ready {
+  border-color: #c9b7e4;
+  background: #f3edfa;
+}
+
+.settings-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.update-settings {
+  margin-top: 24px;
+}
+
 .workspace-tabs {
   display: flex;
   gap: 6px;

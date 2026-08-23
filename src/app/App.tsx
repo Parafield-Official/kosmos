@@ -110,6 +110,12 @@ import type {
   ProjectSettings,
   ScriptSpan,
 } from "../core/project/types";
+import {
+  settingsUpdateCopy,
+  shouldShowUpdateBanner,
+  updateBannerAction,
+  type AppUpdateStatus,
+} from "./app-update";
 
 interface ProjectEnvelope {
   folder: string;
@@ -132,11 +138,61 @@ const STUDIO_TABS: Array<{ id: Exclude<StudioTab, "settings">; label: string; hi
   { id: "people", label: "People", hint: "Roles" },
 ];
 
+function useAppUpdate(): AppUpdateStatus | null {
+  const [status, setStatus] = useState<AppUpdateStatus | null>(null);
+  useEffect(() => {
+    const bridge = window.boothDesk;
+    if (!bridge?.onAppUpdate) {
+      return;
+    }
+    void bridge.appUpdateStatus().then(setStatus).catch(() => undefined);
+    return bridge.onAppUpdate(setStatus);
+  }, []);
+  return status;
+}
+
+function AppUpdateBanner({
+  status,
+  hidden = false,
+}: {
+  status: AppUpdateStatus | null;
+  hidden?: boolean;
+}) {
+  if (hidden || !shouldShowUpdateBanner(status) || !status) {
+    return null;
+  }
+  const action = updateBannerAction(status);
+  return (
+    <div className={`update-banner${status.phase === "ready" ? " ready" : ""}`} role="status">
+      <p>{status.text}</p>
+      {action?.kind === "install" ? (
+        <button
+          className="compact-button"
+          type="button"
+          onClick={() => void window.boothDesk?.installAppUpdate()}
+        >
+          {action.label}
+        </button>
+      ) : null}
+      {action?.kind === "open-release" ? (
+        <button
+          className="compact-button"
+          type="button"
+          onClick={() => void window.boothDesk?.openKosmosRelease()}
+        >
+          {action.label}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function App() {
   const [project, setProject] = useState<ProjectEnvelope | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const projectRequestRef = useRef(0);
+  const updateStatus = useAppUpdate();
 
   useEffect(() => {
     const bridge = window.boothDesk;
@@ -184,6 +240,7 @@ export function App() {
     return (
       <ProjectHome
         envelope={project}
+        updateStatus={updateStatus}
         onClose={() => {
           projectRequestRef.current += 1;
           setProject(null);
@@ -214,6 +271,7 @@ export function App() {
           <h1>Kosmos</h1>
         </div>
       </header>
+      <AppUpdateBanner status={updateStatus} />
 
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
@@ -273,10 +331,12 @@ export function App() {
 
 function ProjectHome({
   envelope,
+  updateStatus,
   onClose,
   onChange,
 }: {
   envelope: ProjectEnvelope;
+  updateStatus: AppUpdateStatus | null;
   onClose: () => void;
   onChange: (next: ProjectEnvelope) => void;
 }) {
@@ -2228,6 +2288,7 @@ function ProjectHome({
         </header> : null}
 
         {!teleprompterOpen && notice ? <div className="inline-notice" role="status">{notice}</div> : null}
+        <AppUpdateBanner status={updateStatus} hidden={teleprompterOpen} />
         <audio ref={pickupListenRef} preload="metadata" hidden />
 
         <section className={teleprompterOpen ? "studio-page reader-page" : "studio-page"} aria-labelledby="book-home-title">
@@ -2439,6 +2500,7 @@ function ProjectHome({
             <SettingsPanel
               settings={projectSettings}
               busyAction={busyAction}
+              updateStatus={updateStatus}
               onChange={(patch) => void persistSettings(patch)}
             />
           ) : null}
@@ -6000,10 +6062,12 @@ function confidenceChoice(value: number): ConfidenceChoice {
 export function SettingsPanel({
   settings,
   busyAction,
+  updateStatus = null,
   onChange,
 }: {
   settings: ProjectSettings;
   busyAction: string | null;
+  updateStatus?: AppUpdateStatus | null;
   onChange: (patch: Partial<ProjectSettings>) => void;
 }) {
   const [draft, setDraft] = useState(settings);
@@ -6136,6 +6200,30 @@ export function SettingsPanel({
         <button className="action-button" type="button" disabled={!dirty || busyAction !== null} onClick={() => setDraft(settings)}>
           Discard changes
         </button>
+      </div>
+      <div className="settings-readonly update-settings">
+        <span>Kosmos version</span>
+        <strong>{updateStatus?.currentVersion ?? "This copy"}</strong>
+        <small>{settingsUpdateCopy(updateStatus)}</small>
+        <div className="settings-update-actions">
+          <button
+            className="action-button"
+            type="button"
+            disabled={!window.boothDesk?.checkAppUpdate}
+            onClick={() => void window.boothDesk?.checkAppUpdate()}
+          >
+            Check for updates
+          </button>
+          {updateStatus?.canInstall ? (
+            <button
+              className="action-button primary"
+              type="button"
+              onClick={() => void window.boothDesk?.installAppUpdate()}
+            >
+              Restart to update
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );

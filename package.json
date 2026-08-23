@@ -1,9 +1,13 @@
 {
   "name": "booth-desk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Manishram-ai/kosmos.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -31,8 +35,8 @@
     "design:shots": "electron scripts/design-shots.cjs",
     "audit:runtime": "node scripts/audit-runtime.cjs",
     "prepare:model": "node scripts/prepare-model.cjs",
-    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac",
-    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win"
+    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac --publish never",
+    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win --publish never"
   },
   "build": {
     "appId": "com.boothdesk.app",
@@ -76,9 +80,15 @@
       }
     ],
     "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",
+    "publish": {
+      "provider": "github",
+      "owner": "Manishram-ai",
+      "repo": "kosmos"
+    },
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "category": "public.app-category.music",
       "hardenedRuntime": true,
@@ -99,6 +109,7 @@
     }
   },
   "dependencies": {
+    "electron-updater": "6.6.2",
     "fflate": "0.8.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

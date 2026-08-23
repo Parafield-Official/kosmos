@@ -280,6 +280,7 @@ jobs:
           path: |
             dist/Kosmos-*
             dist/*.blockmap
+            dist/latest*.yml
           if-no-files-found: error
 
   publish:
@@ -302,6 +303,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
+          prerelease: false
+          make_latest: true
           generate_release_notes: true
           files: release-artifacts/*

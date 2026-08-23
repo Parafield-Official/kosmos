@@ -3,7 +3,7 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
-const { app, BrowserWindow, dialog, ipcMain, protocol, session, systemPreferences } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, shell, systemPreferences } = require("electron");
 const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
@@ -33,6 +33,7 @@ const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { createLiveTape } = require("./live-tape.cjs");
 const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
+const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
 const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 const {
@@ -3227,6 +3228,28 @@ ipcMain.handle("project:save", (_event, payload) => {
   return saveProjectFolder(payload.folder, payload.project);
 });
 
+let appUpdater = null;
+
+function broadcastAppUpdate(status) {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send("app:update", status);
+    }
+  }
+}
+
+ipcMain.handle("app:update-status", () => appUpdater?.getStatus() ?? {
+  phase: "idle",
+  skipped: true,
+  showBanner: false,
+  canInstall: false,
+  text: "",
+  releasePage: RELEASE_PAGE,
+});
+ipcMain.handle("app:update-check", () => (appUpdater ? appUpdater.check() : null));
+ipcMain.handle("app:update-install", () => (appUpdater ? appUpdater.install() : { installed: false }));
+ipcMain.handle("app:open-release", () => shell.openExternal(RELEASE_PAGE));
+
 app.whenReady().then(async () => {
   protocol.handle("booth-audio", handleAudioStreamRequest);
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -3238,6 +3261,18 @@ app.whenReady().then(async () => {
   await ensureMicrophoneAccess(systemPreferences);
   createWindow();
 
+  try {
+    const { autoUpdater } = require("electron-updater");
+    appUpdater = createAppUpdater({
+      autoUpdater,
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      send: broadcastAppUpdate,
+    });
+  } catch {
+    appUpdater = null;
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
@@ -3246,6 +3281,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("before-quit", () => {
+  appUpdater?.dispose();
   liveFollowStream.stop();
   liveFollowServer.stop();
   liveAsrServer.stop();
