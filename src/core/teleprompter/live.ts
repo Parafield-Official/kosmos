@@ -1,10 +1,13 @@
 import { normalizeToken } from "../proof/normalize";
+import { pickupLineRange, pickupLineSeconds, pickupLineText } from "./pickup-line";
 import type { Pickup, Seat } from "../project/types";
 
 export interface LiveExpectedWord {
   index: number;
   lineIndex: number;
   text: string;
+  /** Set when the punctuation after this word closes a sentence. */
+  endsSentence?: boolean;
 }
 
 export interface LiveTranscriptWord {
@@ -24,6 +27,23 @@ export interface LiveMatchState {
   lastHeardEnd: number;
   recentHeard?: LiveHeardToken[];
   pendingResync?: { text: string; expectedIndex: number };
+  /**
+   * An unbroken run of words read differently from the page. Carried between
+   * calls because a streaming window holds a word or two, far fewer than a run
+   * worth stopping a narrator for.
+   */
+  mismatchRun?: LiveMismatchRun;
+}
+
+/** Where a divergence from the page began, and how long it has gone on. */
+export interface LiveMismatchRun {
+  count: number;
+  /** Manuscript index of the first word of the run: where the read left the page. */
+  expectedIndex: number;
+  heard: string;
+  start: number;
+  end: number;
+  confidence: number;
 }
 
 export interface LiveMismatch {
@@ -35,11 +55,25 @@ export interface LiveMismatch {
   start: number;
   end: number;
   confidence: number;
+  /**
+   * The sentence this word sits in: what a narrator listens back to and what
+   * they re-record. `start`/`end` stay the word itself, which is what the
+   * teleprompter marks on the page.
+   */
+  lineStart?: number;
+  lineEnd?: number;
+  lineText?: string;
 }
 
 export interface LiveMatchResult {
   state: LiveMatchState;
   flag?: LiveMismatch;
+  /**
+   * The word the read stopped on. Only set under `haltOnMismatch`. The cursor
+   * in `state` sits on this word and the rest of the window is left unread, so
+   * calling again with the returned state resumes from exactly here.
+   */
+  halt?: LiveMismatch;
 }
 
 export interface LiveMatchInput {
@@ -53,6 +87,29 @@ export interface LiveMatchInput {
   flagShortWords?: boolean;
   requireFlagAnchor?: boolean;
   goldCursor?: number;
+  /**
+   * Stop the page once the read has left it for several words running, and hold
+   * it there until the narrator says to carry on.
+   *
+   * A run, never a single word. One word off the page is nearly always the
+   * recogniser mishearing a clean read, and stopping a narrator mid-sentence
+   * for that is worse than the mistake: it breaks a take that was fine. Several
+   * words in a row is the narrator genuinely lost — a skipped line, the wrong
+   * paragraph — which no amount of resyncing fixes and which they want to know
+   * about. Every recovery path still runs, so a slip the matcher can place
+   * never begins a run at all.
+   */
+  haltOnMismatch?: boolean;
+  /** Confidence a heard word needs before it can count towards a run. */
+  haltConfidenceThreshold?: number;
+  /** Words in a row that must miss the page before the read stops. */
+  haltRunWords?: number;
+  /**
+   * Manuscript index the narrator has already chosen to continue past. That one
+   * word matches under the ordinary tolerant rules so the read can move again,
+   * whether they re-read it or carry straight on to the next word.
+   */
+  haltResumeIndex?: number;
 }
 
 export const LIVE_CONTEXT_SECONDS = 1.6;
@@ -90,6 +147,36 @@ export const LIVE_QC_OVERLAP_SECONDS = 0.8;
 export const LIVE_QC_RECENT_WORDS = 12;
 export const LIVE_QC_PHRASE_WORDS = 8;
 export const LIVE_QC_STALL_SECONDS = 0.5;
+/**
+ * Confidence a heard word needs before it counts towards stopping a read.
+ *
+ * Lower than the flagging bar on purpose. A flag is a claim about the take that
+ * survives the session, so it has to be nearly certain; a stop is a question
+ * put to the narrator, who is standing right there and can wave it off with one
+ * button. The streaming follow model also reports 0.75 for words it gives no
+ * score for, so a bar at the flagging threshold would never stop anything on
+ * that path. It is the run length below, not this number, that keeps a stop
+ * from firing on recogniser noise.
+ */
+export const LIVE_HALT_CONFIDENCE = 0.6;
+
+/**
+ * Words in a row that must miss the page before the read stops.
+ *
+ * One word is the wrong unit. Almost every single-word miss is the recogniser,
+ * not the narrator: a mispronunciation it did not expect, a name it has never
+ * seen, a word swallowed by a breath. Stopping the page for one of those
+ * interrupts a narrator who was reading correctly, which costs more than the
+ * miss it was reporting — and the matcher already has better answers for a
+ * single word, since it can jump, resync, or flag and carry on.
+ *
+ * Three consecutive misses cannot be explained that way. By then the read has
+ * left the page and no resync has brought it back, which is the state worth
+ * stopping for: a skipped line, a jump to the wrong paragraph, a narrator who
+ * has lost their place. Three is the shortest run that still means that, so it
+ * is the least interruption that catches it.
+ */
+export const LIVE_HALT_RUN_WORDS = 3;
 
 export interface LiveQcBuffer {
   chunks: LiveQcChunk[];
@@ -356,6 +443,13 @@ const HALLUCINATION_ONLY_TOKENS = new Set([
  * Exact words and close mishears advance follow. A high-confidence real
  * mismatch still advances and flags, so a stumble does not pin the page.
  * Hallucinated silence tokens and overlapped copies are ignored.
+ *
+ * Under `haltOnMismatch` a read that misses the page for `haltRunWords` in a
+ * row pins the page and returns a `halt`. The cursor goes back to the first
+ * word of that run and the remainder of the window is left unread, so nothing
+ * is graded against a position the narrator has not reached. Shorter runs
+ * behave as they always do: one misheard word must not stop a narrator who is
+ * reading correctly.
  */
 export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
   let cursor = Math.max(0, Math.min(input.expected.length, Math.floor(input.state.cursor)));
@@ -364,10 +458,21 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
   const threshold = Number.isFinite(input.confidenceThreshold)
     ? Math.min(1, Math.max(0, input.confidenceThreshold as number))
     : 0.9;
+  const haltThreshold = Number.isFinite(input.haltConfidenceThreshold)
+    ? Math.min(1, Math.max(0, input.haltConfidenceThreshold as number))
+    : LIVE_HALT_CONFIDENCE;
+  const haltResumeIndex = Number.isFinite(input.haltResumeIndex)
+    ? Math.floor(input.haltResumeIndex as number)
+    : -1;
+  const haltRunWords = Number.isFinite(input.haltRunWords)
+    ? Math.max(1, Math.floor(input.haltRunWords as number))
+    : LIVE_HALT_RUN_WORDS;
   const dismissedIds = new Set(input.dismissedIds ?? []);
   let pendingResync = input.state.pendingResync;
+  let mismatchRun = input.state.mismatchRun;
   let matchedInWindow = 0;
   let flag: LiveMismatch | undefined;
+  let halt: LiveMismatch | undefined;
 
   const words = usableLiveWords(input.transcript);
 
@@ -396,9 +501,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!expected) {
       continue;
     }
+    // Every branch that places a word on the page ends a run of misses, the
+    // same way it clears a pending resync. A run has to be unbroken to mean
+    // anything: one word the matcher could not place is noise, but three in a
+    // row with nothing landing between them is a read that has left the page.
     if (sameWord(heard, expected) || wordsSimilar(heard, expected)) {
       cursor += 1;
       pendingResync = undefined;
+      mismatchRun = undefined;
       matchedInWindow += 1;
       continue;
     }
@@ -407,12 +517,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (nearJump >= 0) {
       cursor = nearJump + 1;
       pendingResync = undefined;
+      mismatchRun = undefined;
       matchedInWindow += 1;
       continue;
     }
     if (!input.flagsEnabled && (isReliableShortSwap(expected, heard) || isNumberSlip(expected, heard))) {
       cursor += 1;
       pendingResync = undefined;
+      mismatchRun = undefined;
       matchedInWindow += 1;
       continue;
     }
@@ -423,6 +535,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       if (longResync >= 0) {
         cursor = longResync + (nextHeard ? 2 : 1);
         pendingResync = undefined;
+        mismatchRun = undefined;
         matchedInWindow += nextHeard ? 2 : 1;
         if (nextHeard) {
           const confirmed = words[wordIndex + 1];
@@ -443,6 +556,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       if (resyncOffset >= 0) {
         cursor += resyncOffset + 3;
         pendingResync = undefined;
+        mismatchRun = undefined;
         matchedInWindow += 2;
         const confirmed = words[wordIndex + 1];
         if (confirmed) {
@@ -465,6 +579,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       if (isDistinctiveResync) {
         cursor = expectedIndex + 1;
         pendingResync = undefined;
+        mismatchRun = undefined;
         matchedInWindow += 1;
         continue;
       }
@@ -475,6 +590,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       if (confirmsPending) {
         cursor = expectedIndex + 1;
         pendingResync = undefined;
+        mismatchRun = undefined;
         matchedInWindow += 1;
       } else {
         pendingResync = { text: heard, expectedIndex };
@@ -484,6 +600,48 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     pendingResync = undefined;
 
     const confidence = Number.isFinite(word.confidence) ? Math.min(1, Math.max(0, word.confidence as number)) : 0;
+
+    // No recovery could place this word, so the read has missed the page here.
+    // Count it, and stop only once the run is long enough to mean the narrator
+    // is lost rather than the recogniser being wrong. The count is kept on its
+    // own confidence bar, below the flagging one, because the follow model
+    // scores most words too low to flag and a run still has to be countable
+    // there. Below the run length nothing happens, and the word goes on to be
+    // flagged and stepped over exactly as it would with stopping switched off.
+    if (input.haltOnMismatch) {
+      const haltShortSwap = confidence >= Math.max(haltThreshold, 0.95)
+        && isReliableShortSwap(expected, heard);
+      const countsTowardsRun = confidence >= haltThreshold
+        && (haltShortSwap || (isContentWord(heard) && isContentWord(expected)));
+      if (countsTowardsRun) {
+        const start = Math.max(0, word.start);
+        const end = Math.max(start, word.end);
+        mismatchRun = mismatchRun
+          ? { ...mismatchRun, count: mismatchRun.count + 1, end }
+          : { count: 1, expectedIndex: cursor, heard: word.text, start, end, confidence };
+        const startedRead = input.expected[mismatchRun.expectedIndex];
+        if (mismatchRun.count >= haltRunWords && startedRead && mismatchRun.expectedIndex !== haltResumeIndex) {
+          halt = {
+            id: `live-${input.chapterId}-${startedRead.index}-${normalizeToken(mismatchRun.heard)}`,
+            expected: startedRead.text,
+            heard: mismatchRun.heard,
+            expectedIndex: startedRead.index,
+            lineIndex: startedRead.lineIndex,
+            start: mismatchRun.start,
+            end: mismatchRun.end,
+            confidence: mismatchRun.confidence,
+            ...liveLineContext(input.expected, mismatchRun.expectedIndex, mismatchRun.start, mismatchRun.end),
+          };
+          // Back to where the read left the page, not to where it was noticed.
+          // Those are three words apart, and the first is the one the narrator
+          // has to pick the line back up from.
+          cursor = mismatchRun.expectedIndex;
+          mismatchRun = undefined;
+          break;
+        }
+      }
+    }
+
     const reliableShortSwap = input.flagShortWords
       && confidence >= Math.max(threshold, 0.95)
       && isReliableShortSwap(expected, heard);
@@ -495,15 +653,18 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     const hasFlagAnchor = matchedInWindow > 0
       || hasTwoWordTrailingAnchor(words, wordIndex, input.expected, cursor);
     if (input.flagsEnabled && !flag && !dismissedIds.has(id) && (!input.requireFlagAnchor || hasFlagAnchor)) {
+      const start = Math.max(0, word.start);
+      const end = Math.max(start, word.end);
       flag = {
         id,
         expected: expectedWord.text,
         heard: word.text,
         expectedIndex: expectedWord.index,
         lineIndex: expectedWord.lineIndex,
-        start: Math.max(0, word.start),
-        end: Math.max(Math.max(0, word.start), word.end),
+        start,
+        end,
         confidence,
+        ...liveLineContext(input.expected, expectedWord.index, start, end),
       };
     }
     cursor += 1;
@@ -516,8 +677,10 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       lastHeardEnd,
       recentHeard: recentHeard.slice(-RECENT_HEARD_LIMIT),
       ...(pendingResync ? { pendingResync } : {}),
+      ...(mismatchRun ? { mismatchRun } : {}),
     },
     flag,
+    halt,
   };
 }
 
@@ -608,6 +771,49 @@ export function liveFlagChipCopy(flag: { expected: string; heard: string }): str
   return `${flag.expected} → ${flag.heard}`;
 }
 
+/**
+ * The sentence around a flagged word, in both manuscript and audio terms.
+ *
+ * Attached to every flag as it is raised, because this is the only moment the
+ * manuscript is in hand: by the time a pickup reaches Review it carries word
+ * text and timestamps but no way back to the page it came from.
+ */
+function liveLineContext(
+  expected: LiveExpectedWord[],
+  expectedIndex: number,
+  start: number,
+  end: number,
+): Pick<LiveMismatch, "lineStart" | "lineEnd" | "lineText"> {
+  const range = pickupLineRange(expected, expectedIndex);
+  if (!range) {
+    return {};
+  }
+  const bounds = pickupLineSeconds({
+    wordStart: start,
+    wordEnd: end,
+    wordsBefore: expectedIndex - range.from,
+    wordsAfter: range.to - expectedIndex,
+  });
+  return {
+    lineStart: bounds.start,
+    lineEnd: bounds.end,
+    lineText: pickupLineText(expected, range),
+  };
+}
+
+/**
+ * What the narrator reads on the stop banner. Name the page word first: they
+ * are looking for the place to pick the read back up, not for a verdict. The
+ * page has been stopped because the read drifted off it for several words, so
+ * the wording points at the line rather than blaming the one word.
+ */
+export function liveHaltCopy(halt: { expected: string; heard: string }): { title: string; detail: string } {
+  return {
+    title: `Lost the page around “${halt.expected}”`,
+    detail: `Heard “${halt.heard}”. Pick the line up here, or continue to carry on from where you are.`,
+  };
+}
+
 /** Whisper QC: mark a swap. Never move the gold cursor or use the stream clock. */
 export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const heardWords = usableLiveWords(input.transcript);
@@ -688,15 +894,18 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (isStaleLiveFlag(pair.expectedIndex, input.goldCursor)) {
       continue;
     }
+    const candidateStart = Math.max(0, heardWord.start);
+    const candidateEnd = Math.max(candidateStart, heardWord.end);
     const candidate: LiveMismatch = {
       id,
       expected: expectedWord.text,
       heard: heardWord.text,
       expectedIndex: expectedWord.index,
       lineIndex: expectedWord.lineIndex,
-      start: Math.max(0, heardWord.start),
-      end: Math.max(Math.max(0, heardWord.start), heardWord.end),
+      start: candidateStart,
+      end: candidateEnd,
       confidence,
+      ...liveLineContext(input.expected, expectedWord.index, candidateStart, candidateEnd),
     };
     const isUnclassifiedSimilar = pair.kind === "similar"
       && !isReliableShortSwap(expected, heard)
@@ -734,15 +943,18 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
     if (heardWord && expectedWord && confidence >= confidenceThreshold && isContentWord(heard) && isContentWord(expected) && !isWhisperWordPiece(heard, expected)) {
       const id = `live-${input.chapterId}-${expectedWord.index}-${heard}`;
       if (!input.dismissedIds?.includes(id) && expectedWord.index < gold && expectedWord.index + LIVE_QC_PHRASE_WORDS >= gold && !isStaleLiveFlag(expectedWord.index, input.goldCursor)) {
+        const loneStart = Math.max(0, heardWord.start);
+        const loneEnd = Math.max(loneStart, heardWord.end);
         return {
           id,
           expected: expectedWord.text,
           heard: heardWord.text,
           expectedIndex: expectedWord.index,
           lineIndex: expectedWord.lineIndex,
-          start: Math.max(0, heardWord.start),
-          end: Math.max(Math.max(0, heardWord.start), heardWord.end),
+          start: loneStart,
+          end: loneEnd,
           confidence,
+          ...liveLineContext(input.expected, expectedWord.index, loneStart, loneEnd),
         };
       }
     }
@@ -1202,6 +1414,8 @@ export function pickupFromLiveFlag(
 ): Pickup {
   const start = Math.max(0, flag.start);
   const end = Math.max(start, flag.end);
+  const lineStart = Number.isFinite(flag.lineStart) ? Math.max(0, flag.lineStart as number) : undefined;
+  const lineEnd = Number.isFinite(flag.lineEnd) ? Math.max(lineStart ?? 0, flag.lineEnd as number) : undefined;
   return {
     id: flag.id,
     chapter_id: chapterId,
@@ -1214,6 +1428,8 @@ export function pickupFromLiveFlag(
     status: "open",
     confidence: Number.isFinite(flag.confidence) ? Math.min(1, Math.max(0, flag.confidence)) : 0,
     note: "Caught while reading",
+    ...(lineStart !== undefined && lineEnd !== undefined ? { line_start: lineStart, line_end: lineEnd } : {}),
+    ...(flag.lineText ? { line_text: flag.lineText } : {}),
   };
 }
 

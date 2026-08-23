@@ -14,6 +14,29 @@ export interface PickupAudioSource {
   start: number;
   end: number;
   kind: "live" | "take";
+  /** True when the range is the flagged word alone, with no line recorded. */
+  wordOnly?: boolean;
+}
+
+/**
+ * Widen a pickup to the line it belongs to.
+ *
+ * A word's timestamps come from a speech model's word alignment, which is
+ * accurate to a few hundred milliseconds — most of a word, so a word-sized clip
+ * regularly plays the neighbour instead of the flagged word. The line recorded
+ * with the pickup is the range the narrator can actually judge, and hearing it
+ * is also the only way to tell a real slip from the model mishearing a clean
+ * read. Pickups filed before lines were recorded keep the word range.
+ */
+export function pickupLineBounds(
+  pickup: Pick<Pickup, "t_start" | "t_end" | "line_start" | "line_end">,
+): { start: number; end: number; wordOnly: boolean } {
+  const lineStart = pickup.line_start;
+  const lineEnd = pickup.line_end;
+  if (Number.isFinite(lineStart) && Number.isFinite(lineEnd) && (lineEnd as number) > (lineStart as number)) {
+    return { start: Math.max(0, lineStart as number), end: lineEnd as number, wordOnly: false };
+  }
+  return { start: Math.max(0, pickup.t_start), end: Math.max(0, pickup.t_end), wordOnly: true };
 }
 
 /** True when Review filed this row from Start narrating, not from Check chapter. */
@@ -27,18 +50,20 @@ export function isLiveCaughtPickup(pickup: Pick<Pickup, "id" | "note">): boolean
  * wrong recording even when both exist.
  */
 export function audioSourceForPickup(
-  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end">,
+  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end" | "line_start" | "line_end">,
   chapter: LiveTapeChapter,
 ): PickupAudioSource | null {
+  const range = pickupLineBounds(pickup);
   if (isLiveCaughtPickup(pickup)) {
     if (!chapter.live_audio_path) {
       return null;
     }
     return {
       relativePath: chapter.live_audio_path,
-      start: pickup.t_start,
-      end: pickup.t_end,
+      start: range.start,
+      end: range.end,
       kind: "live",
+      wordOnly: range.wordOnly,
     };
   }
   if (!chapter.audio_path) {
@@ -46,14 +71,15 @@ export function audioSourceForPickup(
   }
   return {
     relativePath: chapter.audio_path,
-    start: pickup.t_start,
-    end: pickup.t_end,
+    start: range.start,
+    end: range.end,
     kind: "take",
+    wordOnly: range.wordOnly,
   };
 }
 
 export function listenDisabledReason(
-  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end">,
+  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end" | "line_start" | "line_end">,
   chapter: LiveTapeChapter,
 ): string | null {
   if (audioSourceForPickup(pickup, chapter)) {
@@ -62,6 +88,51 @@ export function listenDisabledReason(
   return isLiveCaughtPickup(pickup)
     ? "No booth tape of this read"
     : "No chapter take attached";
+}
+
+/**
+ * Why this pickup cannot be punched yet, if it cannot.
+ *
+ * A live flag is timed on the booth tape, but a punch is spliced into the
+ * chapter take — two different recordings of the same words, so the flag's
+ * seconds point somewhere else entirely in the file being edited. Check chapter
+ * re-files these against the take, which is what gives them a position a splice
+ * can use.
+ */
+export function punchDisabledReason(
+  pickup: Pick<Pickup, "id" | "note">,
+  chapter: LiveTapeChapter,
+): string | null {
+  if (isLiveCaughtPickup(pickup)) {
+    return chapter.audio_path
+      ? "Run Check chapter first, so this flag is timed on the take"
+      : "Attach the chapter take, then run Check chapter";
+  }
+  if (!chapter.audio_path) {
+    return "No chapter take attached";
+  }
+  return null;
+}
+
+/** Check chapter prefers the master take. The booth tape is enough when there is no take. */
+export function proofAudioSource(chapter: LiveTapeChapter): PickupAudioSource | null {
+  if (chapter.audio_path) {
+    return {
+      relativePath: chapter.audio_path,
+      start: 0,
+      end: 0,
+      kind: "take",
+    };
+  }
+  if (chapter.live_audio_path) {
+    return {
+      relativePath: chapter.live_audio_path,
+      start: 0,
+      end: 0,
+      kind: "live",
+    };
+  }
+  return null;
 }
 
 export function shouldKeepLiveTape(sampleCount: number, sampleRate: number): boolean {

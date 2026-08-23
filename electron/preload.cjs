@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   readBookProof: (payload) => ipcRenderer.invoke("project:read-book-proof", payload),
   resolveBookPickups: (payload) => ipcRenderer.invoke("project:resolve-book-pickups", payload),
   transcribe: (payload) => ipcRenderer.invoke("proof:transcribe", payload),
-  startLiveTranscription: () => ipcRenderer.invoke("proof:start-live"),
+  startLiveTranscription: (payload) => ipcRenderer.invoke("proof:start-live", payload),
   stopLiveTranscription: () => ipcRenderer.invoke("proof:stop-live"),
   transcribeBuffer: (payload) => ipcRenderer.invoke("proof:transcribe-buffer", payload),
   // Live follow ingest is one-way on purpose: waiting for a reply per block

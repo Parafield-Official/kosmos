@@ -106,9 +106,32 @@ export function promptChapterStatus(chapter: ChapterFile): PromptChapterStatus {
 
 export function relevantPromptGlossary(spans: ScriptSpan[], glossary: GlossaryEntry[]): GlossaryEntry[] {
   const linkedIds = new Set(spans.flatMap((span) => span.glossary_id ? [span.glossary_id] : []));
-  const manuscript = spans.map((span) => span.text).join(" ").toLocaleLowerCase("en-US");
-  return glossary.filter((entry) => linkedIds.has(entry.id)
-    || manuscript.includes(entry.spelling.toLocaleLowerCase("en-US")));
+  const manuscript = spans.map((span) => span.text).join("");
+  const matches: Array<{ id: string; start: number; end: number }> = [];
+  for (const entry of glossary) {
+    const spelling = entry.spelling.trim();
+    if (spelling === "") {
+      continue;
+    }
+    const escaped = spelling.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const expression = new RegExp(`(^|[^\\p{L}\\p{N}])(${escaped})(?=$|[^\\p{L}\\p{N}])`, "giu");
+    for (const match of manuscript.matchAll(expression)) {
+      const start = (match.index ?? 0) + (match[1]?.length ?? 0);
+      matches.push({ id: entry.id, start, end: start + (match[2]?.length ?? 0) });
+    }
+  }
+  // If "Ann Marie" and "Ann" both exist, one appearance of the phrase should
+  // brief the phrase, not show two cards for the same words. A separate "Ann"
+  // elsewhere in the chapter still keeps the shorter entry relevant.
+  matches.sort((left, right) => left.start - right.start || (right.end - right.start) - (left.end - left.start));
+  const selected: typeof matches = [];
+  for (const match of matches) {
+    if (!selected.some((other) => match.start < other.end && match.end > other.start)) {
+      selected.push(match);
+    }
+  }
+  const matchedIds = new Set(selected.map((match) => match.id));
+  return glossary.filter((entry) => linkedIds.has(entry.id) || matchedIds.has(entry.id));
 }
 
 export function readingProgress(scrollTop: number, scrollHeight: number, clientHeight: number): number {
@@ -149,6 +172,45 @@ export function promptTextTokens(text: string): PromptTextToken[] {
 
 export function promptWordCount(text: string): number {
   return promptTextTokens(text).filter((token) => token.isWord).length;
+}
+
+/**
+ * Abbreviations whose full stop does not close a sentence. Initials are handled
+ * by length rather than listed, which covers "J. R. R." and the like.
+ */
+const SENTENCE_SAFE_ABBREVIATIONS = new Set([
+  "mr", "mrs", "ms", "mx", "dr", "prof", "rev", "hon", "sr", "jr",
+  "st", "mt", "ft", "no", "vs", "etc", "eg", "ie", "cf", "al", "fig", "vol", "ch", "pp",
+]);
+
+/**
+ * Which of a line's words close a sentence, in word order.
+ *
+ * Punctuation lives in the non-word tokens between words, so a word closes a
+ * sentence when the run of marks following it carries a terminator. The last
+ * word closes one regardless: a paragraph edge is where a narrator would
+ * restart whether or not the author punctuated it, which is what callers
+ * splicing or re-reading a line need to know.
+ */
+export function promptSentenceEnds(text: string): boolean[] {
+  const tokens = promptTextTokens(text);
+  const ends: boolean[] = [];
+  for (const [index, token] of tokens.entries()) {
+    if (!token.isWord) {
+      continue;
+    }
+    const following = tokens[index + 1];
+    const terminated = following !== undefined
+      && !following.isWord
+      && /[.!?…。！？]/u.test(following.text);
+    const abbreviated = token.text.length === 1
+      || SENTENCE_SAFE_ABBREVIATIONS.has(token.text.toLocaleLowerCase("en-US"));
+    ends.push(terminated && !abbreviated);
+  }
+  if (ends.length > 0) {
+    ends[ends.length - 1] = true;
+  }
+  return ends;
 }
 
 export function liveHighlightWordIndex(cursor: number, enabled: boolean): number {

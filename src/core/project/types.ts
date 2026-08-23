@@ -141,4 +141,14 @@ export interface Pickup {
   status: PickupStatus;
   confidence: number;
   note?: string;
+  /**
+   * The sentence the flagged word sits in. `t_start`/`t_end` stay the word, for
+   * marking the page and for exports that point at the exact slip; a narrator
+   * listening back or re-recording works on the line, because a word spliced
+   * out of its sentence carries the wrong pace and breath and will not blend.
+   * Absent on pickups filed before the line was recorded.
+   */
+  line_start?: number;
+  line_end?: number;
+  line_text?: string;
 }

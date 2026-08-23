@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_QC_PREROLL_MAX_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMismatch } from "./live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_QC_PREROLL_MAX_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMatchState, type LiveMismatch } from "./live";
 
 const expected: LiveExpectedWord[] = [
   { index: 0, lineIndex: 0, text: "The" },
@@ -110,6 +110,205 @@ describe("teleprompter live matching", () => {
     });
     expect(result.state.cursor).toBe(2);
     expect(result.flag).toBeUndefined();
+  });
+
+  describe("stopping a read that has left the page", () => {
+    // Content words throughout, none of them near-spellings of each other and
+    // none a preposition or determiner, so nothing here is forgiven as a swap
+    // and the run length is what decides the outcome.
+    const quay: LiveExpectedWord[] = [
+      "lantern", "swung", "harbour", "terrace", "railing", "turned", "blacker",
+    ].map((text, index) => ({ index, lineIndex: 0, text }));
+
+    /** Words the narrator never read, none of which appear on the page. */
+    function offPage(texts: string[], confidence = 0.96, fromSeconds = 0) {
+      return texts.map((text, offset) => ({
+        text,
+        start: fromSeconds + offset * 0.4,
+        end: fromSeconds + 0.4 + offset * 0.4,
+        confidence,
+      }));
+    }
+
+    it("reads straight past a single word the recogniser got wrong", () => {
+      // The narrator read the line correctly and the model misheard one word of
+      // it. Stopping here would interrupt a take that was fine, which is worse
+      // than the miss being reported.
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["pierhead", "terrace", "railing"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.cursor).toBe(5);
+      expect(result.state.mismatchRun).toBeUndefined();
+    });
+
+    it("still does not stop after two words in a row", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["pierhead", "marshes", "railing"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.cursor).toBe(5);
+    });
+
+    it("stops on the third word in a row and points at where the read left the page", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "pierhead", "marshes", "shingle"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+
+      // Named for the first word of the run, three words back, because that is
+      // the word the narrator has to pick the line up from.
+      expect(result.halt).toMatchObject({ expected: "harbour", heard: "crumbling", expectedIndex: 2 });
+      expect(result.state.cursor).toBe(2);
+      // The fourth word is still unheard: nothing may be graded against a
+      // position the narrator has not reached.
+      expect(result.state.lastHeardEnd).toBeCloseTo(1.2, 6);
+    });
+
+    it("counts a run across windows, since a streaming hop holds one word", () => {
+      let state: LiveMatchState = { cursor: 2, lastHeardEnd: 0 };
+      const halts: Array<LiveMismatch | undefined> = [];
+      for (const [offset, text] of ["crumbling", "pierhead", "marshes"].entries()) {
+        const result = matchLiveWindow({
+          chapterId: "ch01",
+          expected: quay,
+          transcript: offPage([text], 0.96, offset * 0.4),
+          state,
+          flagsEnabled: false,
+          haltOnMismatch: true,
+        });
+        halts.push(result.halt);
+        state = result.state;
+      }
+      expect(halts.slice(0, 2)).toEqual([undefined, undefined]);
+      expect(halts[2]).toMatchObject({ expected: "harbour", expectedIndex: 2 });
+    });
+
+    it("needs the run unbroken, so a word that lands resets the count", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "terrace", "marshes", "shingle"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+      // Four words missed the page but only two of them ran together.
+      expect(result.halt).toBeUndefined();
+      expect(result.state.mismatchRun?.count).toBe(2);
+    });
+
+    it("does not count words the recogniser was unsure of", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "pierhead", "marshes"], 0.4),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.cursor).toBe(2);
+    });
+
+    it("does not stop on a close mispronunciation the matcher already forgives", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: [
+          { text: "harbor", start: 0, end: 0.4, confidence: 0.97 },
+          { text: "terrice", start: 0.4, end: 0.8, confidence: 0.97 },
+          { text: "raling", start: 0.8, end: 1.2, confidence: 0.97 },
+        ],
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.cursor).toBe(5);
+    });
+
+    it("moves again after Continue, whether the line is re-read or read past", () => {
+      const reread = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: [{ text: "harbour", start: 0, end: 0.4, confidence: 0.97 }],
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+        haltResumeIndex: 2,
+      });
+      expect(reread.halt).toBeUndefined();
+      expect(reread.state.cursor).toBe(3);
+
+      // Carrying straight on instead. The ordinary resync rejoins the narrator
+      // further down the line.
+      const readPast = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: [{ text: "railing", start: 0, end: 0.4, confidence: 0.97 }],
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+        haltResumeIndex: 2,
+      });
+      expect(readPast.halt).toBeUndefined();
+      expect(readPast.state.cursor).toBe(5);
+    });
+
+    it("does not stop twice for a run the narrator has already waved off", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "pierhead", "marshes", "shingle"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+        haltResumeIndex: 2,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.mismatchRun?.count).toBe(4);
+    });
+
+    it("stops sooner when a shorter run is asked for", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "pierhead"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+        haltOnMismatch: true,
+        haltRunWords: 2,
+      });
+      expect(result.halt).toMatchObject({ expectedIndex: 2 });
+    });
+
+    it("leaves following unchanged when stopping is switched off", () => {
+      const result = matchLiveWindow({
+        chapterId: "ch01",
+        expected: quay,
+        transcript: offPage(["crumbling", "pierhead", "marshes", "shingle"]),
+        state: { cursor: 2, lastHeardEnd: 0 },
+        flagsEnabled: false,
+      });
+      expect(result.halt).toBeUndefined();
+      expect(result.state.cursor).toBeGreaterThan(2);
+      expect(result.state.mismatchRun).toBeUndefined();
+    });
   });
 
   it("never emits a dismissed line again", () => {

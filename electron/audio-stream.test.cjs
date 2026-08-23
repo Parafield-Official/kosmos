@@ -9,6 +9,17 @@ describe("streamed audio request boundary", () => {
     });
   });
 
+  // The booth writes every read of a chapter to the same tape path, so the
+  // player tells one read from the next with a query on an otherwise identical
+  // URL. Decoding has to look past it or listening back serves the last read.
+  it("ignores a query used to separate one recording from the next", () => {
+    const url = encodeAudioRequest("/tmp/Book.booth", "audio/live/ch01_session.wav");
+    expect(decodeAudioRequest(`${url}?take=2`)).toEqual({
+      folder: "/tmp/Book.booth",
+      relativePath: "audio/live/ch01_session.wav",
+    });
+  });
+
   it("parses bounded, suffix, and open-ended ranges", () => {
     expect(parseByteRange("bytes=10-19", 100)).toEqual({ start: 10, end: 19 });
     expect(parseByteRange("bytes=90-", 100)).toEqual({ start: 90, end: 99 });

@@ -30,6 +30,12 @@ import {
   linkGlossarySpans,
   renameGlossaryEntry,
 } from "../core/glossary/candidates";
+import {
+  checkChapterPronunciations,
+  nextPronunciationCueByRows,
+  type PromptPronunciationCue,
+  type PronunciationCheck,
+} from "../core/glossary/workflow";
 import { fromPlainText } from "../core/manuscript/import";
 import { hideMarkdownHeadingMarkers, parsePastedChapter } from "../core/manuscript/split";
 import { addChapter, createEmptyProject } from "../core/project/project";
@@ -61,6 +67,7 @@ import {
   dismissLiveFlag,
   filterPromptChapters,
   liveHighlightWordIndex,
+  promptSentenceEnds,
   promptTextTokens,
   promptWordCount,
   recordLiveFlag,
@@ -77,15 +84,19 @@ import {
   type PromptTheme,
   type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import {
   audioSourceForPickup,
   concatLiveTape,
   listenDisabledReason,
+  pickupLineBounds,
+  proofAudioSource,
+  punchDisabledReason,
   shouldKeepLiveTape,
 } from "../core/teleprompter/session-tape";
+import { pickupPrerollStart, PICKUP_PREROLL_SECONDS } from "../core/teleprompter/pickup-line";
 import type {
   AuthorStatus,
   ChapterFile,
@@ -446,11 +457,12 @@ function ProjectHome({
     let disposed = false;
 
     setAudioUrl(null);
-    if (!selectedChapter?.audio_path || !window.boothDesk || folder === "(browser preview)") {
+    const source = selectedChapter ? proofAudioSource(selectedChapter) : null;
+    if (!source || !window.boothDesk || folder === "(browser preview)") {
       return;
     }
 
-    void window.boothDesk.audioUrl({ folder, relativePath: selectedChapter.audio_path })
+    void window.boothDesk.audioUrl({ folder, relativePath: source.relativePath })
       .then((url) => {
         if (disposed) {
           return;
@@ -468,7 +480,7 @@ function ProjectHome({
       // booth-audio:// URLs are owned by the main process; there is no Blob
       // object URL to revoke here.
     };
-  }, [selectedChapter?.audio_path, folder]);
+  }, [selectedChapter?.audio_path, selectedChapter?.live_audio_path, folder]);
 
   useEffect(() => {
     const pending = pendingSeekRef.current;
@@ -737,16 +749,22 @@ function ProjectHome({
     });
   }
 
-  async function runProof(chapter: ChapterFile) {
-    if (!chapter.audio_path) {
-      setNotice("Add a chapter recording before checking it.");
-      return;
+  async function runProof(chapter: ChapterFile, options: { preferLive?: boolean } = {}): Promise<boolean> {
+    // A fresh booth read must be checked against the tape that was just made,
+    // even when the chapter also has an older attached take. Manual proofing
+    // keeps preferring the chapter take.
+    const source = options.preferLive && chapter.live_audio_path
+      ? { relativePath: chapter.live_audio_path, start: 0, end: 0, kind: "live" as const }
+      : proofAudioSource(chapter);
+    if (!source) {
+      setNotice("Start narrating and hit Stop, or attach a take, before checking.");
+      return false;
     }
     if (chapterText.trim().length === 0) {
       setNotice("This chapter has no manuscript text to compare.");
-      return;
+      return false;
     }
-    await runAction(`proof-${chapter.id}`, async () => {
+    return runAction(`proof-${chapter.id}`, async () => {
       // The audio element can still expose the previous chapter's duration
       // for one render after selection changes. Ask the main process for the
       // selected path's metadata so alignment timestamps never inherit stale
@@ -755,7 +773,7 @@ function ProjectHome({
       if (window.boothDesk && folder !== "(browser preview)") {
         const metadata = await window.boothDesk.audioMetadata({
           folder,
-          relativePath: chapter.audio_path as string,
+          relativePath: source.relativePath,
         });
         duration = metadata.durationSeconds;
       } else {
@@ -768,7 +786,7 @@ function ProjectHome({
       } else if (window.boothDesk) {
         const local = await window.boothDesk.transcribe({
           folder,
-          relativePath: chapter.audio_path as string,
+          relativePath: source.relativePath,
           language: "en",
         });
         transcript = local.words;
@@ -995,6 +1013,11 @@ function ProjectHome({
     if (!window.boothDesk || folder === "(browser preview)" || !selectedChapter) {
       throw new Error("Add a chapter recording before creating a pickup.");
     }
+    // Replace the line, not the word. A word dropped into the middle of a
+    // sentence carries the pace and pitch of the take it was recorded in, so the
+    // seam is audible however clean the edit is; a sentence boundary falls in a
+    // breath, where a change of tone reads as the start of a new thought.
+    const replaced = pickupLineBounds(pickup);
     return runAction("punch", async () => {
       const result = await window.boothDesk?.applyPunchRecording({
         ...envelope,
@@ -1002,8 +1025,8 @@ function ProjectHome({
         pickupId: pickup.id,
         expected: pickup.expected,
         heard: pickup.heard,
-        tStart: pickup.t_start,
-        tEnd: pickup.t_end,
+        tStart: replaced.start,
+        tEnd: replaced.end,
         trimSilence: true,
         wavBase64,
       });
@@ -1778,13 +1801,18 @@ function ProjectHome({
     });
   }
 
-  function playOnElement(audio: HTMLAudioElement, start: number, end?: number) {
+  /**
+   * `pad` widens the range on both sides. A word-sized range needs it to be
+   * audible at all; a range that already covers a whole line does not, and
+   * padding one only plays over the line either side of the fix.
+   */
+  function playOnElement(audio: HTMLAudioElement, start: number, end?: number, pad = 0.5) {
     rangeStopRef.current?.();
-    audio.currentTime = Math.max(0, start - 0.5);
+    audio.currentTime = Math.max(0, start - pad);
     void audio.play();
     if (end !== undefined && Number.isFinite(end) && end > start) {
       const stop = () => {
-        if (audio.currentTime >= end + 0.5) {
+        if (audio.currentTime >= end + pad) {
           audio.pause();
           rangeStopRef.current?.();
         }
@@ -1834,9 +1862,81 @@ function ProjectHome({
           audio.load();
         });
       }
-      playOnElement(audio, source.start, source.end);
+      playOnElement(audio, source.start, source.end, source.wordOnly ? 0.5 : 0);
     } catch (reason) {
       setNotice(messageFor(reason, "Could not play this flag."));
+    }
+  }
+
+  async function playPronunciationMoment(check: PronunciationCheck, preferLive = false) {
+    if (!selectedChapter || check.start === undefined) {
+      setNotice("This pronunciation has no aligned audio moment to play.");
+      return;
+    }
+    const source = preferLive && selectedChapter.live_audio_path
+      ? { relativePath: selectedChapter.live_audio_path }
+      : proofAudioSource(selectedChapter);
+    if (!source || !window.boothDesk || folder === "(browser preview)") {
+      setNotice("Listening is available after this recording has been saved.");
+      return;
+    }
+    const audio = pickupListenRef.current;
+    if (!audio) {
+      return;
+    }
+    try {
+      if (pickupListenPathRef.current !== source.relativePath) {
+        const url = await window.boothDesk.audioUrl({ folder, relativePath: source.relativePath });
+        pickupListenPathRef.current = source.relativePath;
+        audio.src = url;
+        await new Promise<void>((resolve, reject) => {
+          const onReady = () => {
+            audio.removeEventListener("error", onError);
+            resolve();
+          };
+          const onError = () => {
+            audio.removeEventListener("loadedmetadata", onReady);
+            reject(new Error("Could not load the recording."));
+          };
+          audio.addEventListener("loadedmetadata", onReady, { once: true });
+          audio.addEventListener("error", onError, { once: true });
+          audio.load();
+        });
+      }
+      playOnElement(audio, check.start, check.end, 0.8);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not play this pronunciation."));
+    }
+  }
+
+  /**
+   * Punch and roll: play the read leading into the line, then hand over to the
+   * recorder. Narrators come in on the tone and pace they just heard, which is
+   * what makes the replacement sit inside the take instead of on top of it.
+   */
+  async function playPickupPreroll(pickup: Pickup) {
+    if (!selectedChapter) {
+      return;
+    }
+    const source = audioSourceForPickup(pickup, selectedChapter);
+    if (!source || !window.boothDesk || folder === "(browser preview)") {
+      setNotice(listenDisabledReason(pickup, selectedChapter) ?? "Nothing to play.");
+      return;
+    }
+    const audio = pickupListenRef.current;
+    if (!audio) {
+      return;
+    }
+    try {
+      if (pickupListenPathRef.current !== source.relativePath) {
+        const url = await window.boothDesk.audioUrl({ folder, relativePath: source.relativePath });
+        pickupListenPathRef.current = source.relativePath;
+        audio.src = url;
+        audio.load();
+      }
+      playOnElement(audio, pickupPrerollStart(source.start), source.start, 0);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not play the lead-in."));
     }
   }
 
@@ -1983,14 +2083,15 @@ function ProjectHome({
       onTheme={setPromptTheme}
       onHighlight={setPromptHighlight}
       onPlayGlossary={(entry) => void playGlossaryClip(entry)}
+      onListenPronunciation={(check, preferLive) => void playPronunciationMoment(check, preferLive)}
       onSelectChapter={(id) => setSelectedChapterId(id)}
       onAttach={(id) => {
         const chapter = project.chapters.find((item) => item.id === id);
         if (chapter) void attachAudio(chapter);
       }}
-      onProof={(id) => {
+      onProof={async (id, options) => {
         const chapter = project.chapters.find((item) => item.id === id);
-        if (chapter) void runProof(chapter);
+        return chapter ? runProof(chapter, options) : false;
       }}
       onCheckAudio={(id) => {
         const chapter = project.chapters.find((item) => item.id === id);
@@ -2008,8 +2109,15 @@ function ProjectHome({
       onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
       onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
       onSaveLiveTape={(wavBase64, chapterId) => saveLiveTape(wavBase64, chapterId)}
+      onLiveTapeSaved={(result) => {
+        onChange(result);
+        setNotice("Kept a booth tape of this read. Check chapter can transcribe it. It is not the chapter take.");
+      }}
+      liveTapeContext={{ folder, project }}
     />
   ) : null;
+
+  const punchBounds = punchPickup ? pickupLineBounds(punchPickup) : null;
 
   return (
     <div className={studioNavOpen ? "studio-shell" : "studio-shell nav-closed"}>
@@ -2205,6 +2313,7 @@ function ProjectHome({
                 onProof={() => void runProof(selectedChapter)}
                 onPlayPickup={playPickup}
                 listenDisabledReason={(pickup) => listenDisabledReason(pickup, selectedChapter)}
+                punchDisabledReason={(pickup) => punchDisabledReason(pickup, selectedChapter)}
                 onPlayRange={playRange}
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
@@ -2374,10 +2483,38 @@ function ProjectHome({
         <div className="modal-backdrop" role="presentation">
           <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="punch-title">
             <p className="phase-label">Pickup recording</p>
-            <h2 id="punch-title">{punchPickup.expected || "Pickup"}</h2>
-            <p className="manager-help">Record the replacement line. Kosmos saves a separate WAV; the original chapter take remains untouched.</p>
+            <h2 id="punch-title">Read this line again</h2>
+            {punchPickup.line_text ? (
+              <p className="punch-line" lang="en">
+                {punchPickup.line_text}
+              </p>
+            ) : (
+              <p className="manager-help">
+                This pickup was filed before Kosmos recorded lines, so it only knows the word
+                “{punchPickup.expected}”. Read the whole sentence it sits in anyway — a word on its own
+                will not match the take.
+              </p>
+            )}
+            <p className="manager-help">
+              Read the whole line, not just “{punchPickup.expected}”. A single word carries the pace and
+              pitch of the session it was recorded in, so the edit is audible; a full line joins the take
+              at a breath. Play the lead-in first and come in on the tone you hear.
+            </p>
+            <div className="punch-preroll">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={!window.boothDesk || folder === "(browser preview)"}
+                onClick={() => void playPickupPreroll(punchPickup)}
+              >
+                Play the {PICKUP_PREROLL_SECONDS}s lead-in
+              </button>
+              <span>
+                Replacing {formatTime(punchBounds?.start ?? punchPickup.t_start)}–{formatTime(punchBounds?.end ?? punchPickup.t_end)}
+              </span>
+            </div>
             <RecorderPanel
-              label={`Punch at ${formatTime(punchPickup.t_start)}`}
+              label={`Punch at ${formatTime(punchBounds?.start ?? punchPickup.t_start)}`}
               disabled={!window.boothDesk || busyAction !== null}
               onSave={async (wav) => {
                 const applied = await applyPunchRecordingWav(wav, punchPickup);
@@ -2445,6 +2582,7 @@ function Teleprompter({
   onTheme,
   onHighlight,
   onPlayGlossary,
+  onListenPronunciation,
   onSelectChapter,
   onAttach,
   onProof,
@@ -2454,6 +2592,8 @@ function Teleprompter({
   onFileLivePickup,
   onIgnoreLivePickup,
   onSaveLiveTape,
+  onLiveTapeSaved,
+  liveTapeContext,
 }: {
   projectName: string;
   chapter: ChapterFile;
@@ -2477,15 +2617,18 @@ function Teleprompter({
   onTheme: (value: PromptTheme) => void;
   onHighlight: (value: PromptHighlightMode) => void;
   onPlayGlossary: (entry: GlossaryEntry) => void;
+  onListenPronunciation: (check: PronunciationCheck, preferLive: boolean) => void;
   onSelectChapter: (id: string) => void;
   onAttach: (chapterId: string) => void;
-  onProof: (chapterId: string) => void;
+  onProof: (chapterId: string, options?: { preferLive?: boolean }) => Promise<boolean>;
   onCheckAudio: (chapterId: string) => void;
   onReview: () => void;
   onClose: () => void;
   onFileLivePickup: (pickup: Pickup) => void;
   onIgnoreLivePickup: (pickupId: string) => void;
   onSaveLiveTape: (wavBase64: string, chapterId: string) => Promise<void>;
+  onLiveTapeSaved: (result: { folder: string; project: import("../core/project/types").ProjectFile }) => void;
+  liveTapeContext: { folder: string; project: import("../core/project/types").ProjectFile };
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const lines = useMemo(() => buildPromptLines(spans), [spans]);
@@ -2493,7 +2636,16 @@ function Teleprompter({
     let index = 0;
     return lines.flatMap((line) => {
       const words = promptTextTokens(line.text).filter((token) => token.isWord).map((token) => token.text);
-      return words.map((text) => ({ index: index++, lineIndex: line.index, text }));
+      // Sentence ends travel with the words so a flag raised mid-read knows
+      // which line it belongs to. Nothing downstream can recover that: a
+      // pickup in Review has word text and timestamps but not the page.
+      const ends = promptSentenceEnds(line.text);
+      return words.map((text, offset) => ({
+        index: index++,
+        lineIndex: line.index,
+        text,
+        endsSentence: ends[offset] === true,
+      }));
     });
   }, [lines]);
   const lineWordStarts = useMemo(() => {
@@ -2507,6 +2659,8 @@ function Teleprompter({
   const [liveState, setLiveState] = useState(createLiveFlagsState);
   const [liveStatus, setLiveStatus] = useState<"off" | "starting" | "listening" | "processing" | "error">("off");
   const [liveFlag, setLiveFlag] = useState<LiveMismatch | null>(null);
+  const [liveHalt, setLiveHalt] = useState<LiveMismatch | null>(null);
+  const [stopOnMismatch, setStopOnMismatch] = useState(true);
   const [liveDetectedFlags, setLiveDetectedFlags] = useState<LiveMismatch[]>([]);
   const [liveCursor, setLiveCursor] = useState(0);
   const [liveError, setLiveError] = useState<string | null>(null);
@@ -2520,6 +2674,21 @@ function Teleprompter({
   const [liveWhisperLastWords, setLiveWhisperLastWords] = useState("");
   const [liveStartCursor, setLiveStartCursor] = useState<number | null>(null);
   const [liveSignalLevel, setLiveSignalLevel] = useState(0);
+  // The booth tape for this chapter, so a narrator can hear back what they just
+  // read without leaving the booth for Review. `tapeTake` counts the reads
+  // recorded since this chapter was opened: zero means the tape on disk is from
+  // an earlier sitting, and each bump is a new recording of the same file.
+  const [tapeUrl, setTapeUrl] = useState<string | null>(null);
+  const [tapeSeconds, setTapeSeconds] = useState<number | null>(null);
+  const [tapeTake, setTapeTake] = useState(0);
+  const [pronunciationBriefingOpen, setPronunciationBriefingOpen] = useState(false);
+  const [pronunciationCheckState, setPronunciationCheckState] = useState<"idle" | "running" | "ready" | "failed">("idle");
+  const [pronunciationCheckSource, setPronunciationCheckSource] = useState<"live" | "take" | null>(null);
+  const [upcomingPronunciation, setUpcomingPronunciation] = useState<{
+    cue: PromptPronunciationCue;
+    entry: GlossaryEntry;
+    rowsAhead: number;
+  } | null>(null);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [materialsTab, setMaterialsTab] = useState<"chapter" | "manuscript" | "voices" | "words" | "notes">("chapter");
@@ -2555,6 +2724,44 @@ function Teleprompter({
     ? orderedChapters[currentChapterPosition + 1]
     : null;
   const chapterGlossary = useMemo(() => relevantPromptGlossary(spans, glossary), [glossary, spans]);
+  const pronunciationCues = useMemo<PromptPronunciationCue[]>(() => {
+    let wordIndex = 0;
+    return lines.flatMap((line) => line.segments.flatMap((segment) => {
+      const start = wordIndex;
+      const count = promptWordCount(segment.text);
+      wordIndex += count;
+      return segment.glossary_id && count > 0
+        ? [{ entryId: segment.glossary_id, wordIndex: start, lineIndex: line.index }]
+        : [];
+    }));
+  }, [lines]);
+  const briefingGlossary = useMemo(() => {
+    const byId = new Map(chapterGlossary.map((entry) => [entry.id, entry]));
+    const seen = new Set<string>();
+    const ordered = pronunciationCues.flatMap((cue) => {
+      const entry = byId.get(cue.entryId);
+      if (!entry || seen.has(entry.id)) {
+        return [];
+      }
+      seen.add(entry.id);
+      return [entry];
+    });
+    return [...ordered, ...chapterGlossary.filter((entry) => !seen.has(entry.id))];
+  }, [chapterGlossary, pronunciationCues]);
+  const chapterManuscript = useMemo(() => spans.map((span) => span.text).join(""), [spans]);
+  const pronunciationChecks = useMemo(
+    () => proof
+      ? checkChapterPronunciations({
+          chapterId,
+          chapterIndex: chapter.index,
+          chapterTitle: title,
+          manuscript: chapterManuscript,
+          transcript: proof.transcript,
+          entries: chapterGlossary,
+        })
+      : [],
+    [chapter.index, chapterGlossary, chapterId, chapterManuscript, proof, title],
+  );
   const chapterExcerpt = useMemo(() => {
     const clean = spans.map((span) => span.text).join(" ").replace(/\s+/g, " ").trim();
     return clean.length > 260 ? `${clean.slice(0, 257).trimEnd()}…` : clean;
@@ -2582,16 +2789,24 @@ function Teleprompter({
   const liveTapeSampleCountRef = useRef(0);
   const liveTapeChapterIdRef = useRef(chapterId);
   const onSaveLiveTapeRef = useRef(onSaveLiveTape);
+  const onLiveTapeSavedRef = useRef(onLiveTapeSaved);
+  const liveTapeContextRef = useRef(liveTapeContext);
   const liveSampleCountRef = useRef(0);
   const liveSampleRateRef = useRef(48_000);
   const liveCapturedSecondsRef = useRef(0);
   const liveBufferStartSecondsRef = useRef(0);
   const liveRequestRef = useRef(false);
   const liveMatchStateRef = useRef<LiveMatchState>({ cursor: 0, lastHeardEnd: 0 });
+  // The word the read stopped on, read by the capture callbacks that run
+  // outside React's render. Null whenever the page is free to move.
+  const liveHaltRef = useRef<LiveMismatch | null>(null);
+  const liveHaltResumeIndexRef = useRef(-1);
+  const stopOnMismatchRef = useRef(stopOnMismatch);
   const liveDismissedRef = useRef<string[]>([]);
   const liveStartingRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
   const liveSessionRef = useRef(0);
+  const automaticPronunciationTakeRef = useRef("");
   const liveSentRef = useRef(false);
   const liveFollowStreamRef = useRef(false);
   const liveWhisperBusyRef = useRef(false);
@@ -2641,8 +2856,23 @@ function Teleprompter({
   }, [onSaveLiveTape]);
 
   useEffect(() => {
+    onLiveTapeSavedRef.current = onLiveTapeSaved;
+  }, [onLiveTapeSaved]);
+
+  useEffect(() => {
+    liveTapeContextRef.current = liveTapeContext;
+  }, [liveTapeContext]);
+
+  useEffect(() => {
     liveStateRef.current = liveState;
   }, [liveState]);
+
+  useEffect(() => {
+    stopOnMismatchRef.current = stopOnMismatch;
+    if (!stopOnMismatch) {
+      resumeFromHalt();
+    }
+  }, [stopOnMismatch]);
 
   useEffect(() => {
     let saved = 0;
@@ -2743,6 +2973,33 @@ function Teleprompter({
 
   useEffect(() => {
     if (!liveState.enabled) {
+      setUpcomingPronunciation(null);
+      return;
+    }
+    const tops = expectedWords.map((word) => wordRefs.current.get(word.index)?.getBoundingClientRect().top ?? null);
+    const measured = nextPronunciationCueByRows(pronunciationCues, liveCursor, tops);
+    if (!measured) {
+      setUpcomingPronunciation(null);
+      return;
+    }
+    const entry = chapterGlossary.find((candidate) => candidate.id === measured.cue.entryId);
+    setUpcomingPronunciation(entry ? { ...measured, entry } : null);
+  }, [
+    chapterGlossary,
+    chaptersOpen,
+    expectedWords,
+    fontSize,
+    lineSpacing,
+    liveCursor,
+    liveState.enabled,
+    materialsOpen,
+    pronunciationCues,
+    readingFont,
+    wrapEpoch,
+  ]);
+
+  useEffect(() => {
+    if (!liveState.enabled) {
       return;
     }
     const highlightIndex = liveHighlightWordIndex(liveCursor, liveState.enabled);
@@ -2774,15 +3031,71 @@ function Teleprompter({
   }
 
   /**
+   * Stop the page on a word the narrator did not read as written. The cursor is
+   * already pinned there by the matcher; this settles the predictive lead onto
+   * the same word so the highlight cannot coast past the place they must
+   * restart from.
+   */
+  function haltLiveFollow(halt: LiveMismatch) {
+    liveHaltRef.current = halt;
+    setLiveHalt(halt);
+    liveLeadRef.current = createLeadState(halt.expectedIndex, performance.now());
+    liveVisualCursorRef.current = halt.expectedIndex;
+    setLiveCursor(halt.expectedIndex);
+  }
+
+  /**
+   * Carry on from a stop. Everything heard while the page was held is dropped:
+   * that audio is the narrator thinking, re-reading, or talking to the room,
+   * and grading it against the word they are about to leave would stop them
+   * again immediately. The run of misses that caused the stop goes with it, or
+   * the next miss would be the fourth of a run the narrator has already dealt
+   * with. The word itself is exempted from starting another run, so both ways
+   * of continuing work — read the line again, or read straight on and let the
+   * ordinary resync rejoin.
+   */
+  function resumeFromHalt() {
+    const halted = liveHaltRef.current;
+    if (!halted) {
+      return;
+    }
+    liveHaltRef.current = null;
+    liveHaltResumeIndexRef.current = halted.expectedIndex;
+    setLiveHalt(null);
+    // Rebuilt rather than spread, so the run and any pending resync go too.
+    liveMatchStateRef.current = {
+      cursor: liveMatchStateRef.current.cursor,
+      lastHeardEnd: Math.max(
+        liveMatchStateRef.current.lastHeardEnd,
+        liveStreamSecondsRef.current,
+        liveCapturedSecondsRef.current,
+      ),
+      recentHeard: [],
+    };
+    liveLeadRef.current = createLeadState(liveMatchStateRef.current.cursor, performance.now());
+    liveSpeechAtRef.current = null;
+    publishLiveCursor();
+  }
+
+  /**
    * Publish the cursor the narrator should see. On the streaming path this
    * coasts ahead of the last confirmed word at the narrator's measured pace,
    * which covers the follow model's emission delay — but only while speech is
    * still arriving, so stopping settles the highlight back onto the last word
    * actually read. The slower Whisper-only fallback shows confirmed positions
    * only, so it cannot outrun its evidence, and so do the line and paragraph
-   * modes.
+   * modes. A stopped page projects nothing at all: the narrator has to be able
+   * to see which word to restart on.
    */
   function publishLiveCursor() {
+    const halted = liveHaltRef.current;
+    if (halted) {
+      if (liveVisualCursorRef.current !== halted.expectedIndex) {
+        liveVisualCursorRef.current = halted.expectedIndex;
+        setLiveCursor(halted.expectedIndex);
+      }
+      return;
+    }
     const limit = expectedWordsRef.current.length || expectedWords.length;
     const advanced = leadAdvance(
       liveLeadRef.current,
@@ -2838,6 +3151,9 @@ function Teleprompter({
     liveVisualCursorRef.current = liveCursor;
     liveStreamSecondsRef.current = 0;
     liveLeadRef.current = createLeadState(liveCursor, performance.now());
+    liveHaltRef.current = null;
+    liveHaltResumeIndexRef.current = -1;
+    setLiveHalt(null);
     setLiveSignalLevel(0);
     setLiveStatus("off");
   }
@@ -2853,29 +3169,53 @@ function Teleprompter({
     return tape;
   }
 
-  async function persistTakenTape(tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string }) {
-    const samples = concatLiveTape(tape.chunks);
-    if (!shouldKeepLiveTape(samples.length, tape.sampleRate)) {
-      return;
-    }
-    try {
-      const wav = encodeWavPcm16(samples, Math.round(tape.sampleRate), 1);
-      await onSaveLiveTapeRef.current(bytesToBase64(wav), tape.chapterId);
-    } catch (reason) {
-      setLiveError(messageFor(reason, "Could not keep a booth tape of this read."));
+  /**
+   * Offer a freshly written tape back for playback, but only when it belongs to
+   * the chapter on screen. Leaving mid-read saves the chapter that was being
+   * read, which by then is not the one being shown.
+   */
+  function markTapeRecorded(tapeChapterId: string) {
+    if (tapeChapterId === chapterIdRef.current) {
+      setTapeTake((take) => take + 1);
     }
   }
 
-  function stopLiveCaptureImmediately() {
+  /**
+   * Write the captured read to disk, unless it was too short to be worth
+   * keeping. Reports whether a tape landed so callers do not offer a previous
+   * read back as though it were the one just finished.
+   */
+  async function persistTakenTape(tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string }): Promise<boolean> {
+    const samples = concatLiveTape(tape.chunks);
+    if (!shouldKeepLiveTape(samples.length, tape.sampleRate)) {
+      return false;
+    }
+    const wav = encodeWavPcm16(samples, Math.round(tape.sampleRate), 1);
+    await onSaveLiveTapeRef.current(bytesToBase64(wav), tape.chapterId);
+    return true;
+  }
+
+  async function stopLiveCaptureImmediately() {
     liveStoppingRef.current = true;
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
     disconnectLiveInput();
     const tape = takeLiveTape();
-    void window.boothDesk?.stopLiveTranscription?.();
+    const stopped = await window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
-    void persistTakenTape(tape);
+    if (stopped?.folder && stopped.project) {
+      markTapeRecorded(tape.chapterId);
+      onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project });
+      return;
+    }
+    return persistTakenTape(tape).then((kept) => {
+      if (kept) {
+        markTapeRecorded(tape.chapterId);
+      }
+    }).catch((reason) => {
+      setLiveError(messageFor(reason, stopped?.tapeError || "Could not keep a booth tape of this read."));
+    });
   }
 
   async function stopLiveCapture({ flushQc = false } = {}) {
@@ -2883,7 +3223,7 @@ function Teleprompter({
       return;
     }
     if (!flushQc || !liveEnabledRef.current || !liveFollowStreamRef.current) {
-      stopLiveCaptureImmediately();
+      await stopLiveCaptureImmediately();
       return;
     }
 
@@ -2918,10 +3258,21 @@ function Teleprompter({
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
     const tape = takeLiveTape();
-    await window.boothDesk?.stopLiveTranscription?.();
+    const stopped = await window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
-    await persistTakenTape(tape);
+    if (stopped?.folder && stopped.project) {
+      markTapeRecorded(tape.chapterId);
+      onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project });
+      return;
+    }
+    try {
+      if (await persistTakenTape(tape)) {
+        markTapeRecorded(tape.chapterId);
+      }
+    } catch (reason) {
+      setLiveError(messageFor(reason, stopped?.tapeError || "Could not keep a booth tape of this read."));
+    }
   }
 
   useEffect(() => () => {
@@ -2945,6 +3296,9 @@ function Teleprompter({
       if (!Array.isArray(words) || words.length === 0) {
         return;
       }
+      if (liveHaltRef.current) {
+        return;
+      }
       const result = matchLiveWindow({
         chapterId: chapterIdRef.current,
         expected: expectedWordsRef.current,
@@ -2953,9 +3307,14 @@ function Teleprompter({
         flagsEnabled: false,
         confidenceThreshold: 0.9,
         dismissedIds: liveDismissedRef.current,
+        haltOnMismatch: stopOnMismatchRef.current,
+        haltResumeIndex: liveHaltResumeIndexRef.current,
       });
       liveMatchStateRef.current = result.state;
       commitLiveCursor(result.state.cursor);
+      if (result.halt) {
+        haltLiveFollow(result.halt);
+      }
       setLiveCheckCount((count) => count + 1);
       setLiveHeardText(words.slice(-5).map((word) => word.text).join(" "));
       // Follow lag measured against the audio clock: how far behind the
@@ -2984,12 +3343,83 @@ function Teleprompter({
     return () => window.clearInterval(timer);
   }, [liveState.enabled]);
 
+  /**
+   * Resolve the booth tape for playback whenever one appears, which is the
+   * moment Stop finishes writing it. Failing quietly is deliberate: a tape that
+   * will not load is not worth an error in front of a narrator mid-session, and
+   * Review can still transcribe the file.
+   *
+   * A chapter's tape always has the same path, so re-reading overwrites it and
+   * the URL alone cannot tell the two apart — the player would keep serving the
+   * previous read, with the previous length beside it. Carrying the take number
+   * makes each recording its own resource.
+   */
+  const tapePath = chapter.live_audio_path;
+  const tapeFolder = liveTapeContext.folder;
+  useEffect(() => {
+    let disposed = false;
+    setTapeUrl(null);
+    setTapeSeconds(null);
+    const bridge = window.boothDesk;
+    if (!tapePath || !bridge || tapeFolder === "(browser preview)") {
+      return;
+    }
+    void (async () => {
+      try {
+        const url = await bridge.audioUrl({ folder: tapeFolder, relativePath: tapePath });
+        if (disposed) {
+          return;
+        }
+        setTapeUrl(tapeTake > 0 ? `${url}?take=${tapeTake}` : url);
+        const metadata = await bridge.audioMetadata({ folder: tapeFolder, relativePath: tapePath });
+        if (!disposed) {
+          setTapeSeconds(metadata.durationSeconds);
+        }
+      } catch {
+        // Leaves the panel away rather than interrupting the read.
+      }
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [tapePath, tapeFolder, tapeTake]);
+
+  // A finished booth read is checked without another trip through the UI. The
+  // proof pass creates the time-aligned transcript used by the pronunciation
+  // report; the take key prevents rerenders from transcribing the same tape
+  // twice. This runs only when the chapter actually has words to check.
+  useEffect(() => {
+    if (tapeTake <= 0 || !tapePath || briefingGlossary.length === 0) {
+      return;
+    }
+    const takeKey = `${chapterId}:${tapeTake}`;
+    if (automaticPronunciationTakeRef.current === takeKey) {
+      return;
+    }
+    automaticPronunciationTakeRef.current = takeKey;
+    setPronunciationCheckState("running");
+    setPronunciationCheckSource("live");
+    void onProof(chapterId, { preferLive: true }).then((checked) => {
+      if (automaticPronunciationTakeRef.current === takeKey) {
+        setPronunciationCheckState(checked ? "ready" : "failed");
+      }
+    });
+  }, [briefingGlossary.length, chapterId, onProof, tapePath, tapeTake]);
+
   useEffect(() => {
     stopLiveCaptureImmediately();
+    setTapeTake(0);
+    automaticPronunciationTakeRef.current = "";
+    setPronunciationBriefingOpen(false);
+    setPronunciationCheckState("idle");
+    setPronunciationCheckSource(null);
     liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
     liveVisualCursorRef.current = 0;
     liveLeadRef.current = createLeadState(0, performance.now());
     liveStreamSecondsRef.current = 0;
+    liveHaltRef.current = null;
+    liveHaltResumeIndexRef.current = -1;
+    setLiveHalt(null);
     setLiveFlag(null);
     setLiveCursor(0);
     setLiveError(null);
@@ -3039,7 +3469,15 @@ function Teleprompter({
             })),
             startSeconds + samples.length / sampleRate,
           );
+      if (liveHaltRef.current) {
+        setLiveStatus("listening");
+        return;
+      }
       const cursorBeforeAudio = liveMatchStateRef.current.cursor;
+      // The follow model owns the cursor even on this slower path, so it is
+      // also where a stop has to be decided. The Whisper back-check below runs
+      // seconds behind the narrator and would stop them on a word they left
+      // long ago; it stays a flag.
       const result = matchLiveWindow({
         chapterId,
         expected: expectedWords,
@@ -3048,9 +3486,14 @@ function Teleprompter({
         flagsEnabled: liveFollowStreamRef.current ? false : liveStateRef.current.enabled,
         confidenceThreshold: 0.9,
         dismissedIds: liveDismissedRef.current,
+        haltOnMismatch: stopOnMismatchRef.current,
+        haltResumeIndex: liveHaltResumeIndexRef.current,
       });
       liveMatchStateRef.current = result.state;
       commitLiveCursor(result.state.cursor);
+      if (result.halt) {
+        haltLiveFollow(result.halt);
+      }
       if (result.flag) {
         setLiveFlag(result.flag);
         setLiveDetectedFlags((flags) => flags.some((candidate) => candidate.id === result.flag!.id) ? flags : [...flags, result.flag!]);
@@ -3097,13 +3540,20 @@ function Teleprompter({
       liveQcBufferRef.current = createLiveQcBuffer();
       return;
     }
-    liveQcBufferRef.current = appendLiveQcSamples(
-      liveQcBufferRef.current,
-      samples,
-      cursorBeforeAudio,
-      startSeconds,
-      coveredCursor,
-    );
+    // While the page is stopped the narrator is deciding or re-reading, and the
+    // QC cursor is frozen on the word that stopped them. Grading that audio
+    // would file pickups against a position they are about to leave. Audio from
+    // before the stop is already buffered and still gets graded, so the slip
+    // that caused the stop is not lost.
+    if (!liveHaltRef.current) {
+      liveQcBufferRef.current = appendLiveQcSamples(
+        liveQcBufferRef.current,
+        samples,
+        cursorBeforeAudio,
+        startSeconds,
+        coveredCursor,
+      );
+    }
     // Encoding a QC clip is heavy and this runs from the audio callback on the
     // streaming path. Hand it to a later task so capture never waits on it.
     window.setTimeout(() => {
@@ -3195,7 +3645,7 @@ function Teleprompter({
       // confidence bar, so against a live stream it can only push the cursor
       // past where the narrator actually is — and one stray word here moves the
       // highlight a whole line in line and paragraph modes.
-      if (!liveFollowStreamRef.current) {
+      if (!liveFollowStreamRef.current && !liveHaltRef.current) {
         const followBeforeWhisper = liveMatchStateRef.current;
         const whisperFollow = matchLiveWindow({
           chapterId,
@@ -3471,7 +3921,11 @@ function Teleprompter({
       // Load the persistent local recognizer while the button visibly says
       // "Starting". Subsequent microphone windows reuse that loaded model;
       // the main process releases it when this session stops.
-      const warmed = await window.boothDesk.startLiveTranscription();
+      const warmed = await window.boothDesk.startLiveTranscription({
+        folder: liveTapeContextRef.current.folder,
+        project: liveTapeContextRef.current.project,
+        chapterId: chapterIdRef.current,
+      });
       liveFollowStreamRef.current = Boolean(warmed?.streaming);
       // A Parakeet follow server can still warm successfully when Whisper
       // failed. Keep voice-follow usable, but make the missing proofreader
@@ -3512,6 +3966,9 @@ function Teleprompter({
       liveLeadRef.current = createLeadState(startingCursor, performance.now());
       liveStreamSecondsRef.current = 0;
       liveSpeechAtRef.current = null;
+      liveHaltRef.current = null;
+      liveHaltResumeIndexRef.current = -1;
+      setLiveHalt(null);
       setLiveCursor(startingCursor);
       liveDismissedRef.current = [];
       setLiveHeardText("");
@@ -3547,9 +4004,19 @@ function Teleprompter({
     }
   }
 
+  function startNarrationNow() {
+    setPronunciationBriefingOpen(false);
+    setPronunciationCheckState("idle");
+    void startLiveCapture();
+  }
+
   function setLiveEnabled(enabled: boolean) {
     if (enabled) {
-      void startLiveCapture();
+      if (briefingGlossary.length > 0) {
+        setPronunciationBriefingOpen(true);
+      } else {
+        startNarrationNow();
+      }
       return;
     }
     void stopLiveCapture({ flushQc: true });
@@ -3557,6 +4024,18 @@ function Teleprompter({
     liveStateRef.current = nextState;
     setLiveState(nextState);
     setLiveFlag(null);
+  }
+
+  async function checkChapterNow() {
+    setPronunciationCheckState("running");
+    setPronunciationCheckSource(proofAudioSource(chapter)?.kind ?? null);
+    const checked = await onProof(chapterId);
+    setPronunciationCheckState(checked ? "ready" : "failed");
+  }
+
+  async function leavePage(next: () => void) {
+    await stopLiveCapture({ flushQc: false });
+    next();
   }
 
   function decideLiveFlag(isTrueMismatch: boolean) {
@@ -3600,8 +4079,16 @@ function Teleprompter({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (pronunciationBriefingOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setPronunciationBriefingOpen(false);
+        }
+        return;
+      }
       if (event.key === "Escape") {
-        onClose();
+        event.preventDefault();
+        void leavePage(onClose);
       } else if (event.key === " " || event.key === "PageDown") {
         event.preventDefault();
         scrollRef.current?.scrollBy({ top: Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
@@ -3612,7 +4099,7 @@ function Teleprompter({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, pronunciationBriefingOpen]);
 
   // Word mode marks a single word; the wider modes band a range instead, so
   // only one of the two is ever active.
@@ -3691,14 +4178,14 @@ function Teleprompter({
               <button type="button" className={mode === "proof" ? "active" : ""} role="tab" aria-selected={mode === "proof"} onClick={() => setMode("proof")}>Proofing</button>
             </div>
             <button type="button" className={materialsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={materialsOpen} onClick={() => setMaterialsOpen((open) => !open)}>Materials</button>
-            <button type="button" className="booth-icon-button" onClick={onClose}>Leave</button>
+            <button type="button" className="booth-icon-button" onClick={() => void leavePage(onClose)}>Leave</button>
           </div>
         </header>
 
         {mode === "narrate" ? (
           <>
             <p className="booth-honesty">
-              Voice follow is experimental. It listens to move the page; it does not save a recording. Space and PageDown always remain available.
+              Voice follow is experimental. Stop or Leave keeps a booth tape so Review can transcribe this read. That tape is not the chapter take. Space and PageDown always remain available.
               {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
               {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
             </p>
@@ -3723,6 +4210,24 @@ function Teleprompter({
               cursor={liveCursor}
               totalWords={expectedWords.length}
             />
+
+            {liveState.enabled && upcomingPronunciation ? (
+              <PronunciationCueBar
+                entry={upcomingPronunciation.entry}
+                linesAhead={upcomingPronunciation.rowsAhead}
+                onPlay={() => activateGlossary(upcomingPronunciation.entry)}
+              />
+            ) : null}
+
+            {liveHalt ? (
+              <div className="booth-halt" role="alert">
+                <div className="booth-halt-copy">
+                  <strong>{liveHaltCopy(liveHalt).title}</strong>
+                  <span>{liveHaltCopy(liveHalt).detail}</span>
+                </div>
+                <button type="button" className="primary-button" onClick={resumeFromHalt}>Continue</button>
+              </div>
+            ) : null}
 
             <div
               ref={scrollRef}
@@ -3798,6 +4303,9 @@ function Teleprompter({
                               mark.follow && highlight === "word" ? "teleprompter-word-live" : "",
                               promptBandCovers(liveBand, currentWordIndex, true) ? "teleprompter-band-live" : "",
                               mark.flag ? "teleprompter-word-flag" : "",
+                              // Marked in every highlight mode: a band alone
+                              // cannot say which of its words to restart on.
+                              liveHalt?.expectedIndex === currentWordIndex ? "teleprompter-word-halt" : "",
                             ].filter(Boolean).join(" ") || undefined;
                             return (
                               <span
@@ -3823,11 +4331,44 @@ function Teleprompter({
                 })}
                 <section className="booth-end-card">
                   <strong>Finished this chapter?</strong>
-                  <span>Attach the take and check it against the manuscript while the read is still fresh.</span>
+                  <span>Hit Stop, listen the read back, then check it against the manuscript while it is still fresh.</span>
                   <button type="button" className="primary-button" onClick={() => setMode("proof")}>Open proofing</button>
                 </section>
               </article>
             </div>
+
+            {/*
+              * Hearing the read back is the first thing a narrator wants after
+              * Stop, so it happens here rather than behind a trip to Review.
+              * Hidden while recording: the tape being offered would be the
+              * previous read, which is not what the button next to it means.
+              */}
+            {tapeUrl && !liveState.enabled ? (
+              <section className={`booth-playback${tapeTake > 0 ? " fresh" : ""}`} aria-label="Listen back to this read">
+                <div className="booth-playback-head">
+                  <div>
+                    <strong>{tapeTake > 0 ? "Saved this read" : "Your last read"}</strong>
+                    <span>
+                      {tapeSeconds !== null ? `${formatLength(tapeSeconds)} · ` : ""}
+                      A booth tape, not the chapter take. Listen back, then check it against the page.
+                    </span>
+                  </div>
+                  <button type="button" className="secondary-button" onClick={() => setMode("proof")}>
+                    Check this read
+                  </button>
+                </div>
+                <audio controls src={tapeUrl} preload="metadata" />
+              </section>
+            ) : null}
+            {tapeTake > 0 && briefingGlossary.length > 0 && !liveState.enabled ? (
+              <PronunciationCheckPanel
+                state={pronunciationCheckState}
+                checks={pronunciationChecks}
+                entries={briefingGlossary}
+                onPlay={activateGlossary}
+                onListen={(check) => onListenPronunciation(check, pronunciationCheckSource === "live")}
+              />
+            ) : null}
           </>
         ) : (
           <section className="booth-proof-panel" aria-label={`Proofing ${title}`}>
@@ -3839,9 +4380,9 @@ function Teleprompter({
               </div>
               <span className={`booth-chapter-state large ${currentChapterStatus.tone}`}>{currentChapterStatus.label}</span>
             </header>
-            {chapter.audio_path ? (
+            {proofAudioSource(chapter) ? (
               <>
-                {audioUrl ? <audio controls src={audioUrl} preload="metadata" /> : <p className="booth-empty">Loading the attached recording…</p>}
+                {audioUrl ? <audio controls src={audioUrl} preload="metadata" /> : <p className="booth-empty">Loading the recording…</p>}
                 <div className="booth-proof-stats">
                   <article><strong>{proof?.pickups.filter((pickup) => pickup.status === "open").length ?? chapter.open_pickups ?? 0}</strong><span>Open pickups</span></article>
                   <article><strong>{proof?.pickups.filter((pickup) => pickup.kind !== "pause" && pickup.status === "open").length ?? "—"}</strong><span>Word changes</span></article>
@@ -3849,10 +4390,19 @@ function Teleprompter({
                   <article><strong>{acxReport ? checkStatusLabel(acxReport.traffic_light) : chapter.acx_traffic_light ? checkStatusLabel(chapter.acx_traffic_light) : "Not checked"}</strong><span>Audio check</span></article>
                 </div>
                 <div className="booth-proof-actions">
-                  <button type="button" className="primary-button" disabled={busyAction !== null} onClick={() => onProof(chapterId)}>{busyAction?.startsWith("proof-") ? "Checking…" : "Check this chapter"}</button>
+                  <button type="button" className="primary-button" disabled={busyAction !== null} onClick={() => void checkChapterNow()}>{busyAction?.startsWith("proof-") ? "Checking…" : "Check this chapter"}</button>
                   <button type="button" className="secondary-button" disabled={busyAction !== null} onClick={() => onCheckAudio(chapterId)}>{busyAction?.startsWith("meter-") ? "Measuring…" : "Check audio levels"}</button>
-                  <button type="button" className="secondary-button" onClick={onReview}>Open full review</button>
+                  <button type="button" className="secondary-button" onClick={() => void leavePage(onReview)}>Open full review</button>
                 </div>
+                {briefingGlossary.length > 0 ? (
+                  <PronunciationCheckPanel
+                    state={pronunciationCheckState}
+                    checks={pronunciationChecks}
+                    entries={briefingGlossary}
+                    onPlay={activateGlossary}
+                    onListen={(check) => onListenPronunciation(check, pronunciationCheckSource === "live")}
+                  />
+                ) : null}
               </>
             ) : (
               <div className="booth-proof-empty">
@@ -3935,6 +4485,10 @@ function Teleprompter({
                   <span><strong>Flag possible word changes</strong><em>Keeps a booth tape so you can Listen to flags. That tape is not the chapter take.</em></span>
                   <input type="checkbox" checked={liveState.enabled} disabled={liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
                 </label>
+                <label className="booth-toggle">
+                  <span><strong>Stop when the read leaves the page</strong><em>Holds the page after {LIVE_HALT_RUN_WORDS} words in a row that do not match, and marks where the line was lost. One misheard word never stops you.</em></span>
+                  <input type="checkbox" checked={stopOnMismatch} onChange={(event) => setStopOnMismatch(event.target.checked)} />
+                </label>
               </div>
             ) : null}
           </div>
@@ -4001,8 +4555,197 @@ function Teleprompter({
           )}
         </aside>
       ) : null}
+      {pronunciationBriefingOpen ? (
+        <PronunciationBriefing
+          chapterTitle={title}
+          entries={briefingGlossary}
+          onPlay={activateGlossary}
+          onCancel={() => setPronunciationBriefingOpen(false)}
+          onStart={startNarrationNow}
+        />
+      ) : null}
     </div>
   );
+}
+
+function PronunciationBriefing({
+  chapterTitle,
+  entries,
+  onPlay,
+  onCancel,
+  onStart,
+}: {
+  chapterTitle: string;
+  entries: GlossaryEntry[];
+  onPlay: (entry: GlossaryEntry) => void;
+  onCancel: () => void;
+  onStart: () => void;
+}) {
+  const undecided = entries.filter((entry) => !entry.respell?.trim() && !entry.clip_path).length;
+  return (
+    <div className="pronunciation-briefing-shade" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) {
+        onCancel();
+      }
+    }}>
+      <section className="pronunciation-briefing" role="dialog" aria-modal="true" aria-labelledby="pronunciation-briefing-title">
+        <header>
+          <div>
+            <p className="card-kicker">Before this take</p>
+            <h2 id="pronunciation-briefing-title">Pronunciations in {chapterTitle}</h2>
+            <p>
+              Review these once, then read without interruption. Kosmos will give you a quiet reminder
+              shortly before each word.
+            </p>
+          </div>
+          <span>{entries.length} {entries.length === 1 ? "word" : "words"}</span>
+        </header>
+        <ul>
+          {entries.map((entry) => (
+            <li key={entry.id} className={!entry.respell?.trim() && !entry.clip_path ? "undecided" : undefined}>
+              <div>
+                <strong>{entry.spelling}</strong>
+                <span>{entry.respell?.trim() || "Pronunciation still needs a decision"}</span>
+                {entry.voice_note?.trim() ? <p>{entry.voice_note}</p> : null}
+              </div>
+              {entry.clip_path ? (
+                <button type="button" className="secondary-button" onClick={() => onPlay(entry)}>▶ Hear</button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {undecided > 0 ? (
+          <p className="pronunciation-briefing-warning">
+            {undecided} {undecided === 1 ? "word has" : "words have"} no agreed pronunciation yet. You can still record, but settle {undecided === 1 ? "it" : "them"} before the final take.
+          </p>
+        ) : null}
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Not yet</button>
+          <button type="button" className="primary-button" onClick={onStart}>Start narrating</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function PronunciationCueBar({
+  entry,
+  linesAhead,
+  onPlay,
+}: {
+  entry: GlossaryEntry;
+  linesAhead: number;
+  onPlay: () => void;
+}) {
+  return (
+    <aside className="pronunciation-cue" aria-label={`Pronunciation coming up: ${entry.spelling}`}>
+      <span className="pronunciation-cue-kicker">
+        {linesAhead === 0 ? "On this line" : linesAhead === 1 ? "Next line" : "Coming up"}
+      </span>
+      <div>
+        <strong>{entry.spelling}</strong>
+        <span>{entry.respell?.trim() || "No respelling agreed yet"}</span>
+        {entry.voice_note?.trim() ? <p>{entry.voice_note}</p> : null}
+      </div>
+      {entry.clip_path ? <button type="button" onClick={onPlay}>▶ Hear</button> : null}
+    </aside>
+  );
+}
+
+function PronunciationCheckPanel({
+  state,
+  checks,
+  entries,
+  onPlay,
+  onListen,
+}: {
+  state: "idle" | "running" | "ready" | "failed";
+  checks: PronunciationCheck[];
+  entries: GlossaryEntry[];
+  onPlay: (entry: GlossaryEntry) => void;
+  onListen: (check: PronunciationCheck) => void;
+}) {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const matched = checks.filter((check) => check.status === "matches").length;
+  const listen = checks.filter((check) => ["inconsistent", "review", "unverified"].includes(check.status)).length;
+  return (
+    <section className="pronunciation-check" aria-labelledby="pronunciation-check-title">
+      <header>
+        <div>
+          <p className="card-kicker">After this take</p>
+          <h3 id="pronunciation-check-title">Pronunciation check</h3>
+        </div>
+        {state === "running" ? <span className="checking">Checking automatically…</span> : null}
+        {state !== "running" && checks.length > 0 ? (
+          <span>{matched} matched · {listen} to listen</span>
+        ) : null}
+      </header>
+      {state === "running" ? (
+        <p>Transcribing the saved read and comparing this chapter’s names with the agreed guide.</p>
+      ) : state === "failed" ? (
+        <p>The automatic check could not finish. Use “Check this chapter” to try the recording again.</p>
+      ) : checks.length === 0 ? (
+        <p>Check this chapter to compare its recorded pronunciations with the guide.</p>
+      ) : (
+        <>
+          <ul>
+            {checks.map((check) => {
+              const entry = byId.get(check.entryId);
+              return (
+                <li key={check.entryId} className={`status-${check.status}`}>
+                  <div>
+                    <strong>{check.spelling}</strong>
+                    <span>{check.respell ? `Guide: ${check.respell}` : "No agreed pronunciation"}</span>
+                    <p>{pronunciationCheckDetail(check)}</p>
+                  </div>
+                  <em>{pronunciationCheckLabel(check.status)}</em>
+                  {check.start !== undefined ? <button type="button" onClick={() => onListen(check)}>▶ Take</button> : null}
+                  {entry?.clip_path ? <button type="button" onClick={() => onPlay(entry)}>▶ Reference</button> : null}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="pronunciation-check-honesty">
+            The speech model is a screen, not a verdict. “Needs a listen” means it could not prove the sound from text alone; play that moment before requesting a pickup.
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
+
+function pronunciationCheckLabel(status: PronunciationCheck["status"]): string {
+  switch (status) {
+    case "matches": return "Matches guide";
+    case "inconsistent": return "Different readings";
+    case "review": return "Needs a listen";
+    case "unverified": return "Needs a listen";
+    case "undecided": return "Not decided";
+    case "unheard": return "Not heard";
+  }
+}
+
+function pronunciationCheckDetail(check: PronunciationCheck): string {
+  if (check.status === "unverified") {
+    return "The recogniser returned the manuscript spelling, so it cannot prove how the word sounded.";
+  }
+  if (check.status === "unheard") {
+    return "No aligned speech was available for this word.";
+  }
+  if (check.status === "undecided") {
+    return check.heard.length > 0
+      ? `Heard as “${check.heard.join("” and “")}”; choose the book’s pronunciation.`
+      : "Choose the book’s pronunciation before the final take.";
+  }
+  if (check.status === "inconsistent") {
+    return `Heard as “${check.heard.join("” and “")}” in this chapter.`;
+  }
+  if (check.status === "matches") {
+    return `Heard as “${check.heard.join("” and “")}” across ${check.checkedCount} ${check.checkedCount === 1 ? "place" : "places"}.`;
+  }
+  return check.heard.length > 0
+    ? `The recogniser heard “${check.heard.join("” and “")}”; compare it with the reference.`
+    : "Listen to the recording and compare it with the reference.";
 }
 
 function LiveVoiceStatus({
@@ -5954,6 +6697,7 @@ function ReviewPage({
   onProof,
   onPlayPickup,
   listenDisabledReason,
+  punchDisabledReason,
   onPlayRange,
   onExportMarkers,
   onExportReport,
@@ -5980,6 +6724,7 @@ function ReviewPage({
   onProof: () => void;
   onPlayPickup: (pickup: Pickup) => void;
   listenDisabledReason?: (pickup: Pickup) => string | null;
+  punchDisabledReason?: (pickup: Pickup) => string | null;
   onPlayRange: (start: number, end?: number) => void;
   onExportMarkers: () => void;
   onExportReport: () => void;
@@ -6000,8 +6745,8 @@ function ReviewPage({
             <p className="card-kicker">Listen against the page</p>
             <h3>{chapter.title}</h3>
           </div>
-          <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
-            {chapter.audio_path ? "Take ready" : "Need a take"}
+          <span className={proofAudioSource(chapter) ? "status-pill attached" : "status-pill"}>
+            {chapter.audio_path ? "Take ready" : chapter.live_audio_path ? "Booth tape" : "Need a take"}
           </span>
         </header>
         {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
@@ -6035,7 +6780,7 @@ function ReviewPage({
           <button
             className="primary-button"
             type="button"
-            disabled={!chapter.audio_path || busyAction !== null}
+            disabled={!proofAudioSource(chapter) || busyAction !== null}
             onClick={onProof}
           >
             {busyAction === `proof-${chapter.id}` ? "Checking…" : "Check chapter"}
@@ -6051,6 +6796,7 @@ function ReviewPage({
             busyAction={busyAction}
             onPlay={onPlayPickup}
             listenDisabledReason={listenDisabledReason}
+            punchDisabledReason={punchDisabledReason}
             onExportMarkers={onExportMarkers}
             onExportReport={onExportReport}
             onExportPacket={onExportPacket}
@@ -6391,7 +7137,7 @@ function PickupComparisonPanel({ folder, comparisons }: { folder: string; compar
   );
 }
 
-export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, punchDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; punchDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -6471,7 +7217,8 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
                     <button
                       className="action-button small accent"
                       type="button"
-                      disabled={busyAction !== null}
+                      disabled={busyAction !== null || Boolean(punchDisabledReason?.(pickup))}
+                      title={punchDisabledReason?.(pickup) ?? "Read the whole line again"}
                       onClick={() => onPunch(pickup)}
                     >
                       Record pickup
@@ -6527,6 +7274,9 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
                   </div>
                 </details>
               </div>
+              {pickup.line_text ? (
+                <p className="pickup-line-text" lang="en">{pickup.line_text}</p>
+              ) : null}
               {pickup.note ? <p className="pickup-note-text">{pickup.note}</p> : null}
             </li>
           ))}

@@ -180,6 +180,18 @@ describe("teleprompter model", () => {
     expect(relevantPromptGlossary(spans, glossary).map((entry) => entry.id)).toEqual(["elena", "kael"]);
   });
 
+  it("does not brief a narrator on a name buried inside another word", () => {
+    const glossary: GlossaryEntry[] = [
+      { id: "ann", spelling: "Ann", respell: "AN", frequency: 1, source: "user" },
+      { id: "ann-marie", spelling: "Ann Marie", respell: "AN muh-REE", frequency: 1, source: "user" },
+    ];
+    const spans: PromptSegment[] = [
+      { text: "The annual meeting starts before Ann Marie arrives.", seat: "narration", style: [] },
+    ];
+
+    expect(relevantPromptGlossary(spans, glossary).map((entry) => entry.id)).toEqual(["ann-marie"]);
+  });
+
   it("turns scroll position into bounded progress and honest time remaining", () => {
     expect(readingProgress(300, 1_000, 400)).toBe(0.5);
     expect(readingProgress(-50, 1_000, 400)).toBe(0);

@@ -1794,6 +1794,48 @@ button {
   font-size: 12px;
 }
 
+/*
+ * The line to read again, in the pickup recorder. Sized like a teleprompter
+ * rather than like body copy, because it is being performed off the screen.
+ */
+.punch-line {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.punch-preroll {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.punch-preroll span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/*
+ * The line the flag sits in. Set in the reading serif rather than the interface
+ * sans: this is manuscript, and it is what the narrator will read aloud again.
+ */
+.pickup-line-text {
+  grid-column: 2 / -1;
+  margin: 0;
+  max-width: 68ch;
+  color: var(--ink);
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .pickup-actions {
   display: flex;
   align-items: center;
@@ -2936,6 +2978,424 @@ button {
   justify-content: flex-end;
   color: inherit;
   opacity: 0.72;
+}
+
+/*
+ * The read has stopped. Unlike the status pill this is not glanceable trim: the
+ * page will not move again until it is answered, so it takes the full width and
+ * the only button on it is the way out.
+ */
+.booth-halt {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 22px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  background: var(--bad-soft);
+  color: #3a1f1a;
+  font-family: var(--font-ui);
+  box-shadow: var(--shadow);
+}
+
+/*
+ * The read, offered back the moment Stop finishes writing it. Sits between the
+ * page and the dock, next to the button that was just pressed, because hearing
+ * it back is the first thing wanted and a trip to Review is too far. Drawn as a
+ * light chip rather than inheriting the page, so it reads the same on all three
+ * booth themes.
+ */
+.booth-playback {
+  display: grid;
+  gap: 8px;
+  margin: 0 22px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffcf8;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  box-shadow: var(--shadow);
+}
+
+.booth-playback.fresh {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.booth-playback-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.booth-playback-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.booth-playback-head strong {
+  font-size: 13px;
+}
+
+.booth-playback-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.booth-playback audio {
+  width: 100%;
+  height: 32px;
+}
+
+/*
+ * Pronunciation help is intentionally quiet in the booth. It appears ahead of
+ * the word but never covers the page, moves the cursor, or plays by itself.
+ */
+.pronunciation-cue {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  margin: 0 22px 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(126, 102, 235, 0.34);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #f1edff;
+  font-family: var(--font-ui);
+  box-shadow: 0 8px 24px rgba(53, 37, 116, 0.08);
+}
+
+.pronunciation-cue-kicker {
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--accent-ink);
+  background: rgba(126, 102, 235, 0.13);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pronunciation-cue > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pronunciation-cue strong {
+  font-size: 13px;
+}
+
+.pronunciation-cue > div > span {
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.pronunciation-cue p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pronunciation-cue button,
+.pronunciation-check li > button {
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+/*
+ * A saved read turns the guide into a short, actionable report. Every uncertain
+ * row can play both the take and the human reference; the recogniser never gets
+ * to pronounce a narrator wrong without a human listen.
+ */
+.pronunciation-check {
+  display: grid;
+  gap: 10px;
+  width: min(780px, calc(100% - 44px));
+  margin: 0 auto 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: #fffcf8;
+  font-family: var(--font-ui);
+  box-shadow: var(--shadow);
+}
+
+.booth-proof-panel .pronunciation-check {
+  width: 100%;
+  margin-top: 22px;
+}
+
+.pronunciation-check > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pronunciation-check h3 {
+  margin: 1px 0 0;
+  font-size: 15px;
+}
+
+.pronunciation-check > header > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pronunciation-check > header > .checking {
+  color: var(--warn);
+}
+
+.pronunciation-check > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pronunciation-check ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pronunciation-check li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.pronunciation-check li > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pronunciation-check li strong {
+  font-size: 12px;
+}
+
+.pronunciation-check li span,
+.pronunciation-check li p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.pronunciation-check li em {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  border-radius: 999px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.pronunciation-check li.status-matches em {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.pronunciation-check li.status-inconsistent em {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.pronunciation-check-honesty {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/*
+ * Starting a take is the one deliberate pause in this workflow. The briefing
+ * is a compact checklist, not a settings screen, and disappears for the whole
+ * read once Start is pressed.
+ */
+.pronunciation-briefing-shade {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(19, 16, 14, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.pronunciation-briefing {
+  display: grid;
+  gap: 16px;
+  width: min(680px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-ui);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+}
+
+.pronunciation-briefing > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.pronunciation-briefing h2 {
+  margin: 2px 0 8px;
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.pronunciation-briefing header p:last-child {
+  max-width: 55ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pronunciation-briefing header > span {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-radius: 999px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.pronunciation-briefing ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pronunciation-briefing li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pronunciation-briefing li.undecided {
+  border-color: #d8b16b;
+  background: var(--warn-soft);
+}
+
+.pronunciation-briefing li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pronunciation-briefing li strong {
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 17px;
+}
+
+.pronunciation-briefing li span {
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pronunciation-briefing li p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.pronunciation-briefing-warning {
+  margin: 0;
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.pronunciation-briefing > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.booth-halt-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.booth-halt-copy strong {
+  font-size: 13px;
+}
+
+.booth-halt-copy span {
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.82;
+}
+
+.booth-halt .primary-button {
+  flex: 0 0 auto;
+}
+
+/*
+ * Where to pick the read back up. A dashed ring rather than a fill: the follow
+ * highlight may be sitting on this same word, and two solid backgrounds on one
+ * word read as a rendering fault.
+ */
+.teleprompter-word-halt {
+  position: relative;
+  padding: 0 0.06em;
+  border-radius: 0.18em;
+  outline: 2px dashed var(--bad);
+  outline-offset: 1px;
 }
 
 .live-model-state {
@@ -5310,5 +5770,33 @@ button {
 
   .booth-proof-panel {
     padding: 24px 18px;
+  }
+
+  .pronunciation-cue {
+    grid-template-columns: 1fr auto;
+  }
+
+  .pronunciation-cue-kicker {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .pronunciation-cue > div {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .pronunciation-briefing ul {
+    grid-template-columns: 1fr;
+  }
+
+  .pronunciation-check li {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pronunciation-check li > div {
+    flex-basis: 100%;
   }
 }

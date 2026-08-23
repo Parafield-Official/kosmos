@@ -31,6 +31,7 @@ const {
 const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
+const { createLiveTape } = require("./live-tape.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
 const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 const {
@@ -77,6 +78,8 @@ let pronunciationLexicon = null;
 const liveAsrServer = new PersistentWhisperServer();
 const liveFollowServer = new PersistentParakeetServer();
 const liveFollowStream = new PersistentParakeetLive();
+const boothTape = createLiveTape();
+let boothTapeContext = null;
 
 // Words leave the follow model on its own schedule, so broadcast them the
 // moment they appear rather than attaching them to an audio request.
@@ -3062,7 +3065,15 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
   }
   return { ...transcription, silences };
 });
-ipcMain.handle("proof:start-live", async () => {
+ipcMain.handle("proof:start-live", async (_event, payload) => {
+  if (payload?.chapterId && payload?.folder && payload?.project) {
+    boothTape.begin({ chapterId: payload.chapterId });
+    boothTapeContext = {
+      folder: payload.folder,
+      project: payload.project,
+      chapterId: payload.chapterId,
+    };
+  }
   try {
     return await warmLiveTranscription();
   } catch (error) {
@@ -3073,11 +3084,33 @@ ipcMain.handle("proof:start-live", async () => {
     return { persistent: false, acceleration: "CLI fallback" };
   }
 });
-ipcMain.handle("proof:stop-live", () => {
+ipcMain.handle("proof:stop-live", async () => {
   liveFollowStream.stop();
   liveFollowServer.stop();
   liveAsrServer.stop();
-  return { stopped: true };
+  let saved = { stopped: true };
+  if (boothTape.shouldKeep() && boothTapeContext) {
+    try {
+      const wav = boothTape.encode();
+      const result = await saveRecordingWav(boothTapeContext.folder, boothTapeContext.project, {
+        kind: "live",
+        chapterId: boothTapeContext.chapterId,
+        wavBase64: Buffer.from(wav).toString("base64"),
+      });
+      saved = {
+        stopped: true,
+        live_audio_path: result.path,
+        folder: result.folder,
+        project: result.project,
+      };
+    } catch (error) {
+      console.warn(`Booth tape save failed: ${error?.message ?? error}`);
+      saved = { stopped: true, tapeError: String(error?.message ?? error) };
+    }
+  }
+  boothTape.take();
+  boothTapeContext = null;
+  return saved;
 });
 ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
   if (!payload?.pcmBase64 && (!payload?.audioBase64 || !payload?.mimeType)) {
@@ -3086,11 +3119,15 @@ ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
   return transcribeAudioBuffer(payload);
 });
 ipcMain.on("live:pcm", (_event, payload) => {
-  if (!payload?.pcmBase64 || !liveFollowStream.running) {
+  if (!payload?.pcmBase64) {
     return;
   }
   try {
-    liveFollowStream.write(decodePcmBase64(payload.pcmBase64));
+    const pcm = decodePcmBase64(payload.pcmBase64);
+    boothTape.append(pcm);
+    if (liveFollowStream.running) {
+      liveFollowStream.write(pcm);
+    }
   } catch (error) {
     // Dropping a block costs a moment of follow accuracy; throwing here would
     // surface as an unhandled rejection in the audio path.
