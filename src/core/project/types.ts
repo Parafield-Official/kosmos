@@ -105,6 +105,10 @@ export interface PunchRecording {
   t_end?: number;
   expected?: string;
   heard?: string;
+  /** Whether silence was trimmed from this clip before replaying the edit manifest. */
+  trim_silence?: boolean;
+  /** Applied edits remain explicit until the narrator has listened and verified the result. */
+  verification_status?: "needs_verification" | "verified";
   created_at: string;
 }
 

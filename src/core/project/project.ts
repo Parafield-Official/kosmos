@@ -356,7 +356,7 @@ function validatePunchRecordings(value: unknown, chapterIds: Set<string>): void 
     if (!punch || typeof punch !== "object") {
       throw new Error(`project.json punch ${position + 1} must be an object`);
     }
-    const candidate = punch as Partial<{ id: string; chapter_id: string; path: string; edited_path: string; created_at: string; t_start: number; t_end: number; expected: string; heard: string }>;
+    const candidate = punch as Partial<{ id: string; chapter_id: string; path: string; edited_path: string; created_at: string; t_start: number; t_end: number; expected: string; heard: string; trim_silence: boolean; verification_status: "needs_verification" | "verified" }>;
     for (const field of ["id", "chapter_id", "path", "created_at"] as const) {
       if (typeof candidate[field] !== "string" || candidate[field].trim().length === 0) {
         throw new Error(`project.json punch ${position + 1} is missing ${field}`);
@@ -387,6 +387,12 @@ function validatePunchRecordings(value: unknown, chapterIds: Set<string>): void 
       if (candidate[field] !== undefined && typeof candidate[field] !== "string") {
         throw new Error(`project.json punch ${candidate.id} has invalid ${field} text`);
       }
+    }
+    if (candidate.trim_silence !== undefined && typeof candidate.trim_silence !== "boolean") {
+      throw new Error(`project.json punch ${candidate.id} has invalid trim behavior`);
+    }
+    if (candidate.verification_status !== undefined && candidate.verification_status !== "needs_verification" && candidate.verification_status !== "verified") {
+      throw new Error(`project.json punch ${candidate.id} has an invalid verification status`);
     }
   });
 }

@@ -107,7 +107,7 @@
 }
 
 .comparison-list li {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(180px, 1fr) repeat(4, auto);
 }
 
 .comparison-list li > div {
@@ -4658,6 +4658,17 @@ button {
   height: 34px;
 }
 
+.pickup-context-comparison {
+  display: grid;
+  gap: 10px;
+}
+
+.pickup-context-comparison label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+
 .recorder-review-actions {
   display: flex;
   flex-wrap: wrap;
@@ -5161,6 +5172,14 @@ button {
   .pickup-note-text {
     flex: 1 1 100%;
     order: 5;
+  }
+
+  .comparison-list li {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .comparison-list li > div {
+    grid-column: 1 / -1;
   }
 }
 

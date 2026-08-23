@@ -28,7 +28,12 @@ const {
   projectAudioPath,
   projectAssetPath,
 } = require("./project-path.cjs");
-const { normalizePunchBounds } = require("./punch.cjs");
+const {
+  buildPunchPreview,
+  canonicalEditedPath,
+  normalizePunchBounds,
+  rebuildPunchTimeline,
+} = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { createLiveTape } = require("./live-tape.cjs");
@@ -1603,14 +1608,18 @@ async function applyPunchRecording(folder, project, payload) {
   if (replacementDuration > MAX_AUDIO_SECONDS) {
     throw new Error(`Punch WAV exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute limit`);
   }
-  const original = await decodeMono44100(projectAssetPath(folder, chapter.audio_path));
-  const originalDuration = original.length / 44100;
+  const rawAudioPath = chapter.raw_audio_path || chapter.audio_path;
+  const original = await decodeMono44100(projectAssetPath(folder, rawAudioPath));
+  const current = chapter.audio_path === rawAudioPath
+    ? original
+    : await decodeMono44100(projectAssetPath(folder, chapter.audio_path));
+  const currentDuration = current.length / 44100;
   let punchBounds;
   try {
-    punchBounds = normalizePunchBounds(payload.tStart, payload.tEnd, originalDuration);
+    punchBounds = normalizePunchBounds(payload.tStart, payload.tEnd, currentDuration);
   } catch {
     throw new Error(
-      `Punch boundaries must stay within the attached take (0.000–${originalDuration.toFixed(3)} seconds).`,
+      `Punch boundaries must stay within the attached take (0.000–${currentDuration.toFixed(3)} seconds).`,
     );
   }
   let replacementSamples = mixInterleavedToMono(replacement.samples, replacement.channels);
@@ -1621,28 +1630,83 @@ async function applyPunchRecording(folder, project, payload) {
       padMs: 50,
     });
   }
-  const edited = spliceCore.splicePunch({
-    original,
-    replacement: replacementSamples,
-    sampleRate: 44100,
-    startSeconds: punchBounds.start,
-    endSeconds: punchBounds.end,
-    crossfadeMs: 10,
-  });
-
   const stamp = assetStamp();
   const punchRelative = `audio/pickups/${chapter.id}-${slugFileName(payload.pickupId || "manual")}-${stamp}.wav`;
-  const editedRelative = `audio/${String(chapter.index).padStart(2, "0")}_edited_${stamp}.wav`;
+  const editedRelative = canonicalEditedPath(chapter);
+  const nextPunch = {
+    id: `punch-${stamp}-${(project.punch_recordings?.length ?? 0) + 1}`,
+    chapter_id: chapter.id,
+    ...(payload.pickupId ? { pickup_id: payload.pickupId } : {}),
+    ...(typeof payload.expected === "string" ? { expected: payload.expected.slice(0, 1000) } : {}),
+    ...(typeof payload.heard === "string" ? { heard: payload.heard.slice(0, 1000) } : {}),
+    path: punchRelative,
+    edited_path: editedRelative,
+    t_start: punchBounds.start,
+    t_end: punchBounds.end,
+    trim_silence: payload.trimSilence !== false,
+    verification_status: "needs_verification",
+    created_at: new Date().toISOString(),
+  };
+  const chapterPunches = [
+    ...(project.punch_recordings ?? []).filter((punch) =>
+      punch.chapter_id === chapter.id
+      && typeof punch.path === "string"
+      && Number.isFinite(punch.t_start)
+      && Number.isFinite(punch.t_end)
+      && punch.t_end > punch.t_start,
+    ),
+    nextPunch,
+  ];
+  const editedAbsolute = projectAssetPath(folder, editedRelative);
+  let rollbackEditedAbsolute = null;
+  try {
+    await fs.access(editedAbsolute);
+    rollbackEditedAbsolute = `${editedAbsolute}.rollback-${process.pid}-${crypto.randomUUID()}`;
+    await copyFileAtomic(editedAbsolute, rollbackEditedAbsolute);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
   await ensureProjectDirectory(folder, path.dirname(punchRelative));
-  await writeFileAtomic(projectAssetPath(folder, punchRelative), replacementBytes);
-  await writeFileAtomic(
-    projectAssetPath(folder, editedRelative),
-    Buffer.from(audioCore.encodeWavPcm16(edited, 44100, 1)),
-  );
-  await clearChapterAlignment(folder, chapter);
-
-  const now = new Date().toISOString();
-  const rawAudioPath = chapter.raw_audio_path || chapter.audio_path;
+  let edited;
+  try {
+    await writeFileAtomic(projectAssetPath(folder, punchRelative), replacementBytes);
+    edited = await rebuildPunchTimeline({
+      original,
+      punches: chapterPunches,
+      sampleRate: 44100,
+      loadReplacement: async (punch) => {
+        if (punch.id === nextPunch.id) {
+          return replacementSamples;
+        }
+        const bytes = await fs.readFile(projectAssetPath(folder, punch.path));
+        const decoded = audioCore.decodeWavPcm16(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+        assertRecorderPcmBounds(decoded);
+        let samples = mixInterleavedToMono(decoded.samples, decoded.channels);
+        samples = resampleLinearArray(samples, decoded.sampleRate, 44100);
+        if (punch.trim_silence !== false) {
+          samples = spliceCore.trimPunchSilence(samples, 44100, { threshold: 0.01, padMs: 50 });
+        }
+        return samples;
+      },
+      splicePunch: spliceCore.splicePunch,
+    });
+    await writeFileAtomic(
+      editedAbsolute,
+      Buffer.from(audioCore.encodeWavPcm16(edited, 44100, 1)),
+    );
+  } catch (error) {
+    await fs.rm(projectAssetPath(folder, punchRelative), { force: true }).catch(() => undefined);
+    if (rollbackEditedAbsolute) {
+      await copyFileAtomic(rollbackEditedAbsolute, editedAbsolute).catch(() => undefined);
+      await fs.rm(rollbackEditedAbsolute, { force: true }).catch(() => undefined);
+    } else {
+      await fs.rm(editedAbsolute, { force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
+  const now = nextPunch.created_at;
   const nextProject = {
     ...project,
     chapters: project.chapters.map((candidate) => candidate.id === chapter.id
@@ -1663,24 +1727,97 @@ async function applyPunchRecording(folder, project, payload) {
         }
       : candidate),
     punch_recordings: [
-      ...(project.punch_recordings ?? []),
-      {
-        id: `punch-${stamp}-${(project.punch_recordings?.length ?? 0) + 1}`,
-        chapter_id: chapter.id,
-        ...(payload.pickupId ? { pickup_id: payload.pickupId } : {}),
-        ...(typeof payload.expected === "string" ? { expected: payload.expected.slice(0, 1000) } : {}),
-        ...(typeof payload.heard === "string" ? { heard: payload.heard.slice(0, 1000) } : {}),
-        path: punchRelative,
-        edited_path: editedRelative,
-        t_start: punchBounds.start,
-        t_end: punchBounds.end,
-        created_at: now,
-      },
+      ...(project.punch_recordings ?? []).map((punch) => punch.chapter_id === chapter.id
+        ? { ...punch, edited_path: editedRelative }
+        : punch),
+      nextPunch,
     ],
     updated_at: now,
   };
-  const saved = await saveProjectFolder(folder, nextProject);
+  let saved;
+  try {
+    saved = await saveProjectFolder(folder, nextProject);
+  } catch (error) {
+    if (rollbackEditedAbsolute) {
+      await copyFileAtomic(rollbackEditedAbsolute, editedAbsolute).catch(() => undefined);
+    } else {
+      await fs.rm(editedAbsolute, { force: true }).catch(() => undefined);
+    }
+    await fs.rm(projectAssetPath(folder, punchRelative), { force: true }).catch(() => undefined);
+    if (rollbackEditedAbsolute) {
+      await fs.rm(rollbackEditedAbsolute, { force: true }).catch(() => undefined);
+    }
+    throw error;
+  }
+  if (rollbackEditedAbsolute) {
+    await fs.rm(rollbackEditedAbsolute, { force: true }).catch(() => undefined);
+  }
+  // The saved project no longer references this stale analysis. Removing its
+  // old file is cleanup, not part of committing the audio edit.
+  await clearChapterAlignment(folder, chapter).catch(() => undefined);
   return { ...saved, kind: "punch", path: punchRelative, editedPath: editedRelative };
+}
+
+async function previewPunchRecording(folder, project, payload) {
+  await assertProjectEnvelope(folder, project);
+  if (typeof payload?.wavBase64 !== "string" || payload.wavBase64.length < 44) {
+    throw new Error("Punch recording did not contain a WAV file");
+  }
+  if (!Number.isFinite(payload?.tStart) || !Number.isFinite(payload?.tEnd) || payload.tEnd <= payload.tStart) {
+    throw new Error("Punch boundaries must be a valid time range");
+  }
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === payload.chapterId);
+  if (!chapter?.audio_path) {
+    throw new Error("Attach a chapter take before previewing a punch");
+  }
+
+  const audioCore = loadCoreModule("audio");
+  const spliceCore = loadCoreModule("splice");
+  const replacementBytes = Buffer.from(payload.wavBase64, "base64");
+  if (replacementBytes.length > MAX_RECORDER_WAV_BYTES) {
+    throw new Error("Punch WAV is larger than Kosmos's supported audio limit");
+  }
+  const replacement = audioCore.decodeWavPcm16(new Uint8Array(
+    replacementBytes.buffer,
+    replacementBytes.byteOffset,
+    replacementBytes.byteLength,
+  ));
+  assertRecorderPcmBounds(replacement);
+  let replacementSamples = mixInterleavedToMono(replacement.samples, replacement.channels);
+  replacementSamples = resampleLinearArray(replacementSamples, replacement.sampleRate, 44100);
+  if (payload.trimSilence !== false) {
+    replacementSamples = spliceCore.trimPunchSilence(replacementSamples, 44100, {
+      threshold: 0.01,
+      padMs: 50,
+    });
+  }
+  if (replacementSamples.length === 0) {
+    throw new Error("Punch WAV contains no audible samples");
+  }
+
+  const current = await decodeMono44100(projectAssetPath(folder, chapter.audio_path));
+  let preview;
+  try {
+    preview = buildPunchPreview({
+      current,
+      replacement: replacementSamples,
+      sampleRate: 44100,
+      startSeconds: payload.tStart,
+      endSeconds: payload.tEnd,
+      contextSeconds: 3,
+      splicePunch: spliceCore.splicePunch,
+    });
+  } catch {
+    throw new Error(
+      `Punch boundaries must stay within the attached take (0.000–${(current.length / 44100).toFixed(3)} seconds).`,
+    );
+  }
+
+  return {
+    currentWavBase64: Buffer.from(audioCore.encodeWavPcm16(preview.currentContext, 44100, 1)).toString("base64"),
+    patchedWavBase64: Buffer.from(audioCore.encodeWavPcm16(preview.patchedContext, 44100, 1)).toString("base64"),
+    contextSeconds: 3,
+  };
 }
 
 async function audioStreamUrl(folder, relativePath) {
@@ -3194,6 +3331,12 @@ ipcMain.handle("recording:apply-punch", (_event, payload) => {
     throw new Error("Invalid punch application request");
   }
   return applyPunchRecording(payload.folder, payload.project, payload);
+});
+ipcMain.handle("recording:preview-punch", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid punch preview request");
+  }
+  return previewPunchRecording(payload.folder, payload.project, payload);
 });
 ipcMain.handle("duet:mix-chapter", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

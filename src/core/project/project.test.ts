@@ -78,6 +78,30 @@ describe("project folder model", () => {
     }))).toThrow(/unsafe.*clip/i);
   });
 
+  it("accepts only supported pickup verification states", () => {
+    const project = addChapter(createEmptyProject("Book", { id: "book" }), {
+      id: "ch01",
+      index: 1,
+      title: "One",
+      text_path: "manuscript/chapters/01.json",
+    });
+    const punch = {
+      id: "punch-1",
+      chapter_id: "ch01",
+      path: "audio/pickups/punch-1.wav",
+      created_at: "2026-08-18T00:00:00.000Z",
+    };
+
+    expect(parseProject(JSON.stringify({
+      ...project,
+      punch_recordings: [{ ...punch, verification_status: "needs_verification" }],
+    })).punch_recordings?.[0].verification_status).toBe("needs_verification");
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      punch_recordings: [{ ...punch, verification_status: "maybe" }],
+    }))).toThrow(/verification/i);
+  });
+
   it("rejects duplicate glossary and dangling collaboration references", () => {
     const project = createEmptyProject("Book", { id: "book" });
     expect(() => parseProject(JSON.stringify({

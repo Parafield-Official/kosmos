@@ -30,6 +30,7 @@ interface BoothDeskBridge {
   exportProofReport: (payload: ProjectEnvelope & { chapterId: string; transcript: import("./core/proof/align").TranscriptWord[]; pickups: import("./core/project/types").Pickup[] }) => Promise<ProofReportResult>;
   exportPickupPacket: (payload: ProjectEnvelope & { chapterId: string; transcript: import("./core/proof/align").TranscriptWord[]; pickups: import("./core/project/types").Pickup[] }) => Promise<PickupPacketResult>;
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room" | "glossary" | "live"; chapterId?: string; glossaryId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
+  previewPunchRecording: (payload: ProjectEnvelope & { chapterId: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchPreviewResult>;
   applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; expected?: string; heard?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
   mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
   audioUrl: (payload: { folder: string; relativePath: string }) => Promise<string>;
@@ -159,6 +160,12 @@ interface PunchSaveResult extends ProjectEnvelope {
   kind: "punch";
   path: string;
   editedPath: string;
+}
+
+interface PunchPreviewResult {
+  currentWavBase64: string;
+  patchedWavBase64: string;
+  contextSeconds: number;
 }
 
 interface DuetMixSaveResult extends ProjectEnvelope {
