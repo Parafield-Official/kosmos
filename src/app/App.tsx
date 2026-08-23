@@ -336,6 +336,7 @@ function ProjectHome({
   const proofRef = useRef<ProofResult | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [reviewAudioUrl, setReviewAudioUrl] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const actionLockRef = useRef(false);
   const collabOutboundUnsub = useRef<null | (() => void)>(null);
@@ -428,6 +429,7 @@ function ProjectHome({
   const reviewAudioSource = selectedChapter
     ? resolveProofSource(selectedChapter, reviewSourceKind)
     : null;
+  const chapterAudioSource = selectedChapter ? proofAudioSource(selectedChapter) : null;
 
   // A replacement take, punch, or duet mix keeps the same chapter id but
   // invalidates the previous proof/meter result. Clear those local views when
@@ -507,7 +509,7 @@ function ProjectHome({
     let disposed = false;
 
     setAudioUrl(null);
-    const source = reviewAudioSource;
+    const source = chapterAudioSource;
     if (!source || !window.boothDesk || folder === "(browser preview)") {
       return;
     }
@@ -527,10 +529,34 @@ function ProjectHome({
 
     return () => {
       disposed = true;
-      // booth-audio:// URLs are owned by the main process; there is no Blob
-      // object URL to revoke here.
     };
-  }, [reviewAudioSource?.relativePath, folder]);
+  }, [chapterAudioSource?.relativePath, selectedChapter?.updated_at, folder]);
+
+  useEffect(() => {
+    let disposed = false;
+    const source = reviewAudioSource;
+    const sameAsChapter = source?.relativePath === chapterAudioSource?.relativePath;
+    if (!source || sameAsChapter || !window.boothDesk || folder === "(browser preview)") {
+      setReviewAudioUrl(null);
+      return;
+    }
+
+    void window.boothDesk.audioUrl({ folder, relativePath: source.relativePath })
+      .then((url) => {
+        if (!disposed) {
+          setReviewAudioUrl(url);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!disposed) {
+          setNotice(messageFor(reason, "Could not load the selected recording."));
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [reviewAudioSource?.relativePath, chapterAudioSource?.relativePath, selectedChapter?.updated_at, folder]);
 
   useEffect(() => {
     const pending = pendingSeekRef.current;
@@ -1961,7 +1987,8 @@ function ProjectHome({
     }
     const visible = reviewAudioSource;
     const visibleAudio = audioRef.current;
-    if (visible && visible.relativePath === source.relativePath && visibleAudio && audioUrl) {
+    const visibleUrl = reviewAudioUrl ?? audioUrl;
+    if (visible && visible.relativePath === source.relativePath && visibleAudio && visibleUrl) {
       playOnElement(visibleAudio, source.start, source.end, source.wordOnly ? 0.5 : 0);
       return;
     }
@@ -2117,7 +2144,7 @@ function ProjectHome({
       acxReport.duration_seconds,
     );
     try {
-      const visible = reviewAudioSource;
+      const visible = chapterAudioSource;
       const visibleAudio = audioRef.current;
       if (visibleAudio && visible?.relativePath === measuredPath) {
         visibleAudio.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -2471,7 +2498,7 @@ function ProjectHome({
                   setTranscriptText(value);
                 }}
                 busyAction={busyAction}
-                audioUrl={audioUrl}
+                audioUrl={reviewAudioUrl ?? audioUrl}
                 audioRef={audioRef}
                 proof={proof}
                 modelAvailable={modelAvailable}
