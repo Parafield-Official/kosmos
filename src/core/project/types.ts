@@ -109,6 +109,8 @@ export interface PunchRecording {
   trim_silence?: boolean;
   /** Applied edits remain explicit until the narrator has listened and verified the result. */
   verification_status?: "needs_verification" | "verified";
+  /** Reverted entries retain their clip/history but are excluded from the working edit. */
+  edit_status?: "applied" | "reverted";
   created_at: string;
 }
 

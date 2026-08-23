@@ -32,6 +32,7 @@ interface BoothDeskBridge {
   saveRecordingWav: (payload: ProjectEnvelope & { kind: "chapter" | "punch" | "room" | "glossary" | "live"; chapterId?: string; glossaryId?: string; pickupId?: string; wavBase64: string }) => Promise<RecordingSaveResult>;
   previewPunchRecording: (payload: ProjectEnvelope & { chapterId: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchPreviewResult>;
   applyPunchRecording: (payload: ProjectEnvelope & { chapterId: string; pickupId?: string; expected?: string; heard?: string; tStart: number; tEnd: number; wavBase64: string; trimSilence?: boolean }) => Promise<PunchSaveResult>;
+  undoLatestPunchRecording: (payload: ProjectEnvelope & { chapterId: string }) => Promise<PunchUndoResult>;
   mixDuetChapter: (payload: ProjectEnvelope & { chapterId: string; narrationSeat: "N1" | "N2"; crossfadeMs?: number }) => Promise<DuetMixSaveResult>;
   audioUrl: (payload: { folder: string; relativePath: string }) => Promise<string>;
   decodeAudio: (payload: { folder: string; relativePath: string }) => Promise<DecodedAudio>;
@@ -159,6 +160,14 @@ interface RecordingSaveResult extends ProjectEnvelope {
 interface PunchSaveResult extends ProjectEnvelope {
   kind: "punch";
   path: string;
+  editedPath: string;
+  appliedStart: number;
+  appliedEnd: number;
+  durationDelta: number;
+}
+
+interface PunchUndoResult extends ProjectEnvelope {
+  undonePunchId: string;
   editedPath: string;
 }
 

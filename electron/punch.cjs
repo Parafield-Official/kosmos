@@ -130,9 +130,30 @@ function buildPunchPreview({
   };
 }
 
+/** Latest active entry is the only pickup that can be undone without rebasing later edits. */
+function latestActivePunch(punches, chapterId) {
+  if (!Array.isArray(punches) || typeof chapterId !== "string") {
+    return null;
+  }
+  for (let index = punches.length - 1; index >= 0; index -= 1) {
+    const punch = punches[index];
+    if (
+      punch?.chapter_id === chapterId
+      && punch.edit_status !== "reverted"
+      && Number.isFinite(punch.t_start)
+      && Number.isFinite(punch.t_end)
+      && punch.t_end > punch.t_start
+    ) {
+      return punch;
+    }
+  }
+  return null;
+}
+
 module.exports = {
   buildPunchPreview,
   canonicalEditedPath,
   normalizePunchBounds,
   rebuildPunchTimeline,
+  latestActivePunch,
 };

@@ -100,6 +100,14 @@ describe("project folder model", () => {
       ...project,
       punch_recordings: [{ ...punch, verification_status: "maybe" }],
     }))).toThrow(/verification/i);
+    expect(parseProject(JSON.stringify({
+      ...project,
+      punch_recordings: [{ ...punch, edit_status: "reverted" }],
+    })).punch_recordings?.[0].edit_status).toBe("reverted");
+    expect(() => parseProject(JSON.stringify({
+      ...project,
+      punch_recordings: [{ ...punch, edit_status: "deleted" }],
+    }))).toThrow(/edit status/i);
   });
 
   it("rejects duplicate glossary and dangling collaboration references", () => {

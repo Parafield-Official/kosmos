@@ -11,6 +11,7 @@ export interface PickupComparison {
   expected?: string;
   heard?: string;
   verificationStatus: "needs_verification" | "verified";
+  editStatus: "applied" | "reverted";
   createdAt: string;
 }
 
@@ -46,6 +47,7 @@ export function buildPickupComparisons(input: PickupComparisonInput): PickupComp
       ...(punch.expected ? { expected: punch.expected } : {}),
       ...(punch.heard ? { heard: punch.heard } : {}),
       verificationStatus: punch.verification_status ?? "needs_verification",
+      editStatus: punch.edit_status ?? "applied",
       createdAt: punch.created_at,
     }))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));

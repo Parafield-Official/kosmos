@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("boothDesk", {
   saveRecordingWav: (payload) => ipcRenderer.invoke("recording:save-wav", payload),
   previewPunchRecording: (payload) => ipcRenderer.invoke("recording:preview-punch", payload),
   applyPunchRecording: (payload) => ipcRenderer.invoke("recording:apply-punch", payload),
+  undoLatestPunchRecording: (payload) => ipcRenderer.invoke("recording:undo-latest-punch", payload),
   mixDuetChapter: (payload) => ipcRenderer.invoke("duet:mix-chapter", payload),
   audioUrl: (payload) => ipcRenderer.invoke("audio:url", payload),
   decodeAudio: (payload) => ipcRenderer.invoke("audio:decode", payload),

@@ -13,6 +13,7 @@ describe("pickup A/B comparisons", () => {
         path: "audio/pickups/ch01-pickup-7.wav",
         edited_path: "audio/01_edited.wav",
         verification_status: "needs_verification",
+        edit_status: "applied",
         t_start: 8.25,
         t_end: 10.5,
         created_at: "2026-08-18T12:00:00.000Z",
@@ -25,6 +26,7 @@ describe("pickup A/B comparisons", () => {
       start: 8.25,
       end: 10.5,
       verificationStatus: "needs_verification",
+      editStatus: "applied",
     })]);
   });
 

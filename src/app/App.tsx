@@ -106,6 +106,11 @@ import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWi
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
+import {
+  advancePickupSession,
+  buildPickupSession,
+  type PickupSession,
+} from "../core/proof/pickup-session";
 import { PaperProse } from "./paper-prose";
 import {
   audioSourceForPickup,
@@ -395,6 +400,7 @@ function ProjectHome({
   const [roomTestOpen, setRoomTestOpen] = useState(false);
   const [roomReport, setRoomReport] = useState<RoomTestReport | null>(null);
   const [punchPickup, setPunchPickup] = useState<Pickup | null>(null);
+  const [pickupSession, setPickupSession] = useState<PickupSession | null>(null);
   const [glossaryRecording, setGlossaryRecording] = useState<GlossaryEntry | null>(null);
   const pendingTranscriptRef = useRef<{ chapterId: string; text: string } | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
@@ -1126,7 +1132,7 @@ function ProjectHome({
     });
   }
 
-  async function applyPunchRecordingWav(wavBase64: string, pickup: Pickup): Promise<boolean> {
+  async function applyPunchRecordingWav(wavBase64: string, pickup: Pickup): Promise<PunchSaveResult | false> {
     if (!window.boothDesk || folder === "(browser preview)" || !selectedChapter) {
       throw new Error("Add a chapter recording before creating a pickup.");
     }
@@ -1135,8 +1141,14 @@ function ProjectHome({
     // seam is audible however clean the edit is; a sentence boundary falls in a
     // breath, where a change of tone reads as the start of a new thought.
     const replaced = pickupLineBounds(pickup);
-    return runAction("punch", async () => {
-      const result = await window.boothDesk?.applyPunchRecording({
+    if (actionLockRef.current) {
+      return false;
+    }
+    actionLockRef.current = true;
+    setBusyAction("punch");
+    setNotice(null);
+    try {
+      const result = await window.boothDesk.applyPunchRecording({
         ...envelope,
         chapterId: selectedChapter.id,
         pickupId: pickup.id,
@@ -1147,11 +1159,20 @@ function ProjectHome({
         trimSilence: true,
         wavBase64,
       });
-      if (result) {
-        onChange(result);
-        setNotice("Pickup applied to the chapter's edited take. The original recording is unchanged.");
-      }
-    });
+      onChange(result);
+      setProof(null);
+      setCheckedSourceKind(null);
+      transcriptOriginRef.current = "generated";
+      setTranscriptText("");
+      setNotice("Pickup applied to the chapter's edited take. The original recording is unchanged.");
+      return result;
+    } catch (reason) {
+      setNotice(messageFor(reason, "The pickup could not be applied."));
+      return false;
+    } finally {
+      setBusyAction(null);
+      actionLockRef.current = false;
+    }
   }
 
   async function previewPunchRecordingWav(
@@ -1195,7 +1216,7 @@ function ProjectHome({
 
   async function verifyPunchRecording(punchId: string): Promise<void> {
     const punch = (project.punch_recordings ?? []).find((candidate) => candidate.id === punchId);
-    if (!punch || punch.verification_status === "verified") {
+    if (!punch || punch.edit_status === "reverted" || punch.verification_status === "verified") {
       return;
     }
     await runAction(`verify-punch-${punchId}`, async () => {
@@ -1210,14 +1231,35 @@ function ProjectHome({
     });
   }
 
-  async function openPunchRecorder(pickup: Pickup) {
-    if (!selectedChapter) {
+  async function undoLatestPunch(): Promise<void> {
+    if (!window.boothDesk || folder === "(browser preview)" || !selectedChapter) {
+      setNotice("Pickup undo is available after a chapter recording is attached.");
       return;
+    }
+    await runAction("undo-punch", async () => {
+      const result = await window.boothDesk?.undoLatestPunchRecording({
+        ...envelope,
+        chapterId: selectedChapter.id,
+      });
+      if (result) {
+        onChange(result);
+        setProof(null);
+        setCheckedSourceKind(null);
+        transcriptOriginRef.current = "generated";
+        setTranscriptText("");
+        setNotice("Latest pickup undone. Its clip remains in history and the original is unchanged.");
+      }
+    });
+  }
+
+  async function openPunchRecorder(pickup: Pickup, inSession = false): Promise<boolean> {
+    if (!selectedChapter) {
+      return false;
     }
     const blocked = punchDisabledReason(pickup, selectedChapter);
     if (blocked) {
       setNotice(blocked);
-      return;
+      return false;
     }
     const next = chapterWithBoothTapeAsTake(selectedChapter);
     if (next.audio_path !== selectedChapter.audio_path) {
@@ -1233,10 +1275,30 @@ function ProjectHome({
         setNotice("Kept this booth tape as the chapter take so the pickup can be spliced in.");
       } catch (reason) {
         setNotice(messageFor(reason, "Could not keep this booth tape as the chapter take."));
-        return;
+        return false;
       }
     }
+    if (!inSession) {
+      setPickupSession(null);
+    }
     setPunchPickup(pickup);
+    return true;
+  }
+
+  async function startPickupSession(pickups: Pickup[]): Promise<void> {
+    if (!selectedChapter) {
+      return;
+    }
+    const eligible = pickups.filter((pickup) => !punchDisabledReason(pickup, selectedChapter));
+    const session = buildPickupSession(eligible);
+    if (session.items.length === 0) {
+      setNotice("None of these review points can be recorded against the current chapter take.");
+      return;
+    }
+    const opened = await openPunchRecorder(session.items[0].pickup, true);
+    if (opened) {
+      setPickupSession(session);
+    }
   }
 
   async function saveLocalIdentity() {
@@ -2376,6 +2438,30 @@ function ProjectHome({
   ) : null;
 
   const punchBounds = punchPickup ? pickupLineBounds(punchPickup) : null;
+  const pickupSessionTotalTasks = pickupSession
+    ? pickupSession.completedTasks + pickupSession.items.length
+    : 0;
+
+  function closePickupSession(): void {
+    setPunchPickup(null);
+    setPickupSession(null);
+  }
+
+  function skipPickupSessionItem(): void {
+    if (!pickupSession) {
+      return;
+    }
+    const [, ...rest] = pickupSession.items;
+    if (rest.length === 0) {
+      closePickupSession();
+      setNotice("Pickup session ended. The skipped review point was not changed.");
+      return;
+    }
+    const next = { ...pickupSession, items: rest };
+    setPickupSession(next);
+    setPunchPickup(next.items[0].pickup);
+    setNotice("Skipped for this session. Nothing was changed.");
+  }
 
   return (
     <div className={studioNavOpen ? "studio-shell" : "studio-shell nav-closed"}>
@@ -2588,6 +2674,7 @@ function ProjectHome({
                 onExportReport={() => void exportProofReport()}
                 onExportPacket={() => void exportPickupPacket()}
                 onPunchPickup={(pickup) => void openPunchRecorder(pickup)}
+                onStartPickupSession={(pickups) => void startPickupSession(pickups)}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 onSuppressPickup={(pickup) => void suppressPickupWord(pickup)}
                 pickupSeatFilter={pickupSeatFilter}
@@ -2595,6 +2682,7 @@ function ProjectHome({
                 comparisonFolder={folder}
                 comparisons={pickupComparisons}
                 onVerifyComparison={(id) => void verifyPunchRecording(id)}
+                onUndoLatestPickup={() => void undoLatestPunch()}
               />
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
@@ -2753,9 +2841,29 @@ function ProjectHome({
 
       {punchPickup ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="chapter-composer punch-recorder" role="dialog" aria-modal="true" aria-labelledby="punch-title">
-            <p className="phase-label">Pickup recording</p>
-            <h2 id="punch-title">Read this line again</h2>
+          <section
+            className="chapter-composer punch-recorder"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="punch-title"
+            onKeyDown={(event) => {
+              if (event.key.toLowerCase() === "l" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+                event.preventDefault();
+                void playPickupPreroll(punchPickup);
+              }
+            }}
+          >
+            <p className="phase-label">
+              {pickupSession
+                ? `Pickup ${pickupSession.completedTasks + 1} of ${pickupSessionTotalTasks}`
+                : "Pickup recording"}
+            </p>
+            <h2 id="punch-title">{pickupSession ? "Pickup session" : "Read this line again"}</h2>
+            {pickupSession ? (
+              <div className="pickup-session-progress" aria-label={`${pickupSession.completedTasks} of ${pickupSessionTotalTasks} pickups applied`}>
+                <span style={{ width: `${pickupSessionTotalTasks > 0 ? (pickupSession.completedTasks / pickupSessionTotalTasks) * 100 : 0}%` }} />
+              </div>
+            ) : null}
             {punchPickup.line_text ? (
               <p className="punch-line" lang="en">
                 {punchPickup.line_text}
@@ -2782,7 +2890,7 @@ function ProjectHome({
                 disabled={!window.boothDesk || folder === "(browser preview)"}
                 onClick={() => void playPickupPreroll(punchPickup)}
               >
-                Play the {PICKUP_PREROLL_SECONDS}s lead-in
+                Play the {PICKUP_PREROLL_SECONDS}s lead-in (L)
               </button>
               <span>
                 Replacing {formatTime(punchBounds?.start ?? punchPickup.t_start)}–{formatTime(punchBounds?.end ?? punchPickup.t_end)}
@@ -2791,15 +2899,49 @@ function ProjectHome({
             <RecorderPanel
               label={`Punch at ${formatTime(punchBounds?.start ?? punchPickup.t_start)}`}
               disabled={!window.boothDesk || busyAction !== null}
+              applyLabel={pickupSession ? "Apply & next" : "Apply pickup"}
               onPreview={(wav) => previewPunchRecordingWav(wav, punchPickup)}
               onSave={async (wav) => {
-                const applied = await applyPunchRecordingWav(wav, punchPickup);
-                if (applied) {
+                const result = await applyPunchRecordingWav(wav, punchPickup);
+                if (!result) {
+                  return;
+                }
+                if (pickupSession) {
+                  const currentItem = pickupSession.items[0];
+                  const next = advancePickupSession(pickupSession, {
+                    pickupIds: currentItem.pickupIds,
+                    start: result.appliedStart,
+                    end: result.appliedEnd,
+                    durationDelta: result.durationDelta,
+                  });
+                  if (next.items.length > 0) {
+                    setPickupSession(next);
+                    setPunchPickup(next.items[0].pickup);
+                    const skipped = next.supersededFlags.length - pickupSession.supersededFlags.length;
+                    setNotice(
+                      `Pickup applied. Next: ${next.completedTasks + 1} of ${next.completedTasks + next.items.length}`
+                      + (skipped > 0 ? ` · ${skipped} overlapping flag${skipped === 1 ? "" : "s"} covered by that line.` : "."),
+                    );
+                    void playPickupPreroll(next.items[0].pickup);
+                  } else {
+                    closePickupSession();
+                    setNotice(
+                      `Pickup session complete: ${next.completedTasks} line${next.completedTasks === 1 ? "" : "s"} applied. Review the edited joins below when ready.`,
+                    );
+                  }
+                } else {
                   setPunchPickup(null);
                 }
               }}
             />
-            <div className="actions"><button className="secondary-button" type="button" onClick={() => setPunchPickup(null)}>Cancel</button></div>
+            <div className="actions">
+              {pickupSession ? (
+                <button className="secondary-button" type="button" onClick={skipPickupSessionItem}>Skip this session</button>
+              ) : null}
+              <button className="secondary-button" type="button" onClick={closePickupSession}>
+                {pickupSession ? "End session" : "Cancel"}
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -5235,11 +5377,13 @@ function LiveVoiceStatus({
 function RecorderPanel({
   label,
   disabled,
+  applyLabel = "Apply pickup",
   onPreview,
   onSave,
 }: {
   label: string;
   disabled: boolean;
+  applyLabel?: string;
   onPreview?: (wavBase64: string) => Promise<PunchPreviewResult | false>;
   onSave: (wavBase64: string) => Promise<unknown>;
 }) {
@@ -5267,6 +5411,7 @@ function RecorderPanel({
   const mountedRef = useRef(true);
   const startingRef = useRef(false);
   const confirmingRef = useRef(false);
+  const panelRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -5302,6 +5447,12 @@ function RecorderPanel({
       URL.revokeObjectURL(contextUrls.patched);
     }
   }, [contextUrls]);
+
+  useEffect(() => {
+    if (onPreview) {
+      panelRef.current?.focus();
+    }
+  }, [label, onPreview]);
 
   async function start() {
     if (
@@ -5585,8 +5736,47 @@ function RecorderPanel({
     setError(null);
   }
 
+  function handleRecorderShortcut(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target !== event.currentTarget && ["BUTTON", "AUDIO", "INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (key === "r" && (status === "idle" || status === "error")) {
+      event.preventDefault();
+      void start();
+    } else if (key === "s" && (status === "recording" || status === "paused")) {
+      event.preventDefault();
+      stop();
+    } else if (event.key === " " && status === "recording") {
+      event.preventDefault();
+      pause();
+    } else if (event.key === " " && status === "paused") {
+      event.preventDefault();
+      resume();
+    } else if (key === "p" && status === "review" && onPreview) {
+      event.preventDefault();
+      void previewTake();
+    } else if (key === "a" && status === "comparison") {
+      event.preventDefault();
+      void confirmTake();
+    } else if (key === "n" && (status === "review" || status === "comparison")) {
+      event.preventDefault();
+      discardTake();
+    }
+  }
+
   return (
-    <section className="recorder-panel" aria-label={label}>
+    <section
+      ref={panelRef}
+      className="recorder-panel"
+      aria-label={label}
+      tabIndex={-1}
+      onKeyDown={handleRecorderShortcut}
+    >
       <div className="recorder-heading">
         <div>
           <p className="card-kicker">Recording</p>
@@ -5599,7 +5789,7 @@ function RecorderPanel({
       </div>
       <div className="recorder-actions">
         <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing" || status === "review" || status === "comparison"} onClick={() => void start()}>
-          Record
+          Record{onPreview ? " (R)" : ""}
         </button>
         <button type="button" disabled={status !== "recording"} onClick={pause}>Pause</button>
         <button type="button" disabled={status !== "paused"} onClick={resume}>Resume</button>
@@ -5613,7 +5803,7 @@ function RecorderPanel({
           <audio controls preload="metadata" src={pendingUrl} />
           <div className="recorder-review-actions">
             <button type="button" className="primary-button" onClick={() => void (onPreview ? previewTake() : confirmTake())}>
-              {onPreview ? "Preview in chapter" : "Use this take"}
+              {onPreview ? "Preview in chapter (P)" : "Use this take"}
             </button>
             <button type="button" className="secondary-button" onClick={discardTake}>{onPreview ? "Record another" : "Discard"}</button>
           </div>
@@ -5632,13 +5822,15 @@ function RecorderPanel({
           </label>
           <p className="recorder-honesty">Your original recording is safe. Nothing changes until you apply the pickup.</p>
           <div className="recorder-review-actions">
-            <button type="button" className="primary-button" onClick={() => void confirmTake()}>Apply pickup</button>
-            <button type="button" className="secondary-button" onClick={discardTake}>Record another</button>
+            <button type="button" className="primary-button" onClick={() => void confirmTake()}>{applyLabel} (A)</button>
+            <button type="button" className="secondary-button" onClick={discardTake}>Record another (N)</button>
           </div>
         </div>
       ) : null}
       <p className="recorder-honesty">
-        Listen before saving. You can keep this take or record another one.
+        {onPreview
+          ? "Shortcuts: L lead-in · R record · Space pause/resume · S stop · P preview · A apply · N another take."
+          : "Listen before saving. You can keep this take or record another one."}
       </p>
       {error ? <p className="recorder-error">{error}</p> : null}
     </section>
@@ -7244,6 +7436,7 @@ function ReviewPage({
   onExportReport,
   onExportPacket,
   onPunchPickup,
+  onStartPickupSession,
   onUpdatePickup,
   onSuppressPickup,
   pickupSeatFilter,
@@ -7251,6 +7444,7 @@ function ReviewPage({
   comparisonFolder,
   comparisons,
   onVerifyComparison,
+  onUndoLatestPickup,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -7277,6 +7471,7 @@ function ReviewPage({
   onExportReport: () => void;
   onExportPacket: () => void;
   onPunchPickup: (pickup: Pickup) => void;
+  onStartPickupSession: (pickups: Pickup[]) => void;
   onUpdatePickup: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void;
   onSuppressPickup: (pickup: Pickup) => void;
   pickupSeatFilter: "all" | "narration" | "N1" | "N2";
@@ -7284,6 +7479,7 @@ function ReviewPage({
   comparisonFolder: string;
   comparisons: PickupComparison[];
   onVerifyComparison: (id: string) => void;
+  onUndoLatestPickup: () => void;
 }) {
   const [editingTranscript, setEditingTranscript] = useState(false);
   const sources = availableProofSources(chapter);
@@ -7427,6 +7623,7 @@ function ReviewPage({
             onExportReport={onExportReport}
             onExportPacket={onExportPacket}
             onPunch={onPunchPickup}
+            onStartSession={onStartPickupSession}
             onUpdate={onUpdatePickup}
             onSuppress={onSuppressPickup}
             seatFilter={pickupSeatFilter}
@@ -7445,6 +7642,7 @@ function ReviewPage({
           comparisons={comparisons}
           busyAction={busyAction}
           onVerify={onVerifyComparison}
+          onUndoLatest={onUndoLatestPickup}
         />
       ) : null}
     </div>
@@ -7897,16 +8095,39 @@ function PickupComparisonPanel({
   comparisons,
   busyAction,
   onVerify,
+  onUndoLatest,
 }: {
   folder: string;
   comparisons: PickupComparison[];
   busyAction: string | null;
   onVerify: (id: string) => void;
+  onUndoLatest: () => void;
 }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [active, setActive] = useState<{ comparison: PickupComparison; side: "original" | "replacement" | "edited" } | null>(null);
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const needsVerification = comparisons.filter((comparison) =>
+    comparison.editStatus === "applied" && comparison.verificationStatus === "needs_verification")
+    .sort((left, right) => left.start - right.start);
+  const latestApplied = comparisons.find((comparison) => comparison.editStatus === "applied");
+
+  useEffect(() => {
+    if (active?.side !== "edited") {
+      return;
+    }
+    const refreshed = comparisons.find((comparison) => comparison.id === active.comparison.id);
+    const next = comparisons
+      .filter((comparison) =>
+        comparison.id !== active.comparison.id
+        && comparison.editStatus === "applied"
+        && comparison.verificationStatus === "needs_verification"
+        && comparison.editedPath)
+      .sort((left, right) => left.start - right.start)[0];
+    if (refreshed?.verificationStatus === "verified" && next) {
+      setActive({ comparison: next, side: "edited" });
+    }
+  }, [comparisons]);
 
   useEffect(() => {
     let disposed = false;
@@ -7958,7 +8179,24 @@ function PickupComparisonPanel({
           <p className="card-kicker">Pickup history</p>
           <h4 id="comparison-title">Applied pickups</h4>
         </div>
-        <span className="result-count">{comparisons.length} replacement{comparisons.length === 1 ? "" : "s"}</span>
+        <div className="result-heading-actions">
+          {needsVerification.length > 0 ? (
+            <button
+              className="action-button small accent"
+              type="button"
+              disabled={busyAction !== null || !needsVerification[0].editedPath}
+              onClick={() => setActive({ comparison: needsVerification[0], side: "edited" })}
+            >
+              Review next ({needsVerification.length})
+            </button>
+          ) : null}
+          {latestApplied ? (
+            <button className="action-button small" type="button" disabled={busyAction !== null} onClick={onUndoLatest}>
+              {busyAction === "undo-punch" ? "Undoing…" : "Undo latest"}
+            </button>
+          ) : null}
+          <span className="result-count">{needsVerification.length} to verify</span>
+        </div>
       </div>
       <p className="panel-honesty">Listen to the edited chapter in context, then mark the applied pickup verified. The untouched original remains available.</p>
       <ol className="comparison-list">
@@ -7967,15 +8205,24 @@ function PickupComparisonPanel({
             <div>
               <strong>{comparison.expected ? `“${comparison.expected}”` : `Pickup ${index + 1}`}</strong>
               <time>{formatTime(comparison.start)}–{formatTime(comparison.end)}{comparison.heard ? ` · heard “${comparison.heard}”` : ""}</time>
-              <span className={`pickup-state ${comparison.verificationStatus === "verified" ? "done" : "open"}`}>
-                {comparison.verificationStatus === "verified" ? "Verified" : "Applied · needs verification"}
+              <span className={`pickup-state ${comparison.editStatus === "reverted" || comparison.verificationStatus === "verified" ? "done" : "open"}`}>
+                {comparison.editStatus === "reverted"
+                  ? "Undone"
+                  : comparison.verificationStatus === "verified"
+                    ? "Verified"
+                    : "Applied · needs verification"}
               </span>
             </div>
             <button type="button" className={active?.comparison.id === comparison.id && active.side === "original" ? "active" : ""} onClick={() => setActive({ comparison, side: "original" })}>A · Original</button>
-            <button type="button" className={active?.comparison.id === comparison.id && active.side === "edited" ? "active" : ""} disabled={!comparison.editedPath} onClick={() => setActive({ comparison, side: "edited" })}>B · Edited in context</button>
+            <button type="button" className={active?.comparison.id === comparison.id && active.side === "edited" ? "active" : ""} disabled={!comparison.editedPath || comparison.editStatus === "reverted"} onClick={() => setActive({ comparison, side: "edited" })}>B · Edited in context</button>
             <button type="button" className={active?.comparison.id === comparison.id && active.side === "replacement" ? "active" : ""} onClick={() => setActive({ comparison, side: "replacement" })}>Pickup clip</button>
-            {comparison.verificationStatus === "needs_verification" ? (
-              <button type="button" disabled={busyAction !== null} onClick={() => onVerify(comparison.id)}>
+            {comparison.editStatus === "applied" && comparison.verificationStatus === "needs_verification" ? (
+              <button
+                type="button"
+                disabled={busyAction !== null || active?.comparison.id !== comparison.id || active.side !== "edited"}
+                title={active?.comparison.id === comparison.id && active.side === "edited" ? "" : "Listen to the edited join first"}
+                onClick={() => onVerify(comparison.id)}
+              >
                 {busyAction === `verify-punch-${comparison.id}` ? "Saving…" : "Mark verified"}
               </button>
             ) : null}
@@ -7993,11 +8240,12 @@ function PickupComparisonPanel({
   );
 }
 
-export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, punchDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; punchDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, punchDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onStartSession, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; punchDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onStartSession: (pickups: Pickup[]) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
   const openCount = seatPickups.filter((pickup) => pickup.status === "open").length;
+  const recordablePickups = seatPickups.filter((pickup) => pickup.status === "open" && !punchDisabledReason?.(pickup));
   return (
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
@@ -8006,6 +8254,16 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
           <h4 id="pickup-title">Pickups</h4>
         </div>
         <div className="result-heading-actions">
+          {openCount > 0 ? (
+            <button
+              className="action-button small accent"
+              type="button"
+              disabled={busyAction !== null || recordablePickups.length === 0}
+              onClick={() => onStartSession(recordablePickups)}
+            >
+              Start pickup session
+            </button>
+          ) : null}
           <label className="pickup-seat-filter">Voice
             <select value={seatFilter} disabled={busyAction !== null} onChange={(event) => onSeatFilter(event.target.value as "all" | "narration" | "N1" | "N2")}>
               <option value="all">All voices</option>

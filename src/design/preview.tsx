@@ -478,6 +478,7 @@ const PANELS: Array<{ id: string; title: string; node: ReactElement }> = [
         onExportReport={noop}
         onExportPacket={noop}
         onPunch={noop}
+        onStartSession={noop}
         onUpdate={noop}
         onSuppress={noop}
         seatFilter="all"

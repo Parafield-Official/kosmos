@@ -31,6 +31,7 @@ const {
 const {
   buildPunchPreview,
   canonicalEditedPath,
+  latestActivePunch,
   normalizePunchBounds,
   rebuildPunchTimeline,
 } = require("./punch.cjs");
@@ -1645,11 +1646,13 @@ async function applyPunchRecording(folder, project, payload) {
     t_end: punchBounds.end,
     trim_silence: payload.trimSilence !== false,
     verification_status: "needs_verification",
+    edit_status: "applied",
     created_at: new Date().toISOString(),
   };
   const chapterPunches = [
     ...(project.punch_recordings ?? []).filter((punch) =>
       punch.chapter_id === chapter.id
+      && punch.edit_status !== "reverted"
       && typeof punch.path === "string"
       && Number.isFinite(punch.t_start)
       && Number.isFinite(punch.t_end)
@@ -1680,15 +1683,7 @@ async function applyPunchRecording(folder, project, payload) {
         if (punch.id === nextPunch.id) {
           return replacementSamples;
         }
-        const bytes = await fs.readFile(projectAssetPath(folder, punch.path));
-        const decoded = audioCore.decodeWavPcm16(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
-        assertRecorderPcmBounds(decoded);
-        let samples = mixInterleavedToMono(decoded.samples, decoded.channels);
-        samples = resampleLinearArray(samples, decoded.sampleRate, 44100);
-        if (punch.trim_silence !== false) {
-          samples = spliceCore.trimPunchSilence(samples, 44100, { threshold: 0.01, padMs: 50 });
-        }
-        return samples;
+        return loadPunchReplacementSamples(folder, punch, audioCore, spliceCore);
       },
       splicePunch: spliceCore.splicePunch,
     });
@@ -1755,7 +1750,113 @@ async function applyPunchRecording(folder, project, payload) {
   // The saved project no longer references this stale analysis. Removing its
   // old file is cleanup, not part of committing the audio edit.
   await clearChapterAlignment(folder, chapter).catch(() => undefined);
-  return { ...saved, kind: "punch", path: punchRelative, editedPath: editedRelative };
+  return {
+    ...saved,
+    kind: "punch",
+    path: punchRelative,
+    editedPath: editedRelative,
+    appliedStart: punchBounds.start,
+    appliedEnd: punchBounds.end,
+    durationDelta: (edited.length - current.length) / 44100,
+  };
+}
+
+async function loadPunchReplacementSamples(folder, punch, audioCore, spliceCore) {
+  const bytes = await fs.readFile(projectAssetPath(folder, punch.path));
+  const decoded = audioCore.decodeWavPcm16(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  assertRecorderPcmBounds(decoded);
+  let samples = mixInterleavedToMono(decoded.samples, decoded.channels);
+  samples = resampleLinearArray(samples, decoded.sampleRate, 44100);
+  if (punch.trim_silence !== false) {
+    samples = spliceCore.trimPunchSilence(samples, 44100, { threshold: 0.01, padMs: 50 });
+  }
+  return samples;
+}
+
+async function undoLatestPunchRecording(folder, project, payload) {
+  await assertProjectEnvelope(folder, project);
+  const chapter = (project.chapters ?? []).find((candidate) => candidate.id === payload.chapterId);
+  if (!chapter?.audio_path) {
+    throw new Error("Attach a chapter take before undoing a pickup");
+  }
+  const latest = latestActivePunch(project.punch_recordings ?? [], chapter.id);
+  if (!latest) {
+    throw new Error("This chapter has no applied pickup to undo");
+  }
+
+  const audioCore = loadCoreModule("audio");
+  const spliceCore = loadCoreModule("splice");
+  const rawAudioPath = chapter.raw_audio_path || chapter.audio_path;
+  const original = await decodeMono44100(projectAssetPath(folder, rawAudioPath));
+  const remaining = (project.punch_recordings ?? []).filter((punch) =>
+    punch.chapter_id === chapter.id
+    && punch.id !== latest.id
+    && punch.edit_status !== "reverted"
+    && typeof punch.path === "string"
+    && Number.isFinite(punch.t_start)
+    && Number.isFinite(punch.t_end)
+    && punch.t_end > punch.t_start,
+  );
+  const edited = await rebuildPunchTimeline({
+    original,
+    punches: remaining,
+    sampleRate: 44100,
+    loadReplacement: (punch) => loadPunchReplacementSamples(folder, punch, audioCore, spliceCore),
+    splicePunch: spliceCore.splicePunch,
+  });
+  const editedRelative = canonicalEditedPath(chapter);
+  const editedAbsolute = projectAssetPath(folder, editedRelative);
+  const rollbackAbsolute = `${editedAbsolute}.rollback-${process.pid}-${crypto.randomUUID()}`;
+  let hadEditedFile = false;
+  try {
+    await fs.access(editedAbsolute);
+    hadEditedFile = true;
+    await copyFileAtomic(editedAbsolute, rollbackAbsolute);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  try {
+    await writeFileAtomic(
+      editedAbsolute,
+      Buffer.from(audioCore.encodeWavPcm16(edited, 44100, 1)),
+    );
+    const now = new Date().toISOString();
+    const nextProject = {
+      ...project,
+      chapters: project.chapters.map((candidate) => candidate.id === chapter.id
+        ? {
+            ...resetChapterAudioFields(candidate, {
+              preserveDuetTracks: project.mode === "duet"
+                && Boolean(candidate.bed_audio_path || candidate.overdub_audio_path),
+            }),
+            raw_audio_path: rawAudioPath,
+            edited_audio_path: editedRelative,
+            audio_path: editedRelative,
+            acx_traffic_light: undefined,
+            updated_at: now,
+          }
+        : candidate),
+      punch_recordings: (project.punch_recordings ?? []).map((punch) => punch.id === latest.id
+        ? { ...punch, edit_status: "reverted" }
+        : punch),
+      updated_at: now,
+    };
+    const saved = await saveProjectFolder(folder, nextProject);
+    await fs.rm(rollbackAbsolute, { force: true }).catch(() => undefined);
+    await clearChapterAlignment(folder, chapter).catch(() => undefined);
+    return { ...saved, undonePunchId: latest.id, editedPath: editedRelative };
+  } catch (error) {
+    if (hadEditedFile) {
+      await copyFileAtomic(rollbackAbsolute, editedAbsolute).catch(() => undefined);
+    } else {
+      await fs.rm(editedAbsolute, { force: true }).catch(() => undefined);
+    }
+    await fs.rm(rollbackAbsolute, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function previewPunchRecording(folder, project, payload) {
@@ -3337,6 +3438,12 @@ ipcMain.handle("recording:preview-punch", (_event, payload) => {
     throw new Error("Invalid punch preview request");
   }
   return previewPunchRecording(payload.folder, payload.project, payload);
+});
+ipcMain.handle("recording:undo-latest-punch", (_event, payload) => {
+  if (!payload?.folder || !payload?.project || !payload?.chapterId) {
+    throw new Error("Invalid pickup undo request");
+  }
+  return undoLatestPunchRecording(payload.folder, payload.project, payload);
 });
 ipcMain.handle("duet:mix-chapter", (_event, payload) => {
   if (!payload?.folder || !payload?.project || !payload?.chapterId) {

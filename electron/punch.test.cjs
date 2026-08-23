@@ -3,6 +3,7 @@ const {
   canonicalEditedPath,
   normalizePunchBounds,
   rebuildPunchTimeline,
+  latestActivePunch,
 } = require("./punch.cjs");
 
 describe("punch boundary validation", () => {
@@ -88,5 +89,16 @@ describe("staged pickup preview", () => {
     expect(current).toEqual(before);
     expect(Array.from(preview.currentContext)).toEqual([2, 3, 4, 5, 6, 7]);
     expect(Array.from(preview.patchedContext)).toEqual([2, 3, 40, 41, 42, 6, 7]);
+  });
+});
+
+describe("latest pickup undo", () => {
+  it("selects only the newest non-reverted timed pickup in a chapter", () => {
+    expect(latestActivePunch([
+      { id: "other", chapter_id: "ch02", t_start: 1, t_end: 2 },
+      { id: "first", chapter_id: "ch01", t_start: 1, t_end: 2 },
+      { id: "undone", chapter_id: "ch01", t_start: 2, t_end: 3, edit_status: "reverted" },
+      { id: "latest", chapter_id: "ch01", t_start: 3, t_end: 4 },
+    ], "ch01")).toMatchObject({ id: "latest" });
   });
 });
