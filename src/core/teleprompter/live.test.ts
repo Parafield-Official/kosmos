@@ -92,6 +92,27 @@ describe("teleprompter live matching", () => {
     expect(high.state.cursor).toBe(3);
   });
 
+  it("uses the live window's measured span instead of a fixed narrator pace", () => {
+    const result = matchLiveWindow({
+      chapterId: "ch-variable-pace",
+      expected,
+      transcript: [
+        { text: "The", start: 2, end: 2.2, confidence: 0.98 },
+        { text: "fox", start: 4, end: 4.5, confidence: 0.98 },
+        { text: "hopped", start: 8, end: 8.4, confidence: 0.98 },
+      ],
+      state: { cursor: 0, lastHeardEnd: 0 },
+      flagsEnabled: true,
+      confidenceThreshold: 0.9,
+    });
+
+    expect(result.flag).toMatchObject({
+      expected: "jumped",
+      lineStart: 2,
+      lineEnd: 8.4,
+    });
+  });
+
   it("keeps following a close mispronunciation without pinning the narrator", () => {
     const ramparts: LiveExpectedWord[] = [
       { index: 0, lineIndex: 0, text: "The" },

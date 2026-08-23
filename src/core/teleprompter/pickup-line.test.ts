@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { promptSentenceEnds } from "./model";
 import {
-  PICKUP_BREATH_SECONDS,
-  PICKUP_WORDS_PER_SECOND,
   pickupLineRange,
   pickupLineSeconds,
   pickupLineText,
   pickupPrerollStart,
+  trimPickupLineSilence,
   sentenceWordRange,
   type PickupLineWord,
 } from "./pickup-line";
@@ -80,44 +79,33 @@ describe("pickup lines", () => {
 });
 
 describe("pickup audio bounds", () => {
-  it("reaches back over the words before the flagged one, plus a breath", () => {
-    const bounds = pickupLineSeconds({
-      wordStart: 10,
-      wordEnd: 10.4,
-      wordsBefore: 3,
-      wordsAfter: 2,
-    });
-    expect(bounds.start).toBeCloseTo(10 - 3 / PICKUP_WORDS_PER_SECOND - PICKUP_BREATH_SECONDS, 6);
-    expect(bounds.end).toBeCloseTo(10.4 + 2 / PICKUP_WORDS_PER_SECOND + PICKUP_BREATH_SECONDS, 6);
+  it("uses measured sentence words instead of assuming a narration pace", () => {
+    expect(pickupLineSeconds([
+      { start: 10, end: 10.4 },
+      { start: 13.8, end: 14.3 },
+      { start: 20, end: 20.6 },
+    ])).toEqual({ start: 10, end: 20.6 });
   });
 
-  it("survives a flag at the very start of a chapter without going negative", () => {
-    const bounds = pickupLineSeconds({ wordStart: 0.2, wordEnd: 0.5, wordsBefore: 6, wordsAfter: 0 });
-    expect(bounds.start).toBe(0);
-    expect(bounds.end).toBeGreaterThan(0.5);
-    expect(pickupPrerollStart(bounds.start)).toBe(0);
-  });
-
-  it("is always wide enough to survive the word-timestamp error that word ranges cannot", () => {
-    // The point of the whole exercise: a back-check model places a word to
-    // within a few hundred milliseconds, which is most of a word and very
-    // little of a line.
-    const word = { start: 12, end: 12.28 };
-    const line = pickupLineSeconds({
-      wordStart: word.start,
-      wordEnd: word.end,
-      wordsBefore: 4,
-      wordsAfter: 4,
+  it("falls back to the measured flagged word when no sentence words are available", () => {
+    expect(pickupLineSeconds([], { start: 0.2, end: 0.5 })).toEqual({
+      start: 0.2,
+      end: 0.5,
     });
-    const worstCaseError = 0.3;
-    expect(word.end - word.start).toBeLessThan(worstCaseError);
-    expect(line.end - line.start).toBeGreaterThan(worstCaseError * 6);
-    expect(line.start).toBeLessThan(word.start - worstCaseError);
-    expect(line.end).toBeGreaterThan(word.end + worstCaseError);
   });
 
   it("rolls back a lead-in so the narrator hears the read they are matching", () => {
     expect(pickupPrerollStart(20)).toBe(17);
     expect(pickupPrerollStart(20, 5)).toBe(15);
+  });
+
+  it("trims room tone at the line edges while retaining breath room", () => {
+    expect(trimPickupLineSilence(
+      { start: 0, end: 20 },
+      [{ start: 0, end: 4.8 }, { start: 14.7, end: 20 }],
+    )).toEqual({
+      start: 4.8,
+      end: 14.7,
+    });
   });
 });

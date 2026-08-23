@@ -1,5 +1,5 @@
 import type { Pickup, Seat } from "../project/types";
-import { pickupLineSeconds } from "../teleprompter/pickup-line";
+import { pickupLineSeconds, trimPickupLineSilence } from "../teleprompter/pickup-line";
 import {
   manuscriptMatchUnits,
   normalizeToken,
@@ -93,6 +93,8 @@ interface PickupRun {
   transcript: Array<TranscriptWord & { index: number }>;
   previousTranscript?: TranscriptWord;
   nextTranscript?: TranscriptWord;
+  previousManuscriptIndex?: number;
+  nextManuscriptIndex?: number;
   /** Whether any contributing word carried a confidence from the engine. */
   confidenceKnown: boolean;
 }
@@ -139,6 +141,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     manuscriptUnits.map((unit) => unit.key),
     transcriptUnits.map((unit) => unit.key),
   );
+  const tokenAlignments = alignManuscriptTokens(input.manuscript, transcriptWords);
   const minConfidence = Number.isFinite(input.minConfidence)
     ? clamp(input.minConfidence as number, 0, 1)
     : 0;
@@ -147,11 +150,13 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
   let operationIndex = 0;
   let pickupOrdinal = 0;
   let previousTranscript: TranscriptWord | undefined;
+  let previousManuscriptIndex: number | undefined;
 
   while (operationIndex < operations.length) {
     const operation = operations[operationIndex];
     if (operation.kind === "equal") {
       previousTranscript = lastWordOfUnit(transcriptWords, transcriptUnits[operation.transcriptIndex]);
+      previousManuscriptIndex = manuscriptUnits[operation.manuscriptIndex]?.to;
       operationIndex += 1;
       continue;
     }
@@ -160,6 +165,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
       manuscript: [],
       transcript: [],
       previousTranscript,
+      previousManuscriptIndex,
       confidenceKnown: false,
     };
     while (operationIndex < operations.length && operations[operationIndex].kind !== "equal") {
@@ -188,6 +194,7 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
     const next = operations[operationIndex];
     if (next?.kind === "equal") {
       run.nextTranscript = firstWordOfUnit(transcriptWords, transcriptUnits[next.transcriptIndex]);
+      run.nextManuscriptIndex = manuscriptUnits[next.manuscriptIndex]?.from;
     }
 
     const pickup = sameWordsDifferentlySpaced(run)
@@ -200,6 +207,8 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
         pickupOrdinal,
         input.manuscript,
         manuscriptTokens,
+        tokenAlignments,
+        input.silences,
       );
     // A recogniser that reports low confidence is telling us it may have
     // misheard, which makes the mismatch its fault rather than the narrator's.
@@ -214,6 +223,9 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
 
     if (run.transcript.length > 0) {
       previousTranscript = run.transcript[run.transcript.length - 1];
+    }
+    if (run.manuscript.length > 0) {
+      previousManuscriptIndex = run.manuscript.at(-1)?.index;
     }
   }
 
@@ -421,6 +433,8 @@ function runToPickup(
   ordinal: number,
   manuscript: string,
   manuscriptTokens: ManuscriptToken[],
+  tokenAlignments: TokenAlignment[],
+  silences: readonly SilenceRange[] | undefined,
 ): Pickup | null {
   const expected = run.manuscript.map((token) => token.text).join(" ");
   const heard = run.transcript.map((word) => word.text).join(" ");
@@ -449,6 +463,8 @@ function runToPickup(
     tStart,
     tEnd,
     durationSeconds,
+    tokenAlignments,
+    silences,
   );
 
   return {
@@ -479,9 +495,12 @@ function pickupSentenceContext(
   wordStart: number,
   wordEnd: number,
   durationSeconds: number,
+  tokenAlignments: TokenAlignment[],
+  silences: readonly SilenceRange[] | undefined,
 ): Pick<Pickup, "line_start" | "line_end" | "line_text"> {
-  const first = run.manuscript[0]?.index;
-  const last = run.manuscript.at(-1)?.index;
+  const anchor = run.nextManuscriptIndex ?? run.previousManuscriptIndex;
+  const first = run.manuscript[0]?.index ?? anchor;
+  const last = run.manuscript.at(-1)?.index ?? anchor;
   if (first === undefined || last === undefined || !tokens[first] || !tokens[last]) {
     return {};
   }
@@ -502,12 +521,17 @@ function pickupSentenceContext(
     .slice(tokens[from].start, finalToken.end + punctuation.length)
     .replace(/\s+/gu, " ")
     .trim();
-  const seconds = pickupLineSeconds({
-    wordStart,
-    wordEnd,
-    wordsBefore: first - from,
-    wordsAfter: to - last,
-  });
+  const timed = tokenAlignments.slice(from, to + 1).filter(
+    (alignment) => alignment.start !== undefined && alignment.end !== undefined,
+  );
+  const measured = pickupLineSeconds(
+    timed.map((alignment) => ({
+      start: alignment.start as number,
+      end: alignment.end as number,
+    })),
+    { start: wordStart, end: wordEnd },
+  );
+  const seconds = trimPickupLineSilence(measured, silences);
   return {
     line_start: Math.max(0, seconds.start),
     line_end: Math.min(durationSeconds, Math.max(seconds.start, seconds.end)),

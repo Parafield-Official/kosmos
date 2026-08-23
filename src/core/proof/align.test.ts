@@ -34,6 +34,60 @@ describe("alignTranscript", () => {
     expect(result.pickups[0].line_end).toBeGreaterThan(result.pickups[0].t_end);
   });
 
+  it("uses the sentence's measured word times so a slow read is not cut off", () => {
+    const result = alignTranscript({
+      chapterId: "ch-slow-line",
+      manuscript: "The Bridgertons are by far the most prolific family in society.",
+      transcript: words([
+        ["The", 5, 5.2],
+        ["Bridget", 5.4, 5.7],
+        ["kinds", 5.75, 6],
+        ["are", 6.2, 6.4],
+        ["by", 7, 7.2],
+        ["far", 7.5, 7.7],
+        ["the", 8, 8.2],
+        ["most", 9, 9.2],
+        ["prolific", 10.5, 11],
+        ["family", 12, 12.5],
+        ["in", 13, 13.2],
+        ["society", 14, 14.5],
+      ]),
+      durationSeconds: 20,
+      silences: [
+        { start: 0, end: 4.8 },
+        { start: 14.7, end: 20 },
+      ],
+    });
+
+    expect(result.pickups).toHaveLength(1);
+    expect(result.pickups[0]).toMatchObject({
+      expected: "Bridgertons",
+      heard: "Bridget kinds",
+      line_start: expect.closeTo(5, 0.001),
+      line_end: expect.closeTo(14.5, 0.001),
+    });
+  });
+
+  it("does not start a pickup line inside measured opening room tone", () => {
+    const result = alignTranscript({
+      chapterId: "ch-leading-room",
+      manuscript: "Bridgertons gathered quietly.",
+      transcript: words([
+        ["Bridget", 0, 0.2],
+        ["kinds", 0.2, 0.4],
+        ["gathered", 5.2, 5.6],
+        ["quietly", 6, 6.4],
+      ]),
+      durationSeconds: 8,
+      silences: [{ start: 0, end: 4.8 }],
+    });
+
+    expect(result.pickups).toHaveLength(1);
+    expect(result.pickups[0].t_start).toBe(0);
+    expect(result.pickups[0].line_start).toBeCloseTo(4.8, 3);
+    expect(result.pickups[0].line_end).toBe(6.4);
+  });
+
   it("groups a skipped sentence into one pickup", () => {
     const result = alignTranscript({
       chapterId: "ch01",
@@ -69,6 +123,30 @@ describe("alignTranscript", () => {
       kind: "insert",
       expected: "",
       heard: "quick",
+    });
+  });
+
+  it("gives an added word the measured sentence range for Listen", () => {
+    const result = alignTranscript({
+      chapterId: "ch-added-line",
+      manuscript: "Such industriousness is commendable.",
+      transcript: words([
+        ["Such", 5, 5.3],
+        ["industriousness", 5.5, 6.2],
+        ["only", 6.4, 6.7],
+        ["is", 6.9, 7.1],
+        ["commendable", 8, 8.6],
+      ]),
+      durationSeconds: 10,
+    });
+
+    expect(result.pickups).toHaveLength(1);
+    expect(result.pickups[0]).toMatchObject({
+      kind: "insert",
+      heard: "only",
+      line_text: "Such industriousness is commendable.",
+      line_start: expect.closeTo(5, 0.001),
+      line_end: expect.closeTo(8.6, 0.001),
     });
   });
 

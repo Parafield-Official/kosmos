@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { pickupFromLiveFlag, type LiveMismatch } from "./live";
 import {
   audioSourceForPickup,
+  chapterWithBoothTapeAsTake,
   concatLiveTape,
   isLiveCaughtPickup,
   listenDisabledReason,
@@ -87,6 +88,12 @@ describe("punching a pickup", () => {
     expect(punchDisabledReason(proofPickup, { audio_path: "audio/01_recorded.wav" })).toBeNull();
     expect(punchDisabledReason(proofPickup, {})).toMatch(/take/i);
   });
+
+  it("lets Record pickup run when Check chapter used the booth tape", () => {
+    expect(punchDisabledReason(proofPickup, {
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toBeNull();
+  });
 });
 
 describe("live session tape", () => {
@@ -128,8 +135,35 @@ describe("live session tape", () => {
       kind: "take",
       wordOnly: true,
     });
+  });
+
+  it("plays a proof pickup from the booth tape when Check chapter had no take", () => {
+    expect(audioSourceForPickup(proofPickup, {
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toEqual({
+      relativePath: "audio/live/ch01_session.wav",
+      start: 8.15,
+      end: 8.45,
+      kind: "live",
+      wordOnly: true,
+    });
     expect(listenDisabledReason(proofPickup, { live_audio_path: "audio/live/ch01_session.wav" }))
-      .toMatch(/take/i);
+      .toBeNull();
+  });
+
+  it("keeps the booth tape as the take so a punch can splice the same file", () => {
+    expect(chapterWithBoothTapeAsTake({
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toEqual({
+      live_audio_path: "audio/live/ch01_session.wav",
+      audio_path: "audio/live/ch01_session.wav",
+      raw_audio_path: "audio/live/ch01_session.wav",
+    });
+    expect(chapterWithBoothTapeAsTake({
+      audio_path: "audio/01_recorded.wav",
+      live_audio_path: "audio/live/ch01_session.wav",
+    }).audio_path).toBe("audio/01_recorded.wav");
+    expect(chapterWithBoothTapeAsTake({})).toEqual({});
   });
 
   it("keeps a usable booth tape and drops a tap or an overlong session", () => {

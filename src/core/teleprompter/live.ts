@@ -630,7 +630,13 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
             start: mismatchRun.start,
             end: mismatchRun.end,
             confidence: mismatchRun.confidence,
-            ...liveLineContext(input.expected, mismatchRun.expectedIndex, mismatchRun.start, mismatchRun.end),
+            ...liveLineContext(
+              input.expected,
+              mismatchRun.expectedIndex,
+              mismatchRun.start,
+              mismatchRun.end,
+              words,
+            ),
           };
           // Back to where the read left the page, not to where it was noticed.
           // Those are three words apart, and the first is the one the narrator
@@ -664,7 +670,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         start,
         end,
         confidence,
-        ...liveLineContext(input.expected, expectedWord.index, start, end),
+        ...liveLineContext(input.expected, expectedWord.index, start, end, words),
       };
     }
     cursor += 1;
@@ -791,17 +797,21 @@ function liveLineContext(
   expectedIndex: number,
   start: number,
   end: number,
+  heardWords: readonly LiveTranscriptWord[],
+  pairs: readonly WhisperAlignmentPair[] = [],
 ): Pick<LiveMismatch, "lineStart" | "lineEnd" | "lineText"> {
   const range = pickupLineRange(expected, expectedIndex);
   if (!range) {
     return {};
   }
-  const bounds = pickupLineSeconds({
-    wordStart: start,
-    wordEnd: end,
-    wordsBefore: expectedIndex - range.from,
-    wordsAfter: range.to - expectedIndex,
-  });
+  const pairedSentenceWords = pairs
+    .filter((pair) => pair.expectedIndex >= range.from && pair.expectedIndex <= range.to)
+    .map((pair) => heardWords[pair.heardIndex])
+    .filter((word): word is LiveTranscriptWord => word !== undefined);
+  const bounds = pickupLineSeconds(
+    pairedSentenceWords.length > 0 ? pairedSentenceWords : heardWords,
+    { start, end },
+  );
   return {
     lineStart: bounds.start,
     lineEnd: bounds.end,
@@ -913,7 +923,14 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
       start: candidateStart,
       end: candidateEnd,
       confidence,
-      ...liveLineContext(input.expected, expectedWord.index, candidateStart, candidateEnd),
+      ...liveLineContext(
+        input.expected,
+        expectedWord.index,
+        candidateStart,
+        candidateEnd,
+        words,
+        alignment.pairs,
+      ),
     };
     const isUnclassifiedSimilar = pair.kind === "similar"
       && !isReliableShortSwap(expected, heard)
@@ -962,7 +979,7 @@ export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
           start: loneStart,
           end: loneEnd,
           confidence,
-          ...liveLineContext(input.expected, expectedWord.index, loneStart, loneEnd),
+          ...liveLineContext(input.expected, expectedWord.index, loneStart, loneEnd, [heardWord]),
         };
       }
     }

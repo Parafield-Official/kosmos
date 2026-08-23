@@ -43,21 +43,6 @@ export interface PickupWordRange {
 }
 
 /**
- * Narration pace used to turn a span of words into a span of audio. Matches the
- * predictive follow lead's starting estimate (150 wpm).
- */
-export const PICKUP_WORDS_PER_SECOND = 2.5;
-
-/**
- * Padding on each end of a line's audio.
- *
- * Narrators are told to punch in just before a breath rather than after one, so
- * the range has to reach back over the breath that leads into the line. It also
- * absorbs the back-check model's word-timestamp error.
- */
-export const PICKUP_BREATH_SECONDS = 0.35;
-
-/**
  * Lead-in played before a pickup's line, so the narrator can hear the read they
  * are matching and come in on its rhythm. Punch-and-roll guides put this at
  * "a sentence or two"; Audacity's punch-and-roll defaults to five seconds. Three
@@ -148,37 +133,74 @@ export function pickupLineText(
     .trim();
 }
 
+/** The measured audio occupied by one transcript word. */
+export interface PickupTimedWord {
+  start: number;
+  end: number;
+}
+
 /**
- * Audio bounds for a line, projected outwards from the one word that has a
- * measured time.
+ * Audio bounds from words that were actually measured.
  *
- * Only the flagged word's timestamps are known: the rest of its sentence sits
- * outside the graded window, or inside a different one. Counting words out to
- * the sentence edges at narration pace is the estimate available, and it is a
- * sound one for this purpose — the range only has to contain the line, and
- * erring wide costs a little extra audio while erring narrow costs the words
- * that make the read matchable.
+ * Never project manuscript words through a global words-per-minute value:
+ * delivery speed changes by narrator, sentence and performance. A partial live
+ * window therefore returns the context it truly contains; the finished proof
+ * later replaces it with the complete sentence's measured words.
  */
-export function pickupLineSeconds(input: {
-  wordStart: number;
-  wordEnd: number;
-  wordsBefore: number;
-  wordsAfter: number;
-  wordsPerSecond?: number;
-  breathSeconds?: number;
-}): { start: number; end: number } {
-  const pace = Number.isFinite(input.wordsPerSecond) && (input.wordsPerSecond as number) > 0
-    ? (input.wordsPerSecond as number)
-    : PICKUP_WORDS_PER_SECOND;
-  const breath = Number.isFinite(input.breathSeconds)
-    ? Math.max(0, input.breathSeconds as number)
-    : PICKUP_BREATH_SECONDS;
-  const wordStart = Number.isFinite(input.wordStart) ? Math.max(0, input.wordStart) : 0;
-  const wordEnd = Number.isFinite(input.wordEnd) ? Math.max(wordStart, input.wordEnd) : wordStart;
-  const before = Number.isFinite(input.wordsBefore) ? Math.max(0, input.wordsBefore) : 0;
-  const after = Number.isFinite(input.wordsAfter) ? Math.max(0, input.wordsAfter) : 0;
-  const start = Math.max(0, wordStart - before / pace - breath);
-  return { start, end: Math.max(start, wordEnd + after / pace + breath) };
+export function pickupLineSeconds(
+  words: readonly PickupTimedWord[],
+  fallback?: PickupTimedWord,
+): { start: number; end: number } {
+  const measured = words.filter((word) =>
+    Number.isFinite(word.start)
+    && Number.isFinite(word.end)
+    && word.start >= 0
+    && word.end >= word.start);
+  if (measured.length === 0) {
+    const start = Number.isFinite(fallback?.start) ? Math.max(0, fallback?.start as number) : 0;
+    const end = Number.isFinite(fallback?.end) ? Math.max(start, fallback?.end as number) : start;
+    return { start, end };
+  }
+  return {
+    start: Math.min(...measured.map((word) => word.start)),
+    end: Math.max(...measured.map((word) => word.end)),
+  };
+}
+
+/**
+ * Remove measured room tone from the edges of a line-sized playback range.
+ *
+ * Whisper can pin its first token to the start of a segment even when that
+ * segment opens with seconds of quiet. The audio measurement is authoritative
+ * for that boundary, so snap directly to where the measured silence ends or
+ * begins instead of adding another guessed duration.
+ */
+export function trimPickupLineSilence(
+  bounds: { start: number; end: number },
+  silences: readonly { start: number; end: number }[] | undefined,
+): { start: number; end: number } {
+  let start = Number.isFinite(bounds.start) ? Math.max(0, bounds.start) : 0;
+  let end = Number.isFinite(bounds.end) ? Math.max(start, bounds.end) : start;
+  const ordered = [...(silences ?? [])]
+    .filter((silence) =>
+      Number.isFinite(silence.start)
+      && Number.isFinite(silence.end)
+      && silence.start >= 0
+      && silence.end > silence.start)
+    .sort((left, right) => left.start - right.start);
+
+  for (const silence of ordered) {
+    if (silence.start <= start && silence.end > start && silence.end < end) {
+      start = silence.end;
+    }
+  }
+  for (const silence of ordered) {
+    if (silence.start > start && silence.start < end && silence.end >= end) {
+      end = silence.start;
+      break;
+    }
+  }
+  return { start, end: Math.max(start, end) };
 }
 
 /**

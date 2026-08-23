@@ -6,6 +6,7 @@ export const MAX_LIVE_TAPE_SECONDS = 2 * 60 * 60;
 
 export interface LiveTapeChapter {
   audio_path?: string;
+  raw_audio_path?: string;
   live_audio_path?: string;
 }
 
@@ -66,16 +67,28 @@ export function audioSourceForPickup(
       wordOnly: range.wordOnly,
     };
   }
-  if (!chapter.audio_path) {
-    return null;
+  if (chapter.audio_path) {
+    return {
+      relativePath: chapter.audio_path,
+      start: range.start,
+      end: range.end,
+      kind: "take",
+      wordOnly: range.wordOnly,
+    };
   }
-  return {
-    relativePath: chapter.audio_path,
-    start: range.start,
-    end: range.end,
-    kind: "take",
-    wordOnly: range.wordOnly,
-  };
+  // Check chapter can run against the booth tape. Those flags are timed on
+  // that file, so Listen has to play it — waiting for a later take would
+  // mute every Review card after Start narrating.
+  if (chapter.live_audio_path) {
+    return {
+      relativePath: chapter.live_audio_path,
+      start: range.start,
+      end: range.end,
+      kind: "live",
+      wordOnly: range.wordOnly,
+    };
+  }
+  return null;
 }
 
 export function listenDisabledReason(
@@ -108,10 +121,26 @@ export function punchDisabledReason(
       ? "Run Check chapter first, so this flag is timed on the take"
       : "Attach the chapter take, then run Check chapter";
   }
-  if (!chapter.audio_path) {
-    return "No chapter take attached";
+  if (chapter.audio_path || chapter.live_audio_path) {
+    return null;
   }
-  return null;
+  return "No chapter take attached";
+}
+
+/**
+ * A punch splices the chapter take. After a booth read there often is no
+ * take yet — only the tape Check chapter already timed against. Point the
+ * take at that same file so the splice uses the clock the flags already have.
+ */
+export function chapterWithBoothTapeAsTake<T extends LiveTapeChapter>(chapter: T): T {
+  if (chapter.audio_path || !chapter.live_audio_path) {
+    return chapter;
+  }
+  return {
+    ...chapter,
+    audio_path: chapter.live_audio_path,
+    raw_audio_path: chapter.raw_audio_path ?? chapter.live_audio_path,
+  };
 }
 
 /** Check chapter prefers the master take. The booth tape is enough when there is no take. */
