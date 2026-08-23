@@ -51,6 +51,7 @@ interface BoothDeskBridge {
   downloadModel: () => Promise<ModelStatus>;
   onModelProgress: (listener: (progress: ModelProgress) => void) => () => void;
   exportAcx: (payload: ProjectEnvelope) => Promise<AcxExportResult>;
+  showAcxPack: (payload: ProjectEnvelope) => Promise<{ folder: string; shown: boolean }>;
   reviewPack: (payload: ProjectEnvelope) => Promise<PackReview | null>;
   applyPack: (payload: ProjectEnvelope & { stagingId: string }) => Promise<PackImportResult>;
   discardPack: (payload: { stagingId: string }) => Promise<{ discarded: boolean }>;

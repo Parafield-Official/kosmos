@@ -49,6 +49,15 @@ export function getExportReadiness(project: Pick<ProjectFile, "chapters">): Expo
   };
 }
 
+/**
+ * Finder / Explorer should land on a real file, not a bare folder.
+ * Prefer the first mastered chapter MP3 so the pack is visible at a glance.
+ */
+export function revealTargetInExportPack(files: string[]): string {
+  const names = files.filter((name) => typeof name === "string" && name.length > 0 && !name.includes("/") && !name.includes("\\"));
+  return names.find((name) => name.toLowerCase().endsWith(".mp3")) ?? names[0] ?? "REPORT.txt";
+}
+
 export interface ReportEntry {
   fileName: string;
   before?: AcxReport;

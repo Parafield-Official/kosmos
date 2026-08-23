@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { measurePcm, samplePeakDbfs } from "./measure";
+import { measurePcm, noiseFloorListenRange, samplePeakDbfs } from "./measure";
 
 describe("ACX measurement", () => {
   it("rejects an inter-sample true peak even when the sample peak is below -3 dBFS", () => {
@@ -149,5 +149,11 @@ describe("ACX measurement", () => {
     expect(report.checks.true_peak).toBe("fail");
     expect(report.checks.noise_floor).toBe("fail");
     expect(report.traffic_light).toBe("red");
+  });
+
+  it("widens a half-second noise-floor window so Listen to it is actually audible", () => {
+    expect(noiseFloorListenRange(0, 0.48, 434)).toEqual({ start: 0, end: 2.5 });
+    expect(noiseFloorListenRange(12.1, 0.9, 434)).toEqual({ start: 11.85, end: 14.35 });
+    expect(noiseFloorListenRange(0, 0.2, 1.1)).toEqual({ start: 0, end: 1.1 });
   });
 });

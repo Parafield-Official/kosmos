@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { pickupFromLiveFlag, type LiveMismatch } from "./live";
 import {
   audioSourceForPickup,
+  availableProofSources,
   chapterWithBoothTapeAsTake,
   concatLiveTape,
   isLiveCaughtPickup,
   listenDisabledReason,
   proofAudioSource,
   punchDisabledReason,
+  resolveProofSource,
   shouldKeepLiveTape,
 } from "./session-tape";
 import type { Pickup } from "../project/types";
@@ -194,5 +196,19 @@ describe("live session tape", () => {
       kind: "take",
     });
     expect(proofAudioSource({})).toBeNull();
+  });
+
+  it("lets Review pick the booth tape even when a take is already attached", () => {
+    const both = {
+      audio_path: "audio/01_recorded.wav",
+      live_audio_path: "audio/live/ch01_session.wav",
+    };
+    expect(availableProofSources(both)).toEqual({
+      take: { relativePath: "audio/01_recorded.wav", start: 0, end: 0, kind: "take" },
+      live: { relativePath: "audio/live/ch01_session.wav", start: 0, end: 0, kind: "live" },
+    });
+    expect(resolveProofSource(both, "live")?.kind).toBe("live");
+    expect(resolveProofSource(both, "take")?.kind).toBe("take");
+    expect(resolveProofSource({ live_audio_path: both.live_audio_path }, "take")?.kind).toBe("live");
   });
 });

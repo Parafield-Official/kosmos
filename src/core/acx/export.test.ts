@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExportPlan, getExportReadiness, reportText } from "./export";
+import { buildExportPlan, getExportReadiness, reportText, revealTargetInExportPack } from "./export";
 import { createEmptyProject, addChapter } from "../project/project";
 
 describe("ACX export plan", () => {
@@ -83,6 +83,12 @@ describe("ACX export plan", () => {
       missingAudio: [],
       ready: true,
     });
+  });
+
+  it("points Finder at the first mastered MP3 in the pack", () => {
+    expect(revealTargetInExportPack(["01_chapter_01.mp3", "99_retail_sample.mp3"])).toBe("01_chapter_01.mp3");
+    expect(revealTargetInExportPack([])).toBe("REPORT.txt");
+    expect(revealTargetInExportPack(["../escape.mp3", "REPORT.txt"])).toBe("REPORT.txt");
   });
 });
 

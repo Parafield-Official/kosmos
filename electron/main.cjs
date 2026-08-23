@@ -2354,7 +2354,7 @@ async function exportAcxPack(folder, project) {
     );
     await replaceDirectory(stagingOutputFolder, outputFolder);
     const warningCount = entries.filter((entry) => entry.status === "warn" || entry.status === "not_measured").length;
-    return {
+    const result = {
       folder: outputFolder,
       files: outputFiles,
       entries,
@@ -2362,6 +2362,12 @@ async function exportAcxPack(folder, project) {
       status: warningCount > 0 ? "ready_with_warnings" : "ready",
       warningCount,
     };
+    try {
+      revealAcxPack(folder, outputFiles);
+    } catch {
+      // The pack is already on disk. Finder is a courtesy, not the export.
+    }
+    return result;
   } finally {
     await fs.rm(temporaryFolder, { recursive: true, force: true });
     await fs.rm(stagingOutputFolder, { recursive: true, force: true });
@@ -2376,6 +2382,29 @@ function reportStatus(report) {
     return "warn";
   }
   return "pass";
+}
+
+function revealAcxPack(folder, files) {
+  const exportCore = loadCoreModule("export");
+  const targetName = exportCore.revealTargetInExportPack(files ?? []);
+  const preferred = projectAssetPath(folder, path.join("export", "acx", targetName));
+  const fallback = projectAssetPath(folder, path.join("export", "acx"));
+  const target = fsSync.existsSync(preferred) ? preferred : fallback;
+  if (!fsSync.existsSync(target)) {
+    throw new Error("The ACX pack folder is missing.");
+  }
+  shell.showItemInFolder(target);
+}
+
+async function showAcxPack(folder, project) {
+  await assertProjectEnvelope(folder, project);
+  const packFolder = projectAssetPath(folder, path.join("export", "acx"));
+  if (!fsSync.existsSync(packFolder)) {
+    throw new Error("Export an ACX pack first.");
+  }
+  const names = (await fs.readdir(packFolder)).filter((name) => !name.startsWith("."));
+  revealAcxPack(folder, names);
+  return { folder: packFolder, shown: true };
 }
 
 async function shareProjectZip(folder, project, lightPack) {
@@ -3140,6 +3169,12 @@ ipcMain.handle("acx:export", (_event, payload) => {
     throw new Error("Invalid ACX export request");
   }
   return exportAcxPack(payload.folder, payload.project);
+});
+ipcMain.handle("acx:show-pack", (_event, payload) => {
+  if (!payload?.folder || !payload?.project) {
+    throw new Error("Invalid ACX pack request");
+  }
+  return showAcxPack(payload.folder, payload.project);
 });
 ipcMain.handle("project:review-pack", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {

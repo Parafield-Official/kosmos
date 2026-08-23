@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
+import { noiseFloorListenRange } from "../core/acx/measure";
 import { getExportReadiness, type ExportReadiness } from "../core/acx/export";
 import { BUILTIN_PRESETS, presetTargets, resolvePreset } from "../core/acx/presets";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
@@ -91,13 +92,16 @@ import { pickupKindPresentation } from "../core/proof/pickup-display";
 import { PaperProse } from "./paper-prose";
 import {
   audioSourceForPickup,
+  availableProofSources,
   chapterWithBoothTapeAsTake,
   concatLiveTape,
   listenDisabledReason,
   pickupLineBounds,
   proofAudioSource,
   punchDisabledReason,
+  resolveProofSource,
   shouldKeepLiveTape,
+  type ProofSourceKind,
 } from "../core/teleprompter/session-tape";
 import { pickupPrerollStart, PICKUP_PREROLL_SECONDS } from "../core/teleprompter/pickup-line";
 import type {
@@ -376,6 +380,8 @@ function ProjectHome({
   const [glossaryRecording, setGlossaryRecording] = useState<GlossaryEntry | null>(null);
   const pendingTranscriptRef = useRef<{ chapterId: string; text: string } | null>(null);
   const [pickupSeatFilter, setPickupSeatFilter] = useState<"all" | "narration" | "N1" | "N2">("all");
+  const [reviewSourceKind, setReviewSourceKind] = useState<ProofSourceKind | null>(null);
+  const [checkedSourceKind, setCheckedSourceKind] = useState<ProofSourceKind | null>(null);
   const [duetNarrationSeat, setDuetNarrationSeat] = useState<"N1" | "N2">("N1");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pickupListenRef = useRef<HTMLAudioElement | null>(null);
@@ -413,6 +419,15 @@ function ProjectHome({
       setSelectedChapterId(project.chapters[0].id);
     }
   }, [project.chapters, selectedChapter]);
+
+  useEffect(() => {
+    setReviewSourceKind(selectedChapter ? (proofAudioSource(selectedChapter)?.kind ?? null) : null);
+    setCheckedSourceKind(null);
+  }, [selectedChapter?.id]);
+
+  const reviewAudioSource = selectedChapter
+    ? resolveProofSource(selectedChapter, reviewSourceKind)
+    : null;
 
   // A replacement take, punch, or duet mix keeps the same chapter id but
   // invalidates the previous proof/meter result. Clear those local views when
@@ -492,7 +507,7 @@ function ProjectHome({
     let disposed = false;
 
     setAudioUrl(null);
-    const source = selectedChapter ? proofAudioSource(selectedChapter) : null;
+    const source = reviewAudioSource;
     if (!source || !window.boothDesk || folder === "(browser preview)") {
       return;
     }
@@ -515,7 +530,7 @@ function ProjectHome({
       // booth-audio:// URLs are owned by the main process; there is no Blob
       // object URL to revoke here.
     };
-  }, [selectedChapter?.audio_path, selectedChapter?.live_audio_path, folder]);
+  }, [reviewAudioSource?.relativePath, folder]);
 
   useEffect(() => {
     const pending = pendingSeekRef.current;
@@ -676,6 +691,7 @@ function ProjectHome({
       if (result) {
         onChange({ folder: result.folder, project: result.project });
         setSelectedChapterId(chapter.id);
+        setReviewSourceKind("take");
       }
     });
   }
@@ -854,6 +870,7 @@ function ProjectHome({
         : result.pickups;
       const pickups = preservePickupWorkflow(proof?.pickups ?? [], freshPickups);
       setProof({ pickups, transcript });
+      setCheckedSourceKind(source.kind);
       if (window.boothDesk && folder !== "(browser preview)") {
         const saved = await window.boothDesk.saveAlignment({
           ...envelope,
@@ -905,11 +922,23 @@ function ProjectHome({
         setExportResult(result);
         setNotice(
           result.status === "ready_with_warnings"
-            ? `ACX pack is ready with ${result.warningCount} item${result.warningCount === 1 ? "" : "s"} to review. Listen once before delivery.`
-            : "ACX pack is ready. Review the report and listen once before delivery.",
+            ? `ACX pack is ready with ${result.warningCount} item${result.warningCount === 1 ? "" : "s"} to review. Finder should now show the MP3s.`
+            : "ACX pack is ready. Finder should now show the MP3s. Listen once before delivery.",
         );
       }
     });
+  }
+
+  async function showAcxPack() {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("The pack folder is available in the desktop app.");
+      return;
+    }
+    try {
+      await window.boothDesk.showAcxPack(envelope);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not open the ACX pack folder."));
+    }
   }
 
   async function exportMarkers() {
@@ -1036,6 +1065,9 @@ function ProjectHome({
       });
       if (result) {
         onChange(result);
+        if (kind === "chapter") {
+          setReviewSourceKind("take");
+        }
         setNotice(
           kind === "punch"
             ? `Punch clip saved to ${result.path}. The original chapter audio is unchanged.`
@@ -1870,6 +1902,25 @@ function ProjectHome({
     });
   }
 
+  function waitAudioReady(audio: HTMLAudioElement): Promise<void> {
+    if (audio.readyState >= 1) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const onReady = () => {
+        audio.removeEventListener("error", onError);
+        resolve();
+      };
+      const onError = () => {
+        audio.removeEventListener("loadedmetadata", onReady);
+        reject(new Error("Could not load the recording."));
+      };
+      audio.addEventListener("loadedmetadata", onReady, { once: true });
+      audio.addEventListener("error", onError, { once: true });
+      audio.load();
+    });
+  }
+
   /**
    * `pad` widens the range on both sides. A word-sized range needs it to be
    * audible at all; a range that already covers a whole line does not, and
@@ -1878,7 +1929,7 @@ function ProjectHome({
   function playOnElement(audio: HTMLAudioElement, start: number, end?: number, pad = 0.5) {
     rangeStopRef.current?.();
     audio.currentTime = Math.max(0, start - pad);
-    void audio.play();
+    const playing = audio.play();
     if (end !== undefined && Number.isFinite(end) && end > start) {
       const stop = () => {
         if (audio.currentTime >= end + pad) {
@@ -1892,6 +1943,7 @@ function ProjectHome({
         rangeStopRef.current = null;
       };
     }
+    return playing;
   }
 
   async function playPickup(pickup: Pickup) {
@@ -1907,7 +1959,7 @@ function ProjectHome({
       setNotice("Listening is available in the desktop app.");
       return;
     }
-    const visible = proofAudioSource(selectedChapter);
+    const visible = reviewAudioSource;
     const visibleAudio = audioRef.current;
     if (visible && visible.relativePath === source.relativePath && visibleAudio && audioUrl) {
       playOnElement(visibleAudio, source.start, source.end, source.wordOnly ? 0.5 : 0);
@@ -2032,25 +2084,61 @@ function ProjectHome({
   }
 
   function playRange(start: number, end?: number) {
-    if (!audioRef.current) {
+    const audio = audioRef.current;
+    if (!audio) {
+      setNotice("The chapter player is not ready.");
       return;
     }
-    rangeStopRef.current?.();
-    audioRef.current.currentTime = Math.max(0, start - 0.5);
-    void audioRef.current.play();
-    if (end !== undefined && Number.isFinite(end) && end > start) {
-      const audio = audioRef.current;
-      const stop = () => {
-        if (audio.currentTime >= end + 0.5) {
-          audio.pause();
-          rangeStopRef.current?.();
-        }
-      };
-      audio.addEventListener("timeupdate", stop);
-      rangeStopRef.current = () => {
-        audio.removeEventListener("timeupdate", stop);
-        rangeStopRef.current = null;
-      };
+    audio.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    void waitAudioReady(audio)
+      .then(() => playOnElement(audio, start, end))
+      .catch((reason: unknown) => {
+        setNotice(messageFor(reason, "Could not play that section."));
+      });
+  }
+
+  async function playNoiseFloor() {
+    if (!selectedChapter || !acxReport) {
+      setNotice("Check audio first so there is a noise floor to hear.");
+      return;
+    }
+    const measuredPath = selectedChapter.audio_path;
+    if (!measuredPath) {
+      setNotice("Attach a chapter take before listening to the noise floor.");
+      return;
+    }
+    if (!window.boothDesk || folder === "(browser preview)") {
+      setNotice("Listening is available in the desktop app.");
+      return;
+    }
+    const range = noiseFloorListenRange(
+      acxReport.noise_floor_start_seconds,
+      acxReport.noise_floor_duration_seconds,
+      acxReport.duration_seconds,
+    );
+    try {
+      const visible = reviewAudioSource;
+      const visibleAudio = audioRef.current;
+      if (visibleAudio && visible?.relativePath === measuredPath) {
+        visibleAudio.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        await waitAudioReady(visibleAudio);
+        await playOnElement(visibleAudio, range.start, range.end, 0);
+        return;
+      }
+      const hidden = pickupListenRef.current;
+      if (!hidden) {
+        setNotice("Listen player is not ready.");
+        return;
+      }
+      if (pickupListenPathRef.current !== measuredPath) {
+        const url = await window.boothDesk.audioUrl({ folder, relativePath: measuredPath });
+        pickupListenPathRef.current = measuredPath;
+        hidden.src = url;
+      }
+      await waitAudioReady(hidden);
+      await playOnElement(hidden, range.start, range.end, 0);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not play the noise floor."));
     }
   }
 
@@ -2389,7 +2477,14 @@ function ProjectHome({
                 modelAvailable={modelAvailable}
                 modelProgress={modelProgress}
                 onDownloadModel={() => void downloadWhisperModel()}
-                onProof={() => void runProof(selectedChapter)}
+                onProof={() => void runProof(selectedChapter, { preferLive: reviewAudioSource?.kind === "live" })}
+                reviewSourceKind={reviewAudioSource?.kind ?? null}
+                checkedSourceKind={checkedSourceKind}
+                onReviewSourceKind={setReviewSourceKind}
+                onAttach={() => void attachAudio(selectedChapter)}
+                onOpenBooth={() => {
+                  setTeleprompterMode(true);
+                }}
                 onPlayPickup={playPickup}
                 listenDisabledReason={(pickup) => listenDisabledReason(pickup, selectedChapter)}
                 punchDisabledReason={(pickup) => punchDisabledReason(pickup, selectedChapter)}
@@ -2435,8 +2530,9 @@ function ProjectHome({
                 onMeasure={(presetId) => void runAcxCheck(selectedChapter, presetId)}
                 specPresetId={projectSettings.spec_preset_id}
                 onExport={() => void exportAcx()}
+                onShowPack={() => void showAcxPack()}
                 onShare={() => setActivePanel("people")}
-                onPlayRange={playRange}
+                onPlayNoiseFloor={() => void playNoiseFloor()}
               />
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
@@ -2888,6 +2984,7 @@ function Teleprompter({
   const stopOnMismatchRef = useRef(stopOnMismatch);
   const liveDismissedRef = useRef<string[]>([]);
   const liveStartingRef = useRef(false);
+  const startFromBeginningRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
   const liveSessionRef = useRef(0);
   const automaticPronunciationTakeRef = useRef("");
@@ -3991,7 +4088,7 @@ function Teleprompter({
     gain.connect(context.destination);
   }
 
-  async function startLiveCapture() {
+  async function startLiveCapture(options?: { fromBeginning?: boolean }) {
     if (liveStartingRef.current || liveStoppingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
       return;
     }
@@ -4055,7 +4152,12 @@ function Teleprompter({
       // Scroll percentage is a visual position, not a word index: headings,
       // spacing, and wrapped lines make multiplying it by the chapter word
       // count wrong. Use the measured first visible manuscript line.
-      const startingCursor = visibleLiveCursor();
+      // "Read again from the start" forces the first word even if the page
+      // is still sitting on the last paragraph of the previous take.
+      if (options?.fromBeginning) {
+        scrollRef.current?.scrollTo({ top: 0 });
+      }
+      const startingCursor = options?.fromBeginning ? 0 : visibleLiveCursor();
       setLiveStartCursor(startingCursor);
       liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
       liveVisualCursorRef.current = startingCursor;
@@ -4174,9 +4276,16 @@ function Teleprompter({
   }
 
   function startNarrationNow() {
+    const fromBeginning = startFromBeginningRef.current;
+    startFromBeginningRef.current = false;
     setPronunciationBriefingOpen(false);
     setPronunciationCheckState("idle");
-    void startLiveCapture();
+    void startLiveCapture({ fromBeginning });
+  }
+
+  function requestNarration(options?: { fromBeginning?: boolean }) {
+    startFromBeginningRef.current = options?.fromBeginning === true;
+    setLiveEnabled(true);
   }
 
   function setLiveEnabled(enabled: boolean) {
@@ -4251,6 +4360,7 @@ function Teleprompter({
       if (pronunciationBriefingOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
+          startFromBeginningRef.current = false;
           setPronunciationBriefingOpen(false);
         }
         return;
@@ -4522,9 +4632,19 @@ function Teleprompter({
                       A booth tape, not the chapter take. Listen back, then check it against the page.
                     </span>
                   </div>
-                  <button type="button" className="secondary-button" onClick={() => setMode("proof")}>
-                    Check this read
-                  </button>
+                  <div className="booth-playback-actions">
+                    <button type="button" className="secondary-button" onClick={() => setMode("proof")}>
+                      Check this read
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={liveStatus === "starting"}
+                      onClick={() => requestNarration({ fromBeginning: true })}
+                    >
+                      Read again from the start
+                    </button>
+                  </div>
                 </div>
                 <audio controls src={tapeUrl} preload="metadata" />
               </section>
@@ -4753,7 +4873,10 @@ function Teleprompter({
           chapterTitle={title}
           entries={briefingGlossary}
           onPlay={activateGlossary}
-          onCancel={() => setPronunciationBriefingOpen(false)}
+          onCancel={() => {
+            startFromBeginningRef.current = false;
+            setPronunciationBriefingOpen(false);
+          }}
           onStart={startNarrationNow}
         />
       ) : null}
@@ -6820,39 +6943,57 @@ function RecordPage({
 }) {
   return (
     <div className="record-page">
-      <article className="surface-card">
-        <header className="chapter-desk-heading">
-          <div>
-            <p className="card-kicker">Now reading</p>
-            <h3>{chapter.title}</h3>
-          </div>
-          <div className="chapter-heading-tools">
-            <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
-              {chapter.audio_path ? "Take attached" : "No take yet"}
-            </span>
-            <button className="table-action" type="button" disabled={busyAction !== null} onClick={() => onAttach(chapter)}>
-              {chapter.audio_path ? "Replace take" : "Attach take"}
+      <div className="record-main">
+        <article className="surface-card">
+          <header className="chapter-desk-heading">
+            <div>
+              <p className="card-kicker">Now reading</p>
+              <h3>{chapter.title}</h3>
+            </div>
+          </header>
+          <p className="manuscript-body">{chapterText || "Loading manuscript…"}</p>
+        </article>
+
+        <article className="surface-card">
+          <p className="card-kicker">Recorded here</p>
+          <h3>Open the page</h3>
+          <p className="panel-honesty">Read in the booth. Kosmos keeps a booth tape for Review.</p>
+          <div className="desk-actions">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={chapterText.trim().length === 0 || busyAction !== null}
+              onClick={onOpenTeleprompter}
+            >
+              Open the page
             </button>
           </div>
-        </header>
-        {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
-        <p className="manuscript-body tall">{chapterText || "Loading manuscript…"}</p>
-        <div className="desk-actions">
-          <button
-            className="primary-button"
-            type="button"
-            disabled={chapterText.trim().length === 0 || busyAction !== null}
-            onClick={onOpenTeleprompter}
-          >
-            Open the page
-          </button>
-        </div>
-        <RecorderPanel
-          label="Record this chapter"
-          disabled={!window.boothDesk || busyAction !== null}
-          onSave={onSaveRecording}
-        />
-      </article>
+        </article>
+
+        <article className="surface-card">
+          <header className="chapter-desk-heading">
+            <div>
+              <p className="card-kicker">Brought in</p>
+              <h3>Chapter take</h3>
+            </div>
+            <span className={chapter.audio_path ? "status-pill attached" : "status-pill"}>
+              {chapter.audio_path ? "File ready" : "No file yet"}
+            </span>
+          </header>
+          <p className="panel-honesty">Add a file you already recorded, or capture one here. This is the take Review can splice into.</p>
+          {chapter.audio_path && audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
+          <div className="desk-actions">
+            <button className="action-button" type="button" disabled={busyAction !== null} onClick={() => onAttach(chapter)}>
+              {chapter.audio_path ? "Replace file" : "Add a file"}
+            </button>
+          </div>
+          <RecorderPanel
+            label="Record a take"
+            disabled={!window.boothDesk || busyAction !== null}
+            onSave={onSaveRecording}
+          />
+        </article>
+      </div>
 
       <aside className="record-side">
         <article className="surface-card">
@@ -6909,6 +7050,11 @@ function ReviewPage({
   modelProgress,
   onDownloadModel,
   onProof,
+  reviewSourceKind,
+  checkedSourceKind,
+  onReviewSourceKind,
+  onAttach,
+  onOpenBooth,
   onPlayPickup,
   listenDisabledReason,
   punchDisabledReason,
@@ -6936,6 +7082,11 @@ function ReviewPage({
   modelProgress: number;
   onDownloadModel: () => void;
   onProof: () => void;
+  reviewSourceKind: ProofSourceKind | null;
+  checkedSourceKind: ProofSourceKind | null;
+  onReviewSourceKind: (kind: ProofSourceKind) => void;
+  onAttach: () => void;
+  onOpenBooth: () => void;
   onPlayPickup: (pickup: Pickup) => void;
   listenDisabledReason?: (pickup: Pickup) => string | null;
   punchDisabledReason?: (pickup: Pickup) => string | null;
@@ -6952,6 +7103,14 @@ function ReviewPage({
   comparisons: PickupComparison[];
 }) {
   const [editingTranscript, setEditingTranscript] = useState(false);
+  const sources = availableProofSources(chapter);
+  const selectedKind = reviewSourceKind ?? proofAudioSource(chapter)?.kind ?? null;
+  const staleFlags = Boolean(
+    proof
+    && checkedSourceKind
+    && selectedKind
+    && checkedSourceKind !== selectedKind,
+  );
   return (
     <div className="review-page">
       <article className="surface-card review-listen-card">
@@ -6959,11 +7118,53 @@ function ReviewPage({
           <div>
             <p className="card-kicker">Listen against the page</p>
             <h3>{chapter.title}</h3>
+            <p className="panel-honesty">Pick the recording to check against the page.</p>
           </div>
-          <span className={proofAudioSource(chapter) ? "status-pill attached" : "status-pill"}>
-            {chapter.audio_path ? "Take ready" : chapter.live_audio_path ? "Booth tape" : "Need a take"}
-          </span>
         </header>
+        <div className="review-source-split">
+          <section className={selectedKind === "live" ? "review-source selected" : "review-source"}>
+            <p className="paper-kicker">Recorded here</p>
+            <strong>{sources.live ? "Booth tape" : "No booth tape yet"}</strong>
+            <p>The read from Open the page.</p>
+            {sources.live ? (
+              <button
+                className="action-button small"
+                type="button"
+                disabled={busyAction !== null || selectedKind === "live"}
+                onClick={() => onReviewSourceKind("live")}
+              >
+                {selectedKind === "live" ? "Using this" : "Use this"}
+              </button>
+            ) : (
+              <button className="action-button small" type="button" disabled={busyAction !== null} onClick={onOpenBooth}>
+                Open the page
+              </button>
+            )}
+          </section>
+          <section className={selectedKind === "take" ? "review-source selected" : "review-source"}>
+            <p className="paper-kicker">Brought in</p>
+            <strong>{sources.take ? "Uploaded take" : "No file yet"}</strong>
+            <p>A recording from Reaper, your phone, or another booth.</p>
+            <div className="review-source-actions">
+              {sources.take ? (
+                <button
+                  className="action-button small"
+                  type="button"
+                  disabled={busyAction !== null || selectedKind === "take"}
+                  onClick={() => onReviewSourceKind("take")}
+                >
+                  {selectedKind === "take" ? "Using this" : "Use this"}
+                </button>
+              ) : null}
+              <button className="action-button small" type="button" disabled={busyAction !== null} onClick={onAttach}>
+                {sources.take ? "Replace file" : "Add a file"}
+              </button>
+            </div>
+          </section>
+        </div>
+        {staleFlags ? (
+          <p className="panel-honesty">These flags are from the other recording. Check this one to refresh them.</p>
+        ) : null}
         {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
         <section className="paper-sheet" aria-label="Manuscript">
           <p className="paper-kicker">The page</p>
@@ -6977,7 +7178,7 @@ function ReviewPage({
         </section>
         <section className="paper-sheet heard-sheet" aria-label="Transcript">
           <div className="paper-sheet-heading">
-            <p className="paper-kicker">Heard on the tape</p>
+            <p className="paper-kicker">{selectedKind === "take" ? "Heard on the uploaded take" : "Heard on the booth tape"}</p>
             <button
               className="action-button small plain"
               type="button"
@@ -7052,7 +7253,7 @@ function ReviewPage({
       ) : (
         <div className="empty-chapters compact">
           <h3>No review yet</h3>
-          <p>Check the chapter after you have a take. Pickups will land here.</p>
+          <p>Check the recording you picked. Pickups will land here.</p>
         </div>
       )}
       {comparisons.length > 0 ? <PickupComparisonPanel folder={comparisonFolder} comparisons={comparisons} /> : null}
@@ -7071,8 +7272,9 @@ function FinishPage({
   onMeasure,
   specPresetId,
   onExport,
+  onShowPack,
   onShare,
-  onPlayRange,
+  onPlayNoiseFloor,
 }: {
   chapter: ChapterFile;
   exportReadiness: ExportReadiness;
@@ -7084,8 +7286,9 @@ function FinishPage({
   onMeasure: (presetId?: string) => void;
   specPresetId: string;
   onExport: () => void;
+  onShowPack: () => void;
   onShare: () => void;
-  onPlayRange: (start: number, end?: number) => void;
+  onPlayNoiseFloor: () => void;
 }) {
   return (
     <div className="finish-page">
@@ -7109,10 +7312,7 @@ function FinishPage({
         {acxReport ? (
           <AcxMeter
             report={acxReport}
-            onPlayNoiseFloor={audioUrl ? () => onPlayRange(
-              acxReport.noise_floor_start_seconds,
-              acxReport.noise_floor_start_seconds + acxReport.noise_floor_duration_seconds,
-            ) : undefined}
+            onPlayNoiseFloor={chapter.audio_path ? onPlayNoiseFloor : undefined}
             presetId={specPresetId}
             onPresetChange={(presetId) => onMeasure(presetId)}
           />
@@ -7139,6 +7339,11 @@ function FinishPage({
           <button className="primary-button" type="button" disabled={!exportReadiness.ready || busyAction !== null} onClick={onExport}>
             {busyAction === "export" ? "Exporting…" : "Export ACX pack"}
           </button>
+          {exportResult ? (
+            <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShowPack}>
+              Show pack
+            </button>
+          ) : null}
           <button className="secondary-button" type="button" disabled={busyAction !== null} onClick={onShare}>
             {busyAction === "share" ? "Preparing…" : "Invite on People"}
           </button>

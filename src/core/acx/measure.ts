@@ -506,3 +506,36 @@ function isDigitalSilence(sample: number): boolean {
 function positiveIntegerOrZero(value: number): number {
   return Number.isInteger(value) && value > 0 ? value : 0;
 }
+
+/** How long Listen to it must play so a quiet floor is actually audible. */
+export const NOISE_FLOOR_MIN_LISTEN_SECONDS = 2.5;
+
+/**
+ * The meter window can be half a second of hush. Playing that alone sounds
+ * like the button did nothing. Widen it just enough to hear that it is quiet.
+ */
+export function noiseFloorListenRange(
+  startSeconds: number,
+  durationSeconds: number,
+  fileDurationSeconds?: number,
+): { start: number; end: number } {
+  const start = Number.isFinite(startSeconds) ? Math.max(0, startSeconds) : 0;
+  const duration = Number.isFinite(durationSeconds) ? Math.max(0, durationSeconds) : 0;
+  const pad = 0.25;
+  let from = Math.max(0, start - pad);
+  let to = start + duration + pad;
+  if (to - from < NOISE_FLOOR_MIN_LISTEN_SECONDS) {
+    to = from + NOISE_FLOOR_MIN_LISTEN_SECONDS;
+  }
+  if (Number.isFinite(fileDurationSeconds) && (fileDurationSeconds as number) > 0) {
+    const fileEnd = fileDurationSeconds as number;
+    to = Math.min(fileEnd, to);
+    if (to - from < NOISE_FLOOR_MIN_LISTEN_SECONDS) {
+      from = Math.max(0, to - NOISE_FLOOR_MIN_LISTEN_SECONDS);
+    }
+  }
+  if (to <= from) {
+    to = from + Math.max(duration, 0.4);
+  }
+  return { start: from, end: to };
+}

@@ -145,23 +145,38 @@ export function chapterWithBoothTapeAsTake<T extends LiveTapeChapter>(chapter: T
 
 /** Check chapter prefers the master take. The booth tape is enough when there is no take. */
 export function proofAudioSource(chapter: LiveTapeChapter): PickupAudioSource | null {
-  if (chapter.audio_path) {
-    return {
-      relativePath: chapter.audio_path,
-      start: 0,
-      end: 0,
-      kind: "take",
-    };
+  return resolveProofSource(chapter, null);
+}
+
+export type ProofSourceKind = "take" | "live";
+
+export function availableProofSources(chapter: LiveTapeChapter): {
+  take: PickupAudioSource | null;
+  live: PickupAudioSource | null;
+} {
+  return {
+    take: chapter.audio_path
+      ? { relativePath: chapter.audio_path, start: 0, end: 0, kind: "take" }
+      : null,
+    live: chapter.live_audio_path
+      ? { relativePath: chapter.live_audio_path, start: 0, end: 0, kind: "live" }
+      : null,
+  };
+}
+
+/** Honour an explicit booth-tape vs uploaded-take choice. Missing sides fall back. */
+export function resolveProofSource(
+  chapter: LiveTapeChapter,
+  preference: ProofSourceKind | null,
+): PickupAudioSource | null {
+  const sources = availableProofSources(chapter);
+  if (preference === "live" && sources.live) {
+    return sources.live;
   }
-  if (chapter.live_audio_path) {
-    return {
-      relativePath: chapter.live_audio_path,
-      start: 0,
-      end: 0,
-      kind: "live",
-    };
+  if (preference === "take" && sources.take) {
+    return sources.take;
   }
-  return null;
+  return sources.take ?? sources.live;
 }
 
 export function shouldKeepLiveTape(sampleCount: number, sampleRate: number): boolean {

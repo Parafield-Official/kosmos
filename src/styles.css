@@ -803,6 +803,52 @@ button {
   gap: 16px;
 }
 
+.record-main {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.review-source-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.review-source {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--stone);
+}
+
+.review-source.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.review-source strong {
+  font-size: 15px;
+}
+
+.review-source > p:not(.paper-kicker) {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.review-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .review-page,
 .book-page {
   display: grid;
@@ -3401,6 +3447,13 @@ button {
   gap: 14px;
 }
 
+.booth-playback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .booth-playback-head > div {
   display: grid;
   gap: 2px;
@@ -4787,6 +4840,10 @@ button {
   }
 
   .welcome-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .review-source-split {
     grid-template-columns: 1fr;
   }
 
