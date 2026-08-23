@@ -36,7 +36,7 @@ async function collectBookProof(project, readDocument, readAlignment) {
       chapterId: chapter.id,
       chapterIndex: chapter.index,
       chapterTitle: chapter.title,
-      manuscript: document?.text ?? "",
+      manuscript: chapterTextFromDocument(document),
       transcript: alignment?.transcript ?? [],
       pickups: alignment?.pickups ?? [],
       hasAudio: Boolean(chapter.audio_path),
@@ -44,6 +44,15 @@ async function collectBookProof(project, readDocument, readAlignment) {
     });
   }
   return { chapters: entries };
+}
+
+/** Chapter files store spans. A leftover `text` field is still accepted. */
+function chapterTextFromDocument(document) {
+  if (typeof document?.text === "string" && document.text.length > 0) {
+    return document.text;
+  }
+  const spans = Array.isArray(document?.spans) ? document.spans : [];
+  return spans.map((span) => (typeof span?.text === "string" ? span.text : "")).join("");
 }
 
 const PICKUP_STATUSES = new Set(["open", "done", "ignored"]);

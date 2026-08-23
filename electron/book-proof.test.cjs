@@ -39,6 +39,17 @@ describe("whole-book proof collection", () => {
     expect(book.chapters[0].hasAudio).toBe(true);
   });
 
+  it("joins span-only chapter scripts so a name scan can see the manuscript", async () => {
+    const book = await collectBookProof(
+      { chapters: [{ id: "ch01", index: 1, title: "One", text_path: "text/ch01.json" }] },
+      () => Promise.resolve({
+        spans: [{ text: "Daphne " }, { text: "Bridgerton crumpled the paper." }],
+      }),
+      () => Promise.resolve(null),
+    );
+    expect(book.chapters[0].manuscript).toBe("Daphne Bridgerton crumpled the paper.");
+  });
+
   it("reports chapters that have no recording yet", async () => {
     const book = await collectBookProof(project, readDocument, readAlignment);
     const third = book.chapters[2];
