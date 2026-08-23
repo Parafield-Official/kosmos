@@ -88,8 +88,10 @@ import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWi
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
+import { PaperProse } from "./paper-prose";
 import {
   audioSourceForPickup,
+  chapterWithBoothTapeAsTake,
   concatLiveTape,
   listenDisabledReason,
   pickupLineBounds,
@@ -112,10 +114,13 @@ import type {
 } from "../core/project/types";
 import {
   settingsUpdateCopy,
-  shouldShowUpdateBanner,
-  updateBannerAction,
   type AppUpdateStatus,
 } from "./app-update";
+import { AppUpdateNotice } from "./AppUpdateNotice";
+import {
+  shouldUseTranscriptOverride,
+  type ProofTranscriptOrigin,
+} from "./proof-transcript";
 
 interface ProjectEnvelope {
   folder: string;
@@ -149,42 +154,6 @@ function useAppUpdate(): AppUpdateStatus | null {
     return bridge.onAppUpdate(setStatus);
   }, []);
   return status;
-}
-
-function AppUpdateBanner({
-  status,
-  hidden = false,
-}: {
-  status: AppUpdateStatus | null;
-  hidden?: boolean;
-}) {
-  if (hidden || !shouldShowUpdateBanner(status) || !status) {
-    return null;
-  }
-  const action = updateBannerAction(status);
-  return (
-    <div className={`update-banner${status.phase === "ready" ? " ready" : ""}`} role="status">
-      <p>{status.text}</p>
-      {action?.kind === "install" ? (
-        <button
-          className="compact-button"
-          type="button"
-          onClick={() => void window.boothDesk?.installAppUpdate()}
-        >
-          {action.label}
-        </button>
-      ) : null}
-      {action?.kind === "open-release" ? (
-        <button
-          className="compact-button"
-          type="button"
-          onClick={() => void window.boothDesk?.openKosmosRelease()}
-        >
-          {action.label}
-        </button>
-      ) : null}
-    </div>
-  );
 }
 
 export function App() {
@@ -271,7 +240,7 @@ export function App() {
           <h1>Kosmos</h1>
         </div>
       </header>
-      <AppUpdateBanner status={updateStatus} />
+      <AppUpdateNotice status={updateStatus} />
 
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy">
@@ -358,6 +327,7 @@ function ProjectHome({
   const [chapterTitle, setChapterTitle] = useState("Chapter 1");
   const [pastedText, setPastedText] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
+  const transcriptOriginRef = useRef<ProofTranscriptOrigin>("generated");
   const [proof, setProof] = useState<ProofResult | null>(null);
   const proofRef = useRef<ProofResult | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
@@ -452,6 +422,7 @@ function ProjectHome({
     setProof(null);
     setAcxReport(null);
     setRoomReport(null);
+    transcriptOriginRef.current = "generated";
     setTranscriptText("");
   }, [selectedChapter?.id, selectedChapter?.audio_path]);
 
@@ -463,6 +434,7 @@ function ProjectHome({
     let disposed = false;
     setProof(null);
     setAcxReport(null);
+    transcriptOriginRef.current = "generated";
     setTranscriptText("");
     setNotice(null);
     setChapterText("");
@@ -488,8 +460,10 @@ function ProjectHome({
         setChapterSpans(result.spans);
         if (alignment && alignment.chapter_id === selectedChapter.id) {
           setProof({ pickups: alignment.pickups, transcript: alignment.transcript });
+          transcriptOriginRef.current = "generated";
           setTranscriptText(alignment.transcript.map((word) => word.text).join(" "));
         } else if (pendingTranscriptRef.current?.chapterId === selectedChapter.id) {
+          transcriptOriginRef.current = "manual";
           setTranscriptText(pendingTranscriptRef.current.text);
           pendingTranscriptRef.current = null;
         }
@@ -842,7 +816,11 @@ function ProjectHome({
       }
       let transcript: TranscriptWord[];
       let silences: SilenceRange[] | undefined;
-      if (transcriptText.trim().length > 0) {
+      if (shouldUseTranscriptOverride({
+        text: transcriptText,
+        origin: transcriptOriginRef.current,
+        preferLive: options.preferLive === true,
+      })) {
         transcript = timedTranscript(transcriptText, duration || 1);
       } else if (window.boothDesk) {
         const local = await window.boothDesk.transcribe({
@@ -852,6 +830,7 @@ function ProjectHome({
         });
         transcript = local.words;
         silences = local.silences;
+        transcriptOriginRef.current = "generated";
         setTranscriptText(local.words.map((word) => word.text).join(" "));
       } else {
         throw new Error("Audio checking is available in the desktop app. Paste a transcript here to continue.");
@@ -1103,6 +1082,35 @@ function ProjectHome({
       ? await window.boothDesk.saveProject({ folder, project: nextProject })
       : { folder, project: nextProject };
     onChange(nextEnvelope);
+  }
+
+  async function openPunchRecorder(pickup: Pickup) {
+    if (!selectedChapter) {
+      return;
+    }
+    const blocked = punchDisabledReason(pickup, selectedChapter);
+    if (blocked) {
+      setNotice(blocked);
+      return;
+    }
+    const next = chapterWithBoothTapeAsTake(selectedChapter);
+    if (next.audio_path !== selectedChapter.audio_path) {
+      const now = new Date().toISOString();
+      try {
+        await persistProject({
+          ...project,
+          chapters: project.chapters.map((item) => item.id === selectedChapter.id
+            ? { ...next, updated_at: now }
+            : item),
+          updated_at: now,
+        });
+        setNotice("Kept this booth tape as the chapter take so the pickup can be spliced in.");
+      } catch (reason) {
+        setNotice(messageFor(reason, "Could not keep this booth tape as the chapter take."));
+        return;
+      }
+    }
+    setPunchPickup(pickup);
   }
 
   async function saveLocalIdentity() {
@@ -1899,6 +1907,12 @@ function ProjectHome({
       setNotice("Listening is available in the desktop app.");
       return;
     }
+    const visible = proofAudioSource(selectedChapter);
+    const visibleAudio = audioRef.current;
+    if (visible && visible.relativePath === source.relativePath && visibleAudio && audioUrl) {
+      playOnElement(visibleAudio, source.start, source.end, source.wordOnly ? 0.5 : 0);
+      return;
+    }
     const audio = pickupListenRef.current;
     if (!audio) {
       setNotice("Listen player is not ready.");
@@ -2288,7 +2302,7 @@ function ProjectHome({
         </header> : null}
 
         {!teleprompterOpen && notice ? <div className="inline-notice" role="status">{notice}</div> : null}
-        <AppUpdateBanner status={updateStatus} hidden={teleprompterOpen} />
+        <AppUpdateNotice status={updateStatus} hidden={teleprompterOpen} />
         <audio ref={pickupListenRef} preload="metadata" hidden />
 
         <section className={teleprompterOpen ? "studio-page reader-page" : "studio-page"} aria-labelledby="book-home-title">
@@ -2364,7 +2378,10 @@ function ProjectHome({
                 chapter={selectedChapter}
                 chapterText={chapterText}
                 transcriptText={transcriptText}
-                onTranscriptChange={setTranscriptText}
+                onTranscriptChange={(value) => {
+                  transcriptOriginRef.current = "manual";
+                  setTranscriptText(value);
+                }}
                 busyAction={busyAction}
                 audioUrl={audioUrl}
                 audioRef={audioRef}
@@ -2380,7 +2397,7 @@ function ProjectHome({
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
                 onExportPacket={() => void exportPickupPacket()}
-                onPunchPickup={setPunchPickup}
+                onPunchPickup={(pickup) => void openPunchRecorder(pickup)}
                 onUpdatePickup={(pickup, changes) => void updateProofPickup(pickup, changes)}
                 onSuppressPickup={(pickup) => void suppressPickupWord(pickup)}
                 pickupSeatFilter={pickupSeatFilter}
@@ -6934,9 +6951,10 @@ function ReviewPage({
   comparisonFolder: string;
   comparisons: PickupComparison[];
 }) {
+  const [editingTranscript, setEditingTranscript] = useState(false);
   return (
     <div className="review-page">
-      <article className="surface-card">
+      <article className="surface-card review-listen-card">
         <header className="chapter-desk-heading">
           <div>
             <p className="card-kicker">Listen against the page</p>
@@ -6947,21 +6965,48 @@ function ReviewPage({
           </span>
         </header>
         {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
-        <details className="manuscript-preview">
-          <summary>Manuscript</summary>
-          <p>{chapterText || "Loading manuscript…"}</p>
-        </details>
-        <div className="proof-input">
-          <label htmlFor="local-transcript">Transcript</label>
-          <textarea
-            id="local-transcript"
-            rows={4}
-            value={transcriptText}
-            disabled={busyAction !== null}
-            onChange={(event) => onTranscriptChange(event.target.value)}
-            placeholder="Paste the words that were read, or leave blank to transcribe…"
-          />
-          <p>We compare this with the manuscript to find word changes and pauses.</p>
+        <section className="paper-sheet" aria-label="Manuscript">
+          <p className="paper-kicker">The page</p>
+          <div className="paper-prose">
+            <PaperProse
+              text={chapterText}
+              kind="manuscript"
+              empty="Loading manuscript…"
+            />
+          </div>
+        </section>
+        <section className="paper-sheet heard-sheet" aria-label="Transcript">
+          <div className="paper-sheet-heading">
+            <p className="paper-kicker">Heard on the tape</p>
+            <button
+              className="action-button small plain"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => setEditingTranscript((open) => !open)}
+            >
+              {editingTranscript ? "Done" : "Edit"}
+            </button>
+          </div>
+          {editingTranscript ? (
+            <textarea
+              id="local-transcript"
+              className="paper-transcript-edit"
+              rows={8}
+              value={transcriptText}
+              disabled={busyAction !== null}
+              onChange={(event) => onTranscriptChange(event.target.value)}
+              placeholder="Paste the words that were read, or leave blank to transcribe…"
+            />
+          ) : (
+            <div className="paper-prose heard">
+              <PaperProse
+                text={transcriptText}
+                kind="transcript"
+                empty="Paste the words that were read, or leave this blank to transcribe."
+              />
+            </div>
+          )}
+          <p className="paper-help">We compare this with the manuscript to find word changes and pauses.</p>
           {modelAvailable === false ? (
             <div className="model-note">
               <span>Speech model is not ready yet.</span>
@@ -6972,7 +7017,7 @@ function ReviewPage({
               </button>
             </div>
           ) : null}
-        </div>
+        </section>
         <div className="desk-actions">
           <button
             className="primary-button"
@@ -7395,7 +7440,7 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
               className={`pickup-row kind-tone-${pickupKindPresentation(pickup.kind).tone} ${pickup.status}`}
               data-kind={pickup.kind}
             >
-              <time>{formatTime(pickup.t_start)}</time>
+              <time>{formatTime(pickupLineBounds(pickup).start)}</time>
               <div className="pickup-reading">{pickupReading(pickup)}</div>
               <span className={`kind-badge kind-tone-${pickupKindPresentation(pickup.kind).tone}`}>
                 {pickupKindPresentation(pickup.kind).label}

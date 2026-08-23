@@ -22,6 +22,8 @@ import {
   PickupList,
   SettingsPanel,
 } from "../app/App";
+import { AppUpdateNoticeCard } from "../app/AppUpdateNotice";
+import { updateNoticeView, type AppUpdateStatus } from "../app/app-update";
 import { DEFAULT_PROJECT_SETTINGS } from "../core/project/settings";
 import type { GlossaryEntry, Pickup, ProjectFile } from "../core/project/types";
 import "../styles.css";
@@ -472,6 +474,51 @@ const PANELS: Array<{ id: string; title: string; node: ReactElement }> = [
     id: "settings",
     title: "Book preferences",
     node: <SettingsPanel settings={PROJECT.settings!} busyAction={null} onChange={noop} />,
+  },
+  {
+    id: "update-arriving",
+    title: "Update arriving",
+    node: (
+      <AppUpdateNoticeCard
+        embedded
+        view={updateNoticeView({
+          phase: "downloading",
+          currentVersion: "0.1.1",
+          version: "0.1.2",
+          percent: 62,
+          showBanner: true,
+        } satisfies AppUpdateStatus)!}
+      />
+    ),
+  },
+  {
+    id: "update-ready",
+    title: "Update installed",
+    node: (
+      <AppUpdateNoticeCard
+        embedded
+        view={updateNoticeView({
+          phase: "ready",
+          currentVersion: "0.1.1",
+          version: "0.1.2",
+          showBanner: true,
+          canInstall: true,
+        } satisfies AppUpdateStatus)!}
+      />
+    ),
+  },
+  {
+    id: "update-applied",
+    title: "Update applied",
+    node: (
+      <AppUpdateNoticeCard
+        embedded
+        view={updateNoticeView(
+          { phase: "up-to-date", currentVersion: "0.1.2" } satisfies AppUpdateStatus,
+          { kind: "applied", from: "0.1.1", to: "0.1.2" },
+        )!}
+      />
+    ),
   },
 ];
 

@@ -33,6 +33,9 @@ const PANELS = [
   "acx-trouble",
   "collaboration",
   "settings",
+  "update-arriving",
+  "update-ready",
+  "update-applied",
 ];
 
 async function shoot(window, panel) {
