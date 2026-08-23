@@ -1,4 +1,5 @@
 const { createLiveTape } = require("./live-tape.cjs");
+const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
 
 describe("main-process booth tape", () => {
   it("keeps streamed PCM so Review can transcribe after the page closes", () => {
@@ -46,5 +47,16 @@ describe("main-process booth tape", () => {
     expect(onDisk.length).toBe(wav.length);
     expect(Buffer.from(onDisk.subarray(8, 12)).toString("ascii")).toBe("WAVE");
     fs.unlinkSync(file);
+  });
+
+  it("accepts its 16 kHz PCM output as a live recording but not a chapter take", () => {
+    const tape = createLiveTape();
+    tape.begin({ chapterId: "ch01" });
+    tape.append(new Float32Array(16_000).fill(0.05));
+    const audio = require("../dist-core/audio.cjs");
+    const decoded = audio.decodeWavPcm16(tape.encode());
+
+    expect(() => assertRecorderPcmBounds(decoded, "live")).not.toThrow();
+    expect(() => assertRecorderPcmBounds(decoded, "chapter")).toThrow(/44\.1 kHz/u);
   });
 });

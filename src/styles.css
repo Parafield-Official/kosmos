@@ -1996,6 +1996,43 @@ button {
   font-size: 9px;
 }
 
+.kind-badge.kind-tone-danger {
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.kind-badge.kind-tone-warning {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.kind-badge.kind-tone-info {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.pickup-row.kind-tone-danger {
+  border-left: 3px solid var(--bad);
+}
+
+.pickup-row.kind-tone-warning {
+  border-left: 3px solid #d8a927;
+}
+
+.pickup-row.kind-tone-info {
+  border-left: 3px solid var(--accent);
+}
+
+.pickup-row.kind-tone-danger .expected,
+.pickup-row.kind-tone-danger .heard {
+  color: var(--bad);
+}
+
+.pickup-row.kind-tone-warning .expected,
+.pickup-row.kind-tone-warning .heard {
+  color: var(--warn);
+}
+
 .pickup-note-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2963,6 +3000,7 @@ button {
 }
 
 .live-voice-status-processing .live-voice-status-dot,
+.live-voice-status-paused .live-voice-status-dot,
 .live-voice-status-starting .live-voice-status-dot {
   background: #d28a28;
   animation: live-status-pulse 1s ease-in-out infinite;
@@ -5315,6 +5353,22 @@ button {
   min-width: 148px;
 }
 
+.booth-recording-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.booth-pause-button {
+  min-width: 116px;
+}
+
+.booth-pause-button[aria-pressed="true"] {
+  border-color: #3ea8f5;
+  color: #176ca8;
+  background: #eaf6ff;
+}
+
 .booth-start-icon {
   display: inline-block;
   margin-right: 8px;
@@ -5766,6 +5820,14 @@ button {
   .booth-start-button,
   .booth-progress-wrap {
     flex: 1 1 100%;
+  }
+
+  .booth-recording-controls {
+    flex: 1 1 100%;
+  }
+
+  .booth-recording-controls > button {
+    flex: 1;
   }
 
   .booth-proof-panel {

@@ -713,13 +713,21 @@ export function liveRequestStatus(streaming: boolean): "listening" | "processing
   return streaming ? "listening" : "processing";
 }
 
+export type LiveVoiceStatus = "off" | "starting" | "listening" | "paused" | "processing" | "error";
+
 export function liveVoiceStatusCopy(input: {
-  status: "off" | "starting" | "listening" | "processing" | "error";
+  status: LiveVoiceStatus;
   enabled: boolean;
   dimmed: boolean;
   error: string | null;
   heardText: string;
 }): { title: string; detail: string } {
+  if (input.status === "paused" && input.enabled) {
+    return {
+      title: "Paused",
+      detail: "Your place is held. Break audio is not being saved.",
+    };
+  }
   if (input.dimmed) {
     return input.enabled
       ? { title: "Following", detail: "Word checks paused; voice follow is still running." }

@@ -32,6 +32,7 @@ const { normalizePunchBounds } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { createLiveTape } = require("./live-tape.cjs");
+const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
 const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 const {
@@ -1487,7 +1488,7 @@ async function saveRecordingWav(folder, project, payload) {
     // copying so a bad recorder/browser payload cannot poison the project.
     const audioCore = loadCoreModule("audio");
     const decoded = audioCore.decodeWavPcm16(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
-    assertRecorderPcmBounds(decoded);
+    assertRecorderPcmBounds(decoded, kind);
     const duration = decoded.samples.length / decoded.channels / decoded.sampleRate;
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new Error("Recorder WAV contains no audio samples");
@@ -2173,22 +2174,6 @@ function mixInterleavedToMono(samples, channels) {
     output[frame] = sum / count;
   }
   return output;
-}
-
-function assertRecorderPcmBounds(decoded) {
-  if (
-    !decoded
-    || !Number.isInteger(decoded.sampleRate)
-    || decoded.sampleRate !== 44_100
-    || !Number.isInteger(decoded.channels)
-    || decoded.channels !== 1
-    || !decoded.samples
-    || !Number.isInteger(decoded.samples.length)
-    || decoded.samples.length === 0
-    || decoded.samples.length % decoded.channels !== 0
-  ) {
-    throw new Error("Recorder WAV must contain 44.1 kHz mono PCM samples");
-  }
 }
 
 function resampleLinearArray(samples, fromRate, toRate) {

@@ -84,9 +84,10 @@ import {
   type PromptTheme,
   type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus } from "../core/teleprompter/live";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
+import { pickupKindPresentation } from "../core/proof/pickup-display";
 import {
   audioSourceForPickup,
   concatLiveTape,
@@ -2657,7 +2658,9 @@ function Teleprompter({
     }));
   }, [lines]);
   const [liveState, setLiveState] = useState(createLiveFlagsState);
-  const [liveStatus, setLiveStatus] = useState<"off" | "starting" | "listening" | "processing" | "error">("off");
+  const [liveStatus, setLiveStatus] = useState<LiveVoiceStatus>("off");
+  const [livePaused, setLivePaused] = useState(false);
+  const [livePauseChanging, setLivePauseChanging] = useState(false);
   const [liveFlag, setLiveFlag] = useState<LiveMismatch | null>(null);
   const [liveHalt, setLiveHalt] = useState<LiveMismatch | null>(null);
   const [stopOnMismatch, setStopOnMismatch] = useState(true);
@@ -2778,6 +2781,8 @@ function Teleprompter({
   const positionRestoreRef = useRef(false);
   const liveStateRef = useRef(liveState);
   const liveEnabledRef = useRef(false);
+  const livePausedRef = useRef(false);
+  const livePauseChangingRef = useRef(false);
   const liveStreamRef = useRef<MediaStream | null>(null);
   const liveContextRef = useRef<AudioContext | null>(null);
   const liveSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -3096,6 +3101,9 @@ function Teleprompter({
       }
       return;
     }
+    if (livePausedRef.current) {
+      return;
+    }
     const limit = expectedWordsRef.current.length || expectedWords.length;
     const advanced = leadAdvance(
       liveLeadRef.current,
@@ -3128,6 +3136,10 @@ function Teleprompter({
   }
 
   function resetLiveCaptureState() {
+    livePausedRef.current = false;
+    livePauseChangingRef.current = false;
+    setLivePaused(false);
+    setLivePauseChanging(false);
     liveSamplesRef.current = [];
     liveSampleCountRef.current = 0;
     liveCapturedSecondsRef.current = 0;
@@ -3290,7 +3302,7 @@ function Teleprompter({
       return;
     }
     return bridge.onLiveWords(({ words }) => {
-      if (!liveEnabledRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
+      if (!liveEnabledRef.current || livePausedRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
         return;
       }
       if (!Array.isArray(words) || words.length === 0) {
@@ -3335,7 +3347,7 @@ function Teleprompter({
       return;
     }
     const timer = window.setInterval(() => {
-      if (!liveEnabledRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
+      if (!liveEnabledRef.current || livePausedRef.current || !liveFollowStreamRef.current || liveStoppingRef.current) {
         return;
       }
       publishLiveCursor();
@@ -3431,7 +3443,7 @@ function Teleprompter({
 
   async function transcribeLiveWindow(samples: Float32Array, sampleRate: number, startSeconds: number, sessionId: number) {
     const bridge = window.boothDesk;
-    if (!bridge?.transcribeBuffer || !liveEnabledRef.current || sessionId !== liveSessionRef.current) {
+    if (!bridge?.transcribeBuffer || !liveEnabledRef.current || livePausedRef.current || sessionId !== liveSessionRef.current) {
       return;
     }
     if (!liveFollowStreamRef.current && samples.length < Math.floor(sampleRate * LIVE_MIN_SPEECH_SECONDS)) {
@@ -3456,7 +3468,7 @@ function Teleprompter({
         20_000,
         "Speech check took too long. Try a quieter room or stop and start again.",
       );
-      if (!liveEnabledRef.current || sessionId !== liveSessionRef.current) {
+      if (!liveEnabledRef.current || livePausedRef.current || sessionId !== liveSessionRef.current) {
         return;
       }
       const transcriptWords = liveFollowStreamRef.current
@@ -3470,7 +3482,7 @@ function Teleprompter({
             startSeconds + samples.length / sampleRate,
           );
       if (liveHaltRef.current) {
-        setLiveStatus("listening");
+        setLiveStatus(livePausedRef.current ? "paused" : "listening");
         return;
       }
       const cursorBeforeAudio = liveMatchStateRef.current.cursor;
@@ -3506,7 +3518,7 @@ function Teleprompter({
           ? transcriptWords.slice(-5).map((word) => word.text).join(" ")
           : "",
       );
-      setLiveStatus("listening");
+      setLiveStatus(livePausedRef.current ? "paused" : "listening");
       setLiveError(null);
       if (liveFollowStreamRef.current) {
         queueWhisperQc(samples, sampleRate, sessionId, cursorBeforeAudio, result.state.cursor, startSeconds);
@@ -3515,14 +3527,14 @@ function Teleprompter({
       const message = messageFor(reason, "Live flags could not transcribe this microphone window.");
       if (/not running/i.test(message) && liveFollowStreamRef.current) {
         liveFollowStreamRef.current = false;
-        setLiveStatus("listening");
+        setLiveStatus(livePausedRef.current ? "paused" : "listening");
         setLiveError(null);
       } else if (liveEnabledRef.current && sessionId === liveSessionRef.current) {
-        setLiveStatus("listening");
+        setLiveStatus(livePausedRef.current ? "paused" : "listening");
       }
     } finally {
       liveRequestRef.current = false;
-      if (!liveStoppingRef.current && liveEnabledRef.current && sessionId === liveSessionRef.current && shouldFlushLiveBuffer()) {
+      if (!liveStoppingRef.current && liveEnabledRef.current && !livePausedRef.current && sessionId === liveSessionRef.current && shouldFlushLiveBuffer()) {
         flushLiveWindow();
       }
     }
@@ -3536,7 +3548,7 @@ function Teleprompter({
     coveredCursor: number,
     startSeconds: number,
   ) {
-    if (liveStateRef.current.dimmed) {
+    if (livePausedRef.current || liveStateRef.current.dimmed) {
       liveQcBufferRef.current = createLiveQcBuffer();
       return;
     }
@@ -3557,7 +3569,7 @@ function Teleprompter({
     // Encoding a QC clip is heavy and this runs from the audio callback on the
     // streaming path. Hand it to a later task so capture never waits on it.
     window.setTimeout(() => {
-      if (!liveEnabledRef.current || sessionId !== liveSessionRef.current) {
+      if (!liveEnabledRef.current || livePausedRef.current || sessionId !== liveSessionRef.current) {
         return;
       }
       flushLiveQcWindow(sampleRate, sessionId);
@@ -3565,7 +3577,7 @@ function Teleprompter({
   }
 
   function flushLiveQcWindow(sampleRate: number, sessionId: number, force = false) {
-    if (liveWhisperBusyRef.current || liveStateRef.current.dimmed) {
+    if (liveWhisperBusyRef.current || (!force && livePausedRef.current) || liveStateRef.current.dimmed) {
       return;
     }
     const drained = drainLiveQcBuffer(
@@ -3769,7 +3781,7 @@ function Teleprompter({
    * and the main-thread fallback so both paths behave identically.
    */
   function handleLiveBlock(samples: Float32Array, rms: number) {
-    if (!liveEnabledRef.current) {
+    if (!liveEnabledRef.current || livePausedRef.current) {
       return;
     }
     const now = performance.now();
@@ -3807,6 +3819,9 @@ function Teleprompter({
   }
 
   function flushLiveWindow() {
+    if (livePausedRef.current) {
+      return;
+    }
     const sampleRate = liveSampleRateRef.current;
     const minSamples = liveFollowStreamRef.current
       ? sampleRate * LIVE_STREAM_HOP_SECONDS
@@ -3943,6 +3958,8 @@ function Teleprompter({
       liveStreamRef.current = stream;
       liveContextRef.current = context;
       liveSourceRef.current = source;
+      livePausedRef.current = false;
+      setLivePaused(false);
       liveSampleRateRef.current = context.sampleRate;
       liveTapeChapterIdRef.current = chapterIdRef.current;
       liveTapeRef.current = [];
@@ -3990,7 +4007,7 @@ function Teleprompter({
         window.clearInterval(liveQcFlushTimerRef.current);
       }
       liveQcFlushTimerRef.current = window.setInterval(() => {
-        if (!liveEnabledRef.current || liveStateRef.current.dimmed) {
+        if (!liveEnabledRef.current || livePausedRef.current || liveStateRef.current.dimmed) {
           return;
         }
         flushLiveQcWindow(liveSampleRateRef.current, liveSessionRef.current);
@@ -4001,6 +4018,79 @@ function Teleprompter({
       setLiveStatus("error");
     } finally {
       liveStartingRef.current = false;
+    }
+  }
+
+  /**
+   * Hold one narration session open while the narrator takes a break.
+   *
+   * Suspending the existing AudioContext keeps the manuscript cursor, matcher,
+   * and booth tape in the same session. Muting the track before suspension
+   * ensures a cough, conversation, or glass of water never enters the tape.
+   */
+  async function setLiveCapturePaused(shouldPause: boolean) {
+    if (
+      !liveEnabledRef.current
+      || liveStoppingRef.current
+      || livePauseChangingRef.current
+      || livePausedRef.current === shouldPause
+    ) {
+      return;
+    }
+    const context = liveContextRef.current;
+    const stream = liveStreamRef.current;
+    if (!context || !stream || context.state === "closed") {
+      setLiveError("The microphone session ended. Stop this read, then start a new one.");
+      setLiveStatus("error");
+      return;
+    }
+
+    livePauseChangingRef.current = true;
+    setLivePauseChanging(true);
+    const tracks = stream.getAudioTracks();
+    try {
+      if (shouldPause) {
+        livePausedRef.current = true;
+        tracks.forEach((track) => {
+          track.enabled = false;
+        });
+        await context.suspend();
+        liveSpeechAtRef.current = null;
+        liveLeadRef.current = createLeadState(liveVisualCursorRef.current, performance.now());
+        setLiveSignalLevel(0);
+        setLivePaused(true);
+        setLiveStatus("paused");
+        setLiveError(null);
+      } else {
+        if (tracks.length === 0 || tracks.every((track) => track.readyState === "ended")) {
+          throw new Error("The microphone disconnected during the break.");
+        }
+        await context.resume();
+        tracks.forEach((track) => {
+          track.enabled = true;
+        });
+        livePausedRef.current = false;
+        liveSpeechAtRef.current = null;
+        liveLeadRef.current = createLeadState(liveVisualCursorRef.current, performance.now());
+        setLivePaused(false);
+        setLiveStatus("listening");
+        setLiveError(null);
+      }
+    } catch (reason) {
+      if (!liveEnabledRef.current || liveStoppingRef.current) {
+        return;
+      }
+      const remainsPaused = !shouldPause;
+      livePausedRef.current = remainsPaused;
+      setLivePaused(remainsPaused);
+      tracks.forEach((track) => {
+        track.enabled = !remainsPaused;
+      });
+      setLiveError(messageFor(reason, shouldPause ? "Could not pause this read." : "Could not resume this read."));
+      setLiveStatus("error");
+    } finally {
+      livePauseChangingRef.current = false;
+      setLivePauseChanging(false);
     }
   }
 
@@ -4417,15 +4507,39 @@ function Teleprompter({
 
         <footer className="booth-dock">
           {mode === "narrate" ? (
-            <button
-              className={`primary-button booth-start-button ${liveState.enabled ? "booth-stop-button" : "booth-narrate-button"}`}
-              type="button"
-              disabled={liveStatus === "starting"}
-              onClick={() => setLiveEnabled(!liveState.enabled)}
-            >
-              <span className="booth-start-icon" aria-hidden="true">{liveState.enabled ? "Ⅱ" : "▶"}</span>
-              <span>{liveState.enabled ? "Stop" : "Start narrating"}</span>
-            </button>
+            liveState.enabled ? (
+              <div className="booth-recording-controls" aria-label="Narration recording controls">
+                <button
+                  className="secondary-button booth-pause-button"
+                  type="button"
+                  disabled={livePauseChanging}
+                  aria-pressed={livePaused}
+                  onClick={() => void setLiveCapturePaused(!livePaused)}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">{livePaused ? "▶" : "Ⅱ"}</span>
+                  <span>{livePaused ? "Resume" : "Pause"}</span>
+                </button>
+                <button
+                  className="primary-button booth-start-button booth-stop-button"
+                  type="button"
+                  disabled={livePauseChanging}
+                  onClick={() => setLiveEnabled(false)}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">■</span>
+                  <span>Stop</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                className="primary-button booth-start-button booth-narrate-button"
+                type="button"
+                disabled={liveStatus === "starting"}
+                onClick={() => setLiveEnabled(true)}
+              >
+                <span className="booth-start-icon" aria-hidden="true">▶</span>
+                <span>Start narrating</span>
+              </button>
+            )
           ) : (
             <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>
           )}
@@ -4766,7 +4880,7 @@ function LiveVoiceStatus({
   totalWords,
 }: {
   modelAvailable: boolean | null;
-  status: "off" | "starting" | "listening" | "processing" | "error";
+  status: LiveVoiceStatus;
   enabled: boolean;
   dimmed: boolean;
   error: string | null;
@@ -5278,13 +5392,6 @@ function ChapterManager({
   );
 }
 
-const PICKUP_KIND_LABELS: Record<Pickup["kind"], string> = {
-  sub: "misread",
-  skip: "skipped",
-  insert: "added",
-  pause: "long pause",
-};
-
 export function BookPickupPanel({
   summary,
   busyAction,
@@ -5396,7 +5503,9 @@ export function BookPickupPanel({
                       <time>{formatTime(row.pickup.t_start)}</time>
                     </span>
                     <span className="pickup-reading">{pickupReading(row.pickup)}</span>
-                    <span className="kind-badge">{PICKUP_KIND_LABELS[row.pickup.kind]}</span>
+                    <span className={`kind-badge kind-tone-${pickupKindPresentation(row.pickup.kind).tone}`}>
+                      {pickupKindPresentation(row.pickup.kind).label}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -7193,10 +7302,16 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
       ) : (
         <ul className="pickup-list">
           {visiblePickups.map((pickup) => (
-            <li key={pickup.id} className={`pickup-row ${pickup.status}`}>
+            <li
+              key={pickup.id}
+              className={`pickup-row kind-tone-${pickupKindPresentation(pickup.kind).tone} ${pickup.status}`}
+              data-kind={pickup.kind}
+            >
               <time>{formatTime(pickup.t_start)}</time>
               <div className="pickup-reading">{pickupReading(pickup)}</div>
-              <span className="kind-badge">{PICKUP_KIND_LABELS[pickup.kind]}</span>
+              <span className={`kind-badge kind-tone-${pickupKindPresentation(pickup.kind).tone}`}>
+                {pickupKindPresentation(pickup.kind).label}
+              </span>
               {pickup.status === "open" ? null : (
                 <span className={`pickup-state ${pickup.status}`}>
                   {pickup.status === "done" ? "Fixed" : "Fine as read"}

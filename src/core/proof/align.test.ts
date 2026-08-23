@@ -28,7 +28,10 @@ describe("alignTranscript", () => {
       expected: "on",
       heard: "in",
       t_start: expect.closeTo(0.9, 0.001),
+      line_text: "The fox jumped on the mat.",
     });
+    expect(result.pickups[0].line_start).toBeLessThan(result.pickups[0].t_start);
+    expect(result.pickups[0].line_end).toBeGreaterThan(result.pickups[0].t_end);
   });
 
   it("groups a skipped sentence into one pickup", () => {
@@ -46,6 +49,27 @@ describe("alignTranscript", () => {
     expect(result.pickups[0].kind).toBe("skip");
     expect(result.pickups[0].expected).toContain("This sentence is missing");
     expect(result.pickups[0].heard).toBe("");
+  });
+
+  it("flags words the narrator added between two manuscript words", () => {
+    const result = alignTranscript({
+      chapterId: "ch-added-word",
+      manuscript: "The fox jumped.",
+      transcript: words([
+        ["The", 0.1, 0.3],
+        ["quick", 0.35, 0.55],
+        ["fox", 0.6, 0.8],
+        ["jumped", 0.85, 1.1],
+      ]),
+      durationSeconds: 1.3,
+    });
+
+    expect(result.pickups).toHaveLength(1);
+    expect(result.pickups[0]).toMatchObject({
+      kind: "insert",
+      expected: "",
+      heard: "quick",
+    });
   });
 
   it("flags a long mid-sentence pause but ignores a sentence-boundary gap", () => {
@@ -104,6 +128,37 @@ describe("alignTranscript", () => {
     const pauses = withAudio.pickups.filter((pickup) => pickup.kind === "pause");
     expect(pauses).toHaveLength(1);
     expect(pauses[0]).toMatchObject({ t_start: 1.25, t_end: 6.4 });
+  });
+
+  it("keeps a measured pause when the word beside it was misrecognised", () => {
+    // Real Whisper timestamps stretched the words before a silent interval,
+    // placing the measured gap beside a low-confidence name substitution.
+    // The nearest matched words still prove this happened mid-sentence.
+    const result = alignTranscript({
+      chapterId: "ch-name-before-pause",
+      manuscript: "The Bridgertons are by far the most prolific family in the upper echelons of society.",
+      transcript: words([
+        ["The", 0.02, 1.38],
+        ["Brejertens", 1.38, 3.37],
+        ["are", 3.67, 4.06],
+        ["by", 4.06, 4.32],
+        ["far", 4.32, 4.71],
+        ["the", 4.71, 5.1],
+        ["most", 5.1, 5.62],
+        ["prolific", 5.62, 6.66],
+        ["family", 6.66, 7.44],
+        ["in", 7.44, 7.7],
+        ["the", 7.7, 8.09],
+        ["upper", 8.8, 8.8],
+        ["echelons", 8.82, 9.39],
+        ["of", 9.39, 9.49],
+        ["society", 9.55, 9.99],
+      ]),
+      durationSeconds: 10.2,
+      silences: [{ start: 3.38, end: 8.82 }],
+    });
+
+    expect(result.pickups.filter((pickup) => pickup.kind === "pause")).toHaveLength(1);
   });
 
   it("ignores room tone before the first word and after the last", () => {

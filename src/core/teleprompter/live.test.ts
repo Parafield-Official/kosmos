@@ -639,6 +639,18 @@ describe("live follow helpers", () => {
     expect(checking.detail).toBe("yard today");
     expect(checking.detail.split(" ").length).toBeLessThanOrEqual(2);
 
+    const paused = liveVoiceStatusCopy({
+      status: "paused",
+      enabled: true,
+      dimmed: false,
+      error: null,
+      heardText: "",
+    });
+    expect(paused).toEqual({
+      title: "Paused",
+      detail: "Your place is held. Break audio is not being saved.",
+    });
+
     const followOnly = liveVoiceStatusCopy({
       status: "listening",
       enabled: true,

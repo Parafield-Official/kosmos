@@ -1,4 +1,5 @@
 import type { Pickup, Seat } from "../project/types";
+import { pickupLineSeconds } from "../teleprompter/pickup-line";
 import {
   manuscriptMatchUnits,
   normalizeToken,
@@ -197,6 +198,8 @@ export function alignTranscript(input: AlignTranscriptInput): AlignmentResult {
         durationSeconds,
         input.seat ?? "narration",
         pickupOrdinal,
+        input.manuscript,
+        manuscriptTokens,
       );
     // A recogniser that reports low confidence is telling us it may have
     // misheard, which makes the mismatch its fault rather than the narrator's.
@@ -282,19 +285,28 @@ function detectPausePickups(input: PauseDetectionInput): Pickup[] {
   const pauses: Pickup[] = [];
   for (const gap of pauseCandidates(input, threshold)) {
     const index = gap.index;
-    const previous = input.transcriptWords[index];
-    const next = input.transcriptWords[index + 1];
-    const previousRange = alignedTokens.get(index);
-    const nextRange = alignedTokens.get(index + 1);
+    let previousIndex = index;
+    while (previousIndex >= 0 && !alignedTokens.has(previousIndex)) {
+      previousIndex -= 1;
+    }
+    let nextIndex = index + 1;
+    while (nextIndex < input.transcriptWords.length && !alignedTokens.has(nextIndex)) {
+      nextIndex += 1;
+    }
+    const previous = input.transcriptWords[previousIndex];
+    const next = input.transcriptWords[nextIndex];
+    const previousRange = alignedTokens.get(previousIndex);
+    const nextRange = alignedTokens.get(nextIndex);
     if (
       previousRange === undefined
       || nextRange === undefined
-      || nextRange.from !== previousRange.to + 1
+      || nextRange.from <= previousRange.to
+      || nextRange.from - previousRange.to > 3
     ) {
-      // A non-adjacent pair usually means the reader skipped or inserted text;
-      // the word pickup already explains that interval. Two words inside one
-      // spoken number are not adjacent tokens either, and a breath in the
-      // middle of "nineteen ninety nine" is not a mid-sentence pause.
+      // A broad unmatched run usually means the reader skipped or inserted
+      // text; the word pickup already explains that interval. Permit one or
+      // two unmatched tokens beside the measured silence, though: Whisper can
+      // stretch a segment across the gap and misrecognise the boundary word.
       continue;
     }
     const previousToken = input.manuscriptTokens[previousRange.to];
@@ -407,6 +419,8 @@ function runToPickup(
   durationSeconds: number,
   seat: Seat,
   ordinal: number,
+  manuscript: string,
+  manuscriptTokens: ManuscriptToken[],
 ): Pickup | null {
   const expected = run.manuscript.map((token) => token.text).join(" ");
   const heard = run.transcript.map((word) => word.text).join(" ");
@@ -428,6 +442,14 @@ function runToPickup(
   const confidence = run.transcript.length > 0
     ? average(run.transcript.map((word) => normalizedConfidence(word.confidence)))
     : 0;
+  const line = pickupSentenceContext(
+    run,
+    manuscript,
+    manuscriptTokens,
+    tStart,
+    tEnd,
+    durationSeconds,
+  );
 
   return {
     id: stablePickupId(chapterId, kind, expected, heard, tStart, tEnd, ordinal),
@@ -440,7 +462,69 @@ function runToPickup(
     seat,
     status: "open",
     confidence,
+    ...line,
   };
+}
+
+const SENTENCE_SAFE_ABBREVIATIONS = new Set([
+  "mr", "mrs", "ms", "dr", "prof", "rev", "gen", "lt", "sgt", "capt",
+  "col", "jr", "sr", "st", "vs", "etc", "inc", "ltd", "co", "no",
+  "fig", "dept", "est", "ft",
+]);
+
+function pickupSentenceContext(
+  run: PickupRun,
+  manuscript: string,
+  tokens: ManuscriptToken[],
+  wordStart: number,
+  wordEnd: number,
+  durationSeconds: number,
+): Pick<Pickup, "line_start" | "line_end" | "line_text"> {
+  const first = run.manuscript[0]?.index;
+  const last = run.manuscript.at(-1)?.index;
+  if (first === undefined || last === undefined || !tokens[first] || !tokens[last]) {
+    return {};
+  }
+
+  let from = first;
+  while (from > 0 && !sentenceBoundaryBetween(manuscript, tokens[from - 1], tokens[from])) {
+    from -= 1;
+  }
+  let to = last;
+  while (to < tokens.length - 1 && !sentenceBoundaryBetween(manuscript, tokens[to], tokens[to + 1])) {
+    to += 1;
+  }
+
+  const finalToken = tokens[to];
+  const following = manuscript.slice(finalToken.end, tokens[to + 1]?.start ?? manuscript.length);
+  const punctuation = following.match(/^[.!?。！？…]+(?:["'’”)\]]+)?/u)?.[0] ?? "";
+  const lineText = manuscript
+    .slice(tokens[from].start, finalToken.end + punctuation.length)
+    .replace(/\s+/gu, " ")
+    .trim();
+  const seconds = pickupLineSeconds({
+    wordStart,
+    wordEnd,
+    wordsBefore: first - from,
+    wordsAfter: to - last,
+  });
+  return {
+    line_start: Math.max(0, seconds.start),
+    line_end: Math.min(durationSeconds, Math.max(seconds.start, seconds.end)),
+    line_text: lineText,
+  };
+}
+
+function sentenceBoundaryBetween(
+  manuscript: string,
+  previous: ManuscriptToken,
+  next: ManuscriptToken,
+): boolean {
+  const between = manuscript.slice(previous.end, next.start);
+  if (/\n/u.test(between) || /[!?。！？]/u.test(between)) {
+    return true;
+  }
+  return /\./u.test(between) && !SENTENCE_SAFE_ABBREVIATIONS.has(previous.value);
 }
 
 function mergePickups(pickups: Pickup[], windowSeconds: number): Pickup[] {
