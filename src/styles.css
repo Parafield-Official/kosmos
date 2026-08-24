@@ -4598,6 +4598,34 @@ button {
   gap: 5px;
 }
 
+.live-input-quality {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.live-input-quality.quality-clipping,
+.live-input-quality.quality-hot {
+  color: var(--bad);
+}
+
+.live-input-quality.quality-noisy,
+.live-input-quality.quality-low {
+  color: var(--warn);
+}
+
+.live-input-quality.quality-clipping .live-mic-meter b,
+.live-input-quality.quality-hot .live-mic-meter b {
+  background: var(--bad);
+}
+
+.live-input-quality.quality-noisy .live-mic-meter b,
+.live-input-quality.quality-low .live-mic-meter b {
+  background: var(--warn);
+}
+
 .live-mic-meter i {
   display: block;
   width: 36px;
@@ -4702,6 +4730,33 @@ button {
   color: #1a1714;
   background: #fffdf9;
   box-shadow: var(--shadow);
+}
+
+.booth-input-device {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 14px;
+  color: #1a1714;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.booth-input-device select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #1a1714;
+  background: #fff;
+  font: inherit;
+  font-weight: 600;
+}
+
+.booth-input-device em {
+  color: #6b635c;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
 }
 
 .booth-theme-grid {

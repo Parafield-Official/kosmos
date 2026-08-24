@@ -116,6 +116,13 @@ import {
 } from "../core/teleprompter/model";
 import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, manualLivePickup, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { boothShortcutAction } from "../core/teleprompter/booth-controls";
+import {
+  createInputQuality,
+  describeInputQuality,
+  microphoneConstraints,
+  observeInputQuality,
+  type LiveInputQuality,
+} from "../core/teleprompter/input-quality";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
@@ -3414,6 +3421,15 @@ function Teleprompter({
   const [liveWhisperLastWords, setLiveWhisperLastWords] = useState("");
   const [liveStartCursor, setLiveStartCursor] = useState<number | null>(null);
   const [liveSignalLevel, setLiveSignalLevel] = useState(0);
+  const [liveInputQuality, setLiveInputQuality] = useState<LiveInputQuality>(createInputQuality);
+  const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedInputId, setSelectedInputId] = useState(() => {
+    try {
+      return window.localStorage.getItem("booth-desk:microphone-device") ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "restarting">("idle");
   const [liveBoothNotice, setLiveBoothNotice] = useState<string | null>(null);
   // The booth tape for this chapter, so a narrator can hear back what they just
@@ -3551,6 +3567,7 @@ function Teleprompter({
   const liveStartingRef = useRef(false);
   const startFromBeginningRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
+  const liveInputQualityRef = useRef<LiveInputQuality>(createInputQuality());
   const liveSessionRef = useRef(0);
   const automaticPronunciationTakeRef = useRef("");
   const liveSentRef = useRef(false);
@@ -3616,6 +3633,43 @@ function Teleprompter({
   useEffect(() => {
     liveStateRef.current = liveState;
   }, [liveState]);
+
+  async function refreshMicrophoneList() {
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      return;
+    }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setAudioInputs(devices.filter((device) => device.kind === "audioinput" && device.deviceId));
+    } catch {
+      // Device labels are a convenience; Start narrating still requests the
+      // system default when enumeration is restricted.
+    }
+  }
+
+  function chooseMicrophone(deviceId: string) {
+    setSelectedInputId(deviceId);
+    try {
+      if (deviceId) {
+        window.localStorage.setItem("booth-desk:microphone-device", deviceId);
+      } else {
+        window.localStorage.removeItem("booth-desk:microphone-device");
+      }
+    } catch {
+      // A private window can reject storage without blocking microphone use.
+    }
+  }
+
+  useEffect(() => {
+    void refreshMicrophoneList();
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.addEventListener) {
+      return;
+    }
+    const refresh = () => { void refreshMicrophoneList(); };
+    mediaDevices.addEventListener("devicechange", refresh);
+    return () => mediaDevices.removeEventListener("devicechange", refresh);
+  }, []);
 
   useEffect(() => {
     stopOnMismatchRef.current = stopOnMismatch;
@@ -4068,6 +4122,8 @@ function Teleprompter({
     liveHaltResumeIndexRef.current = -1;
     setLiveHalt(null);
     setLiveSignalLevel(0);
+    liveInputQualityRef.current = createInputQuality();
+    setLiveInputQuality(liveInputQualityRef.current);
     setLiveStatus("off");
   }
 
@@ -4735,9 +4791,19 @@ function Teleprompter({
     if (rms >= LIVE_SPEECH_RMS) {
       liveSpeechAtRef.current = now;
     }
+    let peak = 0;
+    for (const sample of samples) {
+      peak = Math.max(peak, Math.abs(sample));
+    }
+    liveInputQualityRef.current = observeInputQuality(liveInputQualityRef.current, {
+      rms,
+      peak,
+      atSeconds: liveCapturedSecondsRef.current,
+    });
     if (now - liveMeterUpdateRef.current >= 250) {
       liveMeterUpdateRef.current = now;
-      setLiveSignalLevel(Math.min(1, rms * 8));
+      setLiveSignalLevel(peak);
+      setLiveInputQuality(liveInputQualityRef.current);
     }
     liveSamplesRef.current.push(samples);
     liveSampleCountRef.current += samples.length;
@@ -4881,6 +4947,7 @@ function Teleprompter({
       return;
     }
     liveStartingRef.current = true;
+    let microphoneNotice: string | null = null;
     setLiveError(null);
     setLiveStatus("starting");
     try {
@@ -4903,9 +4970,22 @@ function Teleprompter({
       if (!whisperReady) {
         setLiveWhisperLastError("Whisper back-check is unavailable; cursor follow is still running.");
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(selectedInputId),
+        });
+      } catch (reason) {
+        if (!selectedInputId) {
+          throw reason;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: microphoneConstraints(""),
+        });
+        chooseMicrophone("");
+        microphoneNotice = "The saved microphone was unavailable, so this read is using the system default.";
+      }
+      void refreshMicrophoneList();
       const context = new AudioContext();
       const source = context.createMediaStreamSource(stream);
       liveEnabledRef.current = true;
@@ -4952,13 +5032,15 @@ function Teleprompter({
       setLiveHeardText("");
       setLiveCheckCount(0);
       setLiveLatencyMs(null);
+      liveInputQualityRef.current = createInputQuality();
+      setLiveInputQuality(liveInputQualityRef.current);
       setLiveWhisperAttempted(0);
       setLiveWhisperSucceeded(0);
       setLiveWhisperFailed(0);
       setLiveWhisperLastError(null);
       setLiveWhisperLastWords("");
       setLiveDetectedFlags([]);
-      setLiveBoothNotice(null);
+      setLiveBoothNotice(microphoneNotice);
       await attachLiveTap(context, source);
       await context.resume();
       const nextState = { ...createLiveFlagsState(), enabled: true };
@@ -5196,6 +5278,7 @@ function Teleprompter({
     paragraphWordCount: liveLineWordCount,
     rows: wordRows,
   });
+  const liveInputDescription = describeInputQuality(liveInputQuality, liveCapturedSecondsRef.current);
 
   return (
     <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
@@ -5293,6 +5376,7 @@ function Teleprompter({
               startCursor={liveStartCursor}
               detectedFlags={liveDetectedFlags}
               signalLevel={liveSignalLevel}
+              inputQuality={liveInputDescription}
               cursor={liveCursor}
               totalWords={expectedWords.length}
             />
@@ -5597,6 +5681,23 @@ function Teleprompter({
             <button type="button" className={settingsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>Reading settings</button>
             {settingsOpen ? (
               <div className="booth-settings" role="dialog" aria-label="Reading settings">
+                <p className="card-kicker">Microphone</p>
+                <label className="booth-input-device">
+                  <span>Recording input</span>
+                  <select
+                    value={selectedInputId}
+                    disabled={liveState.enabled}
+                    onChange={(event) => chooseMicrophone(event.target.value)}
+                  >
+                    <option value="">System default</option>
+                    {audioInputs.map((device, index) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Microphone ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                  <em>Raw mono capture. Change inputs between reads.</em>
+                </label>
                 <p className="card-kicker">Reading font</p>
                 <div className="booth-choice-grid" role="radiogroup" aria-label="Reading font">
                   {(["serif", "sans", "hyperlegible"] as const).map((value) => (
@@ -5928,6 +6029,7 @@ function LiveVoiceStatus({
   startCursor,
   detectedFlags,
   signalLevel,
+  inputQuality,
   cursor,
   totalWords,
 }: {
@@ -5947,6 +6049,7 @@ function LiveVoiceStatus({
   startCursor: number | null;
   detectedFlags: LiveMismatch[];
   signalLevel: number;
+  inputQuality: ReturnType<typeof describeInputQuality>;
   cursor: number;
   totalWords: number;
 }) {
@@ -5961,8 +6064,11 @@ function LiveVoiceStatus({
         {importantDetail ? <span>{importantDetail}</span> : null}
       </div>
       {enabled ? (
-        <span className="live-mic-meter" aria-label={`Microphone level ${Math.round(signalLevel * 100)} percent`}>
-          <i><b style={{ width: `${Math.round(signalLevel * 100)}%` }} /></i>
+        <span className={`live-input-quality quality-${inputQuality.kind}`} title={inputQuality.detail}>
+          <span>{inputQuality.label}</span>
+          <span className="live-mic-meter" aria-label={`Microphone peak ${Math.round(signalLevel * 100)} percent`}>
+            <i><b style={{ width: `${Math.round(signalLevel * 100)}%` }} /></i>
+          </span>
         </span>
       ) : null}
       <details className="live-voice-diagnostics">
@@ -5976,6 +6082,8 @@ function LiveVoiceStatus({
           {enabled && whisperLastWords ? <span>Heard: {whisperLastWords}</span> : null}
           {enabled && startCursor != null ? <span>Start {startCursor}</span> : null}
           {enabled ? <span>Cursor {cursor}/{totalWords}</span> : null}
+          {inputQuality.headroomDb !== null ? <span>Headroom {inputQuality.headroomDb.toFixed(1)} dB</span> : null}
+          {inputQuality.noiseFloorDb !== null ? <span>Noise floor {inputQuality.noiseFloorDb.toFixed(1)} dBFS</span> : null}
           {enabled && detectedFlags.length > 0 ? <span>Flags {detectedFlags.length}</span> : null}
         </div>
       </details>
