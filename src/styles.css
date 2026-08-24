@@ -5528,6 +5528,65 @@ button {
   font-size: 15px;
 }
 
+.pickup-word-check {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  border: 1px solid #d6cec6;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.pickup-word-check-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pickup-word-check strong {
+  display: block;
+  color: #302720;
+  font-size: 13px;
+}
+
+.pickup-word-check p {
+  margin: 3px 0 0;
+  color: #675d55;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pickup-word-check.match {
+  border-color: #afd0b7;
+  background: #f0f8f1;
+}
+
+.pickup-word-check.match .pickup-word-check-icon {
+  background: #d7ecd9;
+  color: #2f6c3d;
+}
+
+.pickup-word-check.mismatch {
+  border-color: #e0bf7a;
+  background: #fff8e8;
+}
+
+.pickup-word-check.mismatch .pickup-word-check-icon {
+  background: #f5dfab;
+  color: #84570f;
+}
+
+.pickup-word-check.inconclusive .pickup-word-check-icon {
+  background: #ebe5df;
+  color: #655b53;
+}
+
 .pickup-recorder-panel .recorder-review-actions .primary-button,
 .pickup-recorder-panel .recorder-review-actions .secondary-button {
   min-height: 42px;

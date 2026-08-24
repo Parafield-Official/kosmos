@@ -31,6 +31,11 @@ import {
   type TranscriptWord,
 } from "../core/proof/align";
 import { buildPickupComparisons, type PickupComparison } from "../core/proof/comparison";
+import {
+  finalPickupProofReadiness,
+  verifyPickupTranscript,
+  type PickupVerification,
+} from "../core/proof/pickup-verification";
 import type { SilenceRange } from "../core/proof/silence";
 import { scanBookOccurrences, type BookScanReport } from "../core/proof/book-scan";
 import type { MergeConflict } from "../core/sharing/merge";
@@ -1240,6 +1245,30 @@ function ProjectHome({
     } finally {
       setBusyAction(null);
       actionLockRef.current = false;
+    }
+  }
+
+  async function verifyPunchRecordingWav(wavBase64: string, pickup: Pickup): Promise<PickupVerification> {
+    const manuscript = pickup.line_text?.trim() || pickup.expected.trim();
+    if (!window.boothDesk?.transcribeBuffer || manuscript.length === 0) {
+      return verifyPickupTranscript({ manuscript, transcript: [] });
+    }
+    try {
+      const transcription = await promiseWithTimeout(
+        window.boothDesk.transcribeBuffer({
+          audioBase64: wavBase64,
+          mimeType: "audio/wav",
+          language: "en",
+          engine: "whisper",
+        }),
+        120_000,
+        "The pickup word check took too long.",
+      );
+      return verifyPickupTranscript({ manuscript, transcript: transcription.words });
+    } catch {
+      // Recognition is supporting evidence, never a gate. A missing model or
+      // uncertain short clip still leaves the narrator's A/B review available.
+      return verifyPickupTranscript({ manuscript, transcript: [] });
     }
   }
 
@@ -2733,6 +2762,10 @@ function ProjectHome({
                 modelProgress={modelProgress}
                 onDownloadModel={() => void downloadWhisperModel()}
                 onProof={() => void runProof(selectedChapter, { preferLive: reviewAudioSource?.kind === "live" })}
+                onFinalProof={() => {
+                  setReviewSourceKind("take");
+                  void runProof(selectedChapter);
+                }}
                 reviewSourceKind={reviewAudioSource?.kind ?? null}
                 checkedSourceKind={checkedSourceKind}
                 onReviewSourceKind={setReviewSourceKind}
@@ -2989,6 +3022,7 @@ function ProjectHome({
               label={`Punch at ${formatTime(punchBounds?.start ?? punchPickup.t_start)}`}
               disabled={!window.boothDesk || busyAction !== null}
               applyLabel={pickupSession ? "Apply & next" : "Apply pickup"}
+              onVerify={(wav) => verifyPunchRecordingWav(wav, punchPickup)}
               onPreview={(wav) => previewPunchRecordingWav(wav, punchPickup)}
               onSave={async (wav) => {
                 const result = await applyPunchRecordingWav(wav, punchPickup);
@@ -5513,12 +5547,14 @@ function RecorderPanel({
   label,
   disabled,
   applyLabel = "Apply pickup",
+  onVerify,
   onPreview,
   onSave,
 }: {
   label: string;
   disabled: boolean;
   applyLabel?: string;
+  onVerify?: (wavBase64: string) => Promise<PickupVerification>;
   onPreview?: (wavBase64: string) => Promise<PunchPreviewResult | false>;
   onSave: (wavBase64: string) => Promise<unknown>;
 }) {
@@ -5533,6 +5569,8 @@ function RecorderPanel({
   const [error, setError] = useState<string | null>(null);
   const [pendingWav, setPendingWav] = useState<string | null>(null);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const [verification, setVerification] = useState<PickupVerification | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [contextUrls, setContextUrls] = useState<{ current: string; patched: string } | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -5603,6 +5641,7 @@ function RecorderPanel({
     }
     startingRef.current = true;
     setError(null);
+    setVerification(null);
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Microphone access is not available in this app window.");
@@ -5759,10 +5798,20 @@ function RecorderPanel({
       const nextBuffer = nextBytes.buffer.slice(nextBytes.byteOffset, nextBytes.byteOffset + nextBytes.byteLength) as ArrayBuffer;
       setPendingWav(wavBase64);
       setPendingUrl(URL.createObjectURL(new Blob([nextBuffer], { type: "audio/wav" })));
-      setStatus("review");
       setLevel(0);
+      if (onVerify) {
+        setVerifying(true);
+        const result = await onVerify(wavBase64);
+        if (!mountedRef.current) {
+          return;
+        }
+        setVerification(result);
+        setVerifying(false);
+      }
+      setStatus("review");
     } catch (reason) {
       if (mountedRef.current) {
+        setVerifying(false);
         setStatus("error");
         setError(messageFor(reason, "Could not convert the take to a WAV."));
       }
@@ -5800,6 +5849,7 @@ function RecorderPanel({
         URL.revokeObjectURL(pendingUrl);
       }
       setPendingUrl(null);
+      setVerification(null);
       if (contextUrls) {
         URL.revokeObjectURL(contextUrls.current);
         URL.revokeObjectURL(contextUrls.patched);
@@ -5862,6 +5912,7 @@ function RecorderPanel({
       URL.revokeObjectURL(pendingUrl);
     }
     setPendingUrl(null);
+    setVerification(null);
     if (contextUrls) {
       URL.revokeObjectURL(contextUrls.current);
       URL.revokeObjectURL(contextUrls.patched);
@@ -5905,11 +5956,13 @@ function RecorderPanel({
   }
 
   const flowStep = contextUrls ? 3 : pendingWav ? 2 : 1;
-  const processingLabel = contextUrls
-    ? "Applying pickup…"
-    : pendingWav
-      ? "Building the in-context comparison…"
-      : "Preparing your take…";
+  const processingLabel = verifying
+    ? "Checking words against the manuscript…"
+    : contextUrls
+      ? "Applying pickup…"
+      : pendingWav
+        ? "Building the in-context comparison…"
+        : "Preparing your take…";
 
   return (
     <section
@@ -5979,6 +6032,7 @@ function RecorderPanel({
       {status === "review" && pendingUrl ? (
         <div className="recorder-review">
           <div className="pickup-review-heading"><span>Pickup take</span><strong>Does the performance match?</strong></div>
+          {verification ? <PickupWordCheck result={verification} /> : null}
           <audio controls preload="metadata" src={pendingUrl} />
           <div className="recorder-review-actions">
             <button type="button" className="primary-button" onClick={() => void (onPreview ? previewTake() : confirmTake())}>
@@ -5991,6 +6045,7 @@ function RecorderPanel({
       {status === "comparison" && contextUrls ? (
         <div className="recorder-review pickup-context-comparison">
           <div className="pickup-review-heading"><span>Same surrounding audio</span><strong>Which join sounds natural?</strong></div>
+          {verification ? <PickupWordCheck result={verification} /> : null}
           <div className="pickup-compare-grid">
             <label>
               <span>Before</span>
@@ -6004,7 +6059,9 @@ function RecorderPanel({
             </label>
           </div>
           <div className="recorder-review-actions">
-            <button type="button" className="primary-button pickup-apply-button" onClick={() => void confirmTake()}>{applyLabel} <kbd>A</kbd></button>
+            <button type="button" className="primary-button pickup-apply-button" onClick={() => void confirmTake()}>
+              {verification?.status === "mismatch" ? "Apply anyway" : applyLabel} <kbd>A</kbd>
+            </button>
             <button type="button" className="secondary-button" onClick={discardTake}>Record again <kbd>N</kbd></button>
           </div>
         </div>
@@ -6017,6 +6074,20 @@ function RecorderPanel({
       ) : <p className="recorder-honesty">Listen before saving. You can keep this take or record another one.</p>}
       {error ? <p className="recorder-error">{error}</p> : null}
     </section>
+  );
+}
+
+function PickupWordCheck({ result }: { result: PickupVerification }) {
+  return (
+    <div className={`pickup-word-check ${result.status}`} role="status">
+      <span className="pickup-word-check-icon" aria-hidden="true">
+        {result.status === "match" ? "✓" : result.status === "mismatch" ? "!" : "?"}
+      </span>
+      <div>
+        <strong>{result.title}</strong>
+        <p>{result.detail}</p>
+      </div>
+    </div>
   );
 }
 
@@ -7604,6 +7675,7 @@ function ReviewPage({
   modelProgress,
   onDownloadModel,
   onProof,
+  onFinalProof,
   reviewSourceKind,
   checkedSourceKind,
   onReviewSourceKind,
@@ -7637,6 +7709,7 @@ function ReviewPage({
   modelProgress: number;
   onDownloadModel: () => void;
   onProof: () => void;
+  onFinalProof: () => void;
   reviewSourceKind: ProofSourceKind | null;
   checkedSourceKind: ProofSourceKind | null;
   onReviewSourceKind: (kind: ProofSourceKind) => void;
@@ -8074,6 +8147,7 @@ function ReviewPage({
           busyAction={busyAction}
           onVerify={onVerifyComparison}
           onUndoLatest={onUndoLatestPickup}
+          onFinalProof={onFinalProof}
         />
       ) : null}
     </div>
@@ -8536,12 +8610,14 @@ function PickupComparisonPanel({
   busyAction,
   onVerify,
   onUndoLatest,
+  onFinalProof,
 }: {
   folder: string;
   comparisons: PickupComparison[];
   busyAction: string | null;
   onVerify: (id: string) => void;
   onUndoLatest: () => void;
+  onFinalProof: () => void;
 }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [active, setActive] = useState<{ comparison: PickupComparison; side: "original" | "replacement" | "edited" } | null>(null);
@@ -8551,6 +8627,7 @@ function PickupComparisonPanel({
     comparison.editStatus === "applied" && comparison.verificationStatus === "needs_verification")
     .sort((left, right) => left.start - right.start);
   const latestApplied = comparisons.find((comparison) => comparison.editStatus === "applied");
+  const finalProof = finalPickupProofReadiness(comparisons);
 
   useEffect(() => {
     if (active?.side !== "edited") {
@@ -8635,10 +8712,19 @@ function PickupComparisonPanel({
               {busyAction === "undo-punch" ? "Undoing…" : "Undo latest"}
             </button>
           ) : null}
+          <button
+            className="action-button small accent"
+            type="button"
+            disabled={!finalProof.ready || busyAction !== null}
+            title={finalProof.ready ? "Check the complete edited chapter for remaining word differences" : finalProof.label}
+            onClick={onFinalProof}
+          >
+            {busyAction?.startsWith("proof-") ? "Checking edited chapter…" : finalProof.label}
+          </button>
           <span className="result-count">{needsVerification.length} to verify</span>
         </div>
       </div>
-      <p className="panel-honesty">Listen to the edited chapter in context, then mark the applied pickup verified. The untouched original remains available.</p>
+      <p className="panel-honesty">Listen to each edited join, mark it verified, then run one final word check on the complete edited chapter. The untouched original remains available.</p>
       <ol className="comparison-list">
         {comparisons.map((comparison, index) => (
           <li key={comparison.id}>
