@@ -1,6 +1,7 @@
 const SEATS = new Set(["narration", "N1", "N2"]);
 const KINDS = new Set(["skip", "insert", "sub", "pause"]);
 const STATUSES = new Set(["open", "done", "ignored"]);
+const SOURCE_KINDS = new Set(["take", "live"]);
 
 function normalizeAlignment(value, chapterId) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -11,6 +12,9 @@ function normalizeAlignment(value, chapterId) {
   }
   if (value.schema !== undefined && value.schema !== 1) {
     throw new Error("Alignment file has an unsupported schema");
+  }
+  if (value.source_kind !== undefined && !SOURCE_KINDS.has(value.source_kind)) {
+    throw new Error("Alignment file has an unsupported audio source");
   }
   return {
     ...value,

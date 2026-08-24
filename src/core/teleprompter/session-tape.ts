@@ -51,11 +51,11 @@ export function isLiveCaughtPickup(pickup: Pick<Pickup, "id" | "note">): boolean
  * wrong recording even when both exist.
  */
 export function audioSourceForPickup(
-  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end" | "line_start" | "line_end">,
+  pickup: Pick<Pickup, "id" | "note" | "source_kind" | "t_start" | "t_end" | "line_start" | "line_end">,
   chapter: LiveTapeChapter,
 ): PickupAudioSource | null {
   const range = pickupLineBounds(pickup);
-  if (isLiveCaughtPickup(pickup)) {
+  if (pickup.source_kind === "live" || isLiveCaughtPickup(pickup)) {
     if (!chapter.live_audio_path) {
       return null;
     }
@@ -66,6 +66,9 @@ export function audioSourceForPickup(
       kind: "live",
       wordOnly: range.wordOnly,
     };
+  }
+  if (pickup.source_kind === "take" && !chapter.audio_path) {
+    return null;
   }
   if (chapter.audio_path) {
     return {
@@ -92,7 +95,7 @@ export function audioSourceForPickup(
 }
 
 export function listenDisabledReason(
-  pickup: Pick<Pickup, "id" | "note" | "t_start" | "t_end" | "line_start" | "line_end">,
+  pickup: Pick<Pickup, "id" | "note" | "source_kind" | "t_start" | "t_end" | "line_start" | "line_end">,
   chapter: LiveTapeChapter,
 ): string | null {
   if (audioSourceForPickup(pickup, chapter)) {
@@ -113,9 +116,21 @@ export function listenDisabledReason(
  * can use.
  */
 export function punchDisabledReason(
-  pickup: Pick<Pickup, "id" | "note">,
+  pickup: Pick<Pickup, "id" | "note" | "source_kind">,
   chapter: LiveTapeChapter,
 ): string | null {
+  if (pickup.source_kind === "live") {
+    if (!chapter.live_audio_path) {
+      return "No booth tape of this read";
+    }
+    if (chapter.audio_path && chapter.audio_path !== chapter.live_audio_path) {
+      return "The uploaded take is still the chapter edit. Use that recording, or make the booth tape the chapter take first";
+    }
+    return null;
+  }
+  if (pickup.source_kind === "take" && !chapter.audio_path) {
+    return "No uploaded chapter take attached";
+  }
   if (isLiveCaughtPickup(pickup)) {
     return chapter.audio_path
       ? "Run Check chapter first, so this flag is timed on the take"

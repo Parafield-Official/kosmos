@@ -56,6 +56,7 @@ import {
 } from "../core/glossary/workflow";
 import { fromPlainText } from "../core/manuscript/import";
 import { hideMarkdownHeadingMarkers, parsePastedChapter } from "../core/manuscript/split";
+import { normalizeToken, tokenizeManuscript } from "../core/proof/normalize";
 import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
 import {
@@ -102,7 +103,7 @@ import {
   type PromptTheme,
   type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus } from "../core/teleprompter/live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
@@ -111,7 +112,15 @@ import {
   buildPickupSession,
   type PickupSession,
 } from "../core/proof/pickup-session";
-import { PaperProse } from "./paper-prose";
+import {
+  alignedManuscriptTokens,
+  buildNarrationRedoRanges,
+  createNarratorRedoPickup,
+  type NarrationRedoRange,
+  type NarrationRedoRanges,
+  type NarrationRedoScope,
+} from "../core/proof/selection";
+import { ManuscriptProofProse, type ManuscriptProofAnnotation } from "./paper-prose";
 import {
   audioSourceForPickup,
   availableProofSources,
@@ -500,6 +509,7 @@ function ProjectHome({
         setChapterSpans(result.spans);
         if (alignment && alignment.chapter_id === selectedChapter.id) {
           setProof({ pickups: alignment.pickups, transcript: alignment.transcript });
+          setCheckedSourceKind(alignment.source_kind ?? (proofAudioSource(selectedChapter)?.kind ?? null));
           transcriptOriginRef.current = "generated";
           setTranscriptText(alignment.transcript.map((word) => word.text).join(" "));
         } else if (pendingTranscriptRef.current?.chapterId === selectedChapter.id) {
@@ -880,6 +890,29 @@ function ProjectHome({
       } else {
         duration = audioRef.current?.duration;
       }
+
+      // A Kosmos booth read is already tied to the manuscript while it is
+      // recorded. Reuse that canonical word clock; sending the finished tape
+      // through Whisper would create a second, noisier text representation of
+      // words the app already knows.
+      if (source.kind === "live") {
+        const timeline = checkedSourceKind === "live"
+          ? (proofRef.current?.transcript ?? [])
+          : [];
+        if (timeline.length === 0) {
+          throw new Error("This booth tape predates manuscript timing. Record the passage again in Kosmos to make it directly editable on the page.");
+        }
+        const next = {
+          pickups: proofRef.current?.pickups ?? [],
+          transcript: timeline,
+        };
+        proofRef.current = next;
+        setProof(next);
+        setCheckedSourceKind("live");
+        setNotice("The booth tape is mapped directly to the manuscript. Highlight any timed passage to perform it again.");
+        return;
+      }
+
       let transcript: TranscriptWord[];
       let silences: SilenceRange[] | undefined;
       if (shouldUseTranscriptOverride({
@@ -927,6 +960,7 @@ function ProjectHome({
           chapterId: chapter.id,
           pickups,
           transcript,
+          sourceKind: source.kind,
         });
         onChange(saved);
       }
@@ -1028,6 +1062,7 @@ function ProjectHome({
           chapterId: selectedChapter.id,
           pickups,
           transcript: proof.transcript,
+          sourceKind: checkedSourceKind ?? undefined,
         });
         onChange(saved);
       }
@@ -1047,7 +1082,7 @@ function ProjectHome({
     });
   }
 
-  async function persistAlignment(chapterId: string, next: ProofResult) {
+  async function persistAlignment(chapterId: string, next: ProofResult, sourceKind?: ProofSourceKind) {
     proofRef.current = next;
     setProof(next);
     if (!window.boothDesk || folder === "(browser preview)") {
@@ -1058,6 +1093,7 @@ function ProjectHome({
       chapterId,
       pickups: next.pickups,
       transcript: next.transcript,
+      sourceKind: sourceKind ?? checkedSourceKind ?? undefined,
     });
     onChange(saved);
   }
@@ -1074,7 +1110,7 @@ function ProjectHome({
     await persistAlignment(selectedChapter.id, {
       pickups,
       transcript: current?.transcript ?? [],
-    });
+    }, "live");
   }
 
   async function ignoreLivePickup(pickupId: string) {
@@ -2224,7 +2260,46 @@ function ProjectHome({
     }
   }
 
-  async function saveLiveTape(wavBase64: string, chapterId: string) {
+  async function finishLiveTape(
+    result: ProjectEnvelope,
+    chapterId: string,
+    timeline: TranscriptWord[],
+  ): Promise<void> {
+    if (!window.boothDesk || folder === "(browser preview)") {
+      return;
+    }
+    const existing = await window.boothDesk.readAlignment({
+      folder: result.folder,
+      project: result.project,
+      chapterId,
+    });
+    const pickups = existing?.pickups
+      ?? (selectedChapter?.id === chapterId ? proofRef.current?.pickups : undefined)
+      ?? [];
+    const saved = await window.boothDesk.saveAlignment({
+      folder: result.folder,
+      project: result.project,
+      chapterId,
+      pickups,
+      transcript: timeline,
+      sourceKind: "live",
+    });
+    onChange(saved);
+    if (selectedChapter?.id === chapterId) {
+      const next = { pickups, transcript: timeline };
+      proofRef.current = next;
+      setProof(next);
+      setCheckedSourceKind("live");
+      setReviewSourceKind("live");
+    }
+    setNotice(
+      timeline.length > 0
+        ? "Kept the booth tape and mapped it directly to the manuscript. Highlight a passage in Review to perform it again."
+        : "Kept the booth tape. No manuscript timing was captured, so record the passage again before editing it on the page.",
+    );
+  }
+
+  async function saveLiveTape(wavBase64: string, chapterId: string, timeline: TranscriptWord[]) {
     if (!window.boothDesk || folder === "(browser preview)") {
       throw new Error("Booth tape save is available in the desktop app.");
     }
@@ -2235,8 +2310,7 @@ function ProjectHome({
       wavBase64,
     });
     if (result) {
-      onChange(result);
-      setNotice("Kept a booth tape of this read. Listen plays it. It is not the chapter take.");
+      await finishLiveTape(result, chapterId, timeline);
     }
   }
 
@@ -2428,16 +2502,21 @@ function ProjectHome({
       }}
       onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
       onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
-      onSaveLiveTape={(wavBase64, chapterId) => saveLiveTape(wavBase64, chapterId)}
-      onLiveTapeSaved={(result) => {
-        onChange(result);
-        setNotice("Kept a booth tape of this read. Check chapter can transcribe it. It is not the chapter take.");
-      }}
+      onSaveLiveTape={(wavBase64, chapterId, timeline) => saveLiveTape(wavBase64, chapterId, timeline)}
+      onLiveTapeSaved={(result, chapterId, timeline) => finishLiveTape(result, chapterId, timeline)}
       liveTapeContext={{ folder, project }}
     />
   ) : null;
 
   const punchBounds = punchPickup ? pickupLineBounds(punchPickup) : null;
+  const performancePickup = punchPickup?.intent === "performance";
+  const pickupSelectionLabel = punchPickup?.selection_kind === "paragraph"
+    ? "paragraph"
+    : punchPickup?.selection_kind === "sentence"
+      ? "sentence"
+      : punchPickup?.selection_kind === "selection"
+        ? "selection"
+        : "line";
   const pickupSessionTotalTasks = pickupSession
     ? pickupSession.completedTasks + pickupSession.items.length
     : 0;
@@ -2646,11 +2725,6 @@ function ProjectHome({
               <ReviewPage
                 chapter={selectedChapter}
                 chapterText={chapterText}
-                transcriptText={transcriptText}
-                onTranscriptChange={(value) => {
-                  transcriptOriginRef.current = "manual";
-                  setTranscriptText(value);
-                }}
                 busyAction={busyAction}
                 audioUrl={reviewAudioUrl ?? audioUrl}
                 audioRef={audioRef}
@@ -2858,9 +2932,9 @@ function ProjectHome({
                 <p className="phase-label">
                   {pickupSession
                     ? `Pickup ${pickupSession.completedTasks + 1} of ${pickupSessionTotalTasks}`
-                    : "Single pickup"}
+                    : performancePickup ? "Narrator-selected redo" : "Single pickup"}
                 </p>
-                <h2 id="punch-title">Record this line</h2>
+                <h2 id="punch-title">{performancePickup ? `Redo this ${pickupSelectionLabel}` : "Record this line"}</h2>
               </div>
               <button className="pickup-dialog-close" type="button" aria-label="Close pickup recorder" onClick={closePickupSession}>×</button>
             </header>
@@ -2884,8 +2958,14 @@ function ProjectHome({
               </p>
             )}
             <div className="pickup-cue-row">
-              <span>Match the pace and tone. Read the full sentence.</span>
-              {punchPickup.expected ? <strong>Fix: “{punchPickup.expected}”</strong> : null}
+              <span>
+                {performancePickup
+                  ? "Give this passage the performance you want. You will hear the real edit before Apply."
+                  : "Match the pace and tone. Read the full sentence."}
+              </span>
+              {performancePickup
+                ? <strong>{punchPickup.note || `Selected ${pickupSelectionLabel}`}</strong>
+                : punchPickup.expected ? <strong>Fix: “{punchPickup.expected}”</strong> : null}
             </div>
             <div className="punch-preroll">
               <button
@@ -3053,8 +3133,12 @@ function Teleprompter({
   onClose: () => void;
   onFileLivePickup: (pickup: Pickup) => void;
   onIgnoreLivePickup: (pickupId: string) => void;
-  onSaveLiveTape: (wavBase64: string, chapterId: string) => Promise<void>;
-  onLiveTapeSaved: (result: { folder: string; project: import("../core/project/types").ProjectFile }) => void;
+  onSaveLiveTape: (wavBase64: string, chapterId: string, timeline: TranscriptWord[]) => Promise<void>;
+  onLiveTapeSaved: (
+    result: { folder: string; project: import("../core/project/types").ProjectFile },
+    chapterId: string,
+    timeline: TranscriptWord[],
+  ) => Promise<void>;
   liveTapeContext: { folder: string; project: import("../core/project/types").ProjectFile };
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -3228,6 +3312,7 @@ function Teleprompter({
   const liveBufferStartSecondsRef = useRef(0);
   const liveRequestRef = useRef(false);
   const liveMatchStateRef = useRef<LiveMatchState>({ cursor: 0, lastHeardEnd: 0 });
+  const liveManuscriptTimelineRef = useRef<Map<number, TranscriptWord>>(new Map());
   // The word the read stopped on, read by the capture callbacks that run
   // outside React's render. Null whenever the page is free to move.
   const liveHaltRef = useRef<LiveMismatch | null>(null);
@@ -3619,18 +3704,54 @@ function Teleprompter({
     }
   }
 
+  function recordLiveConfirmations(confirmations: LiveWordConfirmation[]): void {
+    const expected = expectedWordsRef.current;
+    for (const confirmation of confirmations) {
+      const word = expected.find((candidate) => candidate.index === confirmation.expectedIndex);
+      if (!word) {
+        continue;
+      }
+      liveManuscriptTimelineRef.current.set(confirmation.expectedIndex, {
+        text: word.text,
+        start: confirmation.start,
+        end: confirmation.end,
+        confidence: confirmation.confidence,
+      });
+    }
+  }
+
+  function takeLiveManuscriptTimeline(): TranscriptWord[] {
+    const ordered = [...liveManuscriptTimelineRef.current.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, word]) => word);
+    liveManuscriptTimelineRef.current = new Map();
+    let previousStart = -1;
+    let previousEnd = -1;
+    return ordered.filter((word) => {
+      if (word.start < previousStart || word.end < previousEnd) {
+        return false;
+      }
+      previousStart = word.start;
+      previousEnd = word.end;
+      return true;
+    });
+  }
+
   /**
    * Write the captured read to disk, unless it was too short to be worth
    * keeping. Reports whether a tape landed so callers do not offer a previous
    * read back as though it were the one just finished.
    */
-  async function persistTakenTape(tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string }): Promise<boolean> {
+  async function persistTakenTape(
+    tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string },
+    timeline: TranscriptWord[],
+  ): Promise<boolean> {
     const samples = concatLiveTape(tape.chunks);
     if (!shouldKeepLiveTape(samples.length, tape.sampleRate)) {
       return false;
     }
     const wav = encodeWavPcm16(samples, Math.round(tape.sampleRate), 1);
-    await onSaveLiveTapeRef.current(bytesToBase64(wav), tape.chapterId);
+    await onSaveLiveTapeRef.current(bytesToBase64(wav), tape.chapterId, timeline);
     return true;
   }
 
@@ -3640,15 +3761,16 @@ function Teleprompter({
     liveEnabledRef.current = false;
     disconnectLiveInput();
     const tape = takeLiveTape();
+    const timeline = takeLiveManuscriptTimeline();
     const stopped = await window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
     if (stopped?.folder && stopped.project) {
       markTapeRecorded(tape.chapterId);
-      onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project });
+      await onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project }, tape.chapterId, timeline);
       return;
     }
-    return persistTakenTape(tape).then((kept) => {
+    return persistTakenTape(tape, timeline).then((kept) => {
       if (kept) {
         markTapeRecorded(tape.chapterId);
       }
@@ -3697,16 +3819,17 @@ function Teleprompter({
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
     const tape = takeLiveTape();
+    const timeline = takeLiveManuscriptTimeline();
     const stopped = await window.boothDesk?.stopLiveTranscription?.();
     resetLiveCaptureState();
     liveStoppingRef.current = false;
     if (stopped?.folder && stopped.project) {
       markTapeRecorded(tape.chapterId);
-      onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project });
+      await onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project }, tape.chapterId, timeline);
       return;
     }
     try {
-      if (await persistTakenTape(tape)) {
+      if (await persistTakenTape(tape, timeline)) {
         markTapeRecorded(tape.chapterId);
       }
     } catch (reason) {
@@ -3749,6 +3872,7 @@ function Teleprompter({
         haltOnMismatch: stopOnMismatchRef.current,
         haltResumeIndex: liveHaltResumeIndexRef.current,
       });
+      recordLiveConfirmations(result.confirmed);
       liveMatchStateRef.current = result.state;
       commitLiveCursor(result.state.cursor);
       if (result.halt) {
@@ -3928,6 +4052,7 @@ function Teleprompter({
         haltOnMismatch: stopOnMismatchRef.current,
         haltResumeIndex: liveHaltResumeIndexRef.current,
       });
+      recordLiveConfirmations(result.confirmed);
       liveMatchStateRef.current = result.state;
       commitLiveCursor(result.state.cursor);
       if (result.halt) {
@@ -4391,6 +4516,7 @@ function Teleprompter({
       liveTapeChapterIdRef.current = chapterIdRef.current;
       liveTapeRef.current = [];
       liveTapeSampleCountRef.current = 0;
+      liveManuscriptTimelineRef.current = new Map();
       liveSamplesRef.current = [];
       liveSampleCountRef.current = 0;
       liveCapturedSecondsRef.current = 0;
@@ -4715,7 +4841,7 @@ function Teleprompter({
         {mode === "narrate" ? (
           <>
             <p className="booth-honesty">
-              Voice follow is experimental. Stop or Leave keeps a booth tape so Review can transcribe this read. That tape is not the chapter take. Space and PageDown always remain available.
+              Voice follow is experimental. Stop or Leave keeps a booth tape and its manuscript timing for Review. That tape is not the chapter take. Space and PageDown always remain available.
               {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
               {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
             </p>
@@ -7470,8 +7596,6 @@ function RecordPage({
 function ReviewPage({
   chapter,
   chapterText,
-  transcriptText,
-  onTranscriptChange,
   busyAction,
   audioUrl,
   audioRef,
@@ -7505,8 +7629,6 @@ function ReviewPage({
 }: {
   chapter: ChapterFile;
   chapterText: string;
-  transcriptText: string;
-  onTranscriptChange: (value: string) => void;
   busyAction: string | null;
   audioUrl: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -7538,9 +7660,143 @@ function ReviewPage({
   onVerifyComparison: (id: string) => void;
   onUndoLatestPickup: () => void;
 }) {
-  const [editingTranscript, setEditingTranscript] = useState(false);
+  const [redoSelection, setRedoSelection] = useState<{
+    ranges: NarrationRedoRanges;
+    scope: NarrationRedoScope;
+  } | null>(null);
+  const [redoReason, setRedoReason] = useState("");
+  const [focusedAnnotationId, setFocusedAnnotationId] = useState<string | null>(null);
+  const [quickRecordPosition, setQuickRecordPosition] = useState<{
+    left: number;
+    top: number;
+    placement: "above" | "below";
+  } | null>(null);
   const sources = availableProofSources(chapter);
   const selectedKind = reviewSourceKind ?? proofAudioSource(chapter)?.kind ?? null;
+  const alignedTokens = useMemo(
+    () => proof ? alignedManuscriptTokens(chapterText, proof.transcript) : [],
+    [chapterText, proof?.transcript],
+  );
+  const manuscriptAnnotations = useMemo<ManuscriptProofAnnotation[]>(() => {
+    if (!proof) {
+      return [];
+    }
+    return proof.pickups.filter((pickup) => pickup.status === "open").flatMap((pickup) => {
+      const midpoint = (pickup.t_start + pickup.t_end) / 2;
+      const expectedWords = tokenizeManuscript(pickup.expected).map((token) => normalizeToken(token.text));
+      const lineWords = tokenizeManuscript(pickup.line_text ?? "").map((token) => normalizeToken(token.text));
+      const lineStart = lineWords.length > 0
+        ? alignedTokens.find((token) => lineWords.every((written, offset) => (
+            normalizeToken(alignedTokens[token.tokenIndex + offset]?.written ?? "") === written
+          )))?.tokenIndex
+        : undefined;
+      const lineEnd = lineStart !== undefined ? lineStart + lineWords.length - 1 : undefined;
+      const inPickupLine = (tokenIndex: number) => (
+        lineStart === undefined
+        || lineEnd === undefined
+        || (tokenIndex >= lineStart && tokenIndex <= lineEnd)
+      );
+      const writtenMatch = expectedWords.length > 0
+        ? alignedTokens
+            .filter((token) => normalizeToken(token.written) === expectedWords[0])
+            .filter((token) => expectedWords.every((expected, offset) => (
+              normalizeToken(alignedTokens[token.tokenIndex + offset]?.written ?? "") === expected
+            )))
+            .filter((token) => inPickupLine(token.tokenIndex))
+            .sort((left, right) => {
+              const leftMidpoint = left.start !== undefined && left.end !== undefined
+                ? (left.start + left.end) / 2
+                : Number.POSITIVE_INFINITY;
+              const rightMidpoint = right.start !== undefined && right.end !== undefined
+                ? (right.start + right.end) / 2
+                : Number.POSITIVE_INFINITY;
+              return Math.abs(leftMidpoint - midpoint) - Math.abs(rightMidpoint - midpoint);
+            })[0]
+        : undefined;
+      const nearest = alignedTokens
+        .filter((token) => inPickupLine(token.tokenIndex))
+        .filter((token) => token.start !== undefined && token.end !== undefined)
+        .sort((left, right) => {
+          const leftMidpoint = ((left.start as number) + (left.end as number)) / 2;
+          const rightMidpoint = ((right.start as number) + (right.end as number)) / 2;
+          return Math.abs(leftMidpoint - midpoint) - Math.abs(rightMidpoint - midpoint);
+        })[0];
+      const indexed = Number.isFinite(pickup.manuscript_index)
+        ? alignedTokens.find((token) => token.tokenIndex === pickup.manuscript_index)
+        : undefined;
+      const indexedMatchesExpected = indexed && expectedWords.length > 0
+        ? expectedWords.every((expected, offset) => (
+            normalizeToken(alignedTokens[indexed.tokenIndex + offset]?.written ?? "") === expected
+          ))
+        : false;
+      // Old projects can contain indexes saved against an earlier manuscript.
+      // Prefer a verified phrase match; only trust an index when the written
+      // words still agree, then use audio timing as the final fallback.
+      const tokenIndex = writtenMatch?.tokenIndex
+        ?? nearest?.tokenIndex
+        ?? lineStart
+        ?? (indexedMatchesExpected ? indexed?.tokenIndex : undefined)
+        ?? indexed?.tokenIndex;
+      if (tokenIndex === undefined) {
+        return [];
+      }
+      const kind: ManuscriptProofAnnotation["kind"] = pickup.intent === "performance"
+        ? "performance"
+        : pickup.kind;
+      const expectedLabel = pickup.expected.length > 96
+        ? `${pickup.expected.slice(0, 93).trimEnd()}…`
+        : pickup.expected;
+      const heardLabel = pickup.heard.length > 72
+        ? `${pickup.heard.slice(0, 69).trimEnd()}…`
+        : pickup.heard;
+      const label = pickup.intent === "performance"
+        ? (pickup.note || "Narrator performance redo")
+        : pickup.kind === "skip"
+          ? `Missed: ${expectedLabel}`
+          : pickup.kind === "insert"
+            ? `Added: ${heardLabel}`
+            : pickup.kind === "pause"
+              ? "Long pause"
+              : `Misread: ${expectedLabel} → ${heardLabel}`;
+      return [{ id: pickup.id, tokenIndex, kind, label, status: pickup.status }];
+    });
+  }, [alignedTokens, proof?.pickups]);
+  const selectedRedoRange = redoSelection?.ranges[redoSelection.scope] ?? null;
+  const quickRecordRange = redoSelection?.ranges.selection ?? null;
+  const startRedoRecording = (range: NarrationRedoRange, reason = "") => {
+    if (!selectedKind || range.timing === "unavailable") {
+      return;
+    }
+    const pickup = createNarratorRedoPickup({
+      chapterId: chapter.id,
+      range,
+      sourceKind: selectedKind,
+      reason,
+    });
+    setQuickRecordPosition(null);
+    onPunchPickup(pickup);
+  };
+
+  useEffect(() => {
+    if (!quickRecordPosition) {
+      return undefined;
+    }
+    const dismissQuickAction = () => setQuickRecordPosition(null);
+    window.addEventListener("scroll", dismissQuickAction, true);
+    window.addEventListener("resize", dismissQuickAction);
+    return () => {
+      window.removeEventListener("scroll", dismissQuickAction, true);
+      window.removeEventListener("resize", dismissQuickAction);
+    };
+  }, [quickRecordPosition]);
+  const showPickupOnPage = (pickup: Pickup) => {
+    setFocusedAnnotationId(pickup.id);
+    window.requestAnimationFrame(() => {
+      const mark = [...document.querySelectorAll<HTMLElement>("[data-annotation-ids]")]
+        .find((element) => (element.dataset.annotationIds ?? "").split(" ").includes(pickup.id));
+      mark?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    });
+  };
   const staleFlags = Boolean(
     proof
     && checkedSourceKind
@@ -7602,59 +7858,194 @@ function ReviewPage({
           <p className="panel-honesty">These flags are from the other recording. Check this one to refresh them.</p>
         ) : null}
         {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
-        <section className="paper-sheet" aria-label="Manuscript">
-          <p className="paper-kicker">The page</p>
-          <div className="paper-prose">
-            <PaperProse
-              text={chapterText}
-              kind="manuscript"
-              empty="Loading manuscript…"
-            />
-          </div>
-        </section>
-        <section className="paper-sheet heard-sheet" aria-label="Transcript">
-          <div className="paper-sheet-heading">
-            <p className="paper-kicker">{selectedKind === "take" ? "Heard on the uploaded take" : "Heard on the booth tape"}</p>
-            <button
-              className="action-button small plain"
-              type="button"
-              disabled={busyAction !== null}
-              onClick={() => setEditingTranscript((open) => !open)}
-            >
-              {editingTranscript ? "Done" : "Edit"}
-            </button>
-          </div>
-          {editingTranscript ? (
-            <textarea
-              id="local-transcript"
-              className="paper-transcript-edit"
-              rows={8}
-              value={transcriptText}
-              disabled={busyAction !== null}
-              onChange={(event) => onTranscriptChange(event.target.value)}
-              placeholder="Paste the words that were read, or leave blank to transcribe…"
-            />
-          ) : (
-            <div className="paper-prose heard">
-              <PaperProse
-                text={transcriptText}
-                kind="transcript"
-                empty="Paste the words that were read, or leave this blank to transcribe."
+        <div className={proof ? "proofreading-workspace ready" : "proofreading-workspace"}>
+          <aside className="proofing-issue-rail" aria-label="Proofreading annotations">
+            {proof ? (
+              <PickupList
+                variant="rail"
+                pickups={proof.pickups}
+                busyAction={busyAction}
+                onPlay={onPlayPickup}
+                onShow={showPickupOnPage}
+                listenDisabledReason={listenDisabledReason}
+                punchDisabledReason={punchDisabledReason}
+                onExportMarkers={onExportMarkers}
+                onExportReport={onExportReport}
+                onExportPacket={onExportPacket}
+                onPunch={onPunchPickup}
+                onStartSession={onStartPickupSession}
+                onUpdate={onUpdatePickup}
+                onSuppress={onSuppressPickup}
+                seatFilter={pickupSeatFilter}
+                onSeatFilter={onPickupSeatFilter}
               />
+            ) : (
+              <div className="proofing-rail-empty">
+                <p className="card-kicker">Annotations</p>
+                <strong>Issues will appear here</strong>
+                <p>Misreads, added words, missed words, pauses, and your own performance notes stay beside the manuscript.</p>
+              </div>
+            )}
+          </aside>
+          <div className="proofreading-document">
+        <section className="paper-sheet selectable-proof-sheet" aria-label="Selectable manuscript">
+          <div className="paper-sheet-heading">
+            <div>
+              <p className="paper-kicker">The page</p>
+              <p className="paper-selection-hint">Highlight any word, line, sentence, or paragraph to perform it again.</p>
             </div>
-          )}
-          <p className="paper-help">We compare this with the manuscript to find word changes and pauses.</p>
-          {modelAvailable === false ? (
-            <div className="model-note">
-              <span>Speech model is not ready yet.</span>
-              <button type="button" onClick={onDownloadModel} disabled={busyAction !== null}>
-                {busyAction === "model"
-                  ? `Downloading ${Math.round(modelProgress * 100)}%…`
-                  : "Download speech model"}
+            {proof ? (
+              <span className="alignment-ready-badge">
+                {manuscriptAnnotations.length} marked · timed to this recording
+              </span>
+            ) : null}
+          </div>
+          <div className="paper-prose manuscript-edit-surface">
+            <ManuscriptProofProse
+              text={chapterText}
+              alignedTokens={alignedTokens}
+              annotations={manuscriptAnnotations}
+              focusedAnnotationId={focusedAnnotationId}
+              selectable
+              onTokenSelection={({ fromToken, toToken, actionPosition }) => {
+                setRedoSelection({
+                  ranges: buildNarrationRedoRanges({
+                    manuscript: chapterText,
+                    transcript: proof?.transcript ?? [],
+                    fromToken,
+                    toToken,
+                  }),
+                  scope: "selection",
+                });
+                setQuickRecordPosition(actionPosition);
+                setRedoReason("");
+              }}
+            />
+          </div>
+          {quickRecordRange && quickRecordPosition ? (
+            <div
+              className={`selection-record-popover ${quickRecordPosition.placement}`}
+              style={{ left: quickRecordPosition.left, top: quickRecordPosition.top }}
+              role="toolbar"
+              aria-label="Selected passage actions"
+            >
+              <button
+                type="button"
+                disabled={busyAction !== null || !selectedKind || quickRecordRange.timing === "unavailable"}
+                title={quickRecordRange.timing === "unavailable"
+                  ? "Check this recording first so Kosmos can find the selected audio"
+                  : "Record this highlighted passage again"}
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => startRedoRecording(quickRecordRange)}
+              >
+                <MicrophoneGlyph />
+                <span>Record again</span>
               </button>
             </div>
           ) : null}
+          {redoSelection && selectedRedoRange ? (
+            <section className="redo-selection-card" aria-live="polite" aria-label="Redo selected passage">
+              <header>
+                <div>
+                  <p className="card-kicker">Selected passage</p>
+                  <strong>
+                    {selectedRedoRange.wordCount} {selectedRedoRange.wordCount === 1 ? "word" : "words"}
+                    {selectedRedoRange.start !== undefined && selectedRedoRange.end !== undefined
+                      ? ` · ${formatTime(selectedRedoRange.start)}–${formatTime(selectedRedoRange.end)}`
+                      : " · not mapped to audio yet"}
+                  </strong>
+                </div>
+                <button
+                  className="redo-clear-button"
+                  type="button"
+                  onClick={() => {
+                    window.getSelection()?.removeAllRanges();
+                    setRedoSelection(null);
+                    setQuickRecordPosition(null);
+                  }}
+                >
+                  Clear
+                </button>
+              </header>
+              <blockquote>{selectedRedoRange.text}</blockquote>
+              <div className="redo-scope-options" role="group" aria-label="Replacement scope">
+                {([
+                  ["selection", redoSelection.ranges.selection.wordCount === 1 ? "Word" : "Selection / line"],
+                  ["sentence", "Sentence"],
+                  ["paragraph", "Paragraph"],
+                ] as Array<[NarrationRedoScope, string]>).map(([scope, label]) => (
+                  <button
+                    key={scope}
+                    className={redoSelection.scope === scope ? "selected" : ""}
+                    type="button"
+                    onClick={() => setRedoSelection((current) => current ? { ...current, scope } : current)}
+                  >
+                    {label}{scope === "sentence" ? <small>Recommended</small> : null}
+                  </button>
+                ))}
+              </div>
+              {selectedRedoRange.timing === "partial" ? (
+                <p className="redo-warning">Some boundary words were not confidently aligned. Listen to the range before recording; the in-context preview is required before Apply.</p>
+              ) : selectedRedoRange.timing === "unavailable" ? (
+                <p className="redo-warning">This selection has no audio timing yet. Check the chapter first, or select nearby spoken text.</p>
+              ) : selectedRedoRange.wordCount === 1 ? (
+                <p className="redo-warning subtle">A single-word edit can expose a seam. Sentence is safer, but the choice is yours.</p>
+              ) : null}
+              <div className="redo-selection-actions">
+                {selectedRedoRange.timing === "unavailable" ? (
+                  <button className="primary-button" type="button" disabled={busyAction !== null || !selectedKind} onClick={onProof}>
+                    Check chapter first
+                  </button>
+                ) : (
+                  <>
+                    <label className="redo-reason-field">
+                      <span>Intent <small>optional</small></span>
+                      <select value={redoReason} onChange={(event) => setRedoReason(event.target.value)}>
+                        <option value="">Performance choice</option>
+                        <option value="More emotion">More emotion</option>
+                        <option value="Less emotion">Less emotion</option>
+                        <option value="Pacing">Pacing</option>
+                        <option value="Character voice">Character voice</option>
+                        <option value="Pronunciation">Pronunciation</option>
+                        <option value="Mistake">Mistake</option>
+                      </select>
+                    </label>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => onPlayRange(selectedRedoRange.start as number, selectedRedoRange.end)}
+                    >
+                      Listen in context
+                    </button>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={busyAction !== null || !selectedKind}
+                      onClick={() => startRedoRecording(selectedRedoRange, redoReason)}
+                    >
+                      Record this passage
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          ) : null}
         </section>
+        <p className="manuscript-timing-note">
+          {selectedKind === "live"
+            ? "Recorded here: Kosmos reuses the manuscript timing and issues captured while you narrated."
+            : "Brought in: Kosmos uses local speech alignment behind the scenes, then places every issue on this manuscript."}
+        </p>
+        {selectedKind === "take" && modelAvailable === false ? (
+          <div className="model-note">
+            <span>The local speech model is needed only for brought-in audio.</span>
+            <button type="button" onClick={onDownloadModel} disabled={busyAction !== null}>
+              {busyAction === "model"
+                ? `Downloading ${Math.round(modelProgress * 100)}%…`
+                : "Download speech model"}
+            </button>
+          </div>
+        ) : null}
         <div className="desk-actions">
           <button
             className="primary-button"
@@ -7662,37 +8053,20 @@ function ReviewPage({
             disabled={!proofAudioSource(chapter) || busyAction !== null}
             onClick={onProof}
           >
-            {busyAction === `proof-${chapter.id}` ? "Checking…" : "Check chapter"}
+            {busyAction === `proof-${chapter.id}`
+              ? "Preparing…"
+              : selectedKind === "live"
+                ? "Use booth timing"
+                : "Check imported audio"}
           </button>
+        </div>
+          </div>
         </div>
       </article>
 
       {proof ? (
-        <>
-          <OccurrenceScanner transcript={proof.transcript} busy={busyAction !== null} onPlay={onPlayRange} />
-          <PickupList
-            pickups={proof.pickups}
-            busyAction={busyAction}
-            onPlay={onPlayPickup}
-            listenDisabledReason={listenDisabledReason}
-            punchDisabledReason={punchDisabledReason}
-            onExportMarkers={onExportMarkers}
-            onExportReport={onExportReport}
-            onExportPacket={onExportPacket}
-            onPunch={onPunchPickup}
-            onStartSession={onStartPickupSession}
-            onUpdate={onUpdatePickup}
-            onSuppress={onSuppressPickup}
-            seatFilter={pickupSeatFilter}
-            onSeatFilter={onPickupSeatFilter}
-          />
-        </>
-      ) : (
-        <div className="empty-chapters compact">
-          <h3>No review yet</h3>
-          <p>Check the recording you picked. Pickups will land here.</p>
-        </div>
-      )}
+        <OccurrenceScanner transcript={proof.transcript} busy={busyAction !== null} onPlay={onPlayRange} />
+      ) : null}
       {comparisons.length > 0 ? (
         <PickupComparisonPanel
           folder={comparisonFolder}
@@ -7977,6 +8351,15 @@ function CheckGlyph() {
   return (
     <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M2.2 6.4 4.6 8.8 9.8 3.4" />
+    </svg>
+  );
+}
+
+function MicrophoneGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8" />
     </svg>
   );
 }
@@ -8297,7 +8680,7 @@ function PickupComparisonPanel({
   );
 }
 
-export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, punchDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onStartSession, onUpdate, onSuppress, seatFilter, onSeatFilter }: { pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; punchDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onStartSession: (pickups: Pickup[]) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
+export function PickupList({ variant = "default", pickups, busyAction, onPlay, onShow, listenDisabledReason, punchDisabledReason, onExportMarkers, onExportReport, onExportPacket, onPunch, onStartSession, onUpdate, onSuppress, seatFilter, onSeatFilter }: { variant?: "default" | "rail"; pickups: Pickup[]; busyAction: string | null; onPlay: (pickup: Pickup) => void; onShow?: (pickup: Pickup) => void; listenDisabledReason?: (pickup: Pickup) => string | null; punchDisabledReason?: (pickup: Pickup) => string | null; onExportMarkers: () => void; onExportReport: () => void; onExportPacket: () => void; onPunch: (pickup: Pickup) => void; onStartSession: (pickups: Pickup[]) => void; onUpdate: (pickup: Pickup, changes: { status?: Pickup["status"]; note?: string }) => void; onSuppress: (pickup: Pickup) => void; seatFilter: "all" | "narration" | "N1" | "N2"; onSeatFilter: (value: "all" | "narration" | "N1" | "N2") => void }) {
   const [statusFilter, setStatusFilter] = useState<"open" | "all">("open");
   const seatPickups = seatFilter === "all" ? pickups : pickups.filter((pickup) => pickup.seat === seatFilter);
   const visiblePickups = statusFilter === "open" ? seatPickups.filter((pickup) => pickup.status === "open") : seatPickups;
@@ -8307,8 +8690,8 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
     <section className="result-panel" aria-labelledby="pickup-title">
       <div className="result-heading">
         <div>
-          <p className="card-kicker">Review points</p>
-          <h4 id="pickup-title">Pickups</h4>
+          <p className="card-kicker">{variant === "rail" ? "Script sync" : "Review points"}</p>
+          <h4 id="pickup-title">{variant === "rail" ? "Annotations" : "Pickups"}</h4>
         </div>
         <div className="result-heading-actions">
           {openCount > 0 ? (
@@ -8380,6 +8763,16 @@ export function PickupList({ pickups, busyAction, onPlay, listenDisabledReason, 
                 </span>
               )}
               <div className="pickup-actions">
+                {onShow ? (
+                  <button
+                    className="action-button small"
+                    type="button"
+                    disabled={busyAction !== null}
+                    onClick={() => onShow(pickup)}
+                  >
+                    Show on page
+                  </button>
+                ) : null}
                 <button
                   className="action-button small"
                   type="button"

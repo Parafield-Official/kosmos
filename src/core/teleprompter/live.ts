@@ -67,6 +67,8 @@ export interface LiveMismatch {
 
 export interface LiveMatchResult {
   state: LiveMatchState;
+  /** Canonical manuscript words placed on this recording clock. */
+  confirmed: LiveWordConfirmation[];
   flag?: LiveMismatch;
   /**
    * The word the read stopped on. Only set under `haltOnMismatch`. The cursor
@@ -74,6 +76,13 @@ export interface LiveMatchResult {
    * calling again with the returned state resumes from exactly here.
    */
   halt?: LiveMismatch;
+}
+
+export interface LiveWordConfirmation {
+  expectedIndex: number;
+  start: number;
+  end: number;
+  confidence: number;
 }
 
 export interface LiveMatchInput {
@@ -473,6 +482,23 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
   let matchedInWindow = 0;
   let flag: LiveMismatch | undefined;
   let halt: LiveMismatch | undefined;
+  const confirmed: LiveWordConfirmation[] = [];
+
+  const confirmWord = (expectedIndex: number, word: LiveTranscriptWord | undefined) => {
+    if (!word || !Number.isFinite(word.start) || !Number.isFinite(word.end)) {
+      return;
+    }
+    const start = Math.max(0, word.start);
+    const end = Math.max(start, word.end);
+    confirmed.push({
+      expectedIndex,
+      start,
+      end,
+      confidence: Number.isFinite(word.confidence)
+        ? Math.min(1, Math.max(0, word.confidence as number))
+        : 0,
+    });
+  };
 
   const words = usableLiveWords(input.transcript);
 
@@ -506,6 +532,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     // anything: one word the matcher could not place is noise, but three in a
     // row with nothing landing between them is a read that has left the page.
     if (sameWord(heard, expected) || wordsSimilar(heard, expected)) {
+      confirmWord(expectedWord.index, word);
       cursor += 1;
       pendingResync = undefined;
       mismatchRun = undefined;
@@ -515,6 +542,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
 
     const nearJump = !input.flagsEnabled ? findNearJump(heard, input.expected, cursor) : -1;
     if (nearJump >= 0) {
+      confirmWord(input.expected[nearJump]?.index ?? nearJump, word);
       cursor = nearJump + 1;
       pendingResync = undefined;
       mismatchRun = undefined;
@@ -522,6 +550,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       continue;
     }
     if (!input.flagsEnabled && (isReliableShortSwap(expected, heard) || isNumberSlip(expected, heard))) {
+      confirmWord(expectedWord.index, word);
       cursor += 1;
       pendingResync = undefined;
       mismatchRun = undefined;
@@ -533,6 +562,10 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!input.flagsEnabled) {
       const longResync = findLongResync(heard, nextHeard, input.expected, cursor, threshold);
       if (longResync >= 0) {
+        confirmWord(input.expected[longResync]?.index ?? longResync, word);
+        if (nextHeard) {
+          confirmWord(input.expected[longResync + 1]?.index ?? (longResync + 1), words[wordIndex + 1]);
+        }
         cursor = longResync + (nextHeard ? 2 : 1);
         pendingResync = undefined;
         mismatchRun = undefined;
@@ -554,6 +587,9 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         && normalizeToken(lookahead[candidateOffset + 1]?.text ?? "") === nextHeard
       ));
       if (resyncOffset >= 0) {
+        const placedIndex = cursor + resyncOffset + 1;
+        confirmWord(input.expected[placedIndex]?.index ?? placedIndex, word);
+        confirmWord(input.expected[placedIndex + 1]?.index ?? (placedIndex + 1), words[wordIndex + 1]);
         cursor += resyncOffset + 3;
         pendingResync = undefined;
         mismatchRun = undefined;
@@ -577,6 +613,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         && isContentWord(heard)
         && lookahead.filter((candidate) => normalizeToken(candidate.text) === heard).length === 1;
       if (isDistinctiveResync) {
+        confirmWord(input.expected[expectedIndex]?.index ?? expectedIndex, word);
         cursor = expectedIndex + 1;
         pendingResync = undefined;
         mismatchRun = undefined;
@@ -588,6 +625,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         || (expectedIndex === pendingResync.expectedIndex && heard === pendingResync.text)
       );
       if (confirmsPending) {
+        confirmWord(input.expected[expectedIndex]?.index ?? expectedIndex, word);
         cursor = expectedIndex + 1;
         pendingResync = undefined;
         mismatchRun = undefined;
@@ -673,6 +711,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         ...liveLineContext(input.expected, expectedWord.index, start, end, words),
       };
     }
+    confirmWord(expectedWord.index, word);
     cursor += 1;
     matchedInWindow += 1;
   }
@@ -685,6 +724,7 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       ...(pendingResync ? { pendingResync } : {}),
       ...(mismatchRun ? { mismatchRun } : {}),
     },
+    confirmed,
     flag,
     halt,
   };
@@ -1453,6 +1493,7 @@ export function pickupFromLiveFlag(
     status: "open",
     confidence: Number.isFinite(flag.confidence) ? Math.min(1, Math.max(0, flag.confidence)) : 0,
     note: "Caught while reading",
+    manuscript_index: flag.expectedIndex,
     ...(lineStart !== undefined && lineEnd !== undefined ? { line_start: lineStart, line_end: lineEnd } : {}),
     ...(flag.lineText ? { line_text: flag.lineText } : {}),
   };

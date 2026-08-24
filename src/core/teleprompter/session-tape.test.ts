@@ -70,6 +70,7 @@ describe("pickup playback covers the line", () => {
     expect(flagged).toMatchObject({
       t_start: 8.15,
       t_end: 8.45,
+      manuscript_index: 18,
       line_start: 6.4,
       line_end: 11.2,
       line_text: "Down the upper edge of the sky",
@@ -78,6 +79,21 @@ describe("pickup playback covers the line", () => {
 });
 
 describe("punching a pickup", () => {
+  it("keeps a narrator-selected redo on the recording that supplied its timing", () => {
+    const liveSelection = { ...proofPickup, source_kind: "live" as const };
+    expect(audioSourceForPickup(liveSelection, {
+      audio_path: "audio/imported.wav",
+      live_audio_path: "audio/live/ch01_session.wav",
+    })?.relativePath).toBe("audio/live/ch01_session.wav");
+    expect(punchDisabledReason(liveSelection, {
+      audio_path: "audio/imported.wav",
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toMatch(/uploaded take/i);
+    expect(punchDisabledReason(liveSelection, {
+      live_audio_path: "audio/live/ch01_session.wav",
+    })).toBeNull();
+  });
+
   it("will not splice a booth-tape flag into a take it was never timed against", () => {
     const live = pickupFromLiveFlag(liveFlag, "ch01");
     expect(punchDisabledReason(live, {

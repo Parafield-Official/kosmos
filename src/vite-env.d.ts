@@ -24,7 +24,7 @@ interface BoothDeskBridge {
   suggestGlossaryRespells: (payload: ProjectEnvelope) => Promise<RespellSuggestionResult>;
   exportVoiceGuide: (payload: ProjectEnvelope & { frequency?: "paragraph" | "all" }) => Promise<VoiceGuideResult>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
-  saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[] }) => Promise<ProjectEnvelope>;
+  saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[]; sourceKind?: "take" | "live" }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
   exportProofReport: (payload: ProjectEnvelope & { chapterId: string; transcript: import("./core/proof/align").TranscriptWord[]; pickups: import("./core/project/types").Pickup[] }) => Promise<ProofReportResult>;
@@ -126,6 +126,7 @@ interface AlignmentFile {
   schema: 1;
   chapter_id: string;
   updated_at: string;
+  source_kind?: "take" | "live";
   transcript: import("./core/proof/align").TranscriptWord[];
   pickups: import("./core/project/types").Pickup[];
 }

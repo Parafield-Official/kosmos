@@ -147,6 +147,14 @@ export interface Pickup {
   status: PickupStatus;
   confidence: number;
   note?: string;
+  /** A narrator can voluntarily redo delivery even when proofing found no error. */
+  intent?: "proof" | "performance";
+  /** The manuscript scope the narrator deliberately selected. */
+  selection_kind?: "selection" | "sentence" | "paragraph";
+  /** Which reviewed recording supplied this selection's timestamps. */
+  source_kind?: "take" | "live";
+  /** Canonical manuscript word index captured while narrating in Kosmos. */
+  manuscript_index?: number;
   /**
    * The sentence the flagged word sits in. `t_start`/`t_end` stay the word, for
    * marking the page and for exports that point at the exact slip; a narrator

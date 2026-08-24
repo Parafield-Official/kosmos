@@ -456,6 +456,9 @@ function runToPickup(
   const confidence = run.transcript.length > 0
     ? average(run.transcript.map((word) => normalizedConfidence(word.confidence)))
     : 0;
+  const manuscriptIndex = run.manuscript[0]?.index
+    ?? run.nextManuscriptIndex
+    ?? run.previousManuscriptIndex;
   const line = pickupSentenceContext(
     run,
     manuscript,
@@ -478,6 +481,7 @@ function runToPickup(
     seat,
     status: "open",
     confidence,
+    ...(manuscriptIndex !== undefined ? { manuscript_index: manuscriptIndex } : {}),
     ...line,
   };
 }

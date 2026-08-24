@@ -35,6 +35,13 @@ describe("teleprompter live matching", () => {
 
     expect(first.state).toMatchObject({ cursor: 2, lastHeardEnd: 0.5 });
     expect(second.state).toMatchObject({ cursor: 3, lastHeardEnd: 0.9 });
+    expect(first.confirmed).toEqual([
+      { expectedIndex: 0, start: 0, end: 0.2, confidence: 0.98 },
+      { expectedIndex: 1, start: 0.3, end: 0.5, confidence: 0.98 },
+    ]);
+    expect(second.confirmed).toEqual([
+      { expectedIndex: 2, start: 0.6, end: 0.9, confidence: 0.98 },
+    ]);
     expect(second.flag).toBeUndefined();
   });
 

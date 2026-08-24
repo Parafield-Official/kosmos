@@ -1,6 +1,19 @@
 const { normalizeAlignment } = require("./alignment.cjs");
 
 describe("alignment persistence boundary", () => {
+  it("keeps the audio source that owns the timing map", () => {
+    expect(normalizeAlignment({
+      source_kind: "live",
+      transcript: [],
+      pickups: [],
+    }, "ch01").source_kind).toBe("live");
+    expect(() => normalizeAlignment({
+      source_kind: "mystery",
+      transcript: [],
+      pickups: [],
+    }, "ch01")).toThrow(/source/i);
+  });
+
   it("clamps malformed confidence without changing valid workflow data", () => {
     const result = normalizeAlignment({
       schema: 1,
