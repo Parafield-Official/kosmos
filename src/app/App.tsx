@@ -134,6 +134,7 @@ import {
   proofTimingPipeline,
   type ProofTimingEngine,
 } from "../core/proof/pipeline";
+import { refineLiveManuscriptTimeline } from "../core/proof/live-refinement";
 import {
   ManuscriptProofProse,
   selectionActionReducer,
@@ -375,6 +376,10 @@ function ProjectHome({
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(
     project.chapters[0]?.id ?? null,
   );
+  const envelopeRef = useRef(envelope);
+  envelopeRef.current = envelope;
+  const selectedChapterIdRef = useRef(selectedChapterId);
+  selectedChapterIdRef.current = selectedChapterId;
   const [chapterReloadVersion, setChapterReloadVersion] = useState(0);
   const [chapterText, setChapterText] = useState("");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -1130,6 +1135,7 @@ function ProjectHome({
       sourceKind: sourceKind ?? checkedSourceKind ?? undefined,
       timingEngine: next.timingEngine,
     });
+    envelopeRef.current = saved;
     onChange(saved);
   }
 
@@ -2399,9 +2405,73 @@ function ProjectHome({
     }
     setNotice(
       timeline.length > 0
-        ? "Kept the booth tape and mapped it directly to the manuscript. Highlight a passage in Review to perform it again."
+        ? "Kept the booth tape and mapped it directly to the manuscript. Precise word timing is refining in the background."
         : "Kept the booth tape. No manuscript timing was captured, so record the passage again before editing it on the page.",
     );
+    if (timeline.length > 0) {
+      void refineStoppedLiveTape(saved, chapterId, timeline, pickups);
+    }
+  }
+
+  async function refineStoppedLiveTape(
+    saved: ProjectEnvelope,
+    chapterId: string,
+    baseline: TranscriptWord[],
+    pickups: Pickup[],
+  ): Promise<void> {
+    if (!window.boothDesk) {
+      return;
+    }
+    const chapter = saved.project.chapters.find((candidate) => candidate.id === chapterId);
+    const relativePath = chapter?.live_audio_path ?? chapter?.audio_path;
+    if (!relativePath) {
+      return;
+    }
+    try {
+      const aligned = await window.boothDesk.transcribe({
+        folder: saved.folder,
+        relativePath,
+        language: "en",
+      });
+      if (aligned.timingEngine !== "whisperx") {
+        setNotice("The booth tape is ready with its manuscript timing. Precise refinement was unavailable, so nothing was replaced.");
+        return;
+      }
+      const refinement = refineLiveManuscriptTimeline({
+        manuscript: chapterText,
+        baseline,
+        aligned: aligned.words,
+      });
+      if (!refinement.adopted) {
+        setNotice(`The booth tape is ready. Precise timing covered only ${Math.round(refinement.coverage * 100)}%, so Kosmos kept the original manuscript clock.`);
+        return;
+      }
+      if (envelopeRef.current.folder !== saved.folder) {
+        return;
+      }
+      const refined = await window.boothDesk.saveAlignment({
+        folder: envelopeRef.current.folder,
+        project: envelopeRef.current.project,
+        chapterId,
+        pickups,
+        transcript: refinement.timeline,
+        sourceKind: "live",
+        timingEngine: "whisperx",
+      });
+      envelopeRef.current = refined;
+      onChange(refined);
+      if (selectedChapterIdRef.current === chapterId) {
+        const next = { pickups, transcript: refinement.timeline, timingEngine: "whisperx" as const };
+        proofRef.current = next;
+        setProof(next);
+        setCheckedSourceKind("live");
+        setReviewSourceKind("live");
+      }
+      setNotice(`Precise timing is ready for ${refinement.refinedWordCount} manuscript words. Highlighted playback now uses the refined boundaries.`);
+    } catch (reason) {
+      console.warn("Live timing refinement unavailable; keeping manuscript clock", reason);
+      setNotice("The booth tape is ready with its original manuscript timing. Precise refinement could not finish, so nothing was replaced.");
+    }
   }
 
   async function saveLiveTape(wavBase64: string, chapterId: string, timeline: TranscriptWord[]) {
