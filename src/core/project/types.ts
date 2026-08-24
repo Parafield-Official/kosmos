@@ -47,6 +47,15 @@ export interface ScriptSpan {
   /** Deterministic quote heuristic; a user can still repaint the seat. */
   dialogue?: boolean;
   glossary_id?: string;
+  /** A narrator-only preparation cue anchored to the words in this span. */
+  performance_cue?: PerformanceCue;
+}
+
+export type PerformanceCueKind = "beat" | "breath" | "emphasis" | "character" | "intention";
+
+export interface PerformanceCue {
+  kind: PerformanceCueKind;
+  label?: string;
 }
 
 export interface ChapterFile {

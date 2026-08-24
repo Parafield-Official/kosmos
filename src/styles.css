@@ -4294,6 +4294,74 @@ button {
   font-weight: 800;
 }
 
+/* Performance direction stays visible on the manuscript and becomes a quiet
+ * two-row warning during a read. It never changes the underlying book text. */
+.performance-cue-instruction {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 22px 10px;
+  padding: 9px 12px;
+  border: 1px solid rgba(185, 116, 47, 0.4);
+  border-radius: 10px;
+  color: #53371f;
+  background: #fff1d9;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.performance-cue-instruction button {
+  margin-left: auto;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.performance-cue-bar {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0 22px 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(185, 116, 47, 0.4);
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff1d9;
+  font-family: var(--font-ui);
+  box-shadow: 0 8px 24px rgba(92, 54, 20, 0.08);
+}
+
+.performance-cue-bar-symbol {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  background: #a95f27;
+  font-size: 16px;
+  place-items: center;
+}
+
+.performance-cue-bar > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.performance-cue-bar strong {
+  font-size: 13px;
+}
+
+.performance-cue-bar > div > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /*
  * A saved read turns the guide into a short, actionable report. Every uncertain
  * row can play both the take and the human reference; the recogniser never gets
@@ -4535,6 +4603,126 @@ button {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+.performance-cue-shade {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(19, 16, 14, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.performance-cue-editor {
+  display: grid;
+  gap: 18px;
+  width: min(680px, 100%);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-ui);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
+}
+
+.performance-cue-editor > header,
+.performance-cue-editor > footer,
+.performance-cue-editor > footer > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.performance-cue-editor h2 {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: -0.04em;
+}
+
+.performance-cue-editor > header > button {
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 24px;
+}
+
+.performance-cue-kinds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.performance-cue-kinds button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.performance-cue-kinds button.active {
+  border-color: #a95f27;
+  background: #fff1d9;
+  box-shadow: 0 0 0 1px rgba(169, 95, 39, 0.2);
+}
+
+.performance-cue-kinds button > span {
+  color: #a95f27;
+  font-size: 18px;
+}
+
+.performance-cue-kinds strong {
+  font-size: 12px;
+}
+
+.performance-cue-kinds em {
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.performance-cue-note {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.performance-cue-note input {
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 500;
+}
+
+.performance-cue-editor .danger-button {
+  padding: 8px 10px;
+  border: 1px solid var(--bad);
+  border-radius: 9px;
+  color: var(--bad);
+  background: var(--bad-soft);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .booth-halt-copy {
@@ -5083,6 +5271,38 @@ button {
   box-shadow: 0 0 0 1px rgba(194, 137, 31, 0.32);
   color: #211a14;
   transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.teleprompter-word-cued {
+  position: relative;
+  box-shadow: inset 0 -0.1em 0 rgba(169, 95, 39, 0.7);
+}
+
+.teleprompter-word-cued.cue-emphasis {
+  font-weight: 750;
+}
+
+.performance-cue-mark {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% - 0.12em);
+  color: #a95f27;
+  font-family: var(--font-ui);
+  font-size: 0.42em;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.performance-cue-mode .teleprompter-word-cue-target {
+  border-radius: 0.16em;
+  cursor: crosshair;
+}
+
+.performance-cue-mode .teleprompter-word-cue-target:hover {
+  background: rgba(185, 116, 47, 0.2);
+  outline: 1px solid rgba(169, 95, 39, 0.5);
 }
 
 /*
@@ -7690,6 +7910,35 @@ button {
     align-items: flex-start;
     flex-direction: column;
     gap: 2px;
+  }
+
+  .performance-cue-bar {
+    grid-template-columns: auto 1fr;
+  }
+
+  .performance-cue-bar .pronunciation-cue-kicker {
+    grid-column: auto;
+  }
+
+  .performance-cue-bar > div {
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .performance-cue-instruction {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .performance-cue-kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .performance-cue-editor > footer {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .pronunciation-briefing ul {

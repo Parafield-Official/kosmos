@@ -1,0 +1,1428 @@
+{
+  "schema": 1,
+  "label": "narrator-workflow",
+  "createdAt": "2026-08-24T21:50:11.660Z",
+  "voice": "Daniel",
+  "rate": 165,
+  "recognizer": "bundled parakeet-live realtime_eou_120m-v1-f16.gguf",
+  "matcher": "matchLiveWindow with haltOnMismatch=true",
+  "summary": {
+    "passed": 9,
+    "total": 9,
+    "rate": 1
+  },
+  "results": [
+    {
+      "id": "clean_sequential",
+      "description": "Reads every line in order.",
+      "passed": true,
+      "expectation": {
+        "kind": "continue",
+        "throughLine": 3
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter rain moved softly a copper kettle whispered on the stove mara folded the letter and checked the clock",
+      "finalCursor": 29,
+      "finalLine": 4,
+      "haltedAtLine": null,
+      "backtracked": false,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "a",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "whispered",
+          "from": 17,
+          "to": 18,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "on",
+          "from": 18,
+          "to": 19,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 19,
+          "to": 20,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "stove",
+          "from": 20,
+          "to": 21,
+          "fromLine": 2,
+          "toLine": 3
+        },
+        {
+          "heard": "mara",
+          "from": 21,
+          "to": 22,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "folded",
+          "from": 22,
+          "to": 23,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "the",
+          "from": 23,
+          "to": 24,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "letter",
+          "from": 24,
+          "to": 25,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "and",
+          "from": 25,
+          "to": 26,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "checked",
+          "from": 26,
+          "to": 27,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "the",
+          "from": 27,
+          "to": 28,
+          "fromLine": 3,
+          "toLine": 3
+        },
+        {
+          "heard": "clock",
+          "from": 28,
+          "to": 29,
+          "fromLine": 3,
+          "toLine": 4
+        }
+      ]
+    },
+    {
+      "id": "restart_current_line",
+      "description": "Starts a line, breaks off, and restarts it from the beginning.",
+      "passed": true,
+      "expectation": {
+        "kind": "continue",
+        "throughLine": 2,
+        "mustBacktrack": true
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter beyond the window winter rain moved softly a copper kettle whispered on the stove",
+      "finalCursor": 21,
+      "finalLine": 3,
+      "haltedAtLine": null,
+      "backtracked": true,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond the",
+          "from": 11,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "a",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "whispered on",
+          "from": 17,
+          "to": 19,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 19,
+          "to": 20,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "stove",
+          "from": 20,
+          "to": 21,
+          "fromLine": 2,
+          "toLine": 3
+        }
+      ]
+    },
+    {
+      "id": "restart_with_editing_phrase",
+      "description": "Uses a natural editing phrase before restarting the current line.",
+      "passed": true,
+      "expectation": {
+        "kind": "continue",
+        "throughLine": 2,
+        "mustBacktrack": true
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter sorry start again beyond the window winter rain moved softly a copper kettle whispered on the stove",
+      "finalCursor": 21,
+      "finalLine": 3,
+      "haltedAtLine": null,
+      "backtracked": true,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 12,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "a",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "whispered",
+          "from": 17,
+          "to": 18,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "on",
+          "from": 18,
+          "to": 19,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 19,
+          "to": 20,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "stove",
+          "from": 20,
+          "to": 21,
+          "fromLine": 2,
+          "toLine": 3
+        }
+      ]
+    },
+    {
+      "id": "repeat_previous_line",
+      "description": "Rereads the previous complete line, then continues normally.",
+      "passed": true,
+      "expectation": {
+        "kind": "continue",
+        "throughLine": 2,
+        "mustBacktrack": true
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter rain moved softly the lantern waited beside the quiet harbour beyond the window winter rain moved softly a copper kettle whispered on the stove",
+      "finalCursor": 21,
+      "finalLine": 3,
+      "haltedAtLine": null,
+      "backtracked": true,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "lantern",
+          "from": 15,
+          "to": 2,
+          "fromLine": 2,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly a",
+          "from": 13,
+          "to": 15,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "whispered",
+          "from": 17,
+          "to": 18,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "on",
+          "from": 18,
+          "to": 19,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 19,
+          "to": 20,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "stove",
+          "from": 20,
+          "to": 21,
+          "fromLine": 2,
+          "toLine": 3
+        }
+      ]
+    },
+    {
+      "id": "repeat_after_next_line_start",
+      "description": "Begins the next line, returns to the prior line, then tries again.",
+      "passed": true,
+      "expectation": {
+        "kind": "continue",
+        "throughLine": 2,
+        "mustBacktrack": true
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter rain moved softly a copper kettle beyond the window winter rain moved softly a copper kettle whispered on the stove",
+      "finalCursor": 21,
+      "finalLine": 3,
+      "haltedAtLine": null,
+      "backtracked": true,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "a",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 17,
+          "to": 9,
+          "fromLine": 2,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "rain",
+          "from": 11,
+          "to": 12,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "moved",
+          "from": 12,
+          "to": 13,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "softly",
+          "from": 13,
+          "to": 14,
+          "fromLine": 1,
+          "toLine": 2
+        },
+        {
+          "heard": "a",
+          "from": 14,
+          "to": 15,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "copper",
+          "from": 15,
+          "to": 16,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "kettle",
+          "from": 16,
+          "to": 17,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "whispered",
+          "from": 17,
+          "to": 18,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "on",
+          "from": 18,
+          "to": 19,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "the",
+          "from": 19,
+          "to": 20,
+          "fromLine": 2,
+          "toLine": 2
+        },
+        {
+          "heard": "stove",
+          "from": 20,
+          "to": 21,
+          "fromLine": 2,
+          "toLine": 3
+        }
+      ]
+    },
+    {
+      "id": "skip_one_line",
+      "description": "Reads line one and jumps over exactly one full line.",
+      "passed": true,
+      "expectation": {
+        "kind": "halt",
+        "atLine": 1
+      },
+      "recognized": "the lantern waited beside the quiet harbour a copper",
+      "finalCursor": 7,
+      "finalLine": 1,
+      "haltedAtLine": 1,
+      "backtracked": false,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "copper",
+          "from": 7,
+          "to": 7,
+          "fromLine": 1,
+          "toLine": 1,
+          "haltLine": 1
+        }
+      ]
+    },
+    {
+      "id": "skip_two_lines",
+      "description": "Reads line one and jumps two full lines ahead.",
+      "passed": true,
+      "expectation": {
+        "kind": "halt",
+        "atLine": 1
+      },
+      "recognized": "the lantern waited beside the quiet harbour mara folded the",
+      "finalCursor": 7,
+      "finalLine": 1,
+      "haltedAtLine": 1,
+      "backtracked": false,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "mara",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "folded the",
+          "from": 8,
+          "to": 7,
+          "fromLine": 1,
+          "toLine": 1,
+          "haltLine": 1
+        }
+      ]
+    },
+    {
+      "id": "jump_after_partial_line",
+      "description": "Reads part of the current line and jumps to a later line.",
+      "passed": true,
+      "expectation": {
+        "kind": "halt",
+        "atLine": 1
+      },
+      "recognized": "the lantern waited beside the quiet harbour beyond the window winter mara folded the",
+      "finalCursor": 11,
+      "finalLine": 1,
+      "haltedAtLine": 1,
+      "backtracked": false,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "beyond",
+          "from": 7,
+          "to": 8,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 8,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "window",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "winter",
+          "from": 10,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "folded the",
+          "from": 11,
+          "to": 11,
+          "fromLine": 1,
+          "toLine": 1,
+          "haltLine": 1
+        }
+      ]
+    },
+    {
+      "id": "unrelated_sentence",
+      "description": "Says a plausible sentence that is not anywhere in the manuscript.",
+      "passed": true,
+      "expectation": {
+        "kind": "halt",
+        "atLine": 1
+      },
+      "recognized": "the lantern waited beside the quiet harbour the ballroom erupted with",
+      "finalCursor": 9,
+      "finalLine": 1,
+      "haltedAtLine": 1,
+      "backtracked": false,
+      "events": [
+        {
+          "heard": "the",
+          "from": 0,
+          "to": 1,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "lantern",
+          "from": 1,
+          "to": 2,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "waited",
+          "from": 2,
+          "to": 3,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "beside",
+          "from": 3,
+          "to": 4,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "the",
+          "from": 4,
+          "to": 5,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "quiet",
+          "from": 5,
+          "to": 6,
+          "fromLine": 0,
+          "toLine": 0
+        },
+        {
+          "heard": "harbour",
+          "from": 6,
+          "to": 7,
+          "fromLine": 0,
+          "toLine": 1
+        },
+        {
+          "heard": "the",
+          "from": 7,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "erupted",
+          "from": 9,
+          "to": 10,
+          "fromLine": 1,
+          "toLine": 1
+        },
+        {
+          "heard": "with",
+          "from": 10,
+          "to": 9,
+          "fromLine": 1,
+          "toLine": 1,
+          "haltLine": 1
+        }
+      ]
+    }
+  ]
+}

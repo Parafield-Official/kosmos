@@ -18,4 +18,16 @@ describe("chapter document persistence boundary", () => {
   it("rejects an unknown document schema instead of silently rewriting it", () => {
     expect(() => normalizeChapterDocument({ schema: 9, spans: [] })).toThrow(/schema/i);
   });
+
+  it("retains valid narrator performance cues and drops malformed ones", () => {
+    expect(normalizeChapterDocument({
+      spans: [
+        { text: "Wait", seat: "narration", style: [], performance_cue: { kind: "beat", label: "  let it land  " } },
+        { text: "Now", seat: "narration", style: [], performance_cue: { kind: "teleport", label: "bad" } },
+      ],
+    }).spans).toEqual([
+      { text: "Wait", seat: "narration", style: [], performance_cue: { kind: "beat", label: "let it land" } },
+      { text: "Now", seat: "narration", style: [] },
+    ]);
+  });
 });

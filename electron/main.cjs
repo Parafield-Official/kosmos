@@ -53,6 +53,7 @@ const {
   chapterAfterSeatChange,
   chapterHasAudio,
   resetChapterAudioFields,
+  scriptRoutingChanged,
   resetChapterProofFields,
   seatForProjectMode,
 } = require("./chapter-state.cjs");
@@ -790,21 +791,33 @@ async function setChapterSpans(folder, project, chapterId, spans) {
     const styles = Array.isArray(span.style)
       ? span.style.filter((style) => ["bold", "italic", "underline", "highlight"].includes(style))
       : [];
+    const cueKind = typeof span.performance_cue?.kind === "string" ? span.performance_cue.kind : "";
+    const cueLabel = typeof span.performance_cue?.label === "string"
+      ? span.performance_cue.label.trim().slice(0, 160)
+      : "";
+    const performanceCue = ["beat", "breath", "emphasis", "character", "intention"].includes(cueKind)
+      ? { kind: cueKind, ...(cueLabel ? { label: cueLabel } : {}) }
+      : null;
     return {
       text: span.text,
       seat: seatForProjectMode(project.mode, span.seat),
       style: styles,
       ...(typeof span.dialogue === "boolean" ? { dialogue: span.dialogue } : {}),
       ...(typeof span.glossary_id === "string" ? { glossary_id: span.glossary_id } : {}),
+      ...(performanceCue ? { performance_cue: performanceCue } : {}),
     };
   });
-  await writeChapterDocument(folder, chapter.text_path, { schema: 1, spans: normalized });
-  await clearChapterAlignment(folder, chapter);
+  const currentDocument = await readChapterDocument(folder, chapter);
+  const invalidatesAudio = scriptRoutingChanged(currentDocument.spans, normalized);
+  await writeChapterDocument(folder, chapter.text_path, { ...currentDocument, spans: normalized });
+  if (invalidatesAudio) {
+    await clearChapterAlignment(folder, chapter);
+  }
   const now = new Date().toISOString();
   return saveProjectFolder(folder, {
     ...project,
     chapters: project.chapters.map((candidate) => candidate.id === chapterId
-      ? { ...chapterAfterSeatChange(candidate), updated_at: now }
+      ? { ...(invalidatesAudio ? chapterAfterSeatChange(candidate) : candidate), updated_at: now }
       : candidate),
     updated_at: now,
   });

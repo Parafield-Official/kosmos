@@ -1,5 +1,14 @@
 const SEATS = new Set(["narration", "N1", "N2"]);
 const STYLES = new Set(["bold", "italic", "underline", "highlight"]);
+const PERFORMANCE_CUES = new Set(["beat", "breath", "emphasis", "character", "intention"]);
+
+function normalizePerformanceCue(value) {
+  if (!value || typeof value !== "object" || !PERFORMANCE_CUES.has(value.kind)) {
+    return null;
+  }
+  const label = typeof value.label === "string" ? value.label.trim().slice(0, 160) : "";
+  return { kind: value.kind, ...(label ? { label } : {}) };
+}
 
 function normalizeChapterDocument(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.spans)) {
@@ -18,6 +27,7 @@ function normalizeChapterDocument(value) {
       const style = Array.isArray(span.style)
         ? span.style.filter((candidate) => STYLES.has(candidate))
         : [];
+      const performanceCue = normalizePerformanceCue(span.performance_cue);
       return {
         text: span.text,
         seat: span.seat,
@@ -26,6 +36,7 @@ function normalizeChapterDocument(value) {
         ...(typeof span.glossary_id === "string" && span.glossary_id.length > 0
           ? { glossary_id: span.glossary_id }
           : {}),
+        ...(performanceCue ? { performance_cue: performanceCue } : {}),
       };
     }),
   };

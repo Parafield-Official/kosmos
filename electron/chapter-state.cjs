@@ -73,6 +73,26 @@ function chapterAfterSeatChange(chapter) {
   return chapterAfterDuetRoutingChange(chapter);
 }
 
+/** True only when spoken text or per-character narrator routing changed. */
+function scriptRoutingChanged(before, after) {
+  return JSON.stringify(compactScriptRouting(before)) !== JSON.stringify(compactScriptRouting(after));
+}
+
+function compactScriptRouting(spans) {
+  const compact = [];
+  for (const span of Array.isArray(spans) ? spans : []) {
+    const text = typeof span?.text === "string" ? span.text : "";
+    const seat = typeof span?.seat === "string" ? span.seat : "";
+    const previous = compact.at(-1);
+    if (previous?.seat === seat) {
+      previous.text += text;
+    } else {
+      compact.push({ seat, text });
+    }
+  }
+  return compact;
+}
+
 /**
  * A duet mix is only useful when the script actually routes audio to both
  * seats. Without this guard, a chapter with every span still assigned to N1
@@ -151,5 +171,6 @@ module.exports = {
   resetChapterAudioFields,
   resetChapterDuetFields,
   resetChapterProofFields,
+  scriptRoutingChanged,
   seatForProjectMode,
 };

@@ -312,6 +312,7 @@ export function sliceScriptSpans(
       && previous.dialogue === span.dialogue
       && JSON.stringify(previous.style) === JSON.stringify(span.style)
       && previous.glossary_id === span.glossary_id
+      && JSON.stringify(previous.performance_cue) === JSON.stringify(span.performance_cue)
     ) {
       previous.text += text;
     } else {

@@ -117,6 +117,14 @@ import {
 import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, manualLivePickup, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { boothShortcutAction } from "../core/teleprompter/booth-controls";
 import {
+  applyPerformanceCue,
+  nextPerformanceCueByRows,
+  performanceCueLabel,
+  performanceCuesFromSpans,
+  performanceCueSymbol,
+  type PromptPerformanceCue,
+} from "../core/teleprompter/performance-cues";
+import {
   createInputQuality,
   describeInputQuality,
   microphoneConstraints,
@@ -173,6 +181,8 @@ import type {
   GlossaryEntry,
   Pickup,
   PickupStatus,
+  PerformanceCue,
+  PerformanceCueKind,
   ProjectFile,
   ProjectPerson,
   ProjectSettings,
@@ -2172,6 +2182,23 @@ function ProjectHome({
     });
   }
 
+  async function updatePerformanceCues(nextSpans: ScriptSpan[]): Promise<boolean> {
+    if (!selectedChapter) {
+      return false;
+    }
+    return runAction("performance-cue", async () => {
+      if (window.boothDesk && folder !== "(browser preview)") {
+        const result = await window.boothDesk.setChapterSpans({
+          ...envelope,
+          chapterId: selectedChapter.id,
+          spans: nextSpans,
+        });
+        onChange(result);
+      }
+      setChapterSpans(nextSpans);
+    });
+  }
+
   function waitAudioReady(audio: HTMLAudioElement): Promise<void> {
     if (audio.readyState >= 1) {
       return Promise.resolve();
@@ -2689,6 +2716,7 @@ function ProjectHome({
       }}
       onFileLivePickup={(pickup) => void fileLivePickup(pickup)}
       onIgnoreLivePickup={(pickupId) => void ignoreLivePickup(pickupId)}
+      onUpdateSpans={updatePerformanceCues}
       onSaveLiveTape={(wavBase64, chapterId, timeline) => saveLiveTape(wavBase64, chapterId, timeline)}
       onLiveTapeSaved={(result, chapterId, timeline) => finishLiveTape(result, chapterId, timeline)}
       liveTapeContext={{ folder, project }}
@@ -3332,6 +3360,7 @@ function Teleprompter({
   onClose,
   onFileLivePickup,
   onIgnoreLivePickup,
+  onUpdateSpans,
   onSaveLiveTape,
   onLiveTapeSaved,
   liveTapeContext,
@@ -3367,6 +3396,7 @@ function Teleprompter({
   onClose: () => void;
   onFileLivePickup: (pickup: Pickup) => void;
   onIgnoreLivePickup: (pickupId: string) => void;
+  onUpdateSpans: (nextSpans: ScriptSpan[]) => Promise<boolean>;
   onSaveLiveTape: (wavBase64: string, chapterId: string, timeline: TranscriptWord[]) => Promise<void>;
   onLiveTapeSaved: (
     result: { folder: string; project: import("../core/project/types").ProjectFile },
@@ -3447,6 +3477,19 @@ function Teleprompter({
     entry: GlossaryEntry;
     rowsAhead: number;
   } | null>(null);
+  const [upcomingPerformanceCue, setUpcomingPerformanceCue] = useState<{
+    cue: PromptPerformanceCue;
+    rowsAhead: number;
+  } | null>(null);
+  const [performanceCueMode, setPerformanceCueMode] = useState(false);
+  const [performanceCueTarget, setPerformanceCueTarget] = useState<{
+    wordIndex: number;
+    word: string;
+    cue?: PerformanceCue;
+  } | null>(null);
+  const [performanceCueKind, setPerformanceCueKind] = useState<PerformanceCueKind>("beat");
+  const [performanceCueNote, setPerformanceCueNote] = useState("");
+  const [performanceCueSaving, setPerformanceCueSaving] = useState(false);
   const [glossaryHint, setGlossaryHint] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [materialsTab, setMaterialsTab] = useState<"chapter" | "manuscript" | "voices" | "words" | "notes">("chapter");
@@ -3493,6 +3536,11 @@ function Teleprompter({
         : [];
     }));
   }, [lines]);
+  const performanceCues = useMemo(() => performanceCuesFromSpans(spans), [spans]);
+  const performanceCueByWord = useMemo(
+    () => new Map(performanceCues.map((cue) => [cue.wordIndex, cue])),
+    [performanceCues],
+  );
   const briefingGlossary = useMemo(() => {
     const byId = new Map(chapterGlossary.map((entry) => [entry.id, entry]));
     const seen = new Set<string>();
@@ -3803,6 +3851,26 @@ function Teleprompter({
     liveState.enabled,
     materialsOpen,
     pronunciationCues,
+    readingFont,
+    wrapEpoch,
+  ]);
+
+  useEffect(() => {
+    if (!liveState.enabled) {
+      setUpcomingPerformanceCue(null);
+      return;
+    }
+    const tops = expectedWords.map((word) => wordRefs.current.get(word.index)?.getBoundingClientRect().top ?? null);
+    setUpcomingPerformanceCue(nextPerformanceCueByRows(performanceCues, liveCursor, tops));
+  }, [
+    chaptersOpen,
+    expectedWords,
+    fontSize,
+    lineSpacing,
+    liveCursor,
+    liveState.enabled,
+    materialsOpen,
+    performanceCues,
     readingFont,
     wrapEpoch,
   ]);
@@ -5153,6 +5221,8 @@ function Teleprompter({
 
   function setLiveEnabled(enabled: boolean) {
     if (enabled) {
+      setPerformanceCueMode(false);
+      setPerformanceCueTarget(null);
       if (briefingGlossary.length > 0) {
         setPronunciationBriefingOpen(true);
       } else {
@@ -5218,8 +5288,44 @@ function Teleprompter({
     onPlayGlossary(entry);
   }
 
+  function openPerformanceCue(wordIndex: number, word: string, existing?: PromptPerformanceCue) {
+    if (liveState.enabled) {
+      return;
+    }
+    setPerformanceCueTarget({ wordIndex, word, cue: existing?.cue });
+    setPerformanceCueKind(existing?.cue.kind ?? "beat");
+    setPerformanceCueNote(existing?.cue.label ?? "");
+  }
+
+  async function savePerformanceCue(cue: PerformanceCue | null) {
+    const target = performanceCueTarget;
+    if (!target || liveState.enabled || performanceCueSaving) {
+      return;
+    }
+    setPerformanceCueSaving(true);
+    try {
+      const saved = await onUpdateSpans(applyPerformanceCue(spans, target.wordIndex, cue));
+      if (saved) {
+        setPerformanceCueTarget(null);
+        setPerformanceCueMode(false);
+        setLiveBoothNotice(cue
+          ? `${performanceCueLabel(cue)} marked before “${target.word}.”`
+          : `Removed the performance cue from “${target.word}.”`);
+      }
+    } finally {
+      setPerformanceCueSaving(false);
+    }
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (performanceCueTarget) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setPerformanceCueTarget(null);
+        }
+        return;
+      }
       if (pronunciationBriefingOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -5267,7 +5373,7 @@ function Teleprompter({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [liveDetectedFlags, onClose, onIgnoreLivePickup, pronunciationBriefingOpen]);
+  }, [liveDetectedFlags, onClose, onIgnoreLivePickup, performanceCueTarget, pronunciationBriefingOpen]);
 
   // Word mode marks a single word; the wider modes band a range instead, so
   // only one of the two is ever active.
@@ -5281,7 +5387,7 @@ function Teleprompter({
   const liveInputDescription = describeInputQuality(liveInputQuality, liveCapturedSecondsRef.current);
 
   return (
-    <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
+    <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}${performanceCueMode ? " performance-cue-mode" : ""}`}>
       {chaptersOpen ? (
         <aside className="booth-chapters" aria-label="Book chapters">
           <header className="booth-rail-heading">
@@ -5381,6 +5487,13 @@ function Teleprompter({
               totalWords={expectedWords.length}
             />
             {liveBoothNotice ? <p className="booth-honesty" role="status">{liveBoothNotice}</p> : null}
+            {performanceCueMode && !liveState.enabled ? (
+              <p className="performance-cue-instruction" role="status">
+                <strong>Add a performance cue</strong>
+                Click the manuscript word where the direction should appear. Existing cues can be clicked to edit them.
+                <button type="button" onClick={() => setPerformanceCueMode(false)}>Cancel</button>
+              </p>
+            ) : null}
 
             {livePunchRollStatus !== "idle" ? (
               <div className="booth-halt" role="status">
@@ -5396,6 +5509,12 @@ function Teleprompter({
                 entry={upcomingPronunciation.entry}
                 linesAhead={upcomingPronunciation.rowsAhead}
                 onPlay={() => activateGlossary(upcomingPronunciation.entry)}
+              />
+            ) : null}
+            {liveState.enabled && upcomingPerformanceCue ? (
+              <PerformanceCueBar
+                cue={upcomingPerformanceCue.cue.cue}
+                linesAhead={upcomingPerformanceCue.rowsAhead}
               />
             ) : null}
 
@@ -5478,6 +5597,7 @@ function Teleprompter({
                             const currentWordIndex = wordIndex;
                             wordIndex += 1;
                             const mark = liveWordMark(currentWordIndex, liveWordIndex, liveFlag?.expectedIndex);
+                            const performanceCue = performanceCueByWord.get(currentWordIndex);
                             const wordClass = [
                               // The single-word mark belongs to word mode. The
                               // wider modes band a range instead, but the
@@ -5489,6 +5609,8 @@ function Teleprompter({
                               // Marked in every highlight mode: a band alone
                               // cannot say which of its words to restart on.
                               liveHalt?.expectedIndex === currentWordIndex ? "teleprompter-word-halt" : "",
+                              performanceCue ? `teleprompter-word-cued cue-${performanceCue.cue.kind}` : "",
+                              performanceCueMode && !liveState.enabled ? "teleprompter-word-cue-target" : "",
                             ].filter(Boolean).join(" ") || undefined;
                             return (
                               <span
@@ -5496,7 +5618,27 @@ function Teleprompter({
                                 ref={(node) => { if (node) wordRefs.current.set(currentWordIndex, node); else wordRefs.current.delete(currentWordIndex); }}
                                 className={wordClass}
                                 aria-current={mark.follow ? "true" : undefined}
+                                role={!liveState.enabled && (performanceCueMode || performanceCue) ? "button" : undefined}
+                                tabIndex={!liveState.enabled && performanceCue ? 0 : undefined}
+                                title={performanceCue ? performanceCueLabel(performanceCue.cue) : performanceCueMode ? "Add performance cue here" : undefined}
+                                onClick={!liveState.enabled && (performanceCueMode || performanceCue) ? (event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openPerformanceCue(currentWordIndex, token.text, performanceCue);
+                                } : undefined}
+                                onKeyDown={!liveState.enabled && performanceCue ? (event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    openPerformanceCue(currentWordIndex, token.text, performanceCue);
+                                  }
+                                } : undefined}
                               >
+                                {performanceCue ? (
+                                  <span className={`performance-cue-mark cue-${performanceCue.cue.kind}`} aria-hidden="true">
+                                    {performanceCueSymbol(performanceCue.cue)}
+                                  </span>
+                                ) : null}
                                 {token.text}
                                 {mark.flag && liveFlag ? (
                                   <span className="teleprompter-word-flag-chip" role="alert" onClick={(event) => event.stopPropagation()}>
@@ -5653,15 +5795,29 @@ function Teleprompter({
                 </button>
               </div>
             ) : (
-              <button
-                className="primary-button booth-start-button booth-narrate-button"
-                type="button"
-                disabled={liveStatus === "starting"}
-                onClick={() => setLiveEnabled(true)}
-              >
-                <span className="booth-start-icon" aria-hidden="true">▶</span>
-                <span>Start narrating</span>
-              </button>
+              <div className="booth-recording-controls" aria-label="Narration preparation controls">
+                <button
+                  className={performanceCueMode ? "secondary-button active" : "secondary-button"}
+                  type="button"
+                  aria-pressed={performanceCueMode}
+                  onClick={() => setPerformanceCueMode((enabled) => !enabled)}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">✦</span>
+                  <span>Add cue</span>
+                </button>
+                <button
+                  className="primary-button booth-start-button booth-narrate-button"
+                  type="button"
+                  disabled={liveStatus === "starting"}
+                  onClick={() => {
+                    setPerformanceCueMode(false);
+                    setLiveEnabled(true);
+                  }}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">▶</span>
+                  <span>Start narrating</span>
+                </button>
+              </div>
             )
           ) : (
             <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>
@@ -5828,6 +5984,103 @@ function Teleprompter({
           onStart={startNarrationNow}
         />
       ) : null}
+      {performanceCueTarget ? (
+        <PerformanceCueEditor
+          word={performanceCueTarget.word}
+          kind={performanceCueKind}
+          note={performanceCueNote}
+          existing={performanceCueTarget.cue !== undefined}
+          saving={performanceCueSaving}
+          onKind={setPerformanceCueKind}
+          onNote={setPerformanceCueNote}
+          onCancel={() => setPerformanceCueTarget(null)}
+          onRemove={() => void savePerformanceCue(null)}
+          onSave={() => void savePerformanceCue({
+            kind: performanceCueKind,
+            ...(performanceCueNote.trim() ? { label: performanceCueNote.trim() } : {}),
+          })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PerformanceCueEditor({
+  word,
+  kind,
+  note,
+  existing,
+  saving,
+  onKind,
+  onNote,
+  onCancel,
+  onRemove,
+  onSave,
+}: {
+  word: string;
+  kind: PerformanceCueKind;
+  note: string;
+  existing: boolean;
+  saving: boolean;
+  onKind: (kind: PerformanceCueKind) => void;
+  onNote: (note: string) => void;
+  onCancel: () => void;
+  onRemove: () => void;
+  onSave: () => void;
+}) {
+  const options: Array<{ kind: PerformanceCueKind; label: string; detail: string }> = [
+    { kind: "beat", label: "Beat", detail: "Let the moment land" },
+    { kind: "breath", label: "Breath", detail: "Take a clean breath" },
+    { kind: "emphasis", label: "Emphasis", detail: "Give this word weight" },
+    { kind: "character", label: "Character", detail: "Switch or hold a voice" },
+    { kind: "intention", label: "Intention", detail: "Remember the emotional aim" },
+  ];
+  return (
+    <div className="performance-cue-shade" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !saving) onCancel();
+    }}>
+      <section className="performance-cue-editor" role="dialog" aria-modal="true" aria-labelledby="performance-cue-title">
+        <header>
+          <div>
+            <p className="card-kicker">Inline direction</p>
+            <h2 id="performance-cue-title">Cue before “{word}”</h2>
+          </div>
+          <button type="button" aria-label="Close performance cue" disabled={saving} onClick={onCancel}>×</button>
+        </header>
+        <div className="performance-cue-kinds" role="radiogroup" aria-label="Cue type">
+          {options.map((option) => (
+            <button
+              key={option.kind}
+              type="button"
+              role="radio"
+              aria-checked={kind === option.kind}
+              className={kind === option.kind ? "active" : undefined}
+              onClick={() => onKind(option.kind)}
+            >
+              <span aria-hidden="true">{performanceCueSymbol({ kind: option.kind })}</span>
+              <strong>{option.label}</strong>
+              <em>{option.detail}</em>
+            </button>
+          ))}
+        </div>
+        <label className="performance-cue-note">
+          <span>Direction (optional)</span>
+          <input
+            autoFocus
+            maxLength={160}
+            value={note}
+            onChange={(event) => onNote(event.target.value)}
+            placeholder={kind === "character" ? "Mara — guarded" : kind === "intention" ? "Don’t reveal the answer yet" : "Let this land"}
+          />
+        </label>
+        <footer>
+          {existing ? <button type="button" className="danger-button" disabled={saving} onClick={onRemove}>Remove cue</button> : <span />}
+          <div>
+            <button type="button" className="secondary-button" disabled={saving} onClick={onCancel}>Cancel</button>
+            <button type="button" className="primary-button" disabled={saving} onClick={onSave}>{saving ? "Saving…" : "Save cue"}</button>
+          </div>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -5912,6 +6165,21 @@ function PronunciationCueBar({
         {entry.voice_note?.trim() ? <p>{entry.voice_note}</p> : null}
       </div>
       {entry.clip_path ? <button type="button" onClick={onPlay}>▶ Hear</button> : null}
+    </aside>
+  );
+}
+
+function PerformanceCueBar({ cue, linesAhead }: { cue: PerformanceCue; linesAhead: number }) {
+  return (
+    <aside className={`performance-cue-bar cue-${cue.kind}`} aria-label={`Performance cue coming up: ${performanceCueLabel(cue)}`}>
+      <span className="performance-cue-bar-symbol" aria-hidden="true">{performanceCueSymbol(cue)}</span>
+      <span className="pronunciation-cue-kicker">
+        {linesAhead === 0 ? "On this line" : linesAhead === 1 ? "Next line" : "Two lines ahead"}
+      </span>
+      <div>
+        <strong>{performanceCueLabel(cue)}</strong>
+        <span>Direction marked in the manuscript</span>
+      </div>
     </aside>
   );
 }

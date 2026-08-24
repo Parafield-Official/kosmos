@@ -5,10 +5,23 @@ const {
   chapterAfterSeatChange,
   chapterHasAudio,
   resetChapterAudioFields,
+  scriptRoutingChanged,
   seatForProjectMode,
 } = require("./chapter-state.cjs");
 
 describe("chapter audio state transitions", () => {
+  it("does not invalidate audio when cue metadata only splits a script span", () => {
+    const before = [{ text: "Read this line", seat: "N1" }];
+    const after = [
+      { text: "Read ", seat: "N1" },
+      { text: "this", seat: "N1", performance_cue: { kind: "emphasis" } },
+      { text: " line", seat: "N1" },
+    ];
+    expect(scriptRoutingChanged(before, after)).toBe(false);
+    expect(scriptRoutingChanged(before, [{ text: "Read this line", seat: "N2" }])).toBe(true);
+    expect(scriptRoutingChanged(before, [{ text: "Read a different line", seat: "N1" }])).toBe(true);
+  });
+
   it("requires a real N2 route before accepting a duet mix", () => {
     expect(() => assertDuetMixRouting([], "N1")).toThrow(/spans to seats/i);
     expect(() => assertDuetMixRouting([{ start: 0, end: 1, seat: "N1" }], "N1")).toThrow(/N2/i);
