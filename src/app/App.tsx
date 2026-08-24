@@ -114,7 +114,8 @@ import {
   type PromptTheme,
   type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
+import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, manualLivePickup, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
+import { boothShortcutAction } from "../core/teleprompter/booth-controls";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
@@ -3414,6 +3415,7 @@ function Teleprompter({
   const [liveStartCursor, setLiveStartCursor] = useState<number | null>(null);
   const [liveSignalLevel, setLiveSignalLevel] = useState(0);
   const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "restarting">("idle");
+  const [liveBoothNotice, setLiveBoothNotice] = useState<string | null>(null);
   // The booth tape for this chapter, so a narrator can hear back what they just
   // read without leaving the booth for Review. `tapeTake` counts the reads
   // recorded since this chapter was opened: zero means the tape on disk is from
@@ -3830,6 +3832,34 @@ function Teleprompter({
     publishLiveCursor();
   }
 
+  function currentLiveConfirmations(): LiveWordConfirmation[] {
+    return [...liveManuscriptTimelineRef.current.entries()].map(([expectedIndex, word]) => ({
+      expectedIndex,
+      start: word.start,
+      end: word.end,
+      confidence: word.confidence ?? 0,
+    }));
+  }
+
+  /** Place a hands-free review marker on the last word with a recording clock. */
+  function markCurrentRead() {
+    if (!liveEnabledRef.current || livePausedRef.current) {
+      return;
+    }
+    const pickup = manualLivePickup({
+      chapterId: chapterIdRef.current,
+      expected: expectedWordsRef.current,
+      confirmations: currentLiveConfirmations(),
+      cursor: liveMatchStateRef.current.cursor,
+    });
+    if (!pickup) {
+      setLiveBoothNotice("Read a few words before placing a marker.");
+      return;
+    }
+    onFileLivePickup(pickup);
+    setLiveBoothNotice(`Marked “${pickup.expected}” for Review.`);
+  }
+
   /**
    * Replace the current sentence inside the active booth tape.
    *
@@ -3854,16 +3884,9 @@ function Teleprompter({
       setLiveError("Punch-and-roll is available while a desktop booth recording is active.");
       return;
     }
-    const confirmations: LiveWordConfirmation[] = [...liveManuscriptTimelineRef.current.entries()]
-      .map(([expectedIndex, word]) => ({
-        expectedIndex,
-        start: word.start,
-        end: word.end,
-        confidence: word.confidence ?? 0,
-      }));
     const plan = planLivePunchRoll(
       expectedWordsRef.current,
-      confirmations,
+      currentLiveConfirmations(),
       liveHaltRef.current?.expectedIndex ?? liveMatchStateRef.current.cursor,
       PICKUP_PREROLL_SECONDS,
     );
@@ -3935,6 +3958,7 @@ function Teleprompter({
       liveVisualCursorRef.current = plan.restartIndex;
       setLiveCursor(plan.restartIndex);
       setLiveHeardText("");
+      setLiveBoothNotice("Sentence replaced. Recording from the restart point.");
       setLiveError(null);
     } catch (reason) {
       setLiveError(messageFor(reason, "Could not restart this sentence. The existing booth tape was kept."));
@@ -4038,6 +4062,7 @@ function Teleprompter({
     liveStreamClockOffsetRef.current = 0;
     livePunchBusyRef.current = false;
     setLivePunchRollStatus("idle");
+    setLiveBoothNotice(null);
     liveLeadRef.current = createLeadState(liveCursor, performance.now());
     liveHaltRef.current = null;
     liveHaltResumeIndexRef.current = -1;
@@ -4933,6 +4958,7 @@ function Teleprompter({
       setLiveWhisperLastError(null);
       setLiveWhisperLastWords("");
       setLiveDetectedFlags([]);
+      setLiveBoothNotice(null);
       await attachLiveTap(context, source);
       await context.resume();
       const nextState = { ...createLiveFlagsState(), enabled: true };
@@ -5120,18 +5146,41 @@ function Teleprompter({
         }
         return;
       }
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const editing = Boolean(
+        target?.isContentEditable
+        || target?.closest("input, textarea, select"),
+      );
+      const boothAction = boothShortcutAction({
+        key: event.key,
+        recording: liveEnabledRef.current,
+        paused: livePausedRef.current,
+        halted: liveHaltRef.current !== null,
+        repeat: event.repeat,
+        editing,
+      });
+      if (boothAction) {
+        event.preventDefault();
+        if (boothAction === "continue") {
+          resumeFromHalt();
+        } else if (boothAction === "restart") {
+          void restartSentenceWithPreroll();
+        } else if (boothAction === "mark") {
+          markCurrentRead();
+        } else {
+          void setLiveCapturePaused(!livePausedRef.current);
+        }
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         void leavePage(onClose);
-      } else if (event.key === " " || event.key === "PageDown") {
+      } else if ((event.key === " " || event.key === "PageDown") && !target?.closest("button, input, textarea, select")) {
         event.preventDefault();
         scrollRef.current?.scrollBy({ top: Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
-      } else if (event.key === "PageUp") {
+      } else if (event.key === "PageUp" && !target?.closest("button, input, textarea, select")) {
         event.preventDefault();
         scrollRef.current?.scrollBy({ top: -Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
-      } else if (event.key === "F8" && liveEnabledRef.current && !livePausedRef.current) {
-        event.preventDefault();
-        void restartSentenceWithPreroll();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -5247,6 +5296,7 @@ function Teleprompter({
               cursor={liveCursor}
               totalWords={expectedWords.length}
             />
+            {liveBoothNotice ? <p className="booth-honesty" role="status">{liveBoothNotice}</p> : null}
 
             {livePunchRollStatus !== "idle" ? (
               <div className="booth-halt" role="status">
@@ -5489,6 +5539,16 @@ function Teleprompter({
                   <span>Restart sentence</span>
                 </button>
                 <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={livePaused || livePunchRollStatus !== "idle"}
+                  title="Place a marker for Review (F9)"
+                  onClick={markCurrentRead}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">◆</span>
+                  <span>Mark</span>
+                </button>
+                <button
                   className="secondary-button booth-pause-button"
                   type="button"
                   disabled={livePauseChanging || livePunchRollStatus !== "idle"}
@@ -5582,6 +5642,13 @@ function Teleprompter({
                   <span><strong>Stop when the read leaves the page</strong><em>Holds the page after {LIVE_HALT_RUN_WORDS} words in a row that do not match, and marks where the line was lost. One misheard word never stops you.</em></span>
                   <input type="checkbox" checked={stopOnMismatch} onChange={(event) => setStopOnMismatch(event.target.checked)} />
                 </label>
+                <div className="booth-shortcuts" aria-label="Keyboard and foot pedal shortcuts">
+                  <strong>Keyboard or programmable pedal</strong>
+                  <span><kbd>F7</kbd> Continue</span>
+                  <span><kbd>F8</kbd> Restart sentence</span>
+                  <span><kbd>F9</kbd> Mark for Review</span>
+                  <span><kbd>F10</kbd> Pause or resume</span>
+                </div>
               </div>
             ) : null}
           </div>
@@ -5845,11 +5912,14 @@ function pronunciationCheckDetail(check: PronunciationCheck): string {
 }
 
 function LiveVoiceStatus({
+  modelAvailable,
   status,
   enabled,
   dimmed,
   error,
   heardText,
+  checkCount,
+  latencyMs,
   whisperAttempted,
   whisperSucceeded,
   whisperFailed,
@@ -5881,33 +5951,34 @@ function LiveVoiceStatus({
   totalWords: number;
 }) {
   const copy = liveVoiceStatusCopy({ status, enabled, dimmed, error, heardText });
+  const importantDetail = status === "error" || status === "paused" || dimmed ? copy.detail : "";
 
   return (
     <div className={`live-voice-status live-voice-status-${status}`} role="status" aria-live="polite">
       <div className="live-voice-status-main">
         <span className="live-voice-status-dot" aria-hidden="true" />
         <strong>{copy.title}</strong>
-        {copy.detail ? <span>{copy.detail}</span> : null}
-        {enabled && whisperAttempted > 0 ? (
-          <span aria-label={`Whisper back-check ${whisperSucceeded} succeeded, ${whisperFailed} failed`}>
-            Whisper {whisperSucceeded}/{whisperAttempted}
-          </span>
-        ) : null}
-        {enabled && whisperLastError ? <span role="alert">{whisperLastError}</span> : null}
-        {enabled && whisperLastWords ? <span aria-label={`Whisper heard ${whisperLastWords}`}>Heard: {whisperLastWords}</span> : null}
-        {enabled && startCursor != null ? <span aria-label={`Live start cursor ${startCursor}`}>Start {startCursor}</span> : null}
-        {enabled ? <span aria-label={`Live cursor ${cursor} of ${totalWords}`}>Cursor {cursor}</span> : null}
-        {enabled && detectedFlags.length > 0 ? (
-          <span aria-label={`Whisper flags ${detectedFlags.length}: ${detectedFlags.map((flag) => `${flag.expected} to ${flag.heard}`).join(", ")}`}>
-            Flags {detectedFlags.length}
-          </span>
-        ) : null}
+        {importantDetail ? <span>{importantDetail}</span> : null}
       </div>
       {enabled ? (
         <span className="live-mic-meter" aria-label={`Microphone level ${Math.round(signalLevel * 100)} percent`}>
           <i><b style={{ width: `${Math.round(signalLevel * 100)}%` }} /></i>
         </span>
       ) : null}
+      <details className="live-voice-diagnostics">
+        <summary>Diagnostics</summary>
+        <div>
+          <span>Model {modelAvailable === false ? "missing" : "ready"}</span>
+          <span>Checks {checkCount}</span>
+          {latencyMs !== null ? <span>{Math.round(latencyMs)} ms</span> : null}
+          {enabled && whisperAttempted > 0 ? <span>Back-check {whisperSucceeded}/{whisperAttempted} · {whisperFailed} failed</span> : null}
+          {enabled && whisperLastError ? <span>{whisperLastError}</span> : null}
+          {enabled && whisperLastWords ? <span>Heard: {whisperLastWords}</span> : null}
+          {enabled && startCursor != null ? <span>Start {startCursor}</span> : null}
+          {enabled ? <span>Cursor {cursor}/{totalWords}</span> : null}
+          {enabled && detectedFlags.length > 0 ? <span>Flags {detectedFlags.length}</span> : null}
+        </div>
+      </details>
     </div>
   );
 }

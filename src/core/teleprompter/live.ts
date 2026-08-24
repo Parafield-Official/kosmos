@@ -951,6 +951,52 @@ export function liveHaltCopy(halt: { expected: string; heard: string }): { title
   };
 }
 
+/** Create a review marker where the narrator most recently landed on the page. */
+export function manualLivePickup(input: {
+  chapterId: string;
+  expected: LiveExpectedWord[];
+  confirmations: LiveWordConfirmation[];
+  cursor: number;
+}): Pickup | null {
+  const beforeCursor = Math.max(0, Math.floor(input.cursor) - 1);
+  const point = [...input.confirmations]
+    .filter((confirmation) => (
+      confirmation.expectedIndex <= beforeCursor
+      && Number.isFinite(confirmation.start)
+      && Number.isFinite(confirmation.end)
+    ))
+    .sort((left, right) => right.expectedIndex - left.expectedIndex)[0];
+  const word = point ? input.expected[point.expectedIndex] : undefined;
+  if (!point || !word) {
+    return null;
+  }
+  const range = pickupLineRange(input.expected, point.expectedIndex);
+  const sentenceConfirmations = input.confirmations
+    .filter((confirmation) => !range || (confirmation.expectedIndex >= range.from && confirmation.expectedIndex <= range.to))
+    .sort((left, right) => left.expectedIndex - right.expectedIndex);
+  const lineStart = sentenceConfirmations[0]?.start ?? point.start;
+  const lineEnd = sentenceConfirmations.at(-1)?.end ?? point.end;
+  return {
+    id: `manual-${input.chapterId}-${point.expectedIndex}-${Math.round(point.start * 1000)}`,
+    chapter_id: input.chapterId,
+    t_start: point.start,
+    t_end: point.end,
+    expected: word.text,
+    heard: "Marked by narrator",
+    kind: "sub",
+    seat: "narration",
+    status: "open",
+    confidence: 1,
+    note: "Marked while reading",
+    intent: "performance",
+    source_kind: "live",
+    manuscript_index: point.expectedIndex,
+    line_start: lineStart,
+    line_end: lineEnd,
+    line_text: range ? pickupLineText(input.expected, range) : word.text,
+  };
+}
+
 /** Whisper QC: mark a swap. Never move the gold cursor or use the stream clock. */
 export function liveBackFlag(input: LiveMatchInput): LiveMismatch | undefined {
   const heardWords = usableLiveWords(input.transcript);

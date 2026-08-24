@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_QC_PREROLL_MAX_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMatchState, type LiveMismatch } from "./live";
+import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, dropUnstableLiveTail, liveBackFlag, liveFlagChipCopy, liveFlagRequiresClick, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, manualLivePickup, matchLiveWindow, mergeLivePickup, parseParakeetLiveLine, pcmHasSpeech, pickupFromLiveFlag, LIVE_QC_PREROLL_MAX_SECONDS, LIVE_STREAM_HOP_SECONDS, type LiveExpectedWord, type LiveMatchState, type LiveMismatch } from "./live";
 
 const expected: LiveExpectedWord[] = [
   { index: 0, lineIndex: 0, text: "The" },
@@ -73,6 +73,27 @@ describe("teleprompter live matching", () => {
       state = result.state;
     }
     expect(state.cursor).toBe(8);
+  });
+
+  it("places a narrator review marker on the last confirmed manuscript word", () => {
+    const pickup = manualLivePickup({
+      chapterId: "ch01",
+      expected,
+      cursor: 3,
+      confirmations: [
+        { expectedIndex: 0, start: 0.2, end: 0.5, confidence: 0.95 },
+        { expectedIndex: 2, start: 1.1, end: 1.5, confidence: 0.96 },
+      ],
+    });
+    expect(pickup).toMatchObject({
+      chapter_id: "ch01",
+      manuscript_index: 2,
+      expected: "jumped",
+      heard: "Marked by narrator",
+      source_kind: "live",
+      intent: "performance",
+      note: "Marked while reading",
+    });
   });
 
   it("emits a high-confidence full-word mismatch but hides low-confidence guesses", () => {
