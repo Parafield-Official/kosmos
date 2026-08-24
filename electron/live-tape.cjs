@@ -31,6 +31,14 @@ function createLiveTape() {
     seconds() {
       return sampleCount / LIVE_TAPE_SAMPLE_RATE;
     },
+    truncate(endSeconds) {
+      const safeSeconds = Number.isFinite(endSeconds) ? Math.max(0, endSeconds) : 0;
+      const keep = Math.min(sampleCount, Math.round(safeSeconds * LIVE_TAPE_SAMPLE_RATE));
+      const retained = concat(chunks, sampleCount).slice(0, keep);
+      chunks = retained.length > 0 ? [retained] : [];
+      sampleCount = retained.length;
+      return sampleCount / LIVE_TAPE_SAMPLE_RATE;
+    },
     shouldKeep() {
       const seconds = sampleCount / LIVE_TAPE_SAMPLE_RATE;
       return seconds >= MIN_LIVE_TAPE_SECONDS && seconds <= MAX_LIVE_TAPE_SECONDS;

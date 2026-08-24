@@ -145,13 +145,16 @@ import {
   audioSourceForPickup,
   availableProofSources,
   chapterWithBoothTapeAsTake,
+  clipLiveTape,
   concatLiveTape,
   listenDisabledReason,
+  planLivePunchRoll,
   pickupLineBounds,
   proofAudioSource,
   punchDisabledReason,
   resolveProofSource,
   shouldKeepLiveTape,
+  truncateLiveTape,
   type ProofSourceKind,
 } from "../core/teleprompter/session-tape";
 import { pickupPrerollStart, PICKUP_PREROLL_SECONDS } from "../core/teleprompter/pickup-line";
@@ -3262,6 +3265,33 @@ function sameWordRows(left: PromptWordRange[], right: PromptWordRange[]): boolea
     && left.every((row, index) => row.from === right[index].from && row.to === right[index].to);
 }
 
+/** Play a PCM roll-in without routing it back through the muted mic graph. */
+function playLivePunchCue(samples: Float32Array, sampleRate: number): Promise<void> {
+  if (samples.length === 0) {
+    return Promise.resolve();
+  }
+  const wav = encodeWavPcm16(samples, Math.round(sampleRate), 1);
+  const bytes = new Uint8Array(wav.length);
+  bytes.set(wav);
+  const url = URL.createObjectURL(new Blob([bytes.buffer], { type: "audio/wav" }));
+  const audio = new Audio(url);
+  return new Promise((resolve, reject) => {
+    const finish = (reason?: unknown) => {
+      audio.onended = null;
+      audio.onerror = null;
+      URL.revokeObjectURL(url);
+      if (reason) {
+        reject(reason);
+      } else {
+        resolve();
+      }
+    };
+    audio.onended = () => finish();
+    audio.onerror = () => finish(new Error("The punch-and-roll lead-in could not play."));
+    void audio.play().catch(finish);
+  });
+}
+
 function Teleprompter({
   projectName,
   chapter,
@@ -3383,6 +3413,7 @@ function Teleprompter({
   const [liveWhisperLastWords, setLiveWhisperLastWords] = useState("");
   const [liveStartCursor, setLiveStartCursor] = useState<number | null>(null);
   const [liveSignalLevel, setLiveSignalLevel] = useState(0);
+  const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "restarting">("idle");
   // The booth tape for this chapter, so a narrator can hear back what they just
   // read without leaving the booth for Review. `tapeTake` counts the reads
   // recorded since this chapter was opened: zero means the tape on disk is from
@@ -3534,6 +3565,10 @@ function Teleprompter({
   // Seconds of audio handed to the follow model. Word timestamps are
   // stream-relative, so this doubles as the clock for measuring follow lag.
   const liveStreamSecondsRef = useRef(0);
+  // A restarted streaming recognizer reports a fresh zero-based clock. Add the
+  // retained booth-tape duration so its words stay on the recording timeline.
+  const liveStreamClockOffsetRef = useRef(0);
+  const livePunchBusyRef = useRef(false);
   /**
    * Granularity, for the follow loop that runs outside React's render.
    *
@@ -3796,6 +3831,131 @@ function Teleprompter({
   }
 
   /**
+   * Replace the current sentence inside the active booth tape.
+   *
+   * The microphone is muted during the roll-in. Once the cue reaches the
+   * sentence boundary, both tape owners and the recognizer are rewound to the
+   * same clock before capture resumes, so the false start never reaches the
+   * saved read.
+   */
+  async function restartSentenceWithPreroll() {
+    if (
+      livePunchBusyRef.current
+      || !liveEnabledRef.current
+      || livePausedRef.current
+      || liveStoppingRef.current
+    ) {
+      return;
+    }
+    const context = liveContextRef.current;
+    const stream = liveStreamRef.current;
+    const bridge = window.boothDesk;
+    if (!context || !stream || !bridge?.restartLiveTranscription) {
+      setLiveError("Punch-and-roll is available while a desktop booth recording is active.");
+      return;
+    }
+    const confirmations: LiveWordConfirmation[] = [...liveManuscriptTimelineRef.current.entries()]
+      .map(([expectedIndex, word]) => ({
+        expectedIndex,
+        start: word.start,
+        end: word.end,
+        confidence: word.confidence ?? 0,
+      }));
+    const plan = planLivePunchRoll(
+      expectedWordsRef.current,
+      confirmations,
+      liveHaltRef.current?.expectedIndex ?? liveMatchStateRef.current.cursor,
+      PICKUP_PREROLL_SECONDS,
+    );
+    if (!plan) {
+      setLiveError("Read a little farther before restarting so Kosmos has a clean recorded boundary.");
+      return;
+    }
+    const cue = clipLiveTape(
+      liveTapeRef.current,
+      liveSampleRateRef.current,
+      plan.cueFromSeconds,
+      plan.punchAtSeconds,
+    );
+    const tracks = stream.getAudioTracks();
+    livePunchBusyRef.current = true;
+    livePausedRef.current = true;
+    setLivePaused(true);
+    setLivePunchRollStatus("cueing");
+    setLiveStatus("paused");
+    tracks.forEach((track) => { track.enabled = false; });
+    try {
+      await context.suspend();
+      await playLivePunchCue(cue, liveSampleRateRef.current);
+      setLivePunchRollStatus("restarting");
+      liveSessionRef.current += 1;
+      const restarted = await bridge.restartLiveTranscription({
+        truncateToSeconds: plan.punchAtSeconds,
+      });
+      const punchAtSeconds = restarted.truncatedToSeconds;
+
+      liveTapeRef.current = truncateLiveTape(
+        liveTapeRef.current,
+        liveSampleRateRef.current,
+        punchAtSeconds,
+      );
+      liveTapeSampleCountRef.current = liveTapeRef.current.reduce((total, chunk) => total + chunk.length, 0);
+      liveSamplesRef.current = [];
+      liveSampleCountRef.current = 0;
+      liveCapturedSecondsRef.current = punchAtSeconds;
+      liveBufferStartSecondsRef.current = punchAtSeconds;
+      liveStreamSecondsRef.current = punchAtSeconds;
+      liveStreamClockOffsetRef.current = punchAtSeconds;
+      liveSentRef.current = false;
+      liveRequestRef.current = false;
+      liveFollowStreamRef.current = Boolean(restarted.streaming);
+      liveQcBufferRef.current = createLiveQcBuffer();
+      liveWhisperPromiseRef.current = null;
+      liveFollowPromiseRef.current = null;
+      liveWhisperBusyRef.current = false;
+
+      for (const [expectedIndex, word] of liveManuscriptTimelineRef.current) {
+        if (expectedIndex >= plan.restartIndex || word.start >= punchAtSeconds) {
+          liveManuscriptTimelineRef.current.delete(expectedIndex);
+        }
+      }
+      const replacedFlags = liveDetectedFlags.filter((flag) => flag.expectedIndex >= plan.restartIndex);
+      replacedFlags.forEach((flag) => onIgnoreLivePickup(flag.id));
+      setLiveDetectedFlags((flags) => flags.filter((flag) => flag.expectedIndex < plan.restartIndex));
+      setLiveFlag(null);
+      liveHaltRef.current = null;
+      liveHaltResumeIndexRef.current = -1;
+      setLiveHalt(null);
+      liveMatchStateRef.current = {
+        cursor: plan.restartIndex,
+        lastHeardEnd: punchAtSeconds,
+        recentHeard: [],
+      };
+      liveLeadRef.current = createLeadState(plan.restartIndex, performance.now());
+      liveVisualCursorRef.current = plan.restartIndex;
+      setLiveCursor(plan.restartIndex);
+      setLiveHeardText("");
+      setLiveError(null);
+    } catch (reason) {
+      setLiveError(messageFor(reason, "Could not restart this sentence. The existing booth tape was kept."));
+    } finally {
+      try {
+        await context.resume();
+      } catch {
+        // The ordinary microphone state below reports a disconnected context.
+      }
+      tracks.forEach((track) => { track.enabled = true; });
+      livePausedRef.current = false;
+      setLivePaused(false);
+      livePunchBusyRef.current = false;
+      setLivePunchRollStatus("idle");
+      if (liveEnabledRef.current && !liveStoppingRef.current) {
+        setLiveStatus("listening");
+      }
+    }
+  }
+
+  /**
    * Publish the cursor the narrator should see. On the streaming path this
    * coasts ahead of the last confirmed word at the narrator's measured pace,
    * which covers the follow model's emission delay — but only while speech is
@@ -3875,6 +4035,9 @@ function Teleprompter({
     }
     liveVisualCursorRef.current = liveCursor;
     liveStreamSecondsRef.current = 0;
+    liveStreamClockOffsetRef.current = 0;
+    livePunchBusyRef.current = false;
+    setLivePunchRollStatus("idle");
     liveLeadRef.current = createLeadState(liveCursor, performance.now());
     liveHaltRef.current = null;
     liveHaltResumeIndexRef.current = -1;
@@ -4062,10 +4225,16 @@ function Teleprompter({
       if (liveHaltRef.current) {
         return;
       }
+      const clockOffset = liveStreamClockOffsetRef.current;
+      const timedWords = clockOffset === 0 ? words : words.map((word) => ({
+        ...word,
+        start: word.start + clockOffset,
+        end: word.end + clockOffset,
+      }));
       const result = matchLiveWindow({
         chapterId: chapterIdRef.current,
         expected: expectedWordsRef.current,
-        transcript: words,
+        transcript: timedWords,
         state: liveMatchStateRef.current,
         flagsEnabled: false,
         confidenceThreshold: 0.9,
@@ -4554,6 +4723,13 @@ function Teleprompter({
       pumpLiveStream();
       return;
     }
+    // The main process owns the crash/page-close-safe booth tape. Streaming
+    // follow normally supplies its 16 kHz PCM; on the Whisper fallback path we
+    // still send a copy even though no live recognizer consumes it.
+    const mono = resamplePcmToMono(samples, liveSampleRateRef.current, 16_000);
+    window.boothDesk?.sendLivePcm({
+      pcmBase64: bytesToBase64(new Uint8Array(mono.buffer, mono.byteOffset, mono.byteLength)),
+    });
     if (shouldFlushLiveBuffer()) {
       flushLiveWindow();
     }
@@ -4741,6 +4917,7 @@ function Teleprompter({
       liveVisualCursorRef.current = startingCursor;
       liveLeadRef.current = createLeadState(startingCursor, performance.now());
       liveStreamSecondsRef.current = 0;
+      liveStreamClockOffsetRef.current = 0;
       liveSpeechAtRef.current = null;
       liveHaltRef.current = null;
       liveHaltResumeIndexRef.current = -1;
@@ -4952,11 +5129,14 @@ function Teleprompter({
       } else if (event.key === "PageUp") {
         event.preventDefault();
         scrollRef.current?.scrollBy({ top: -Math.max(120, window.innerHeight * 0.72), behavior: "smooth" });
+      } else if (event.key === "F8" && liveEnabledRef.current && !livePausedRef.current) {
+        event.preventDefault();
+        void restartSentenceWithPreroll();
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, pronunciationBriefingOpen]);
+  }, [liveDetectedFlags, onClose, onIgnoreLivePickup, pronunciationBriefingOpen]);
 
   // Word mode marks a single word; the wider modes band a range instead, so
   // only one of the two is ever active.
@@ -5068,6 +5248,15 @@ function Teleprompter({
               totalWords={expectedWords.length}
             />
 
+            {livePunchRollStatus !== "idle" ? (
+              <div className="booth-halt" role="status">
+                <div className="booth-halt-copy">
+                  <strong>{livePunchRollStatus === "cueing" ? "Rolling into the sentence" : "Rewinding the clean take"}</strong>
+                  <span>{livePunchRollStatus === "cueing" ? "Listen for your rhythm; recording resumes at the marked boundary." : "Replacing the false start and resetting voice follow…"}</span>
+                </div>
+              </div>
+            ) : null}
+
             {liveState.enabled && upcomingPronunciation ? (
               <PronunciationCueBar
                 entry={upcomingPronunciation.entry}
@@ -5082,7 +5271,10 @@ function Teleprompter({
                   <strong>{liveHaltCopy(liveHalt).title}</strong>
                   <span>{liveHaltCopy(liveHalt).detail}</span>
                 </div>
-                <button type="button" className="primary-button" onClick={resumeFromHalt}>Continue</button>
+                <div className="booth-playback-actions">
+                  <button type="button" className="secondary-button" onClick={() => void restartSentenceWithPreroll()}>Restart sentence</button>
+                  <button type="button" className="primary-button" onClick={resumeFromHalt}>Continue</button>
+                </div>
               </div>
             ) : null}
 
@@ -5287,9 +5479,19 @@ function Teleprompter({
             liveState.enabled ? (
               <div className="booth-recording-controls" aria-label="Narration recording controls">
                 <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={livePauseChanging || livePaused || livePunchRollStatus !== "idle"}
+                  title="Restart the current sentence with a lead-in (F8)"
+                  onClick={() => void restartSentenceWithPreroll()}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">↶</span>
+                  <span>Restart sentence</span>
+                </button>
+                <button
                   className="secondary-button booth-pause-button"
                   type="button"
-                  disabled={livePauseChanging}
+                  disabled={livePauseChanging || livePunchRollStatus !== "idle"}
                   aria-pressed={livePaused}
                   onClick={() => void setLiveCapturePaused(!livePaused)}
                 >
@@ -5299,7 +5501,7 @@ function Teleprompter({
                 <button
                   className="primary-button booth-start-button booth-stop-button"
                   type="button"
-                  disabled={livePauseChanging}
+                  disabled={livePauseChanging || livePunchRollStatus !== "idle"}
                   onClick={() => setLiveEnabled(false)}
                 >
                   <span className="booth-start-icon" aria-hidden="true">■</span>

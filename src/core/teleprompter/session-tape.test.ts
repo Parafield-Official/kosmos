@@ -4,13 +4,16 @@ import {
   audioSourceForPickup,
   availableProofSources,
   chapterWithBoothTapeAsTake,
+  clipLiveTape,
   concatLiveTape,
   isLiveCaughtPickup,
   listenDisabledReason,
+  planLivePunchRoll,
   proofAudioSource,
   punchDisabledReason,
   resolveProofSource,
   shouldKeepLiveTape,
+  truncateLiveTape,
 } from "./session-tape";
 import type { Pickup } from "../project/types";
 
@@ -75,6 +78,45 @@ describe("pickup playback covers the line", () => {
       line_end: 11.2,
       line_text: "Down the upper edge of the sky",
     });
+  });
+});
+
+describe("in-session punch and roll", () => {
+  const expected = [
+    { index: 0, lineIndex: 0, text: "First" },
+    { index: 1, lineIndex: 0, text: "sentence", endsSentence: true },
+    { index: 2, lineIndex: 0, text: "Second" },
+    { index: 3, lineIndex: 0, text: "sentence" },
+    { index: 4, lineIndex: 0, text: "continues", endsSentence: true },
+  ];
+  const confirmations = [
+    { expectedIndex: 0, start: 0.4, end: 0.8, confidence: 0.98 },
+    { expectedIndex: 1, start: 0.9, end: 1.4, confidence: 0.98 },
+    { expectedIndex: 2, start: 2.0, end: 2.4, confidence: 0.98 },
+    { expectedIndex: 3, start: 2.5, end: 3.0, confidence: 0.98 },
+  ];
+
+  it("restarts from the beginning of the current sentence with a lead-in", () => {
+    expect(planLivePunchRoll(expected, confirmations, 4, 1.25)).toEqual({
+      restartIndex: 2,
+      punchAtSeconds: 2,
+      cueFromSeconds: 0.75,
+    });
+  });
+
+  it("falls back to the nearest confirmed word when the sentence start has no clock", () => {
+    expect(planLivePunchRoll(expected, confirmations.slice(3), 4, 5)).toEqual({
+      restartIndex: 3,
+      punchAtSeconds: 2.5,
+      cueFromSeconds: 0,
+    });
+  });
+
+  it("clips a cue and truncates the take exactly across PCM chunks", () => {
+    const chunks = [Float32Array.from([0, 1, 2]), Float32Array.from([3, 4, 5, 6])];
+    expect([...clipLiveTape(chunks, 2, 1, 2.5)]).toEqual([2, 3, 4]);
+    expect([...concatLiveTape(truncateLiveTape(chunks, 2, 2.5))]).toEqual([0, 1, 2, 3, 4]);
+    expect([...chunks[1]!]).toEqual([3, 4, 5, 6]);
   });
 });
 

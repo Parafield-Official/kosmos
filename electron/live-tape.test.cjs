@@ -33,6 +33,18 @@ describe("main-process booth tape", () => {
     expect(tape.seconds()).toBe(0);
   });
 
+  it("rewinds an active tape before replacement audio is appended", () => {
+    const tape = createLiveTape();
+    tape.begin({ chapterId: "ch01" });
+    tape.append(Float32Array.from({ length: 32_000 }, (_, index) => index));
+    expect(tape.truncate(1.25)).toBeCloseTo(1.25, 5);
+    tape.append(new Float32Array(4_000).fill(-1));
+    const snapshot = tape.take();
+    expect(snapshot.samples.length).toBe(24_000);
+    expect(snapshot.samples[19_999]).toBe(19_999);
+    expect(snapshot.samples[20_000]).toBe(-1);
+  });
+
   it("writes a WAV Review can open", () => {
     const fs = require("node:fs");
     const os = require("node:os");

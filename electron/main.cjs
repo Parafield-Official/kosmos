@@ -3561,6 +3561,21 @@ ipcMain.handle("proof:start-live", async (_event, payload) => {
     return { persistent: false, acceleration: "CLI fallback" };
   }
 });
+ipcMain.handle("proof:restart-live", async (_event, payload) => {
+  if (!boothTapeContext) {
+    throw new Error("No booth recording is active.");
+  }
+  const truncateToSeconds = Number(payload?.truncateToSeconds);
+  if (!Number.isFinite(truncateToSeconds) || truncateToSeconds < 0) {
+    throw new Error("Invalid punch-and-roll boundary.");
+  }
+  // A restarted recognizer gets a fresh zero-based word clock. The renderer
+  // adds the retained tape duration back onto those words before matching.
+  liveFollowStream.stop();
+  const warmed = await warmLiveTranscription();
+  const truncatedToSeconds = boothTape.truncate(truncateToSeconds);
+  return { ...warmed, truncatedToSeconds };
+});
 ipcMain.handle("proof:stop-live", async () => {
   liveFollowStream.stop();
   liveFollowServer.stop();

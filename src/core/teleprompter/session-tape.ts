@@ -1,4 +1,5 @@
 import type { ChapterFile, Pickup } from "../project/types";
+import type { LiveExpectedWord, LiveWordConfirmation } from "./live";
 
 export const LIVE_CAUGHT_NOTE = "Caught while reading";
 export const MIN_LIVE_TAPE_SECONDS = 0.3;
@@ -211,6 +212,83 @@ export function concatLiveTape(chunks: readonly Float32Array[]): Float32Array {
     offset += chunk.length;
   }
   return samples;
+}
+
+export interface LivePunchRollPlan {
+  restartIndex: number;
+  punchAtSeconds: number;
+  cueFromSeconds: number;
+}
+
+/**
+ * Choose a clean sentence boundary already present on the live tape.
+ *
+ * Punch-and-roll cannot start from a manuscript word with no recording clock.
+ * If ASR missed the sentence's first word, use the first confirmed word inside
+ * that sentence rather than guessing an audio offset and cutting a syllable.
+ */
+export function planLivePunchRoll(
+  expected: readonly LiveExpectedWord[],
+  confirmations: readonly LiveWordConfirmation[],
+  cursor: number,
+  prerollSeconds: number,
+): LivePunchRollPlan | null {
+  if (expected.length === 0 || confirmations.length === 0) {
+    return null;
+  }
+  const at = Math.min(expected.length - 1, Math.max(0, Math.floor(cursor)));
+  let sentenceStart = at;
+  while (sentenceStart > 0 && expected[sentenceStart - 1]?.endsSentence !== true) {
+    sentenceStart -= 1;
+  }
+  const point = [...confirmations]
+    .filter((confirmation) => (
+      confirmation.expectedIndex >= sentenceStart
+      && confirmation.expectedIndex <= at
+      && Number.isFinite(confirmation.start)
+      && confirmation.start >= 0
+    ))
+    .sort((left, right) => left.expectedIndex - right.expectedIndex)[0];
+  if (!point) {
+    return null;
+  }
+  const punchAtSeconds = Math.max(0, point.start);
+  const safePreroll = Number.isFinite(prerollSeconds) ? Math.max(0, prerollSeconds) : 0;
+  return {
+    restartIndex: point.expectedIndex,
+    punchAtSeconds,
+    cueFromSeconds: Math.max(0, punchAtSeconds - safePreroll),
+  };
+}
+
+/** Copy a time range from chunked mono PCM without changing the live tape. */
+export function clipLiveTape(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  fromSeconds: number,
+  toSeconds: number,
+): Float32Array {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return new Float32Array(0);
+  }
+  const samples = concatLiveTape(chunks);
+  const from = Math.min(samples.length, Math.max(0, Math.round(fromSeconds * sampleRate)));
+  const to = Math.min(samples.length, Math.max(from, Math.round(toSeconds * sampleRate)));
+  return samples.slice(from, to);
+}
+
+/** Return a copy of a live tape ending at the requested punch boundary. */
+export function truncateLiveTape(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  endSeconds: number,
+): Float32Array[] {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return [];
+  }
+  const samples = concatLiveTape(chunks);
+  const end = Math.min(samples.length, Math.max(0, Math.round(endSeconds * sampleRate)));
+  return end > 0 ? [samples.slice(0, end)] : [];
 }
 
 export function liveTapePathHint(chapter: Pick<ChapterFile, "id">): string {
