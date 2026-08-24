@@ -5,6 +5,8 @@ import type { Pickup, Seat } from "../project/types";
 export interface LiveExpectedWord {
   index: number;
   lineIndex: number;
+  /** Global first-word index of the wrapped row shown in line-follow mode. */
+  visualLineStart?: number;
   text: string;
   /** Set when the punctuation after this word closes a sentence. */
   endsSentence?: boolean;
@@ -414,6 +416,10 @@ const LIVE_RESYNC_LOOKAHEAD = 8;
 // distinctive two-word anchor without pinning the page forever.
 const LIVE_LONG_RESYNC_LOOKAHEAD = 64;
 const LIVE_NEAR_JUMP = 3;
+/** A reread is local: at most a few wrapped lines or one short paragraph. */
+const LIVE_BACKTRACK_LOOKBEHIND = 48;
+/** Two words farther apart than this are not one spoken repair anchor. */
+const LIVE_BACKTRACK_ANCHOR_GAP_SECONDS = 1.25;
 const RECENT_HEARD_LIMIT = 12;
 const OVERLAP_REMATCH_SECONDS = 0.65;
 const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu;
@@ -448,10 +454,18 @@ const HALLUCINATION_ONLY_TOKENS = new Set([
 ]);
 
 /**
- * Consume a rolling ASR window without ever moving the prompt backwards.
- * Exact words and close mishears advance follow. A high-confidence real
- * mismatch still advances and flags, so a stumble does not pin the page.
- * Hallucinated silence tokens and overlapped copies are ignored.
+ * Words narrators use between an abandoned read and its replacement. They are
+ * ignored only when they do not match the current manuscript word, so a book
+ * that genuinely says "sorry" or "again" still follows normally.
+ */
+const REPAIR_CUE_TOKENS = new Set(["again", "oops", "restart", "sorry", "start"]);
+
+/**
+ * Consume a rolling ASR window. Exact words and close mishears advance follow;
+ * a bounded unique phrase can move it back when a narrator clearly restarts.
+ * A high-confidence real mismatch still advances and flags, so a stumble does
+ * not pin the page. Hallucinated silence tokens and overlapped copies are
+ * ignored.
  *
  * Under `haltOnMismatch` a read that misses the page for `haltRunWords` in a
  * row pins the page and returns a `halt`. The cursor goes back to the first
@@ -540,8 +554,41 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       continue;
     }
 
+    // Repetitions and false starts are non-monotonic. A strict left-to-right
+    // cursor treats the repeated words as off-page speech and stops before the
+    // correction can arrive. Follow a bounded, unique rough-copy anchor back
+    // instead. Two words are enough at a visible line start; elsewhere three
+    // are required unless the pair contains a distinctive content word.
+    if (!input.flagsEnabled) {
+      const backtrack = findBackwardRepair(recentHeard, input.expected, cursor);
+      if (backtrack >= 0) {
+        confirmWord(input.expected[backtrack - 1]?.index ?? (backtrack - 1), word);
+        cursor = backtrack;
+        pendingResync = undefined;
+        mismatchRun = undefined;
+        matchedInWindow += 1;
+        continue;
+      }
+    }
+
+    // An editing phrase sits between a false start and the replacement. It is
+    // neither manuscript progress nor evidence that the narrator is lost.
+    if (!input.flagsEnabled && REPAIR_CUE_TOKENS.has(heard)) {
+      pendingResync = undefined;
+      mismatchRun = undefined;
+      continue;
+    }
+
     const nearJump = !input.flagsEnabled ? findNearJump(heard, input.expected, cursor) : -1;
     if (nearJump >= 0) {
+      const jumpHalt = forwardLineJumpHalt(input, mismatchRun?.expectedIndex ?? cursor, nearJump, word, words);
+      if (jumpHalt) {
+        halt = jumpHalt;
+        cursor = jumpHalt.expectedIndex;
+        pendingResync = undefined;
+        mismatchRun = undefined;
+        break;
+      }
       confirmWord(input.expected[nearJump]?.index ?? nearJump, word);
       cursor = nearJump + 1;
       pendingResync = undefined;
@@ -562,6 +609,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
     if (!input.flagsEnabled) {
       const longResync = findLongResync(heard, nextHeard, input.expected, cursor, threshold);
       if (longResync >= 0) {
+        const jumpHalt = forwardLineJumpHalt(input, mismatchRun?.expectedIndex ?? cursor, longResync, word, words);
+        if (jumpHalt) {
+          halt = jumpHalt;
+          cursor = jumpHalt.expectedIndex;
+          pendingResync = undefined;
+          mismatchRun = undefined;
+          break;
+        }
         confirmWord(input.expected[longResync]?.index ?? longResync, word);
         if (nextHeard) {
           confirmWord(input.expected[longResync + 1]?.index ?? (longResync + 1), words[wordIndex + 1]);
@@ -588,6 +643,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
       ));
       if (resyncOffset >= 0) {
         const placedIndex = cursor + resyncOffset + 1;
+        const jumpHalt = forwardLineJumpHalt(input, mismatchRun?.expectedIndex ?? cursor, placedIndex, word, words);
+        if (jumpHalt) {
+          halt = jumpHalt;
+          cursor = jumpHalt.expectedIndex;
+          pendingResync = undefined;
+          mismatchRun = undefined;
+          break;
+        }
         confirmWord(input.expected[placedIndex]?.index ?? placedIndex, word);
         confirmWord(input.expected[placedIndex + 1]?.index ?? (placedIndex + 1), words[wordIndex + 1]);
         cursor += resyncOffset + 3;
@@ -613,6 +676,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         && isContentWord(heard)
         && lookahead.filter((candidate) => normalizeToken(candidate.text) === heard).length === 1;
       if (isDistinctiveResync) {
+        const jumpHalt = forwardLineJumpHalt(input, mismatchRun?.expectedIndex ?? cursor, expectedIndex, word, words);
+        if (jumpHalt) {
+          halt = jumpHalt;
+          cursor = jumpHalt.expectedIndex;
+          pendingResync = undefined;
+          mismatchRun = undefined;
+          break;
+        }
         confirmWord(input.expected[expectedIndex]?.index ?? expectedIndex, word);
         cursor = expectedIndex + 1;
         pendingResync = undefined;
@@ -625,6 +696,14 @@ export function matchLiveWindow(input: LiveMatchInput): LiveMatchResult {
         || (expectedIndex === pendingResync.expectedIndex && heard === pendingResync.text)
       );
       if (confirmsPending) {
+        const jumpHalt = forwardLineJumpHalt(input, mismatchRun?.expectedIndex ?? cursor, expectedIndex, word, words);
+        if (jumpHalt) {
+          halt = jumpHalt;
+          cursor = jumpHalt.expectedIndex;
+          pendingResync = undefined;
+          mismatchRun = undefined;
+          break;
+        }
         confirmWord(input.expected[expectedIndex]?.index ?? expectedIndex, word);
         cursor = expectedIndex + 1;
         pendingResync = undefined;
@@ -1511,6 +1590,142 @@ export function isStaleLiveFlag(expectedIndex: number, goldCursor?: number): boo
     return false;
   }
   return expectedIndex + LIVE_QC_RECENT_WORDS < Math.floor(goldCursor as number);
+}
+
+/**
+ * Find a recent spoken phrase behind the cursor. This is deliberately bounded
+ * and uniqueness-gated: a common word such as "the" must never drag a live
+ * prompter backwards, while "Beyond the" at the start of the current line is
+ * strong evidence that the narrator restarted it.
+ */
+function findBackwardRepair(
+  recentHeard: LiveHeardToken[],
+  expected: LiveExpectedWord[],
+  cursor: number,
+): number {
+  const floor = Math.max(0, cursor - LIVE_BACKTRACK_LOOKBEHIND);
+  for (const length of [3, 2]) {
+    if (recentHeard.length < length) {
+      continue;
+    }
+    const heard = recentHeard.slice(-length);
+    const first = heard[0];
+    const last = heard[heard.length - 1];
+    if (!first || !last || last.end - first.end > LIVE_BACKTRACK_ANCHOR_GAP_SECONDS) {
+      continue;
+    }
+    const tokens = heard.map((word) => word.text);
+    if (tokens.some((token) => REPAIR_CUE_TOKENS.has(token))) {
+      continue;
+    }
+    const hits: number[] = [];
+    for (let start = floor; start + length < cursor; start += 1) {
+      if (tokens.every((token, offset) => {
+        const candidate = normalizeToken(expected[start + offset]?.text ?? "");
+        return sameWord(token, candidate) || wordsSimilar(token, candidate);
+      })) {
+        hits.push(start);
+      }
+    }
+    if (hits.length !== 1) {
+      continue;
+    }
+    const start = hits[0]!;
+    const startsFollowLine = start === 0 || liveLineKey(expected[start - 1]) !== liveLineKey(expected[start]);
+    const hasDistinctiveWord = tokens.some((token) => isContentWord(token) && token.length >= 5);
+    if (length >= 3 || startsFollowLine || hasDistinctiveWord) {
+      return start + length;
+    }
+  }
+  return -1;
+}
+
+/**
+ * A forward anchor is useful when ASR loses words inside a line, but it must
+ * not silently approve a narrator omitting the rest of a line (or more). One
+ * missing final word is tolerated because streaming ASR commonly finalizes the
+ * next line's onset before the preceding tail.
+ */
+function shouldStopAtForwardLineJump(
+  expected: LiveExpectedWord[],
+  cursor: number,
+  target: number,
+): boolean {
+  const current = expected[cursor];
+  const destination = expected[target];
+  if (!current || !destination) {
+    return false;
+  }
+  const currentLine = liveLineKey(current);
+  if (liveLineKey(destination) === currentLine) {
+    return false;
+  }
+  let unreadCurrentLine = 0;
+  for (let index = cursor; index < expected.length && liveLineKey(expected[index]) === currentLine; index += 1) {
+    unreadCurrentLine += 1;
+  }
+  let crossedLines = 0;
+  let priorLine = currentLine;
+  for (let index = cursor + 1; index <= target; index += 1) {
+    const nextLine = liveLineKey(expected[index]);
+    if (nextLine !== priorLine) {
+      crossedLines += 1;
+      priorLine = nextLine;
+    }
+  }
+  return crossedLines > 1 || unreadCurrentLine > 1;
+}
+
+function liveLineKey(word: LiveExpectedWord | undefined): string {
+  return word?.visualLineStart === undefined
+    ? `manuscript:${word?.lineIndex ?? -1}`
+    : `visual:${word.visualLineStart}`;
+}
+
+/** Add browser-measured wrapped rows to the words used by live follow. */
+export function applyLiveVisualRows(
+  expected: LiveExpectedWord[],
+  rows: ReadonlyArray<{ from: number; to: number }>,
+): LiveExpectedWord[] {
+  if (rows.length === 0) {
+    return expected;
+  }
+  return expected.map((word) => {
+    const row = rows.find((candidate) => word.index >= candidate.from && word.index <= candidate.to);
+    return row ? { ...word, visualLineStart: row.from } : word;
+  });
+}
+
+function forwardLineJumpHalt(
+  input: LiveMatchInput,
+  cursor: number,
+  target: number,
+  heardWord: LiveTranscriptWord,
+  heardWords: LiveTranscriptWord[],
+): LiveMismatch | undefined {
+  if (!input.haltOnMismatch || !shouldStopAtForwardLineJump(input.expected, cursor, target)) {
+    return undefined;
+  }
+  const expectedWord = input.expected[cursor];
+  if (!expectedWord) {
+    return undefined;
+  }
+  const start = Math.max(0, heardWord.start);
+  const end = Math.max(start, heardWord.end);
+  const confidence = Number.isFinite(heardWord.confidence)
+    ? Math.min(1, Math.max(0, heardWord.confidence as number))
+    : 0;
+  return {
+    id: `live-${input.chapterId}-${expectedWord.index}-${normalizeToken(heardWord.text)}`,
+    expected: expectedWord.text,
+    heard: heardWord.text,
+    expectedIndex: expectedWord.index,
+    lineIndex: expectedWord.lineIndex,
+    start,
+    end,
+    confidence,
+    ...liveLineContext(input.expected, expectedWord.index, start, end, heardWords),
+  };
 }
 
 function findNearJump(heard: string, expected: LiveExpectedWord[], cursor: number): number {

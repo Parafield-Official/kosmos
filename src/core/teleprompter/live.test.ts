@@ -45,11 +45,10 @@ describe("teleprompter live matching", () => {
     expect(second.flag).toBeUndefined();
   });
 
-  it("stalls after the cursor is pushed past the narrator, because it only looks forward", () => {
-    // Why a second writer must never advance the follow cursor while the live
-    // model is running. Every resync path searches forward from the cursor and
-    // the cursor never moves back, so an overshoot cannot be corrected — the
-    // matcher goes dead until the narrator's voice reaches the wrong position.
+  it("recovers when the cursor is pushed past the narrator and a phrase proves their position", () => {
+    // A second writer should not normally advance the follow cursor, but a
+    // unique repeated phrase now gives the matcher enough evidence to recover
+    // from that overshoot instead of going dead for the rest of the line.
     const script: LiveExpectedWord[] = [
       "the", "moon", "hangs", "small", "and", "yellow", "and", "gibbous",
       "the", "sea", "glides", "along", "far", "below",
@@ -60,7 +59,8 @@ describe("teleprompter live matching", () => {
     let state = { cursor: 9, lastHeardEnd: 0.4 };
     expect(script[state.cursor].lineIndex).toBe(1);
 
-    // They keep reading from word 4. None of it advances the cursor.
+    // They keep reading from word 4. "and yellow" is a unique backward anchor,
+    // after which the remaining words land normally.
     for (const [offset, text] of ["and", "yellow", "and", "gibbous"].entries()) {
       const result = matchLiveWindow({
         chapterId: "ch01",
@@ -72,7 +72,7 @@ describe("teleprompter live matching", () => {
       });
       state = result.state;
     }
-    expect(state.cursor).toBe(9);
+    expect(state.cursor).toBe(8);
   });
 
   it("emits a high-confidence full-word mismatch but hides low-confidence guesses", () => {

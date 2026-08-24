@@ -114,7 +114,7 @@ import {
   type PromptTheme,
   type PromptWordRange,
 } from "../core/teleprompter/model";
-import { appendLiveQcSamples, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
+import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { createLeadState, leadAdvance, leadOnConfirm, type LeadState } from "../core/teleprompter/lead";
 import { createLiveTap, type LiveTap } from "../core/teleprompter/live-tap";
 import { pickupKindPresentation } from "../core/proof/pickup-display";
@@ -3653,6 +3653,7 @@ function Teleprompter({
   // highlighting costs one layout read per paragraph rather than per word.
   useEffect(() => {
     if (highlight !== "line" || liveLineIndex === undefined || liveLineWordCount === 0) {
+      expectedWordsRef.current = expectedWords;
       setWordRows((rows) => (rows.length === 0 ? rows : []));
       return;
     }
@@ -3666,8 +3667,12 @@ function Teleprompter({
       tops.push(node ? node.getBoundingClientRect().top : null);
     }
     const measured = promptWordRows(firstWord, tops);
+    // The matcher runs outside React's render loop. Give it the exact wrapped
+    // rows the narrator sees, so skipping a screen line inside a long prose
+    // paragraph cannot be mistaken for a harmless within-line resync.
+    expectedWordsRef.current = applyLiveVisualRows(expectedWords, measured);
     setWordRows((rows) => (sameWordRows(rows, measured) ? rows : measured));
-  }, [highlight, liveLineIndex, liveLineWordCount, lineWordStarts, fontSize, lineSpacing, readingFont, wrapEpoch]);
+  }, [expectedWords, highlight, liveLineIndex, liveLineWordCount, lineWordStarts, fontSize, lineSpacing, readingFont, wrapEpoch]);
 
   // Resizing the window or the side rails rewraps the text, which moves every
   // row boundary. Re-measure rather than band words that have moved.
@@ -4239,7 +4244,7 @@ function Teleprompter({
       // long ago; it stays a flag.
       const result = matchLiveWindow({
         chapterId,
-        expected: expectedWords,
+        expected: expectedWordsRef.current,
         transcript: transcriptWords,
         state: liveMatchStateRef.current,
         flagsEnabled: liveFollowStreamRef.current ? false : liveStateRef.current.enabled,
@@ -4397,8 +4402,8 @@ function Teleprompter({
       // judged this same frozen audio window, so use its ordered words as a
       // conservative cursor fallback instead of repeatedly grading later
       // audio against the first stalled phrase. This is independent of the
-      // manuscript/test vocabulary: matchLiveWindow only advances on a
-      // nearby exact/similar/number match and never moves the cursor back.
+      // manuscript/test vocabulary: matchLiveWindow only uses nearby matches,
+      // except for a bounded unique phrase that clearly repeats the page.
       //
       // Only when there is no streaming follow model, though. This window is
       // audio Parakeet already transcribed seconds ago, graded at a lower
@@ -4409,7 +4414,7 @@ function Teleprompter({
         const followBeforeWhisper = liveMatchStateRef.current;
         const whisperFollow = matchLiveWindow({
           chapterId,
-          expected: expectedWords,
+          expected: expectedWordsRef.current,
           transcript,
           state: followBeforeWhisper,
           flagsEnabled: false,

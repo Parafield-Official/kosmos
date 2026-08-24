@@ -57,3 +57,59 @@ accepted instead of stopping at the unread line.
 
 The machine-readable trace is `line-follow-before.json` in this directory.
 
+## Open-source alignment review
+
+WhisperX is the right tool for post-recording timing, not the live cursor. Its
+published pipeline uses VAD to assemble long speech chunks and then applies
+phoneme-model/DTW forced alignment to a completed transcript. Kosmos already
+uses optional WhisperX output after a booth tape stops, with the manuscript
+clock retained as fallback. Running that batch pipeline during narration would
+add another recognizer and seconds of context without deciding whether a
+forward text match is a legitimate ASR recovery or an omitted line.
+
+ReadAlong Studio is a useful MIT-licensed reference for private audiobook
+text/audio alignment, but it is likewise an offline production pipeline rather
+than a streaming position tracker.
+
+Two newer 2026 projects are worth a future recognizer bake-off, but not a blind
+runtime replacement in this fix:
+
+- Qwen3-ASR offers a 0.6B forced aligner and streaming ASR, but its official
+  streaming path does not return timestamps. The forced aligner remains a
+  separate offline operation.
+- `audio.cpp` now exposes Qwen3-ASR and Qwen3-ForcedAligner through a portable
+  GGUF/Metal runtime. This is promising for a future native A/B benchmark, but
+  it introduces a substantially larger model family and has not yet been tested
+  against Kosmos's 160 ms follow latency or this narrator-miscue corpus.
+- The small pure-C Qwen3-ASR runtime is MIT-licensed and supports live input,
+  but commits stable text in two-second chunks. That is too coarse to replace
+  the current 160 ms Parakeet hop without a measured UX win.
+
+The production change therefore reuses the most relevant alignment idea—local,
+constrained sequence evidence—inside the existing low-latency matcher. It does
+not add a network service, Python environment, model download, or new license.
+
+Additional references:
+
+- WhisperX source and limitations: https://github.com/m-bain/whisperX
+- WhisperX paper: https://www.isca-archive.org/interspeech_2023/bain23_interspeech.pdf
+- ReadAlong Studio: https://github.com/ReadAlongs/Studio
+- Qwen3-ASR: https://github.com/QwenLM/Qwen3-ASR
+- `audio.cpp`: https://github.com/0xShug0/audio.cpp
+- Pure-C Qwen3-ASR: https://github.com/antirez/qwen-asr
+
+## Improved result
+
+The identical cached virtual-voice recordings and recognizer were rerun after
+adding bounded backward repair anchors, neutral editing cues, and guarded
+cross-line forward resync. Browser-measured wrapped rows are also passed into
+the matcher, so a skipped on-screen line inside one prose paragraph receives
+the same protection; that path has a separate regression test. The virtual
+voice result improved from **2/9 (22.2%) to 9/9 (100.0%)**:
+
+- all four restart/repetition cases moved backward and recovered;
+- all three skip/jump cases stopped on the first unread line;
+- clean sequential reading still completed;
+- unrelated speech still stopped without being treated as manuscript progress.
+
+The exact after trace is `line-follow-after.json` in this directory.
