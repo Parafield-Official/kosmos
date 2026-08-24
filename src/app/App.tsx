@@ -26,6 +26,7 @@ import { resamplePcmToMono } from "../core/audio/resample";
 import {
   contextPlaybackRange,
   playbackReachedEnd,
+  preciseSelectedPlaybackRange,
   selectedPlaybackRange,
 } from "../core/audio/playback-range";
 import {
@@ -2923,7 +2924,12 @@ function ProjectHome({
                 listenDisabledReason={(pickup) => listenDisabledReason(pickup, selectedChapter)}
                 punchDisabledReason={(pickup) => punchDisabledReason(pickup, selectedChapter)}
                 onPlayRange={playRange}
-                onPlaySelection={(start, end) => playRange(start, end, 0)}
+                onPlaySelection={(start, end) => {
+                  const range = proof?.timingEngine === "whisperx"
+                    ? preciseSelectedPlaybackRange(start, end)
+                    : selectedPlaybackRange(start, end);
+                  playRange(range.start, range.end, 0);
+                }}
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
                 onExportPacket={() => void exportPickupPacket()}

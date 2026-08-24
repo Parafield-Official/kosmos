@@ -10,6 +10,20 @@ export function selectedPlaybackRange(start: number, end: number): PlaybackRange
   return { start: safeStart, end: safeEnd };
 }
 
+/**
+ * Forced aligners can leave a few milliseconds of the neighboring phoneme on
+ * a word edge. Inset precise selected-only playback by at most 40 ms per side,
+ * capped at 20% so very short words are not erased.
+ */
+export function preciseSelectedPlaybackRange(start: number, end: number): PlaybackRange {
+  const range = selectedPlaybackRange(start, end);
+  const inset = Math.min(0.04, Math.max(0, range.end - range.start) * 0.2);
+  return {
+    start: roundedSeconds(range.start + inset),
+    end: roundedSeconds(range.end - inset),
+  };
+}
+
 /** A deliberately wider interval for search results and contextual listening. */
 export function contextPlaybackRange(
   start: number,

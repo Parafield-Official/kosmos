@@ -3,6 +3,7 @@ import {
   contextPlaybackRange,
   leadInPlaybackRange,
   playbackReachedEnd,
+  preciseSelectedPlaybackRange,
   selectedPlaybackRange,
 } from "./playback-range";
 
@@ -30,5 +31,10 @@ describe("exact selected-word playback", () => {
     expect(playbackReachedEnd(5.514, 5.52)).toBe(false);
     expect(playbackReachedEnd(5.516, 5.52)).toBe(true);
     expect(playbackReachedEnd(5.8, 5.52)).toBe(true);
+  });
+
+  it("guards forced-aligned selections from neighboring phonemes without collapsing short words", () => {
+    expect(preciseSelectedPlaybackRange(2.32, 5.52)).toEqual({ start: 2.36, end: 5.48 });
+    expect(preciseSelectedPlaybackRange(1, 1.1)).toEqual({ start: 1.02, end: 1.08 });
   });
 });
