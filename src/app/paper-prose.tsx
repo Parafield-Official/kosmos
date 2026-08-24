@@ -17,6 +17,21 @@ export interface SelectionActionPosition {
   placement: "above" | "below";
 }
 
+export type SelectionActionEvent =
+  | { type: "show"; position: SelectionActionPosition }
+  | { type: "dismiss"; reason: "outside-pointer" | "overlay-open" | "selection-cleared" | "viewport-change" };
+
+/** Keep contextual selection controls ephemeral instead of carrying them into overlays. */
+export function selectionActionReducer(
+  state: SelectionActionPosition | null,
+  event: SelectionActionEvent,
+): SelectionActionPosition | null {
+  if (event.type === "show") {
+    return event.position;
+  }
+  return state ? null : state;
+}
+
 interface SelectionRect {
   left: number;
   top: number;

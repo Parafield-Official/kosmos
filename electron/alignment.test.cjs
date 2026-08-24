@@ -14,6 +14,21 @@ describe("alignment persistence boundary", () => {
     }, "ch01")).toThrow(/source/i);
   });
 
+  it("persists which engine produced the word clock", () => {
+    expect(normalizeAlignment({
+      source_kind: "take",
+      timing_engine: "whisperx",
+      transcript: [],
+      pickups: [],
+    }, "ch01").timing_engine).toBe("whisperx");
+    expect(() => normalizeAlignment({
+      source_kind: "take",
+      timing_engine: "unknown",
+      transcript: [],
+      pickups: [],
+    }, "ch01")).toThrow(/timing engine/i);
+  });
+
   it("clamps malformed confidence without changing valid workflow data", () => {
     const result = normalizeAlignment({
       schema: 1,

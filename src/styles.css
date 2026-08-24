@@ -3773,7 +3773,7 @@ button {
 
 .modal-backdrop {
   position: fixed;
-  z-index: 10;
+  z-index: 300;
   inset: 0;
   display: grid;
   padding: 24px;
@@ -5298,6 +5298,24 @@ button {
   font: inherit;
   font-size: 13px;
   font-weight: 760;
+}
+
+.pickup-selection-listen-button {
+  padding: 10px 14px;
+  border: 1px solid #5b47d9;
+  border-radius: 10px;
+  background: #5b47d9;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 780;
+}
+
+.pickup-selection-listen-button:disabled,
+.pickup-leadin-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .pickup-session-dialog .punch-preroll span {

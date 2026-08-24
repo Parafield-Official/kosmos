@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { AcxReport } from "../core/acx/measure";
 import { noiseFloorListenRange } from "../core/acx/measure";
 import { getExportReadiness, type ExportReadiness } from "../core/acx/export";
@@ -23,6 +23,11 @@ import type { CheckStatus } from "../core/acx/spec";
 import { analyzeRoomTest, type RoomTestReport } from "../core/acx/room";
 import { encodeWavPcm16 } from "../core/audio/wav";
 import { resamplePcmToMono } from "../core/audio/resample";
+import {
+  contextPlaybackRange,
+  playbackReachedEnd,
+  selectedPlaybackRange,
+} from "../core/audio/playback-range";
 import {
   alignTranscript,
   isSuppressedPickup,
@@ -125,7 +130,15 @@ import {
   type NarrationRedoRanges,
   type NarrationRedoScope,
 } from "../core/proof/selection";
-import { ManuscriptProofProse, type ManuscriptProofAnnotation } from "./paper-prose";
+import {
+  proofTimingPipeline,
+  type ProofTimingEngine,
+} from "../core/proof/pipeline";
+import {
+  ManuscriptProofProse,
+  selectionActionReducer,
+  type ManuscriptProofAnnotation,
+} from "./paper-prose";
 import {
   audioSourceForPickup,
   availableProofSources,
@@ -170,6 +183,7 @@ interface ProjectEnvelope {
 interface ProofResult {
   pickups: Pickup[];
   transcript: TranscriptWord[];
+  timingEngine?: ProofTimingEngine;
 }
 
 type StudioTab = "book" | "record" | "review" | "finish" | "words" | "people" | "settings";
@@ -513,7 +527,11 @@ function ProjectHome({
         setChapterText(hideMarkdownHeadingMarkers(result.text));
         setChapterSpans(result.spans);
         if (alignment && alignment.chapter_id === selectedChapter.id) {
-          setProof({ pickups: alignment.pickups, transcript: alignment.transcript });
+          setProof({
+            pickups: alignment.pickups,
+            transcript: alignment.transcript,
+            timingEngine: alignment.timing_engine,
+          });
           setCheckedSourceKind(alignment.source_kind ?? (proofAudioSource(selectedChapter)?.kind ?? null));
           transcriptOriginRef.current = "generated";
           setTranscriptText(alignment.transcript.map((word) => word.text).join(" "));
@@ -900,7 +918,7 @@ function ProjectHome({
       // recorded. Reuse that canonical word clock; sending the finished tape
       // through Whisper would create a second, noisier text representation of
       // words the app already knows.
-      if (source.kind === "live") {
+      if (proofTimingPipeline(source.kind) === "manuscript-clock") {
         const timeline = checkedSourceKind === "live"
           ? (proofRef.current?.transcript ?? [])
           : [];
@@ -910,6 +928,7 @@ function ProjectHome({
         const next = {
           pickups: proofRef.current?.pickups ?? [],
           transcript: timeline,
+          timingEngine: "manuscript-clock" as const,
         };
         proofRef.current = next;
         setProof(next);
@@ -920,12 +939,14 @@ function ProjectHome({
 
       let transcript: TranscriptWord[];
       let silences: SilenceRange[] | undefined;
+      let timingEngine: ProofTimingEngine;
       if (shouldUseTranscriptOverride({
         text: transcriptText,
         origin: transcriptOriginRef.current,
         preferLive: options.preferLive === true,
       })) {
         transcript = timedTranscript(transcriptText, duration || 1);
+        timingEngine = "manual";
       } else if (window.boothDesk) {
         const local = await window.boothDesk.transcribe({
           folder,
@@ -934,6 +955,7 @@ function ProjectHome({
         });
         transcript = local.words;
         silences = local.silences;
+        timingEngine = local.timingEngine ?? (local.engine === "whisperx" ? "whisperx" : "whisper.cpp");
         transcriptOriginRef.current = "generated";
         setTranscriptText(local.words.map((word) => word.text).join(" "));
       } else {
@@ -957,7 +979,7 @@ function ProjectHome({
           )
         : result.pickups;
       const pickups = preservePickupWorkflow(proof?.pickups ?? [], freshPickups);
-      setProof({ pickups, transcript });
+      setProof({ pickups, transcript, timingEngine });
       setCheckedSourceKind(source.kind);
       if (window.boothDesk && folder !== "(browser preview)") {
         const saved = await window.boothDesk.saveAlignment({
@@ -966,16 +988,22 @@ function ProjectHome({
           pickups,
           transcript,
           sourceKind: source.kind,
+          timingEngine,
         });
         onChange(saved);
       }
       const mismatchCount = pickups.filter((pickup) => pickup.kind !== "pause").length;
       const pauseCount = pickups.filter((pickup) => pickup.kind === "pause").length;
+      const timingCopy = timingEngine === "whisperx"
+        ? " Precise word timing was aligned with WhisperX."
+        : timingEngine === "manual"
+          ? " Timing is estimated from the supplied transcript."
+          : " WhisperX was unavailable, so Kosmos used its bundled Whisper timing.";
       setNotice(
         pickups.length === 0
-          ? "No word changes or long pauses found. Listen once for delivery and background noise."
+          ? `No word changes or long pauses found. Listen once for delivery and background noise.${timingCopy}`
           : `${mismatchCount > 0 ? `${mismatchCount} word ${mismatchCount === 1 ? "mismatch" : "mismatches"}` : "No word mismatches"}`
-            + `${pauseCount > 0 ? `; ${pauseCount} long ${pauseCount === 1 ? "pause" : "pauses"}` : ""} found.`,
+            + `${pauseCount > 0 ? `; ${pauseCount} long ${pauseCount === 1 ? "pause" : "pauses"}` : ""} found.${timingCopy}`,
       );
     });
   }
@@ -1068,6 +1096,7 @@ function ProjectHome({
           pickups,
           transcript: proof.transcript,
           sourceKind: checkedSourceKind ?? undefined,
+          timingEngine: proof.timingEngine,
         });
         onChange(saved);
       }
@@ -1099,6 +1128,7 @@ function ProjectHome({
       pickups: next.pickups,
       transcript: next.transcript,
       sourceKind: sourceKind ?? checkedSourceKind ?? undefined,
+      timingEngine: next.timingEngine,
     });
     onChange(saved);
   }
@@ -1115,6 +1145,7 @@ function ProjectHome({
     await persistAlignment(selectedChapter.id, {
       pickups,
       transcript: current?.transcript ?? [],
+      timingEngine: current?.timingEngine ?? "manuscript-clock",
     }, "live");
   }
 
@@ -2143,24 +2174,40 @@ function ProjectHome({
   }
 
   /**
-   * `pad` widens the range on both sides. A word-sized range needs it to be
-   * audible at all; a range that already covers a whole line does not, and
-   * padding one only plays over the line either side of the fix.
+   * `pad` is deliberate context on both sides. Selected-word playback passes
+   * zero so the stored first/last word boundaries remain exact.
    */
   function playOnElement(audio: HTMLAudioElement, start: number, end?: number, pad = 0.5) {
     rangeStopRef.current?.();
-    audio.currentTime = Math.max(0, start - pad);
+    const range = end !== undefined && Number.isFinite(end) && end > start
+      ? (pad > 0 ? contextPlaybackRange(start, end, pad) : selectedPlaybackRange(start, end))
+      : selectedPlaybackRange(Math.max(0, start - pad), Math.max(0, start - pad));
+    audio.currentTime = range.start;
     const playing = audio.play();
     if (end !== undefined && Number.isFinite(end) && end > start) {
-      const stop = () => {
-        if (audio.currentTime >= end + pad) {
+      let animationFrame: number | null = null;
+      let stopped = false;
+      const stopAtEnd = () => {
+        if (playbackReachedEnd(audio.currentTime, range.end)) {
+          stopped = true;
           audio.pause();
           rangeStopRef.current?.();
         }
       };
-      audio.addEventListener("timeupdate", stop);
+      const monitor = () => {
+        stopAtEnd();
+        if (!stopped) {
+          animationFrame = window.requestAnimationFrame(monitor);
+        }
+      };
+      audio.addEventListener("timeupdate", stopAtEnd);
+      animationFrame = window.requestAnimationFrame(monitor);
       rangeStopRef.current = () => {
-        audio.removeEventListener("timeupdate", stop);
+        stopped = true;
+        audio.removeEventListener("timeupdate", stopAtEnd);
+        if (animationFrame !== null) {
+          window.cancelAnimationFrame(animationFrame);
+        }
         rangeStopRef.current = null;
       };
     }
@@ -2289,6 +2336,34 @@ function ProjectHome({
     }
   }
 
+  /** Play only the manuscript words the narrator highlighted—no lead-in or post-roll. */
+  async function playPickupSelection(pickup: Pickup) {
+    if (!selectedChapter) {
+      return;
+    }
+    const source = audioSourceForPickup(pickup, selectedChapter);
+    if (!source || !window.boothDesk || folder === "(browser preview)") {
+      setNotice(listenDisabledReason(pickup, selectedChapter) ?? "Nothing to play.");
+      return;
+    }
+    const audio = pickupListenRef.current;
+    if (!audio) {
+      return;
+    }
+    try {
+      if (pickupListenPathRef.current !== source.relativePath) {
+        const url = await window.boothDesk.audioUrl({ folder, relativePath: source.relativePath });
+        pickupListenPathRef.current = source.relativePath;
+        audio.src = url;
+        audio.load();
+      }
+      await waitAudioReady(audio);
+      await playOnElement(audio, source.start, source.end, 0);
+    } catch (reason) {
+      setNotice(messageFor(reason, "Could not play the selected words."));
+    }
+  }
+
   async function finishLiveTape(
     result: ProjectEnvelope,
     chapterId: string,
@@ -2312,10 +2387,11 @@ function ProjectHome({
       pickups,
       transcript: timeline,
       sourceKind: "live",
+      timingEngine: "manuscript-clock",
     });
     onChange(saved);
     if (selectedChapter?.id === chapterId) {
-      const next = { pickups, transcript: timeline };
+      const next = { pickups, transcript: timeline, timingEngine: "manuscript-clock" as const };
       proofRef.current = next;
       setProof(next);
       setCheckedSourceKind("live");
@@ -2343,7 +2419,7 @@ function ProjectHome({
     }
   }
 
-  function playRange(start: number, end?: number) {
+  function playRange(start: number, end?: number, pad = 0.5) {
     const audio = audioRef.current;
     if (!audio) {
       setNotice("The chapter player is not ready.");
@@ -2351,7 +2427,7 @@ function ProjectHome({
     }
     audio.scrollIntoView({ block: "nearest", behavior: "smooth" });
     void waitAudioReady(audio)
-      .then(() => playOnElement(audio, start, end))
+      .then(() => playOnElement(audio, start, end, pad))
       .catch((reason: unknown) => {
         setNotice(messageFor(reason, "Could not play that section."));
       });
@@ -2777,6 +2853,7 @@ function ProjectHome({
                 listenDisabledReason={(pickup) => listenDisabledReason(pickup, selectedChapter)}
                 punchDisabledReason={(pickup) => punchDisabledReason(pickup, selectedChapter)}
                 onPlayRange={playRange}
+                onPlaySelection={(start, end) => playRange(start, end, 0)}
                 onExportMarkers={() => void exportMarkers()}
                 onExportReport={() => void exportProofReport()}
                 onExportPacket={() => void exportPickupPacket()}
@@ -2790,6 +2867,7 @@ function ProjectHome({
                 comparisons={pickupComparisons}
                 onVerifyComparison={(id) => void verifyPunchRecording(id)}
                 onUndoLatestPickup={() => void undoLatestPunch()}
+                selectionOverlayOpen={Boolean(punchPickup)}
               />
             ) : (
               <MissingChapter onAdd={() => { setActivePanel("book"); setComposerOpen(true); }} />
@@ -3002,12 +3080,20 @@ function ProjectHome({
             </div>
             <div className="punch-preroll">
               <button
+                className="pickup-selection-listen-button"
+                type="button"
+                disabled={!window.boothDesk || folder === "(browser preview)"}
+                onClick={() => void playPickupSelection(punchPickup)}
+              >
+                {performancePickup ? "Play selected words" : "Play replacement line"}
+              </button>
+              <button
                 className="pickup-leadin-button"
                 type="button"
                 disabled={!window.boothDesk || folder === "(browser preview)"}
                 onClick={() => void playPickupPreroll(punchPickup)}
               >
-                Play the {PICKUP_PREROLL_SECONDS}s lead-in (L)
+                Hear {PICKUP_PREROLL_SECONDS}s before selection (L)
               </button>
               <span>
                 Source {formatTime(punchBounds?.start ?? punchPickup.t_start)}–{formatTime(punchBounds?.end ?? punchPickup.t_end)}
@@ -7685,6 +7771,7 @@ function ReviewPage({
   listenDisabledReason,
   punchDisabledReason,
   onPlayRange,
+  onPlaySelection,
   onExportMarkers,
   onExportReport,
   onExportPacket,
@@ -7698,6 +7785,7 @@ function ReviewPage({
   comparisons,
   onVerifyComparison,
   onUndoLatestPickup,
+  selectionOverlayOpen,
 }: {
   chapter: ChapterFile;
   chapterText: string;
@@ -7719,6 +7807,7 @@ function ReviewPage({
   listenDisabledReason?: (pickup: Pickup) => string | null;
   punchDisabledReason?: (pickup: Pickup) => string | null;
   onPlayRange: (start: number, end?: number) => void;
+  onPlaySelection: (start: number, end: number) => void;
   onExportMarkers: () => void;
   onExportReport: () => void;
   onExportPacket: () => void;
@@ -7732,6 +7821,7 @@ function ReviewPage({
   comparisons: PickupComparison[];
   onVerifyComparison: (id: string) => void;
   onUndoLatestPickup: () => void;
+  selectionOverlayOpen: boolean;
 }) {
   const [redoSelection, setRedoSelection] = useState<{
     ranges: NarrationRedoRanges;
@@ -7739,11 +7829,8 @@ function ReviewPage({
   } | null>(null);
   const [redoReason, setRedoReason] = useState("");
   const [focusedAnnotationId, setFocusedAnnotationId] = useState<string | null>(null);
-  const [quickRecordPosition, setQuickRecordPosition] = useState<{
-    left: number;
-    top: number;
-    placement: "above" | "below";
-  } | null>(null);
+  const [quickRecordPosition, dispatchSelectionAction] = useReducer(selectionActionReducer, null);
+  const quickRecordPopoverRef = useRef<HTMLDivElement>(null);
   const sources = availableProofSources(chapter);
   const selectedKind = reviewSourceKind ?? proofAudioSource(chapter)?.kind ?? null;
   const alignedTokens = useMemo(
@@ -7846,7 +7933,8 @@ function ReviewPage({
       sourceKind: selectedKind,
       reason,
     });
-    setQuickRecordPosition(null);
+    window.getSelection()?.removeAllRanges();
+    dispatchSelectionAction({ type: "dismiss", reason: "overlay-open" });
     onPunchPickup(pickup);
   };
 
@@ -7854,14 +7942,31 @@ function ReviewPage({
     if (!quickRecordPosition) {
       return undefined;
     }
-    const dismissQuickAction = () => setQuickRecordPosition(null);
+    const dismissQuickAction = () => dispatchSelectionAction({ type: "dismiss", reason: "viewport-change" });
+    const dismissOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && quickRecordPopoverRef.current?.contains(target)) {
+        return;
+      }
+      dispatchSelectionAction({ type: "dismiss", reason: "outside-pointer" });
+    };
+    document.addEventListener("pointerdown", dismissOnOutsidePointer, true);
     window.addEventListener("scroll", dismissQuickAction, true);
     window.addEventListener("resize", dismissQuickAction);
     return () => {
+      document.removeEventListener("pointerdown", dismissOnOutsidePointer, true);
       window.removeEventListener("scroll", dismissQuickAction, true);
       window.removeEventListener("resize", dismissQuickAction);
     };
   }, [quickRecordPosition]);
+
+  useEffect(() => {
+    if (!selectionOverlayOpen) {
+      return;
+    }
+    window.getSelection()?.removeAllRanges();
+    dispatchSelectionAction({ type: "dismiss", reason: "overlay-open" });
+  }, [selectionOverlayOpen]);
   const showPickupOnPage = (pickup: Pickup) => {
     setFocusedAnnotationId(pickup.id);
     window.requestAnimationFrame(() => {
@@ -7968,8 +8073,19 @@ function ReviewPage({
               <p className="paper-selection-hint">Highlight any word, line, sentence, or paragraph to perform it again.</p>
             </div>
             {proof ? (
-              <span className="alignment-ready-badge">
-                {manuscriptAnnotations.length} marked · timed to this recording
+              <span
+                className="alignment-ready-badge"
+                title={proof.timingEngine === "whisperx"
+                  ? "Imported audio received forced word alignment"
+                  : proof.timingEngine === "manuscript-clock"
+                    ? "Timing was captured while narrating in Kosmos"
+                    : "Timing comes from the available speech transcript"}
+              >
+                {manuscriptAnnotations.length} marked · {proof.timingEngine === "whisperx"
+                  ? "precise word timing"
+                  : proof.timingEngine === "manuscript-clock"
+                    ? "manuscript timing"
+                    : "word timing"}
               </span>
             ) : null}
           </div>
@@ -7981,6 +8097,9 @@ function ReviewPage({
               focusedAnnotationId={focusedAnnotationId}
               selectable
               onTokenSelection={({ fromToken, toToken, actionPosition }) => {
+                if (selectionOverlayOpen) {
+                  return;
+                }
                 setRedoSelection({
                   ranges: buildNarrationRedoRanges({
                     manuscript: chapterText,
@@ -7990,13 +8109,14 @@ function ReviewPage({
                   }),
                   scope: "selection",
                 });
-                setQuickRecordPosition(actionPosition);
+                dispatchSelectionAction({ type: "show", position: actionPosition });
                 setRedoReason("");
               }}
             />
           </div>
-          {quickRecordRange && quickRecordPosition ? (
+          {!selectionOverlayOpen && quickRecordRange && quickRecordPosition ? (
             <div
+              ref={quickRecordPopoverRef}
               className={`selection-record-popover ${quickRecordPosition.placement}`}
               style={{ left: quickRecordPosition.left, top: quickRecordPosition.top }}
               role="toolbar"
@@ -8034,7 +8154,7 @@ function ReviewPage({
                   onClick={() => {
                     window.getSelection()?.removeAllRanges();
                     setRedoSelection(null);
-                    setQuickRecordPosition(null);
+                    dispatchSelectionAction({ type: "dismiss", reason: "selection-cleared" });
                   }}
                 >
                   Clear
@@ -8086,9 +8206,9 @@ function ReviewPage({
                     <button
                       className="secondary-button"
                       type="button"
-                      onClick={() => onPlayRange(selectedRedoRange.start as number, selectedRedoRange.end)}
+                      onClick={() => onPlaySelection(selectedRedoRange.start as number, selectedRedoRange.end as number)}
                     >
-                      Listen in context
+                      Play selected words
                     </button>
                     <button
                       className="primary-button"

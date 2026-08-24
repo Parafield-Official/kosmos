@@ -2,6 +2,7 @@ const SEATS = new Set(["narration", "N1", "N2"]);
 const KINDS = new Set(["skip", "insert", "sub", "pause"]);
 const STATUSES = new Set(["open", "done", "ignored"]);
 const SOURCE_KINDS = new Set(["take", "live"]);
+const TIMING_ENGINES = new Set(["manuscript-clock", "whisperx", "whisper.cpp", "manual"]);
 
 function normalizeAlignment(value, chapterId) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -15,6 +16,9 @@ function normalizeAlignment(value, chapterId) {
   }
   if (value.source_kind !== undefined && !SOURCE_KINDS.has(value.source_kind)) {
     throw new Error("Alignment file has an unsupported audio source");
+  }
+  if (value.timing_engine !== undefined && !TIMING_ENGINES.has(value.timing_engine)) {
+    throw new Error("Alignment file has an unsupported timing engine");
   }
   return {
     ...value,

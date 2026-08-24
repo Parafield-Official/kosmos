@@ -5,6 +5,10 @@ const os = require("node:os");
 const crypto = require("node:crypto");
 const { app, BrowserWindow, dialog, ipcMain, protocol, session, shell, systemPreferences } = require("electron");
 const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
+const {
+  alignImportedAudioWithWhisperX,
+  transcribeImportedAudio,
+} = require("./whisperx.cjs");
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
@@ -1090,7 +1094,7 @@ async function readChapterText(folder, project, chapterId) {
   return { chapterId, text, spans: value.spans };
 }
 
-async function saveAlignment(folder, project, chapterId, pickups, transcript, sourceKind) {
+async function saveAlignment(folder, project, chapterId, pickups, transcript, sourceKind, timingEngine) {
   await assertProjectEnvelope(folder, project);
   const chapter = (project.chapters ?? []).find((candidate) => candidate.id === chapterId);
   if (!chapter) {
@@ -1099,13 +1103,19 @@ async function saveAlignment(folder, project, chapterId, pickups, transcript, so
   if (!Array.isArray(pickups)) {
     throw new Error("Alignment pickups must be an array");
   }
-  const normalizedAlignment = normalizeAlignment({ transcript, pickups, source_kind: sourceKind }, chapterId);
+  const normalizedAlignment = normalizeAlignment({
+    transcript,
+    pickups,
+    source_kind: sourceKind,
+    timing_engine: timingEngine,
+  }, chapterId);
   const relativePath = chapter.pickups_path || `alignment/${String(chapter.index).padStart(2, "0")}.json`;
   const value = {
     schema: 1,
     chapter_id: chapterId,
     updated_at: new Date().toISOString(),
     ...(normalizedAlignment.source_kind ? { source_kind: normalizedAlignment.source_kind } : {}),
+    ...(normalizedAlignment.timing_engine ? { timing_engine: normalizedAlignment.timing_engine } : {}),
     transcript: normalizedAlignment.transcript,
     pickups: normalizedAlignment.pickups,
   };
@@ -1185,6 +1195,7 @@ async function resolveBookPickups(folder, project, requests, status) {
       decided.pickups,
       alignment.transcript,
       alignment.source_kind,
+      alignment.timing_engine,
     );
     current = saved.project;
     changedChapters += 1;
@@ -3380,6 +3391,7 @@ ipcMain.handle("project:save-alignment", (_event, payload) => {
     payload.pickups,
     payload.transcript,
     payload.sourceKind,
+    payload.timingEngine,
   );
 });
 ipcMain.handle("project:read-alignment", (_event, payload) => {
@@ -3500,13 +3512,25 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
   }
   await assertProjectFolder(payload.folder);
   const audioPath = projectAudioPath(payload.folder, payload.relativePath);
-  const transcription = await transcribeAudio({
-    audioPath,
-    userDataPath: app.getPath("userData"),
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
-    language: payload.language || "en",
-    requireBundled: app.isPackaged,
+  const transcription = await transcribeImportedAudio({
+    alignWithWhisperX: () => alignImportedAudioWithWhisperX({
+      audioPath,
+      userDataPath: app.getPath("userData"),
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      language: payload.language || "en",
+    }),
+    transcribeWithWhisper: () => transcribeAudio({
+      audioPath,
+      userDataPath: app.getPath("userData"),
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      language: payload.language || "en",
+      requireBundled: app.isPackaged,
+    }),
+    onFallback: (error) => {
+      console.warn(`WhisperX alignment unavailable; using Whisper timestamps: ${error?.message ?? error}`);
+    },
   });
   let silences = [];
   try {

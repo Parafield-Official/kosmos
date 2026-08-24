@@ -24,7 +24,7 @@ interface BoothDeskBridge {
   suggestGlossaryRespells: (payload: ProjectEnvelope) => Promise<RespellSuggestionResult>;
   exportVoiceGuide: (payload: ProjectEnvelope & { frequency?: "paragraph" | "all" }) => Promise<VoiceGuideResult>;
   readChapterText: (payload: ProjectEnvelope & { chapterId: string }) => Promise<ChapterText>;
-  saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[]; sourceKind?: "take" | "live" }) => Promise<ProjectEnvelope>;
+  saveAlignment: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[]; transcript: import("./core/proof/align").TranscriptWord[]; sourceKind?: "take" | "live"; timingEngine?: import("./core/proof/pipeline").ProofTimingEngine }) => Promise<ProjectEnvelope>;
   readAlignment: (payload: ProjectEnvelope & { chapterId: string }) => Promise<AlignmentFile | null>;
   exportMarkers: (payload: ProjectEnvelope & { chapterId: string; pickups: import("./core/project/types").Pickup[] }) => Promise<MarkerExportResult>;
   exportProofReport: (payload: ProjectEnvelope & { chapterId: string; transcript: import("./core/proof/align").TranscriptWord[]; pickups: import("./core/project/types").Pickup[] }) => Promise<ProofReportResult>;
@@ -127,6 +127,7 @@ interface AlignmentFile {
   chapter_id: string;
   updated_at: string;
   source_kind?: "take" | "live";
+  timing_engine?: import("./core/proof/pipeline").ProofTimingEngine;
   transcript: import("./core/proof/align").TranscriptWord[];
   pickups: import("./core/project/types").Pickup[];
 }
@@ -250,7 +251,9 @@ interface BookProof {
 }
 
 interface TranscriptionResult {
-  engine: "whisper.cpp";
+  engine: "whisper.cpp" | "whisperx";
+  timingEngine?: "whisper.cpp" | "whisperx";
+  alignmentFallback?: boolean;
   modelPath: string;
   words: import("./core/proof/align").TranscriptWord[];
   /** Quiet stretches measured from the audio, when the file was on disk. */
