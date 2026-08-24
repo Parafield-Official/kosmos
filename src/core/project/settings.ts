@@ -9,7 +9,7 @@ export const DEFAULT_PROJECT_SETTINGS: Readonly<ProjectSettings> = Object.freeze
   suppressed_words: [],
   teleprompter_theme: "cream",
   teleprompter_font_size: 28,
-  teleprompter_highlight: "word",
+  teleprompter_highlight: "line",
   teleprompter_preset_version: 2,
 });
 
@@ -43,10 +43,11 @@ export function normalizeProjectSettings(value: unknown): ProjectSettings {
     teleprompter_font_size: legacyTeleprompterDefaults
       ? 28
       : Math.round(clampNumber(candidate.teleprompter_font_size, 20, 96, 28)),
-    teleprompter_highlight: candidate.teleprompter_highlight === "line"
+    teleprompter_highlight: candidate.teleprompter_highlight === "word"
+      || candidate.teleprompter_highlight === "line"
       || candidate.teleprompter_highlight === "paragraph"
       ? candidate.teleprompter_highlight
-      : "word",
+      : "line",
     teleprompter_preset_version: 2,
   };
 }
