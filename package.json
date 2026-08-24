@@ -22,6 +22,7 @@
     "pretest": "npm run build:core",
     "test": "vitest run",
     "test:watch": "vitest",
+    "benchmark:line-follow": "jiti scripts/benchmark-line-follow.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run build:core && npm run verify:acx && npm run verify:delivery && npm run verify:restoration && npm run verify:loudness && npm run verify:markers && npm run verify:packet && npm run verify:collab && npm run verify:proof && npm run verify:book",
     "verify:acx": "node scripts/verify-acx.mjs",
