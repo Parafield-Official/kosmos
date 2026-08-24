@@ -2842,7 +2842,7 @@ function ProjectHome({
       {punchPickup ? (
         <div className="modal-backdrop" role="presentation">
           <section
-            className="chapter-composer punch-recorder"
+            className="chapter-composer punch-recorder pickup-session-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="punch-title"
@@ -2853,15 +2853,23 @@ function ProjectHome({
               }
             }}
           >
-            <p className="phase-label">
-              {pickupSession
-                ? `Pickup ${pickupSession.completedTasks + 1} of ${pickupSessionTotalTasks}`
-                : "Pickup recording"}
-            </p>
-            <h2 id="punch-title">{pickupSession ? "Pickup session" : "Read this line again"}</h2>
+            <header className="pickup-dialog-header">
+              <div>
+                <p className="phase-label">
+                  {pickupSession
+                    ? `Pickup ${pickupSession.completedTasks + 1} of ${pickupSessionTotalTasks}`
+                    : "Single pickup"}
+                </p>
+                <h2 id="punch-title">Record this line</h2>
+              </div>
+              <button className="pickup-dialog-close" type="button" aria-label="Close pickup recorder" onClick={closePickupSession}>×</button>
+            </header>
             {pickupSession ? (
-              <div className="pickup-session-progress" aria-label={`${pickupSession.completedTasks} of ${pickupSessionTotalTasks} pickups applied`}>
-                <span style={{ width: `${pickupSessionTotalTasks > 0 ? (pickupSession.completedTasks / pickupSessionTotalTasks) * 100 : 0}%` }} />
+              <div
+                className="pickup-session-progress"
+                aria-label={`Pickup ${pickupSession.completedTasks + 1} of ${pickupSessionTotalTasks}`}
+              >
+                <span style={{ width: `${pickupSessionTotalTasks > 0 ? ((pickupSession.completedTasks + 1) / pickupSessionTotalTasks) * 100 : 0}%` }} />
               </div>
             ) : null}
             {punchPickup.line_text ? (
@@ -2869,23 +2877,19 @@ function ProjectHome({
                 {punchPickup.line_text}
               </p>
             ) : (
-              <p className="manager-help">
+              <p className="manager-help pickup-missing-line">
                 This pickup was filed before Kosmos recorded lines, so it only knows the word
                 “{punchPickup.expected}”. Read the whole sentence it sits in anyway — a word on its own
                 will not match the take.
               </p>
             )}
-            <p className="manager-help">
-              Read the whole line, not just “{punchPickup.expected}”. A single word carries the pace and
-              pitch of the session it was recorded in, so the edit is audible; a full line joins the take
-              at a breath. Play the lead-in first and come in on the tone you hear.
-            </p>
-            <p className="recorder-honesty">
-              Your original recording is safe. Nothing changes until you apply the pickup.
-            </p>
+            <div className="pickup-cue-row">
+              <span>Match the pace and tone. Read the full sentence.</span>
+              {punchPickup.expected ? <strong>Fix: “{punchPickup.expected}”</strong> : null}
+            </div>
             <div className="punch-preroll">
               <button
-                className="secondary-button"
+                className="pickup-leadin-button"
                 type="button"
                 disabled={!window.boothDesk || folder === "(browser preview)"}
                 onClick={() => void playPickupPreroll(punchPickup)}
@@ -2893,8 +2897,13 @@ function ProjectHome({
                 Play the {PICKUP_PREROLL_SECONDS}s lead-in (L)
               </button>
               <span>
-                Replacing {formatTime(punchBounds?.start ?? punchPickup.t_start)}–{formatTime(punchBounds?.end ?? punchPickup.t_end)}
+                Source {formatTime(punchBounds?.start ?? punchPickup.t_start)}–{formatTime(punchBounds?.end ?? punchPickup.t_end)}
               </span>
+            </div>
+            <div className="pickup-safety-note">
+              <span aria-hidden="true">✓</span>
+              <strong>Original safe</strong>
+              <span>Nothing changes until you choose Apply.</span>
             </div>
             <RecorderPanel
               label={`Punch at ${formatTime(punchBounds?.start ?? punchPickup.t_start)}`}
@@ -2934,14 +2943,14 @@ function ProjectHome({
                 }
               }}
             />
-            <div className="actions">
+            <footer className="pickup-session-footer">
               {pickupSession ? (
-                <button className="secondary-button" type="button" onClick={skipPickupSessionItem}>Skip this session</button>
+                <button className="pickup-footer-button" type="button" onClick={skipPickupSessionItem}>Skip this pickup</button>
               ) : null}
-              <button className="secondary-button" type="button" onClick={closePickupSession}>
-                {pickupSession ? "End session" : "Cancel"}
+              <button className="pickup-footer-button quiet" type="button" onClick={closePickupSession}>
+                {pickupSession ? "Exit session" : "Cancel"}
               </button>
-            </div>
+            </footer>
           </section>
         </div>
       ) : null}
@@ -5769,18 +5778,41 @@ function RecorderPanel({
     }
   }
 
+  const flowStep = contextUrls ? 3 : pendingWav ? 2 : 1;
+  const processingLabel = contextUrls
+    ? "Applying pickup…"
+    : pendingWav
+      ? "Building the in-context comparison…"
+      : "Preparing your take…";
+
   return (
     <section
       ref={panelRef}
-      className="recorder-panel"
+      className={onPreview ? "recorder-panel pickup-recorder-panel" : "recorder-panel"}
       aria-label={label}
       tabIndex={-1}
       onKeyDown={handleRecorderShortcut}
     >
+      {onPreview ? (
+        <ol className="pickup-flow-steps" aria-label="Pickup workflow">
+          {["Record", "Compare", "Apply"].map((step, index) => {
+            const number = index + 1;
+            const state = number < flowStep ? "complete" : number === flowStep ? "active" : "upcoming";
+            return (
+              <li key={step} className={state} aria-current={number === flowStep ? "step" : undefined}>
+                <span>{number < flowStep ? "✓" : number}</span><strong>{step}</strong>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
       <div className="recorder-heading">
         <div>
-          <p className="card-kicker">Recording</p>
-          <h4>{label}</h4>
+          <p className="card-kicker">
+            {status === "recording" ? "Recording now" : status === "paused" ? "Recording paused" : `Step ${flowStep}`}
+          </p>
+          <h4>{onPreview ? (flowStep === 1 ? "Capture the pickup" : flowStep === 2 ? "Check your performance" : "Hear the actual edit") : label}</h4>
+          {onPreview ? <span className="pickup-recorder-location">{label}</span> : null}
         </div>
         <time>{formatTime(seconds)}</time>
       </div>
@@ -5788,50 +5820,75 @@ function RecorderPanel({
         <span style={{ width: `${Math.round(level * 100)}%` }} />
       </div>
       <div className="recorder-actions">
-        <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing" || status === "review" || status === "comparison"} onClick={() => void start()}>
-          Record{onPreview ? " (R)" : ""}
-        </button>
-        <button type="button" disabled={status !== "recording"} onClick={pause}>Pause</button>
-        <button type="button" disabled={status !== "paused"} onClick={resume}>Resume</button>
-        <button type="button" disabled={status !== "recording" && status !== "paused"} onClick={stop}>
-          {status === "processing" ? "Saving…" : status === "review" ? "Review take" : "Stop & review"}
-        </button>
+        {onPreview ? (
+          <>
+            {(status === "idle" || status === "error") ? (
+              <button className="pickup-record-trigger" type="button" disabled={disabled} onClick={() => void start()}>
+                <span className="record-dot" aria-hidden="true" /> Start recording <kbd>R</kbd>
+              </button>
+            ) : null}
+            {status === "recording" ? (
+              <>
+                <button className="pickup-control-button" type="button" onClick={pause}>Pause <kbd>Space</kbd></button>
+                <button className="pickup-stop-button" type="button" onClick={stop}>Stop & review <kbd>S</kbd></button>
+              </>
+            ) : null}
+            {status === "paused" ? (
+              <>
+                <button className="pickup-control-button" type="button" onClick={resume}>Resume <kbd>Space</kbd></button>
+                <button className="pickup-stop-button" type="button" onClick={stop}>Stop & review <kbd>S</kbd></button>
+              </>
+            ) : null}
+            {status === "processing" ? <div className="pickup-processing" role="status">{processingLabel}</div> : null}
+          </>
+        ) : (
+          <>
+            <button type="button" disabled={disabled || status === "recording" || status === "paused" || status === "processing" || status === "review" || status === "comparison"} onClick={() => void start()}>Record</button>
+            <button type="button" disabled={status !== "recording"} onClick={pause}>Pause</button>
+            <button type="button" disabled={status !== "paused"} onClick={resume}>Resume</button>
+            <button type="button" disabled={status !== "recording" && status !== "paused"} onClick={stop}>Stop & review</button>
+          </>
+        )}
       </div>
       {status === "review" && pendingUrl ? (
         <div className="recorder-review">
-          <p className="card-kicker">Review your take</p>
+          <div className="pickup-review-heading"><span>Pickup take</span><strong>Does the performance match?</strong></div>
           <audio controls preload="metadata" src={pendingUrl} />
           <div className="recorder-review-actions">
             <button type="button" className="primary-button" onClick={() => void (onPreview ? previewTake() : confirmTake())}>
-              {onPreview ? "Preview in chapter (P)" : "Use this take"}
+              {onPreview ? "Compare in context" : "Use this take"}{onPreview ? <kbd>P</kbd> : null}
             </button>
-            <button type="button" className="secondary-button" onClick={discardTake}>{onPreview ? "Record another" : "Discard"}</button>
+            <button type="button" className="secondary-button" onClick={discardTake}>{onPreview ? "Record again" : "Discard"}</button>
           </div>
         </div>
       ) : null}
       {status === "comparison" && contextUrls ? (
         <div className="recorder-review pickup-context-comparison">
-          <p className="card-kicker">Compare in the same context</p>
-          <label>
-            <strong>Current take in context</strong>
-            <audio controls preload="metadata" src={contextUrls.current} />
-          </label>
-          <label>
-            <strong>With pickup in context</strong>
-            <audio controls preload="metadata" src={contextUrls.patched} />
-          </label>
-          <p className="recorder-honesty">Your original recording is safe. Nothing changes until you apply the pickup.</p>
+          <div className="pickup-review-heading"><span>Same surrounding audio</span><strong>Which join sounds natural?</strong></div>
+          <div className="pickup-compare-grid">
+            <label>
+              <span>Before</span>
+              <strong>Current take</strong>
+              <audio controls preload="metadata" src={contextUrls.current} />
+            </label>
+            <label className="candidate">
+              <span>After</span>
+              <strong>With your pickup</strong>
+              <audio controls preload="metadata" src={contextUrls.patched} />
+            </label>
+          </div>
           <div className="recorder-review-actions">
-            <button type="button" className="primary-button" onClick={() => void confirmTake()}>{applyLabel} (A)</button>
-            <button type="button" className="secondary-button" onClick={discardTake}>Record another (N)</button>
+            <button type="button" className="primary-button pickup-apply-button" onClick={() => void confirmTake()}>{applyLabel} <kbd>A</kbd></button>
+            <button type="button" className="secondary-button" onClick={discardTake}>Record again <kbd>N</kbd></button>
           </div>
         </div>
       ) : null}
-      <p className="recorder-honesty">
-        {onPreview
-          ? "Shortcuts: L lead-in · R record · Space pause/resume · S stop · P preview · A apply · N another take."
-          : "Listen before saving. You can keep this take or record another one."}
-      </p>
+      {onPreview ? (
+        <details className="pickup-shortcuts">
+          <summary>Keyboard shortcuts</summary>
+          <p><kbd>L</kbd> lead-in <kbd>R</kbd> record <kbd>Space</kbd> pause <kbd>S</kbd> stop <kbd>P</kbd> compare <kbd>A</kbd> apply <kbd>N</kbd> again</p>
+        </details>
+      ) : <p className="recorder-honesty">Listen before saving. You can keep this take or record another one.</p>}
       {error ? <p className="recorder-error">{error}</p> : null}
     </section>
   );
