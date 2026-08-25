@@ -1,4 +1,4 @@
-const { createLiveTape } = require("./live-tape.cjs");
+const { createLiveTape, normalizeLiveTapePcm } = require("./live-tape.cjs");
 const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
 
 describe("main-process booth tape", () => {
@@ -43,6 +43,26 @@ describe("main-process booth tape", () => {
     expect(snapshot.samples.length).toBe(24_000);
     expect(snapshot.samples[19_999]).toBe(19_999);
     expect(snapshot.samples[20_000]).toBe(-1);
+  });
+
+  it("seeds a continued session with the saved booth tape before appending", () => {
+    const tape = createLiveTape();
+    const saved = new Float32Array(16_000).fill(0.1);
+    tape.begin({ chapterId: "ch01", initialSamples: saved });
+    saved.fill(0.9);
+
+    expect(tape.seconds()).toBeCloseTo(1, 5);
+    tape.append(new Float32Array(8_000).fill(-0.2));
+    const continued = tape.take();
+    expect(continued.samples.length).toBe(24_000);
+    expect(continued.samples[0]).toBeCloseTo(0.1, 5);
+    expect(continued.samples[16_000]).toBeCloseTo(-0.2, 5);
+  });
+
+  it("normalizes an older saved tape to the live mono clock before continuing", () => {
+    const stereo = Float32Array.from([0.8, 0.2, -0.4, 0.2]);
+    expect(normalizeLiveTapePcm(stereo, 16_000, 2)).toEqual(Float32Array.from([0.5, -0.1]));
+    expect(normalizeLiveTapePcm(new Float32Array(48_000), 48_000, 1)).toHaveLength(16_000);
   });
 
   it("writes a WAV Review can open", () => {

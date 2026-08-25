@@ -44,7 +44,7 @@ interface BoothDeskBridge {
     status: import("./core/project/types").PickupStatus;
   }) => Promise<{ folder: string; project: import("./core/project/types").ProjectFile; changedChapters: number }>;
   transcribe: (payload: { folder: string; relativePath: string; language?: string }) => Promise<TranscriptionResult>;
-  startLiveTranscription: (payload?: ProjectEnvelope & { chapterId?: string }) => Promise<{ persistent: boolean; acceleration: string; engine?: string; streaming?: boolean; backcheck?: string }>;
+  startLiveTranscription: (payload?: ProjectEnvelope & { chapterId?: string; resumeExisting?: boolean }) => Promise<{ persistent: boolean; acceleration: string; engine?: string; streaming?: boolean; backcheck?: string; resumedSeconds?: number }>;
   restartLiveTranscription: (payload: { truncateToSeconds: number }) => Promise<{ persistent: boolean; acceleration: string; engine?: string; streaming?: boolean; backcheck?: string; truncatedToSeconds: number }>;
   stopLiveTranscription: () => Promise<{ stopped: boolean; live_audio_path?: string; folder?: string; project?: import("./core/project/types").ProjectFile; tapeError?: string }>;
   transcribeBuffer: (payload: { audioBase64?: string; pcmBase64?: string; mimeType?: string; language?: string; engine?: string }) => Promise<TranscriptionResult>;

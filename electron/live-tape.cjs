@@ -17,8 +17,13 @@ function createLiveTape() {
   return {
     begin(session = {}) {
       chapterId = typeof session.chapterId === "string" ? session.chapterId : "";
-      chunks = [];
-      sampleCount = 0;
+      const initial = session.initialSamples instanceof Float32Array
+        ? new Float32Array(session.initialSamples)
+        : Array.isArray(session.initialSamples)
+          ? Float32Array.from(session.initialSamples)
+          : new Float32Array(0);
+      chunks = initial.length > 0 ? [initial] : [];
+      sampleCount = initial.length;
     },
     append(samples) {
       if (!samples || samples.length === 0) {
@@ -79,8 +84,38 @@ function float32FromPcmBase64(base64) {
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
 }
 
+/** Convert a previously saved tape to the 16 kHz mono clock used by live ingest. */
+function normalizeLiveTapePcm(samples, sampleRate, channels) {
+  const source = samples instanceof Float32Array ? samples : Float32Array.from(samples ?? []);
+  const safeChannels = Number.isInteger(channels) && channels > 0 ? channels : 1;
+  const frameCount = Math.floor(source.length / safeChannels);
+  const mono = new Float32Array(frameCount);
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    let sum = 0;
+    for (let channel = 0; channel < safeChannels; channel += 1) {
+      sum += source[frame * safeChannels + channel] ?? 0;
+    }
+    mono[frame] = sum / safeChannels;
+  }
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || sampleRate === LIVE_TAPE_SAMPLE_RATE || mono.length === 0) {
+    return mono;
+  }
+  const output = new Float32Array(Math.max(1, Math.round(mono.length * LIVE_TAPE_SAMPLE_RATE / sampleRate)));
+  const ratio = sampleRate / LIVE_TAPE_SAMPLE_RATE;
+  for (let index = 0; index < output.length; index += 1) {
+    const position = index * ratio;
+    const left = Math.floor(position);
+    const fraction = position - left;
+    const a = mono[Math.min(mono.length - 1, left)] ?? 0;
+    const b = mono[Math.min(mono.length - 1, left + 1)] ?? a;
+    output[index] = a + (b - a) * fraction;
+  }
+  return output;
+}
+
 module.exports = {
   LIVE_TAPE_SAMPLE_RATE,
   createLiveTape,
   float32FromPcmBase64,
+  normalizeLiveTapePcm,
 };

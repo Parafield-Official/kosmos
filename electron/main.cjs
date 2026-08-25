@@ -41,7 +41,7 @@ const {
 } = require("./punch.cjs");
 const { normalizeAlignment } = require("./alignment.cjs");
 const { decodeLiveAudioPayload } = require("./live-audio.cjs");
-const { createLiveTape } = require("./live-tape.cjs");
+const { createLiveTape, normalizeLiveTapePcm } = require("./live-tape.cjs");
 const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
@@ -3543,8 +3543,27 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
   return { ...transcription, silences };
 });
 ipcMain.handle("proof:start-live", async (_event, payload) => {
+  let resumedSeconds = 0;
   if (payload?.chapterId && payload?.folder && payload?.project) {
-    boothTape.begin({ chapterId: payload.chapterId });
+    let initialSamples = new Float32Array(0);
+    if (payload.resumeExisting === true) {
+      const chapter = payload.project.chapters?.find((candidate) => candidate.id === payload.chapterId);
+      if (!chapter?.live_audio_path) {
+        throw new Error("There is no saved booth read to continue.");
+      }
+      const decoded = await decodeAudioPcm(payload.folder, chapter.live_audio_path);
+      const buffer = decoded.pcm.buffer.slice(
+        decoded.pcm.byteOffset,
+        decoded.pcm.byteOffset + decoded.pcm.byteLength,
+      );
+      initialSamples = normalizeLiveTapePcm(
+        new Float32Array(buffer),
+        decoded.sampleRate,
+        decoded.channels,
+      );
+      resumedSeconds = initialSamples.length / 16_000;
+    }
+    boothTape.begin({ chapterId: payload.chapterId, initialSamples });
     boothTapeContext = {
       folder: payload.folder,
       project: payload.project,
@@ -3552,13 +3571,13 @@ ipcMain.handle("proof:start-live", async (_event, payload) => {
     };
   }
   try {
-    return await warmLiveTranscription();
+    return { ...(await warmLiveTranscription()), resumedSeconds };
   } catch (error) {
     // Starting narration must remain usable with the existing CLI fallback.
     // The first live window will retry the persistent server path and then
     // fall back again if this machine has no server runtime.
     console.warn(`Persistent Whisper warm-up skipped: ${error?.message ?? error}`);
-    return { persistent: false, acceleration: "CLI fallback" };
+    return { persistent: false, acceleration: "CLI fallback", resumedSeconds };
   }
 });
 ipcMain.handle("proof:restart-live", async (_event, payload) => {

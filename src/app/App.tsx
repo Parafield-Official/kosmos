@@ -116,6 +116,7 @@ import {
 } from "../core/teleprompter/model";
 import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, manualLivePickup, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { boothShortcutAction } from "../core/teleprompter/booth-controls";
+import { recordedManuscriptCoverage, stoppedReadFlow } from "../core/teleprompter/recording-flow";
 import {
   createInputQuality,
   describeInputQuality,
@@ -2653,6 +2654,7 @@ function ProjectHome({
       spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
       glossary={project.glossary ?? []}
       proof={proof}
+      reviewSourceKind={reviewAudioSource?.kind ?? null}
       acxReport={acxReport}
       audioUrl={audioUrl}
       modelAvailable={modelAvailable}
@@ -2673,6 +2675,12 @@ function ProjectHome({
       onProof={async (id, options) => {
         const chapter = project.chapters.find((item) => item.id === id);
         return chapter ? runProof(chapter, options) : false;
+      }}
+      onSelectReviewRecording={async (id, sourceKind) => {
+        const chapter = project.chapters.find((item) => item.id === id);
+        if (!chapter) return false;
+        setReviewSourceKind(sourceKind);
+        return runProof(chapter, { preferLive: sourceKind === "live" });
       }}
       onCheckAudio={(id) => {
         const chapter = project.chapters.find((item) => item.id === id);
@@ -2926,7 +2934,10 @@ function ProjectHome({
                 }}
                 reviewSourceKind={reviewAudioSource?.kind ?? null}
                 checkedSourceKind={checkedSourceKind}
-                onReviewSourceKind={setReviewSourceKind}
+                onReviewSourceKind={(sourceKind) => {
+                  setReviewSourceKind(sourceKind);
+                  void runProof(selectedChapter, { preferLive: sourceKind === "live" });
+                }}
                 onAttach={() => void attachAudio(selectedChapter)}
                 onOpenBooth={() => {
                   setTeleprompterMode(true);
@@ -3312,6 +3323,7 @@ function Teleprompter({
   spans,
   glossary,
   proof,
+  reviewSourceKind,
   acxReport,
   audioUrl,
   modelAvailable,
@@ -3327,6 +3339,7 @@ function Teleprompter({
   onSelectChapter,
   onAttach,
   onProof,
+  onSelectReviewRecording,
   onCheckAudio,
   onReview,
   onClose,
@@ -3347,6 +3360,7 @@ function Teleprompter({
   spans: ScriptSpan[];
   glossary: GlossaryEntry[];
   proof: ProofResult | null;
+  reviewSourceKind: ProofSourceKind | null;
   acxReport: AcxReport | null;
   audioUrl: string | null;
   modelAvailable: boolean | null;
@@ -3362,6 +3376,7 @@ function Teleprompter({
   onSelectChapter: (id: string) => void;
   onAttach: (chapterId: string) => void;
   onProof: (chapterId: string, options?: { preferLive?: boolean }) => Promise<boolean>;
+  onSelectReviewRecording: (chapterId: string, sourceKind: ProofSourceKind) => Promise<boolean>;
   onCheckAudio: (chapterId: string) => void;
   onReview: () => void;
   onClose: () => void;
@@ -3432,6 +3447,9 @@ function Teleprompter({
   });
   const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "counting" | "restarting">("idle");
   const [liveBoothNotice, setLiveBoothNotice] = useState<string | null>(null);
+  const [replaceReadConfirmationOpen, setReplaceReadConfirmationOpen] = useState(false);
+  const [reviewRecordingChooserOpen, setReviewRecordingChooserOpen] = useState(false);
+  const [reviewSelectionBusy, setReviewSelectionBusy] = useState<ProofSourceKind | null>(null);
   // The booth tape for this chapter, so a narrator can hear back what they just
   // read without leaving the booth for Review. `tapeTake` counts the reads
   // recorded since this chapter was opened: zero means the tape on disk is from
@@ -3457,6 +3475,7 @@ function Teleprompter({
   const [readingFont, setReadingFont] = useState<"serif" | "sans" | "hyperlegible">("serif");
   const [lineSpacing, setLineSpacing] = useState(1.8);
   const [progress, setProgress] = useState(0);
+  const [savedResumeCursor, setSavedResumeCursor] = useState<number | null>(null);
   // Visual rows of the paragraph being read, for line-by-line highlighting.
   const [wordRows, setWordRows] = useState<PromptWordRange[]>([]);
   // Bumped whenever anything that could rewrap the text changes, so measured
@@ -3507,6 +3526,12 @@ function Teleprompter({
     return [...ordered, ...chapterGlossary.filter((entry) => !seen.has(entry.id))];
   }, [chapterGlossary, pronunciationCues]);
   const chapterManuscript = useMemo(() => spans.map((span) => span.text).join(""), [spans]);
+  const savedReadCoverage = useMemo(
+    () => reviewSourceKind === "live" && proof
+      ? recordedManuscriptCoverage(chapterManuscript, proof.transcript)
+      : progress,
+    [chapterManuscript, progress, proof, reviewSourceKind],
+  );
   const pronunciationChecks = useMemo(
     () => proof
       ? checkChapterPronunciations({
@@ -3531,9 +3556,11 @@ function Teleprompter({
   }, {}), [spans]);
   const currentChapterStatus = promptChapterStatus(chapter);
   const savedPositionKey = `booth-desk:teleprompter-position:${chapterId}`;
+  const savedResumeKey = `booth-desk:teleprompter-resume:${chapterId}`;
   const lineRefs = useRef(new Map<number, HTMLParagraphElement>());
   const wordRefs = useRef(new Map<number, HTMLSpanElement>());
   const positionRestoreRef = useRef(false);
+  const savedResumeCursorRef = useRef<number | null>(null);
   const liveStateRef = useRef(liveState);
   const liveEnabledRef = useRef(false);
   const livePausedRef = useRef(false);
@@ -3547,6 +3574,7 @@ function Teleprompter({
   const liveSamplesRef = useRef<Float32Array[]>([]);
   const liveTapeRef = useRef<Float32Array[]>([]);
   const liveTapeSampleCountRef = useRef(0);
+  const liveTapeBaseSecondsRef = useRef(0);
   const liveTapeChapterIdRef = useRef(chapterId);
   const onSaveLiveTapeRef = useRef(onSaveLiveTape);
   const onLiveTapeSavedRef = useRef(onLiveTapeSaved);
@@ -3558,6 +3586,7 @@ function Teleprompter({
   const liveRequestRef = useRef(false);
   const liveMatchStateRef = useRef<LiveMatchState>({ cursor: 0, lastHeardEnd: 0 });
   const liveManuscriptTimelineRef = useRef<Map<number, TranscriptWord>>(new Map());
+  const livePriorTimelineRef = useRef<TranscriptWord[]>([]);
   // The word the read stopped on, read by the capture callbacks that run
   // outside React's render. Null whenever the page is free to move.
   const liveHaltRef = useRef<LiveMismatch | null>(null);
@@ -3566,6 +3595,7 @@ function Teleprompter({
   const liveDismissedRef = useRef<string[]>([]);
   const liveStartingRef = useRef(false);
   const startFromBeginningRef = useRef(false);
+  const resumeExistingRef = useRef(false);
   const liveMeterUpdateRef = useRef(0);
   const liveInputQualityRef = useRef<LiveInputQuality>(createInputQuality());
   const liveSessionRef = useRef(0);
@@ -3698,6 +3728,32 @@ function Teleprompter({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [lines.length, savedPositionKey]);
+
+  useEffect(() => {
+    let saved: number | null = null;
+    try {
+      const raw = window.localStorage.getItem(savedResumeKey);
+      const candidate = raw === null ? Number.NaN : Number(raw);
+      saved = Number.isFinite(candidate) && candidate >= 0
+        ? Math.min(expectedWords.length, Math.floor(candidate))
+        : null;
+    } catch {
+      saved = null;
+    }
+    savedResumeCursorRef.current = saved;
+    setSavedResumeCursor(saved);
+  }, [expectedWords.length, savedResumeKey]);
+
+  function rememberResumeCursor(cursor: number) {
+    const safe = Math.min(expectedWordsRef.current.length, Math.max(0, Math.floor(cursor)));
+    savedResumeCursorRef.current = safe;
+    setSavedResumeCursor(safe);
+    try {
+      window.localStorage.setItem(savedResumeKey, String(safe));
+    } catch {
+      // The current page remains the fallback when local storage is unavailable.
+    }
+  }
 
   function trackReadingProgress() {
     const container = scrollRef.current;
@@ -3951,8 +4007,8 @@ function Teleprompter({
     const cue = buildLivePunchCue(
       liveTapeRef.current,
       liveSampleRateRef.current,
-      plan.cueFromSeconds,
-      plan.punchAtSeconds,
+      Math.max(0, plan.cueFromSeconds - liveTapeBaseSecondsRef.current),
+      Math.max(0, plan.punchAtSeconds - liveTapeBaseSecondsRef.current),
     );
     const tracks = stream.getAudioTracks();
     livePunchBusyRef.current = true;
@@ -3974,7 +4030,7 @@ function Teleprompter({
       liveTapeRef.current = truncateLiveTape(
         liveTapeRef.current,
         liveSampleRateRef.current,
-        punchAtSeconds,
+        Math.max(0, punchAtSeconds - liveTapeBaseSecondsRef.current),
       );
       liveTapeSampleCountRef.current = liveTapeRef.current.reduce((total, chunk) => total + chunk.length, 0);
       liveSamplesRef.current = [];
@@ -4116,6 +4172,8 @@ function Teleprompter({
     liveVisualCursorRef.current = liveCursor;
     liveStreamSecondsRef.current = 0;
     liveStreamClockOffsetRef.current = 0;
+    liveTapeBaseSecondsRef.current = 0;
+    livePriorTimelineRef.current = [];
     livePunchBusyRef.current = false;
     setLivePunchRollStatus("idle");
     setLiveBoothNotice(null);
@@ -4134,9 +4192,11 @@ function Teleprompter({
       chunks: liveTapeRef.current,
       sampleRate: liveSampleRateRef.current,
       chapterId: liveTapeChapterIdRef.current,
+      baseSeconds: liveTapeBaseSecondsRef.current,
     };
     liveTapeRef.current = [];
     liveTapeSampleCountRef.current = 0;
+    liveTapeBaseSecondsRef.current = 0;
     return tape;
   }
 
@@ -4145,9 +4205,10 @@ function Teleprompter({
    * the chapter on screen. Leaving mid-read saves the chapter that was being
    * read, which by then is not the one being shown.
    */
-  function markTapeRecorded(tapeChapterId: string) {
+  function markTapeRecorded(tapeChapterId: string, resumeCursor: number) {
     if (tapeChapterId === chapterIdRef.current) {
       setTapeTake((take) => take + 1);
+      rememberResumeCursor(resumeCursor);
     }
   }
 
@@ -4168,10 +4229,13 @@ function Teleprompter({
   }
 
   function takeLiveManuscriptTimeline(): TranscriptWord[] {
-    const ordered = [...liveManuscriptTimelineRef.current.entries()]
+    const current = [...liveManuscriptTimelineRef.current.entries()]
       .sort(([left], [right]) => left - right)
       .map(([, word]) => word);
+    const ordered = [...livePriorTimelineRef.current, ...current]
+      .sort((left, right) => left.start - right.start || left.end - right.end);
     liveManuscriptTimelineRef.current = new Map();
+    livePriorTimelineRef.current = [];
     let previousStart = -1;
     let previousEnd = -1;
     return ordered.filter((word) => {
@@ -4190,9 +4254,12 @@ function Teleprompter({
    * read back as though it were the one just finished.
    */
   async function persistTakenTape(
-    tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string },
+    tape: { chunks: Float32Array[]; sampleRate: number; chapterId: string; baseSeconds: number },
     timeline: TranscriptWord[],
   ): Promise<boolean> {
+    if (tape.baseSeconds > 0) {
+      throw new Error("The continued read could not be appended. The previously saved booth tape was kept unchanged.");
+    }
     const samples = concatLiveTape(tape.chunks);
     if (!shouldKeepLiveTape(samples.length, tape.sampleRate)) {
       return false;
@@ -4204,6 +4271,7 @@ function Teleprompter({
 
   async function stopLiveCaptureImmediately() {
     liveStoppingRef.current = true;
+    const resumeCursor = liveMatchStateRef.current.cursor;
     liveSessionRef.current += 1;
     liveEnabledRef.current = false;
     disconnectLiveInput();
@@ -4213,13 +4281,13 @@ function Teleprompter({
     resetLiveCaptureState();
     liveStoppingRef.current = false;
     if (stopped?.folder && stopped.project) {
-      markTapeRecorded(tape.chapterId);
+      markTapeRecorded(tape.chapterId, resumeCursor);
       await onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project }, tape.chapterId, timeline);
       return;
     }
     return persistTakenTape(tape, timeline).then((kept) => {
       if (kept) {
-        markTapeRecorded(tape.chapterId);
+        markTapeRecorded(tape.chapterId, resumeCursor);
       }
     }).catch((reason) => {
       setLiveError(messageFor(reason, stopped?.tapeError || "Could not keep a booth tape of this read."));
@@ -4237,6 +4305,7 @@ function Teleprompter({
 
     liveStoppingRef.current = true;
     const sessionId = liveSessionRef.current;
+    const resumeCursor = liveMatchStateRef.current.cursor;
     disconnectLiveInput();
     setLiveStatus("processing");
     try {
@@ -4271,13 +4340,13 @@ function Teleprompter({
     resetLiveCaptureState();
     liveStoppingRef.current = false;
     if (stopped?.folder && stopped.project) {
-      markTapeRecorded(tape.chapterId);
+      markTapeRecorded(tape.chapterId, resumeCursor);
       await onLiveTapeSavedRef.current({ folder: stopped.folder, project: stopped.project }, tape.chapterId, timeline);
       return;
     }
     try {
       if (await persistTakenTape(tape, timeline)) {
-        markTapeRecorded(tape.chapterId);
+        markTapeRecorded(tape.chapterId, resumeCursor);
       }
     } catch (reason) {
       setLiveError(messageFor(reason, stopped?.tapeError || "Could not keep a booth tape of this read."));
@@ -4427,6 +4496,9 @@ function Teleprompter({
     setTapeTake(0);
     automaticPronunciationTakeRef.current = "";
     setPronunciationBriefingOpen(false);
+    setReplaceReadConfirmationOpen(false);
+    setReviewRecordingChooserOpen(false);
+    setReviewSelectionBusy(null);
     setPronunciationCheckState("idle");
     setPronunciationCheckSource(null);
     liveMatchStateRef.current = { cursor: 0, lastHeardEnd: 0 };
@@ -4934,7 +5006,7 @@ function Teleprompter({
     gain.connect(context.destination);
   }
 
-  async function startLiveCapture(options?: { fromBeginning?: boolean }) {
+  async function startLiveCapture(options?: { fromBeginning?: boolean; resumeExisting?: boolean }) {
     if (liveStartingRef.current || liveStoppingRef.current || liveEnabledRef.current || liveStateRef.current.dimmed) {
       return;
     }
@@ -4956,6 +5028,13 @@ function Teleprompter({
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("Microphone access is not available in this app window.");
       }
+      const priorAlignment = options?.resumeExisting
+        ? await window.boothDesk.readAlignment({
+            folder: liveTapeContextRef.current.folder,
+            project: liveTapeContextRef.current.project,
+            chapterId: chapterIdRef.current,
+          })
+        : null;
       // Load the persistent local recognizer while the button visibly says
       // "Starting". Subsequent microphone windows reuse that loaded model;
       // the main process releases it when this session stops.
@@ -4963,7 +5042,16 @@ function Teleprompter({
         folder: liveTapeContextRef.current.folder,
         project: liveTapeContextRef.current.project,
         chapterId: chapterIdRef.current,
+        resumeExisting: options?.resumeExisting === true,
       });
+      const resumedSeconds = options?.resumeExisting ? Math.max(0, warmed?.resumedSeconds ?? 0) : 0;
+      if (options?.resumeExisting && resumedSeconds <= 0) {
+        throw new Error("The saved booth read could not be loaded for continuation. It was not replaced.");
+      }
+      liveTapeBaseSecondsRef.current = resumedSeconds;
+      livePriorTimelineRef.current = priorAlignment?.source_kind === "live"
+        ? [...priorAlignment.transcript]
+        : [];
       liveFollowStreamRef.current = Boolean(warmed?.streaming);
       // A Parakeet follow server can still warm successfully when Whisper
       // failed. Keep voice-follow usable, but make the missing proofreader
@@ -5000,11 +5088,12 @@ function Teleprompter({
       liveTapeChapterIdRef.current = chapterIdRef.current;
       liveTapeRef.current = [];
       liveTapeSampleCountRef.current = 0;
+      liveTapeBaseSecondsRef.current = resumedSeconds;
       liveManuscriptTimelineRef.current = new Map();
       liveSamplesRef.current = [];
       liveSampleCountRef.current = 0;
-      liveCapturedSecondsRef.current = 0;
-      liveBufferStartSecondsRef.current = 0;
+      liveCapturedSecondsRef.current = resumedSeconds;
+      liveBufferStartSecondsRef.current = resumedSeconds;
       liveSentRef.current = false;
       liveQcBufferRef.current = createLiveQcBuffer();
       liveWhisperPromiseRef.current = null;
@@ -5018,13 +5107,17 @@ function Teleprompter({
       if (options?.fromBeginning) {
         scrollRef.current?.scrollTo({ top: 0 });
       }
-      const startingCursor = options?.fromBeginning ? 0 : visibleLiveCursor();
+      const startingCursor = options?.fromBeginning
+        ? 0
+        : options?.resumeExisting && savedResumeCursorRef.current !== null
+          ? savedResumeCursorRef.current
+          : visibleLiveCursor();
       setLiveStartCursor(startingCursor);
-      liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: 0 };
+      liveMatchStateRef.current = { cursor: startingCursor, lastHeardEnd: resumedSeconds };
       liveVisualCursorRef.current = startingCursor;
       liveLeadRef.current = createLeadState(startingCursor, performance.now());
       liveStreamSecondsRef.current = 0;
-      liveStreamClockOffsetRef.current = 0;
+      liveStreamClockOffsetRef.current = resumedSeconds;
       liveSpeechAtRef.current = null;
       liveHaltRef.current = null;
       liveHaltResumeIndexRef.current = -1;
@@ -5042,7 +5135,9 @@ function Teleprompter({
       setLiveWhisperLastError(null);
       setLiveWhisperLastWords("");
       setLiveDetectedFlags([]);
-      setLiveBoothNotice(microphoneNotice);
+      setLiveBoothNotice(options?.resumeExisting
+        ? `Continuing the saved ${formatLength(resumedSeconds)} booth read. New audio will be appended when you stop.`
+        : microphoneNotice);
       await attachLiveTap(context, source);
       await context.resume();
       const nextState = { ...createLiveFlagsState(), enabled: true };
@@ -5142,20 +5237,23 @@ function Teleprompter({
 
   function startNarrationNow() {
     const fromBeginning = startFromBeginningRef.current;
+    const resumeExisting = resumeExistingRef.current;
     startFromBeginningRef.current = false;
+    resumeExistingRef.current = false;
     setPronunciationBriefingOpen(false);
     setPronunciationCheckState("idle");
-    void startLiveCapture({ fromBeginning });
+    void startLiveCapture({ fromBeginning, resumeExisting });
   }
 
-  function requestNarration(options?: { fromBeginning?: boolean }) {
+  function requestNarration(options?: { fromBeginning?: boolean; resumeExisting?: boolean }) {
     startFromBeginningRef.current = options?.fromBeginning === true;
+    resumeExistingRef.current = options?.resumeExisting === true;
     setLiveEnabled(true);
   }
 
   function setLiveEnabled(enabled: boolean) {
     if (enabled) {
-      if (briefingGlossary.length > 0) {
+      if (briefingGlossary.length > 0 && !resumeExistingRef.current) {
         setPronunciationBriefingOpen(true);
       } else {
         startNarrationNow();
@@ -5174,6 +5272,28 @@ function Teleprompter({
     setPronunciationCheckSource(proofAudioSource(chapter)?.kind ?? null);
     const checked = await onProof(chapterId);
     setPronunciationCheckState(checked ? "ready" : "failed");
+  }
+
+  function openReviewRecordingChooser() {
+    if (!chapter.live_audio_path && !chapter.audio_path) {
+      setMode("proof");
+      return;
+    }
+    setReviewRecordingChooserOpen(true);
+  }
+
+  async function selectReviewRecording(sourceKind: ProofSourceKind) {
+    if (reviewSelectionBusy) return;
+    setReviewSelectionBusy(sourceKind);
+    try {
+      const checked = await onSelectReviewRecording(chapterId, sourceKind);
+      if (checked) {
+        setReviewRecordingChooserOpen(false);
+        onReview();
+      }
+    } finally {
+      setReviewSelectionBusy(null);
+    }
   }
 
   async function leavePage(next: () => void) {
@@ -5222,10 +5342,25 @@ function Teleprompter({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      if (reviewRecordingChooserOpen) {
+        if (event.key === "Escape" && !reviewSelectionBusy) {
+          event.preventDefault();
+          setReviewRecordingChooserOpen(false);
+        }
+        return;
+      }
+      if (replaceReadConfirmationOpen) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setReplaceReadConfirmationOpen(false);
+        }
+        return;
+      }
       if (pronunciationBriefingOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
           startFromBeginningRef.current = false;
+          resumeExistingRef.current = false;
           setPronunciationBriefingOpen(false);
         }
         return;
@@ -5269,7 +5404,7 @@ function Teleprompter({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [liveDetectedFlags, onClose, onIgnoreLivePickup, pronunciationBriefingOpen]);
+  }, [liveDetectedFlags, onClose, onIgnoreLivePickup, pronunciationBriefingOpen, replaceReadConfirmationOpen, reviewRecordingChooserOpen, reviewSelectionBusy]);
 
   // Word mode marks a single word; the wider modes band a range instead, so
   // only one of the two is ever active.
@@ -5281,6 +5416,10 @@ function Teleprompter({
     rows: wordRows,
   });
   const liveInputDescription = describeInputQuality(liveInputQuality, liveCapturedSecondsRef.current);
+  const stoppedFlow = stoppedReadFlow(Boolean(chapter.live_audio_path));
+  const resumeAtWord = savedResumeCursor === null
+    ? null
+    : expectedWords[Math.min(expectedWords.length - 1, savedResumeCursor)]?.text ?? null;
 
   return (
     <div className={`booth-stage booth-stage-v2 teleprompter-${theme}${chaptersOpen ? "" : " chapters-closed"}${materialsOpen ? "" : " materials-closed"}`}>
@@ -5346,7 +5485,7 @@ function Teleprompter({
           <div className="booth-top-actions">
             <div className="booth-mode-switch" role="tablist" aria-label="Teleprompter mode">
               <button type="button" className={mode === "narrate" ? "active" : ""} role="tab" aria-selected={mode === "narrate"} onClick={() => setMode("narrate")}>Narrate</button>
-              <button type="button" className={mode === "proof" ? "active" : ""} role="tab" aria-selected={mode === "proof"} onClick={() => setMode("proof")}>Proofing</button>
+              <button type="button" className={mode === "proof" ? "active" : ""} role="tab" aria-selected={mode === "proof"} onClick={openReviewRecordingChooser}>Review</button>
             </div>
             <button type="button" className={materialsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={materialsOpen} onClick={() => setMaterialsOpen((open) => !open)}>Materials</button>
             <button type="button" className="booth-icon-button" onClick={() => void leavePage(onClose)}>Leave</button>
@@ -5524,8 +5663,8 @@ function Teleprompter({
                 })}
                 <section className="booth-end-card">
                   <strong>Finished this chapter?</strong>
-                  <span>Hit Stop, listen the read back, then check it against the manuscript while it is still fresh.</span>
-                  <button type="button" className="primary-button" onClick={() => setMode("proof")}>Open proofing</button>
+                  <span>Hit Stop, choose the recording you want to use, then review it against the manuscript while it is still fresh.</span>
+                  <button type="button" className="primary-button" onClick={openReviewRecordingChooser}>Choose recording for Review</button>
                 </section>
               </article>
             </div>
@@ -5537,30 +5676,52 @@ function Teleprompter({
               * previous read, which is not what the button next to it means.
               */}
             {tapeUrl && !liveState.enabled ? (
-              <section className={`booth-playback${tapeTake > 0 ? " fresh" : ""}`} aria-label="Listen back to this read">
+              <section className={`booth-playback stopped-read-card${tapeTake > 0 ? " fresh" : ""}`} aria-label="Stopped booth recording">
                 <div className="booth-playback-head">
                   <div>
-                    <strong>{tapeTake > 0 ? "Saved this read" : "Your last read"}</strong>
+                    <p className="card-kicker">Recording stopped</p>
+                    <strong>Your booth read is safe</strong>
                     <span>
                       {tapeSeconds !== null ? `${formatLength(tapeSeconds)} · ` : ""}
-                      A booth tape, not the chapter take. Listen back, then check it against the page.
+                      {Math.round(savedReadCoverage * 100)}% of the manuscript has recorded timing.
                     </span>
                   </div>
-                  <div className="booth-playback-actions">
-                    <button type="button" className="secondary-button" onClick={() => setMode("proof")}>
-                      Check this read
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={liveStatus === "starting"}
-                      onClick={() => requestNarration({ fromBeginning: true })}
-                    >
-                      Read again from the start
-                    </button>
+                  <div className="stopped-read-status" aria-label={`${Math.round(savedReadCoverage * 100)} percent recorded`}>
+                    <strong>{Math.round(savedReadCoverage * 100)}%</strong>
+                    <span>recorded</span>
                   </div>
                 </div>
-                <audio controls src={tapeUrl} preload="metadata" />
+                <div className="recorded-coverage-track" role="progressbar" aria-label="Recorded manuscript coverage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(savedReadCoverage * 100)}>
+                  <i style={{ width: `${Math.round(savedReadCoverage * 100)}%` }} />
+                </div>
+                <p className="stopped-read-explainer">
+                  Continue keeps this recording and appends {resumeAtWord ? <>at “<strong>{resumeAtWord}</strong>,” where you stopped</> : "from your saved page position"}. Start over begins at the first word and replaces this booth read only after you confirm.
+                </p>
+                <div className="stopped-read-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={liveStatus === "starting"}
+                    onClick={() => requestNarration({ resumeExisting: true })}
+                  >
+                    <span aria-hidden="true">▶</span> Continue recording
+                  </button>
+                  <button type="button" className="secondary-button" onClick={openReviewRecordingChooser}>
+                    Choose recording for Review
+                  </button>
+                  <button
+                    type="button"
+                    className="replace-read-button"
+                    disabled={liveStatus === "starting"}
+                    onClick={() => setReplaceReadConfirmationOpen(true)}
+                  >
+                    Start over…
+                  </button>
+                </div>
+                <div className="stopped-read-audio">
+                  <span>Listen before deciding</span>
+                  <audio controls src={tapeUrl} preload="metadata" />
+                </div>
               </section>
             ) : null}
             {tapeTake > 0 && briefingGlossary.length > 0 && !liveState.enabled ? (
@@ -5663,15 +5824,30 @@ function Teleprompter({
                 </button>
               </div>
             ) : (
-              <button
-                className="primary-button booth-start-button booth-narrate-button"
-                type="button"
-                disabled={liveStatus === "starting"}
-                onClick={() => setLiveEnabled(true)}
-              >
-                <span className="booth-start-icon" aria-hidden="true">▶</span>
-                <span>Start narrating</span>
-              </button>
+              <div className="booth-recording-controls" aria-label="Stopped recording actions">
+                {stoppedFlow.canStartOver ? (
+                  <button
+                    className="secondary-button booth-start-over-button"
+                    type="button"
+                    disabled={liveStatus === "starting"}
+                    onClick={() => setReplaceReadConfirmationOpen(true)}
+                  >
+                    <span className="booth-start-icon" aria-hidden="true">↺</span>
+                    <span>Start over…</span>
+                  </button>
+                ) : null}
+                <button
+                  className="primary-button booth-start-button booth-narrate-button"
+                  type="button"
+                  disabled={liveStatus === "starting"}
+                  onClick={() => stoppedFlow.primary === "continue"
+                    ? requestNarration({ resumeExisting: true })
+                    : setLiveEnabled(true)}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">▶</span>
+                  <span>{stoppedFlow.primaryLabel}</span>
+                </button>
+              </div>
             )
           ) : (
             <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>
@@ -5826,6 +6002,28 @@ function Teleprompter({
           )}
         </aside>
       ) : null}
+      {replaceReadConfirmationOpen ? (
+        <ReplaceBoothReadConfirmation
+          duration={tapeSeconds}
+          coverage={savedReadCoverage}
+          onCancel={() => setReplaceReadConfirmationOpen(false)}
+          onConfirm={() => {
+            setReplaceReadConfirmationOpen(false);
+            requestNarration({ fromBeginning: true });
+          }}
+        />
+      ) : null}
+      {reviewRecordingChooserOpen ? (
+        <ReviewRecordingChooser
+          hasBoothRead={Boolean(chapter.live_audio_path)}
+          hasChapterTake={Boolean(chapter.audio_path)}
+          boothDuration={tapeSeconds}
+          boothCoverage={savedReadCoverage}
+          busy={reviewSelectionBusy}
+          onCancel={() => setReviewRecordingChooserOpen(false)}
+          onSelect={(sourceKind) => void selectReviewRecording(sourceKind)}
+        />
+      ) : null}
       {pronunciationBriefingOpen ? (
         <PronunciationBriefing
           chapterTitle={title}
@@ -5833,11 +6031,106 @@ function Teleprompter({
           onPlay={activateGlossary}
           onCancel={() => {
             startFromBeginningRef.current = false;
+            resumeExistingRef.current = false;
             setPronunciationBriefingOpen(false);
           }}
           onStart={startNarrationNow}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ReplaceBoothReadConfirmation({
+  duration,
+  coverage,
+  onCancel,
+  onConfirm,
+}: {
+  duration: number | null;
+  coverage: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="recording-decision-shade" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onCancel();
+    }}>
+      <section className="recording-decision-dialog replace-read-dialog" role="alertdialog" aria-modal="true" aria-labelledby="replace-read-title" aria-describedby="replace-read-detail">
+        <span className="recording-decision-icon warning" aria-hidden="true">↺</span>
+        <div>
+          <p className="card-kicker">Start over from the first word</p>
+          <h2 id="replace-read-title">Replace the current booth read?</h2>
+          <p id="replace-read-detail">
+            Your {duration !== null ? `${formatLength(duration)} recording` : "saved recording"} covers {Math.round(coverage * 100)}% of the manuscript.
+            Starting over creates a new read from the beginning. When you stop and it saves successfully, that new recording becomes the current booth read.
+          </p>
+          <p className="recording-decision-safety">Your attached chapter take is not changed. Cancel to keep everything exactly as it is.</p>
+        </div>
+        <footer>
+          <button type="button" className="secondary-button" onClick={onCancel}>Keep current read</button>
+          <button type="button" className="replace-confirm-button" onClick={onConfirm}>Start over and replace</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function ReviewRecordingChooser({
+  hasBoothRead,
+  hasChapterTake,
+  boothDuration,
+  boothCoverage,
+  busy,
+  onCancel,
+  onSelect,
+}: {
+  hasBoothRead: boolean;
+  hasChapterTake: boolean;
+  boothDuration: number | null;
+  boothCoverage: number;
+  busy: ProofSourceKind | null;
+  onCancel: () => void;
+  onSelect: (sourceKind: ProofSourceKind) => void;
+}) {
+  return (
+    <div className="recording-decision-shade" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !busy) onCancel();
+    }}>
+      <section className="recording-decision-dialog review-recording-dialog" role="dialog" aria-modal="true" aria-labelledby="review-recording-title">
+        <header>
+          <div>
+            <p className="card-kicker">Before Review</p>
+            <h2 id="review-recording-title">Which recording do you want to review?</h2>
+            <p>Kosmos will check the selected recording, then open it against the manuscript. The source stays named throughout Review.</p>
+          </div>
+          <button type="button" aria-label="Close recording chooser" disabled={Boolean(busy)} onClick={onCancel}>×</button>
+        </header>
+        <div className="review-recording-options">
+          {hasBoothRead ? (
+            <button type="button" disabled={Boolean(busy)} onClick={() => onSelect("live")}>
+              <span className="recording-choice-icon" aria-hidden="true">●</span>
+              <strong>Booth read</strong>
+              <em>{boothDuration !== null ? formatLength(boothDuration) : "Saved here"} · {Math.round(boothCoverage * 100)}% recorded</em>
+              <small>Keeps the teleprompter timing and narrator markers.</small>
+              <b>{busy === "live" ? "Preparing Review…" : "Review this recording"}</b>
+            </button>
+          ) : null}
+          {hasChapterTake ? (
+            <button type="button" disabled={Boolean(busy)} onClick={() => onSelect("take")}>
+              <span className="recording-choice-icon imported" aria-hidden="true">↑</span>
+              <strong>Attached chapter take</strong>
+              <em>Imported recording</em>
+              <small>Uses the take attached to this chapter, not the booth read.</small>
+              <b>{busy === "take" ? "Preparing Review…" : "Review this recording"}</b>
+            </button>
+          ) : null}
+        </div>
+        <footer>
+          <span>Selecting a source does not delete or replace either recording.</span>
+          <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={onCancel}>Cancel</button>
+        </footer>
+      </section>
     </div>
   );
 }
@@ -8453,6 +8746,9 @@ function ReviewPage({
     && selectedKind
     && checkedSourceKind !== selectedKind,
   );
+  const manuscriptCoverage = proof && checkedSourceKind === selectedKind
+    ? recordedManuscriptCoverage(chapterText, proof.transcript)
+    : 0;
   return (
     <div className="review-page">
       <article className="surface-card review-listen-card">
@@ -8561,6 +8857,20 @@ function ReviewPage({
               </span>
             ) : null}
           </div>
+          {proof && checkedSourceKind === selectedKind ? (
+            <div className="review-manuscript-coverage">
+              <div>
+                <strong>{Math.round(manuscriptCoverage * 100)}% recorded</strong>
+                <span>{selectedKind === "live" ? "Booth read" : "Attached chapter take"} mapped to this manuscript</span>
+              </div>
+              <div className="recorded-coverage-track" role="progressbar" aria-label="Selected recording manuscript coverage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(manuscriptCoverage * 100)}>
+                <i style={{ width: `${Math.round(manuscriptCoverage * 100)}%` }} />
+              </div>
+              {manuscriptCoverage < 0.98 ? (
+                <p>This recording does not cover the whole manuscript. Return to the teleprompter and continue when you are ready.</p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="paper-prose manuscript-edit-surface">
             <ManuscriptProofProse
               text={chapterText}

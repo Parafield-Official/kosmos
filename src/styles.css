@@ -2213,6 +2213,37 @@ button {
   white-space: nowrap;
 }
 
+.review-manuscript-coverage {
+  display: grid;
+  gap: 7px;
+  margin: 4px 0 14px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid #e4d6c6;
+}
+
+.review-manuscript-coverage > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-manuscript-coverage strong {
+  color: #352b23;
+  font-size: 11px;
+}
+
+.review-manuscript-coverage span,
+.review-manuscript-coverage p {
+  color: #7e7267;
+  font-size: 10px;
+}
+
+.review-manuscript-coverage p {
+  margin: 0;
+  line-height: 1.45;
+}
+
 .manuscript-edit-surface {
   max-width: none;
   max-height: 680px;
@@ -4225,6 +4256,112 @@ button {
   height: 32px;
 }
 
+/* The stopped state is a decision point, not passive playback. The hierarchy
+ * mirrors the real file behavior: append first, review second, replace last. */
+.stopped-read-card {
+  gap: 12px;
+  padding: 15px 16px;
+}
+
+.stopped-read-card .card-kicker {
+  margin: 0;
+  color: var(--accent-ink);
+  font-size: 9px;
+}
+
+.stopped-read-card .booth-playback-head strong {
+  font-size: 15px;
+}
+
+.stopped-read-status {
+  display: grid;
+  flex: 0 0 auto !important;
+  min-width: 72px !important;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: right;
+}
+
+.stopped-read-status strong {
+  font-family: var(--font-display);
+  font-size: 20px !important;
+  font-weight: 600;
+}
+
+.stopped-read-status span {
+  font-size: 9px !important;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.recorded-coverage-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(128, 117, 106, 0.2);
+}
+
+.recorded-coverage-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3ea8f5, #6f78e8);
+  transition: width 180ms ease;
+}
+
+.stopped-read-explainer {
+  max-width: 82ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.stopped-read-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stopped-read-actions .primary-button span {
+  margin-right: 5px;
+}
+
+.replace-read-button,
+.booth-start-over-button {
+  border-color: rgba(169, 63, 48, 0.45) !important;
+  color: #91392f !important;
+  background: #fff8f6 !important;
+}
+
+.replace-read-button {
+  padding: 8px 10px;
+  border: 1px solid rgba(169, 63, 48, 0.45);
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.stopped-read-audio {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.stopped-read-audio > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
 /*
  * Pronunciation help is intentionally quiet in the booth. It appears ahead of
  * the word but never covers the page, moves the cursor, or plays by itself.
@@ -4535,6 +4672,180 @@ button {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+.recording-decision-shade {
+  position: fixed;
+  z-index: 55;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(19, 16, 14, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.recording-decision-dialog {
+  display: grid;
+  gap: 18px;
+  width: min(700px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 25px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: var(--ink);
+  background: var(--canvas);
+  font-family: var(--font-ui);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+}
+
+.recording-decision-dialog h2 {
+  margin: 3px 0 8px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.recording-decision-dialog p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.replace-read-dialog {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.recording-decision-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  color: #91392f;
+  background: #fae2de;
+  font-size: 23px;
+  place-items: center;
+}
+
+.recording-decision-safety {
+  margin-top: 12px !important;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink) !important;
+  background: var(--surface);
+}
+
+.recording-decision-dialog > footer {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.replace-confirm-button {
+  padding: 9px 12px;
+  border: 1px solid #91392f;
+  border-radius: 9px;
+  color: #fff;
+  background: #91392f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.review-recording-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.review-recording-dialog > header > button {
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 24px;
+}
+
+.review-recording-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.review-recording-options > button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.review-recording-options > button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.recording-choice-icon {
+  display: grid;
+  grid-row: 1 / span 4;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  color: #fff;
+  background: #3ea8f5;
+  place-items: center;
+}
+
+.recording-choice-icon.imported {
+  background: #7661d6;
+}
+
+.review-recording-options strong,
+.review-recording-options em,
+.review-recording-options small,
+.review-recording-options b {
+  grid-column: 2;
+}
+
+.review-recording-options strong {
+  font-size: 15px;
+}
+
+.review-recording-options em,
+.review-recording-options small {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.review-recording-options b {
+  margin-top: 8px;
+  color: var(--accent-ink);
+  font-size: 11px;
+}
+
+.review-recording-dialog > footer {
+  justify-content: space-between;
+}
+
+.review-recording-dialog > footer > span {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .booth-halt-copy {
@@ -7608,6 +7919,33 @@ button {
 }
 
 @media (max-width: 560px) {
+  .review-recording-options {
+    grid-template-columns: 1fr;
+  }
+
+  .replace-read-dialog {
+    grid-template-columns: 1fr;
+  }
+
+  .recording-decision-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .recording-decision-dialog > footer,
+  .review-recording-dialog > footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stopped-read-actions > button {
+    flex: 1 1 100%;
+  }
+
+  .stopped-read-audio {
+    grid-template-columns: 1fr;
+  }
+
   .book-dashboard-stats {
     grid-template-columns: repeat(2, 1fr);
     gap: 12px;
