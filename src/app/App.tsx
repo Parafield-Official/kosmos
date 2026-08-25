@@ -9195,7 +9195,7 @@ function ReviewPage({
             {busyAction === `proof-${chapter.id}`
               ? "Preparing…"
               : selectedKind === "live"
-                ? "Use booth timing"
+                ? "Review this recording"
                 : "Check imported audio"}
           </button>
         </div>
