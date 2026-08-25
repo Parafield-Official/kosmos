@@ -4330,6 +4330,35 @@ button {
   font: inherit;
 }
 
+.review-pronunciation-summary {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+}
+
+.review-pronunciation-summary summary,
+.review-pronunciation-summary li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-pronunciation-summary summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.review-pronunciation-summary summary::-webkit-details-marker { display: none; }
+.review-pronunciation-summary span strong,
+.review-pronunciation-summary span small { display: block; }
+.review-pronunciation-summary span small { margin-top: 2px; color: var(--muted); }
+.review-pronunciation-summary em { color: var(--muted); font-size: 11px; font-style: normal; font-weight: 700; }
+.review-pronunciation-summary ul { margin: 0; padding: 0 12px 10px; list-style: none; }
+.review-pronunciation-summary li { padding: 8px 0; border-top: 1px solid var(--line); }
+
 .stopped-read-card .card-kicker {
   margin: 0;
   color: var(--accent-ink);

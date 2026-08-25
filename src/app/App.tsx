@@ -2921,6 +2921,7 @@ function ProjectHome({
               <ReviewPage
                 chapter={selectedChapter}
                 chapterText={chapterText}
+                pronunciationEntries={project.glossary ?? []}
                 busyAction={busyAction}
                 audioUrl={reviewAudioUrl ?? audioUrl}
                 audioRef={audioRef}
@@ -8654,6 +8655,7 @@ function RecordPage({
 function ReviewPage({
   chapter,
   chapterText,
+  pronunciationEntries,
   busyAction,
   audioUrl,
   audioRef,
@@ -8690,6 +8692,7 @@ function ReviewPage({
 }: {
   chapter: ChapterFile;
   chapterText: string;
+  pronunciationEntries: GlossaryEntry[];
   busyAction: string | null;
   audioUrl: string | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
@@ -8885,6 +8888,15 @@ function ReviewPage({
   const manuscriptCoverage = proof && checkedSourceKind === selectedKind
     ? recordedManuscriptCoverage(chapterText, proof.transcript)
     : 0;
+  const reviewPronunciationChecks = useMemo(() => proof ? checkChapterPronunciations({
+    chapterId: chapter.id,
+    chapterIndex: chapter.index,
+    chapterTitle: chapter.title,
+    manuscript: chapterText,
+    transcript: proof.transcript,
+    entries: pronunciationEntries,
+  }) : [], [chapter.id, chapter.index, chapter.title, chapterText, proof, pronunciationEntries]);
+  const reviewPronunciationAttention = reviewPronunciationChecks.filter((check) => check.status !== "matches").length;
   return (
     <div className="review-page">
       <article className="surface-card review-listen-card">
@@ -8940,6 +8952,22 @@ function ReviewPage({
           <p className="panel-honesty">These flags are from the other recording. Check this one to refresh them.</p>
         ) : null}
         {audioUrl ? <audio ref={audioRef} controls src={audioUrl} preload="metadata" /> : null}
+        {reviewPronunciationChecks.length > 0 ? (
+          <details className="review-pronunciation-summary">
+            <summary>
+              <span><strong>Pronunciation</strong><small>Compare the selected recording with the guide</small></span>
+              <em>{reviewPronunciationAttention === 0 ? "All matched" : `${reviewPronunciationAttention} need a listen`}</em>
+            </summary>
+            <ul>
+              {reviewPronunciationChecks.map((check) => (
+                <li key={check.entryId}>
+                  <span><strong>{check.spelling}</strong><small>{check.respell ? `Guide: ${check.respell}` : "No agreed pronunciation"}</small></span>
+                  <em>{pronunciationCheckLabel(check.status)}</em>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
         <div className={proof ? "proofreading-workspace ready" : "proofreading-workspace"}>
           <aside className="proofing-issue-rail" aria-label="Proofreading annotations">
             {proof ? (
