@@ -1,13 +1,13 @@
 import type { LiveVoiceStatus } from "./live";
 
-export type TeleprompterWorkflowStage = "ready" | "recording" | "paused" | "saving" | "stopped";
+export type TeleprompterWorkflowStage = "ready" | "recording" | "paused" | "saving" | "stopped-unsaved" | "stopped";
 
 export interface TeleprompterWorkflow {
   stage: TeleprompterWorkflowStage;
   activeStep: 1 | 2 | 3;
   title: string;
   detail: string;
-  primaryLabel: "Start recording" | "Stop and save" | "Resume recording" | "Continue recording" | null;
+  primaryLabel: "Start recording" | "Stop recording" | "Resume recording" | "Save this recording" | "Continue recording" | null;
   showFirstReadGuide: boolean;
   canReview: boolean;
   canStartOver: boolean;
@@ -15,6 +15,7 @@ export interface TeleprompterWorkflow {
 
 export function teleprompterWorkflow(input: {
   hasSavedTape: boolean;
+  hasPendingDraft: boolean;
   recording: boolean;
   paused: boolean;
   status: LiveVoiceStatus;
@@ -48,8 +49,20 @@ export function teleprompterWorkflow(input: {
       stage: "recording",
       activeStep: 2,
       title: "Recording your booth read",
-      detail: "Read naturally. Kosmos follows the highlighted line; Stop saves this read for Continue or Review.",
-      primaryLabel: "Stop and save",
+      detail: "Read naturally. Kosmos follows the highlighted line; Stop lets you listen and name the read before saving.",
+      primaryLabel: "Stop recording",
+      showFirstReadGuide: false,
+      canReview: false,
+      canStartOver: false,
+    };
+  }
+  if (input.hasPendingDraft) {
+    return {
+      stage: "stopped-unsaved",
+      activeStep: 3,
+      title: "Recording stopped",
+      detail: "Listen to this draft, give it a name, then save it before continuing or opening Review.",
+      primaryLabel: "Save this recording",
       showFirstReadGuide: false,
       canReview: false,
       canStartOver: false,
@@ -71,7 +84,7 @@ export function teleprompterWorkflow(input: {
     stage: "ready",
     activeStep: 1,
     title: "Ready to record",
-    detail: "Press Start recording, then read naturally. The highlighted line follows your voice and Stop saves your booth read.",
+    detail: "Press Start recording, then read naturally. Stop lets you listen and name the read before you save it.",
     primaryLabel: "Start recording",
     showFirstReadGuide: true,
     canReview: false,

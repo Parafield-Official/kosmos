@@ -9,6 +9,7 @@ describe("first-use teleprompter workflow", () => {
   it("explains the first recording before asking the narrator to act", () => {
     expect(teleprompterWorkflow({
       hasSavedTape: false,
+      hasPendingDraft: false,
       recording: false,
       paused: false,
       status: "off",
@@ -26,6 +27,7 @@ describe("first-use teleprompter workflow", () => {
   it("makes the active recording state and stop consequence obvious", () => {
     expect(teleprompterWorkflow({
       hasSavedTape: false,
+      hasPendingDraft: false,
       recording: true,
       paused: false,
       status: "listening",
@@ -33,7 +35,7 @@ describe("first-use teleprompter workflow", () => {
       stage: "recording",
       activeStep: 2,
       title: "Recording your booth read",
-      primaryLabel: "Stop and save",
+      primaryLabel: "Stop recording",
       showFirstReadGuide: false,
     });
   });
@@ -41,6 +43,7 @@ describe("first-use teleprompter workflow", () => {
   it("distinguishes a break from a stopped recording", () => {
     expect(teleprompterWorkflow({
       hasSavedTape: false,
+      hasPendingDraft: false,
       recording: true,
       paused: true,
       status: "paused",
@@ -55,6 +58,7 @@ describe("first-use teleprompter workflow", () => {
   it("shows that the recording is being made safe while processing", () => {
     expect(teleprompterWorkflow({
       hasSavedTape: false,
+      hasPendingDraft: false,
       recording: false,
       paused: false,
       status: "processing",
@@ -66,9 +70,26 @@ describe("first-use teleprompter workflow", () => {
     });
   });
 
+  it("requires an explicit named save after stopping", () => {
+    expect(teleprompterWorkflow({
+      hasSavedTape: false,
+      hasPendingDraft: true,
+      recording: false,
+      paused: false,
+      status: "off",
+    })).toMatchObject({
+      stage: "stopped-unsaved",
+      title: "Recording stopped",
+      primaryLabel: "Save this recording",
+      canReview: false,
+      canStartOver: false,
+    });
+  });
+
   it("presents one clear decision after a booth read is saved", () => {
     expect(teleprompterWorkflow({
       hasSavedTape: true,
+      hasPendingDraft: false,
       recording: false,
       paused: false,
       status: "off",

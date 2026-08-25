@@ -3603,16 +3603,16 @@ ipcMain.handle("proof:stop-live", async () => {
   if (boothTape.shouldKeep() && boothTapeContext) {
     try {
       const wav = boothTape.encode();
-      const result = await saveRecordingWav(boothTapeContext.folder, boothTapeContext.project, {
-        kind: "live",
-        chapterId: boothTapeContext.chapterId,
-        wavBase64: Buffer.from(wav).toString("base64"),
-      });
+      const chapter = boothTapeContext.project.chapters.find((candidate) => candidate.id === boothTapeContext.chapterId);
+      if (!chapter) throw new Error("The recording chapter no longer exists.");
+      const relativePath = `audio/live/.draft_${slugFileName(chapter.id)}_${assetStamp()}.wav`;
+      const destination = await nextAvailablePath(projectAssetPath(boothTapeContext.folder, relativePath));
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await writeFileAtomic(destination, Buffer.from(wav));
       saved = {
         stopped: true,
-        live_audio_path: result.path,
-        folder: result.folder,
-        project: result.project,
+        draft_audio_path: path.relative(boothTapeContext.folder, destination).replaceAll(path.sep, "/"),
+        folder: boothTapeContext.folder,
       };
     } catch (error) {
       console.warn(`Booth tape save failed: ${error?.message ?? error}`);
@@ -3622,6 +3622,42 @@ ipcMain.handle("proof:stop-live", async () => {
   boothTape.take();
   boothTapeContext = null;
   return saved;
+});
+function assertLiveDraftPath(draftPath, chapterId) {
+  const expectedPrefix = `audio/live/.draft_${slugFileName(chapterId)}_`;
+  if (typeof draftPath !== "string" || !draftPath.startsWith(expectedPrefix) || !draftPath.endsWith(".wav")) {
+    throw new Error("That file is not an unsaved booth recording for this chapter.");
+  }
+}
+ipcMain.handle("proof:save-live-draft", async (_event, payload) => {
+  await assertProjectEnvelope(payload?.folder, payload?.project);
+  const chapter = payload.project.chapters.find((candidate) => candidate.id === payload.chapterId);
+  if (!chapter) throw new Error("Choose a chapter before saving this recording.");
+  assertLiveDraftPath(payload.draftPath, chapter.id);
+  const name = typeof payload.name === "string" ? payload.name.trim().slice(0, 120) : "";
+  if (!name) throw new Error("Give this recording a name before saving it.");
+  const source = projectAssetPath(payload.folder, payload.draftPath);
+  const relativePath = `audio/live/${slugFileName(name)}_${assetStamp()}.wav`;
+  const destination = await nextAvailablePath(projectAssetPath(payload.folder, relativePath));
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  await fs.rename(source, destination);
+  const savedPath = path.relative(payload.folder, destination).replaceAll(path.sep, "/");
+  const now = new Date().toISOString();
+  const nextProject = {
+    ...payload.project,
+    updated_at: now,
+    chapters: payload.project.chapters.map((candidate) => candidate.id === chapter.id
+      ? { ...candidate, live_audio_path: savedPath, live_audio_name: name, updated_at: now }
+      : candidate),
+  };
+  await saveProjectFolder(payload.folder, nextProject);
+  return { folder: payload.folder, project: nextProject, path: savedPath };
+});
+ipcMain.handle("proof:discard-live-draft", async (_event, payload) => {
+  await assertProjectFolder(payload?.folder);
+  assertLiveDraftPath(payload?.draftPath, payload?.chapterId);
+  await fs.unlink(projectAssetPath(payload.folder, payload.draftPath));
+  return { discarded: true };
 });
 ipcMain.handle("proof:transcribe-buffer", (_event, payload) => {
   if (!payload?.pcmBase64 && (!payload?.audioBase64 || !payload?.mimeType)) {

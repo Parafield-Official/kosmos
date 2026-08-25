@@ -4270,6 +4270,64 @@ button {
 .stopped-read-card {
   gap: 12px;
   padding: 15px 16px;
+  width: min(760px, calc(100% - 44px));
+  margin-inline: auto;
+}
+
+.recording-progress-top {
+  display: grid;
+  gap: 5px;
+}
+
+.recording-progress-top > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.compact-recording-copy {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.compact-recording-copy p,
+.compact-recording-copy strong {
+  display: block;
+  margin: 0;
+}
+
+.compact-recording-copy > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.draft-read-card {
+  border-color: rgba(212, 154, 55, 0.58);
+  background: color-mix(in srgb, var(--surface) 94%, #f4bd5c 6%);
+}
+
+.recording-name-field {
+  display: grid;
+  gap: 5px;
+}
+
+.recording-name-field span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.recording-name-field input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: inherit;
+  background: var(--surface);
+  font: inherit;
 }
 
 .stopped-read-card .card-kicker {
@@ -7448,22 +7506,19 @@ button {
 }
 
 .teleprompter-workflow {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.35fr);
-  gap: 18px;
-  margin: 12px 22px 8px;
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 15px;
+  display: block;
+  margin: 8px 22px 5px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 9px;
   color: inherit;
-  background: rgba(255, 255, 255, 0.055);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .teleprompter-cream .teleprompter-workflow,
 .teleprompter-sepia .teleprompter-workflow {
-  border-color: var(--line);
-  background: var(--surface);
-  box-shadow: 0 8px 20px rgba(45, 37, 31, 0.04);
+  background: rgba(255, 255, 255, 0.45);
+  box-shadow: none;
 }
 
 .teleprompter-workflow-copy {
@@ -7491,7 +7546,8 @@ button {
 }
 
 .teleprompter-workflow.stage-paused .teleprompter-workflow-state,
-.teleprompter-workflow.stage-saving .teleprompter-workflow-state {
+.teleprompter-workflow.stage-saving .teleprompter-workflow-state,
+.teleprompter-workflow.stage-stopped-unsaved .teleprompter-workflow-state {
   border-color: #d49a37;
   background: #d49a37;
   opacity: 1;
@@ -7521,63 +7577,6 @@ button {
   line-height: 1.45;
 }
 
-.teleprompter-workflow ol {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.teleprompter-workflow li {
-  display: flex;
-  align-items: flex-start;
-  min-width: 0;
-  gap: 7px;
-  padding: 7px 8px;
-  border-radius: 10px;
-  opacity: 0.46;
-}
-
-.teleprompter-workflow li.active {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  opacity: 1;
-}
-
-.teleprompter-workflow li.complete {
-  opacity: 0.7;
-}
-
-.teleprompter-workflow li > span {
-  display: grid;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  font-size: 9px;
-  font-weight: 800;
-}
-
-.teleprompter-workflow li strong,
-.teleprompter-workflow li small {
-  display: block;
-}
-
-.teleprompter-workflow li strong {
-  font-size: 10px;
-  line-height: 1.3;
-}
-
-.teleprompter-workflow li small {
-  margin-top: 2px;
-  opacity: 0.7;
-  font-size: 9px;
-  line-height: 1.35;
-}
 
 .booth-recording-help {
   margin: 0 22px 9px;

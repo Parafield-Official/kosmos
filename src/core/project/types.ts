@@ -59,6 +59,8 @@ export interface ChapterFile {
   edited_audio_path?: string;
   /** Scratch tape from Start narrating. Not the chapter take. */
   live_audio_path?: string;
+  /** Narrator-facing name chosen when the scratch tape is explicitly saved. */
+  live_audio_name?: string;
   bed_audio_path?: string;
   overdub_audio_path?: string;
   duet_mix_path?: string;
