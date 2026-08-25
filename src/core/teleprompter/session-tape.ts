@@ -277,6 +277,72 @@ export function clipLiveTape(
   return samples.slice(from, to);
 }
 
+export interface LivePunchCue {
+  samples: Float32Array;
+  kind: "recorded" | "count-in";
+}
+
+/**
+ * Prepare a restart cue that is always audible.
+ *
+ * A valid punch boundary can sit at the very beginning of this recording
+ * session—for example when the narrator starts halfway through a chapter. In
+ * that case the nominal pre-roll contains microphone startup silence, not the
+ * preceding sentence. Treating a non-empty silent buffer as useful playback
+ * made Restart appear to work while the narrator heard nothing. A short
+ * three-beat count-in is the honest fallback when no recorded voice exists.
+ */
+export function buildLivePunchCue(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  fromSeconds: number,
+  toSeconds: number,
+): LivePunchCue {
+  const recorded = clipLiveTape(chunks, sampleRate, fromSeconds, toSeconds);
+  if (hasAudibleWindow(recorded, sampleRate)) {
+    return { samples: recorded, kind: "recorded" };
+  }
+  return { samples: createPunchCountIn(sampleRate), kind: "count-in" };
+}
+
+function hasAudibleWindow(samples: Float32Array, sampleRate: number): boolean {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
+    return false;
+  }
+  const windowSize = Math.max(1, Math.round(sampleRate * 0.08));
+  for (let from = 0; from < samples.length; from += windowSize) {
+    const to = Math.min(samples.length, from + windowSize);
+    let sumSquares = 0;
+    for (let index = from; index < to; index += 1) {
+      const sample = samples[index] ?? 0;
+      sumSquares += sample * sample;
+    }
+    if (Math.sqrt(sumSquares / Math.max(1, to - from)) >= 0.008) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function createPunchCountIn(sampleRate: number): Float32Array {
+  const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.round(sampleRate) : 48_000;
+  const durationSeconds = 1.35;
+  const pulseSeconds = 0.09;
+  const fadeSeconds = 0.012;
+  const output = new Float32Array(Math.max(1, Math.round(rate * durationSeconds)));
+  [0.08, 0.53, 0.98].forEach((startSeconds, pulseIndex) => {
+    const start = Math.round(startSeconds * rate);
+    const length = Math.round(pulseSeconds * rate);
+    const fade = Math.max(1, Math.round(fadeSeconds * rate));
+    const frequency = pulseIndex === 2 ? 1_050 : 760;
+    for (let offset = 0; offset < length && start + offset < output.length; offset += 1) {
+      const envelope = Math.min(1, offset / fade, (length - offset) / fade);
+      output[start + offset] = Math.sin((2 * Math.PI * frequency * offset) / rate) * 0.24 * envelope;
+    }
+  });
+  return output;
+}
+
 /** Return a copy of a live tape ending at the requested punch boundary. */
 export function truncateLiveTape(
   chunks: readonly Float32Array[],

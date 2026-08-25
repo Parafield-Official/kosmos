@@ -152,8 +152,8 @@ import {
 import {
   audioSourceForPickup,
   availableProofSources,
+  buildLivePunchCue,
   chapterWithBoothTapeAsTake,
-  clipLiveTape,
   concatLiveTape,
   listenDisabledReason,
   planLivePunchRoll,
@@ -3430,7 +3430,7 @@ function Teleprompter({
       return "";
     }
   });
-  const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "restarting">("idle");
+  const [livePunchRollStatus, setLivePunchRollStatus] = useState<"idle" | "cueing" | "counting" | "restarting">("idle");
   const [liveBoothNotice, setLiveBoothNotice] = useState<string | null>(null);
   // The booth tape for this chapter, so a narrator can hear back what they just
   // read without leaving the booth for Review. `tapeTake` counts the reads
@@ -3948,7 +3948,7 @@ function Teleprompter({
       setLiveError("Read a little farther before restarting so Kosmos has a clean recorded boundary.");
       return;
     }
-    const cue = clipLiveTape(
+    const cue = buildLivePunchCue(
       liveTapeRef.current,
       liveSampleRateRef.current,
       plan.cueFromSeconds,
@@ -3958,12 +3958,12 @@ function Teleprompter({
     livePunchBusyRef.current = true;
     livePausedRef.current = true;
     setLivePaused(true);
-    setLivePunchRollStatus("cueing");
+    setLivePunchRollStatus(cue.kind === "recorded" ? "cueing" : "counting");
     setLiveStatus("paused");
     tracks.forEach((track) => { track.enabled = false; });
     try {
       await context.suspend();
-      await playLivePunchCue(cue, liveSampleRateRef.current);
+      await playLivePunchCue(cue.samples, liveSampleRateRef.current);
       setLivePunchRollStatus("restarting");
       liveSessionRef.current += 1;
       const restarted = await bridge.restartLiveTranscription({
@@ -4012,7 +4012,9 @@ function Teleprompter({
       liveVisualCursorRef.current = plan.restartIndex;
       setLiveCursor(plan.restartIndex);
       setLiveHeardText("");
-      setLiveBoothNotice("Sentence replaced. Recording from the restart point.");
+      setLiveBoothNotice(cue.kind === "recorded"
+        ? "Sentence replaced. Recording from the restart point."
+        : "No earlier voice was recorded in this session, so Kosmos counted you in. Recording from the restart point.");
       setLiveError(null);
     } catch (reason) {
       setLiveError(messageFor(reason, "Could not restart this sentence. The existing booth tape was kept."));
@@ -5385,8 +5387,16 @@ function Teleprompter({
             {livePunchRollStatus !== "idle" ? (
               <div className="booth-halt" role="status">
                 <div className="booth-halt-copy">
-                  <strong>{livePunchRollStatus === "cueing" ? "Rolling into the sentence" : "Rewinding the clean take"}</strong>
-                  <span>{livePunchRollStatus === "cueing" ? "Listen for your rhythm; recording resumes at the marked boundary." : "Replacing the false start and resetting voice follow…"}</span>
+                  <strong>{livePunchRollStatus === "cueing"
+                    ? "Rolling into the sentence"
+                    : livePunchRollStatus === "counting"
+                      ? "Counting into the sentence"
+                      : "Rewinding the clean take"}</strong>
+                  <span>{livePunchRollStatus === "cueing"
+                    ? "Listen for your rhythm; recording resumes at the marked boundary."
+                    : livePunchRollStatus === "counting"
+                      ? "There is no earlier voice in this session, so three tones mark the restart."
+                      : "Replacing the false start and resetting voice follow…"}</span>
                 </div>
               </div>
             ) : null}

@@ -3,6 +3,7 @@ import { pickupFromLiveFlag, type LiveMismatch } from "./live";
 import {
   audioSourceForPickup,
   availableProofSources,
+  buildLivePunchCue,
   chapterWithBoothTapeAsTake,
   clipLiveTape,
   concatLiveTape,
@@ -117,6 +118,25 @@ describe("in-session punch and roll", () => {
     expect([...clipLiveTape(chunks, 2, 1, 2.5)]).toEqual([2, 3, 4]);
     expect([...concatLiveTape(truncateLiveTape(chunks, 2, 2.5))]).toEqual([0, 1, 2, 3, 4]);
     expect([...chunks[1]!]).toEqual([3, 4, 5, 6]);
+  });
+
+  it("uses an audible count-in when the available restart lead-in is only silence", () => {
+    const sampleRate = 1_000;
+    const cue = buildLivePunchCue([new Float32Array(400)], sampleRate, 0, 0.4);
+
+    expect(cue.kind).toBe("count-in");
+    expect(cue.samples.length).toBeGreaterThanOrEqual(sampleRate);
+    expect(cue.samples.some((sample) => Math.abs(sample) > 0.1)).toBe(true);
+  });
+
+  it("keeps a brief recorded voice inside an otherwise quiet lead-in", () => {
+    const sampleRate = 1_000;
+    const samples = new Float32Array(2_000);
+    samples.fill(0.08, 1_400, 1_650);
+    const cue = buildLivePunchCue([samples], sampleRate, 0, 2);
+
+    expect(cue.kind).toBe("recorded");
+    expect(cue.samples).toEqual(samples);
   });
 });
 
