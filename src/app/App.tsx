@@ -6038,7 +6038,7 @@ function Teleprompter({
                 <p className="card-kicker">Line spacing</p>
                 <div className="booth-choice-grid" role="radiogroup" aria-label="Line spacing">
                   {[1.35, 1.55, 1.8].map((value) => (
-                    <button key={value} type="button" role="radio" aria-checked={lineSpacing === value} className={lineSpacing === value ? "active" : ""} onClick={() => setLineSpacing(value)}>{value === 1.35 ? "Tight" : value === 1.55 ? "Comfortable" : "Open"}</button>
+                    <button key={value} type="button" role="radio" aria-checked={lineSpacing === value} className={lineSpacing === value ? "active" : ""} onClick={() => setLineSpacing(value)}>{value === 1.35 ? "Tight" : value === 1.55 ? "Comfortable" : "Spacious"}</button>
                   ))}
                 </div>
                 <label className="booth-toggle">
