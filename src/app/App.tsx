@@ -117,6 +117,7 @@ import {
 import { appendLiveQcSamples, applyLiveVisualRows, createLiveQcBuffer, drainLiveQcBuffer, matchLiveWindow, liveBackFlag, liveRequestStatus, liveVoiceStatusCopy, liveWordMark, liveFlagChipCopy, liveHaltCopy, manualLivePickup, mergeLivePickup, pickupFromLiveFlag, pcmHasSpeech, dropUnstableLiveTail, LIVE_CONTEXT_SECONDS, LIVE_HOP_SECONDS, LIVE_MIN_SPEECH_SECONDS, LIVE_OVERLAP_SECONDS, LIVE_SPEECH_RMS, LIVE_STREAM_HOP_SECONDS, LIVE_QC_STALL_SECONDS, LIVE_HALT_RUN_WORDS, type LiveExpectedWord, type LiveMismatch, type LiveMatchState, type LiveQcBuffer, type LiveVoiceStatus, type LiveWordConfirmation } from "../core/teleprompter/live";
 import { boothShortcutAction } from "../core/teleprompter/booth-controls";
 import { recordedManuscriptCoverage, stoppedReadFlow } from "../core/teleprompter/recording-flow";
+import { initialTeleprompterPanels, shouldOfferChapterReview, teleprompterWorkflow, type TeleprompterWorkflow } from "../core/teleprompter/workflow";
 import {
   createInputQuality,
   describeInputQuality,
@@ -2654,7 +2655,7 @@ function ProjectHome({
       spans={chapterSpans.length > 0 ? chapterSpans : [{ text: chapterText, seat: "narration", style: [] }]}
       glossary={project.glossary ?? []}
       proof={proof}
-      reviewSourceKind={reviewAudioSource?.kind ?? null}
+      checkedSourceKind={checkedSourceKind}
       acxReport={acxReport}
       audioUrl={audioUrl}
       modelAvailable={modelAvailable}
@@ -3323,7 +3324,7 @@ function Teleprompter({
   spans,
   glossary,
   proof,
-  reviewSourceKind,
+  checkedSourceKind,
   acxReport,
   audioUrl,
   modelAvailable,
@@ -3360,7 +3361,7 @@ function Teleprompter({
   spans: ScriptSpan[];
   glossary: GlossaryEntry[];
   proof: ProofResult | null;
-  reviewSourceKind: ProofSourceKind | null;
+  checkedSourceKind: ProofSourceKind | null;
   acxReport: AcxReport | null;
   audioUrl: string | null;
   modelAvailable: boolean | null;
@@ -3469,8 +3470,8 @@ function Teleprompter({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [materialsTab, setMaterialsTab] = useState<"chapter" | "manuscript" | "voices" | "words" | "notes">("chapter");
   const [chapterFilter, setChapterFilter] = useState("");
-  const [chaptersOpen, setChaptersOpen] = useState(true);
-  const [materialsOpen, setMaterialsOpen] = useState(true);
+  const [chaptersOpen, setChaptersOpen] = useState(() => initialTeleprompterPanels(chapters.length).chaptersOpen);
+  const [materialsOpen, setMaterialsOpen] = useState(() => initialTeleprompterPanels(chapters.length).materialsOpen);
   const [mode, setMode] = useState<"narrate" | "proof">("narrate");
   const [readingFont, setReadingFont] = useState<"serif" | "sans" | "hyperlegible">("serif");
   const [lineSpacing, setLineSpacing] = useState(1.8);
@@ -3527,10 +3528,10 @@ function Teleprompter({
   }, [chapterGlossary, pronunciationCues]);
   const chapterManuscript = useMemo(() => spans.map((span) => span.text).join(""), [spans]);
   const savedReadCoverage = useMemo(
-    () => reviewSourceKind === "live" && proof
+    () => checkedSourceKind === "live" && proof
       ? recordedManuscriptCoverage(chapterManuscript, proof.transcript)
       : progress,
-    [chapterManuscript, progress, proof, reviewSourceKind],
+    [chapterManuscript, checkedSourceKind, progress, proof],
   );
   const pronunciationChecks = useMemo(
     () => proof
@@ -5417,6 +5418,16 @@ function Teleprompter({
   });
   const liveInputDescription = describeInputQuality(liveInputQuality, liveCapturedSecondsRef.current);
   const stoppedFlow = stoppedReadFlow(Boolean(chapter.live_audio_path));
+  const workflow = teleprompterWorkflow({
+    hasSavedTape: Boolean(chapter.live_audio_path),
+    recording: liveState.enabled,
+    paused: livePaused,
+    status: liveStatus,
+  });
+  const offerChapterReview = shouldOfferChapterReview({
+    recordedCoverage: savedReadCoverage,
+    pageProgress: progress,
+  });
   const resumeAtWord = savedResumeCursor === null
     ? null
     : expectedWords[Math.min(expectedWords.length - 1, savedResumeCursor)]?.text ?? null;
@@ -5483,10 +5494,11 @@ function Teleprompter({
             <button type="button" disabled={!nextChapter} aria-label="Next chapter" onClick={() => nextChapter && onSelectChapter(nextChapter.id)}>›</button>
           </div>
           <div className="booth-top-actions">
-            <div className="booth-mode-switch" role="tablist" aria-label="Teleprompter mode">
-              <button type="button" className={mode === "narrate" ? "active" : ""} role="tab" aria-selected={mode === "narrate"} onClick={() => setMode("narrate")}>Narrate</button>
-              <button type="button" className={mode === "proof" ? "active" : ""} role="tab" aria-selected={mode === "proof"} onClick={openReviewRecordingChooser}>Review</button>
-            </div>
+            {mode === "proof" ? (
+              <button type="button" className="booth-icon-button" onClick={() => setMode("narrate")}>Back to reading</button>
+            ) : !workflow.canReview && !liveState.enabled && (chapter.live_audio_path || chapter.audio_path) ? (
+              <button type="button" className="booth-icon-button booth-review-button" onClick={openReviewRecordingChooser}>Review a recording…</button>
+            ) : null}
             <button type="button" className={materialsOpen ? "booth-icon-button active" : "booth-icon-button"} aria-expanded={materialsOpen} onClick={() => setMaterialsOpen((open) => !open)}>Materials</button>
             <button type="button" className="booth-icon-button" onClick={() => void leavePage(onClose)}>Leave</button>
           </div>
@@ -5494,33 +5506,38 @@ function Teleprompter({
 
         {mode === "narrate" ? (
           <>
-            <p className="booth-honesty">
-              Voice follow is experimental. Stop or Leave keeps a booth tape and its manuscript timing for Review. That tape is not the chapter take. Space and PageDown always remain available.
-              {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try word checks again</button> : null}
-              {glossaryHint ? <strong role="status">{glossaryHint}</strong> : null}
-            </p>
+            <TeleprompterWorkflowGuide workflow={workflow} />
 
-            <LiveVoiceStatus
-              modelAvailable={modelAvailable}
-              status={liveStatus}
-              enabled={liveState.enabled}
-              dimmed={liveState.dimmed}
-              error={liveError}
-              heardText={liveHeardText}
-              checkCount={liveCheckCount}
-              latencyMs={liveLatencyMs}
-              whisperAttempted={liveWhisperAttempted}
-              whisperSucceeded={liveWhisperSucceeded}
-              whisperFailed={liveWhisperFailed}
-              whisperLastError={liveWhisperLastError}
-              whisperLastWords={liveWhisperLastWords}
-              startCursor={liveStartCursor}
-              detectedFlags={liveDetectedFlags}
-              signalLevel={liveSignalLevel}
-              inputQuality={liveInputDescription}
-              cursor={liveCursor}
-              totalWords={expectedWords.length}
-            />
+            <details className="booth-recording-help">
+              <summary>How voice follow and saving work</summary>
+              <p>The highlighted line follows your voice. Stop or Leave saves a separate booth read for Review; it never replaces an attached chapter take. Voice follow is experimental, and Space or PageDown always scrolls the page.</p>
+              {liveState.dimmed ? <button type="button" className="table-action" onClick={undoLiveDim}>Try voice follow again</button> : null}
+            </details>
+            {glossaryHint ? <p className="booth-honesty"><strong role="status">{glossaryHint}</strong></p> : null}
+
+            {liveStatus !== "off" || liveState.enabled || liveError ? (
+              <LiveVoiceStatus
+                modelAvailable={modelAvailable}
+                status={liveStatus}
+                enabled={liveState.enabled}
+                dimmed={liveState.dimmed}
+                error={liveError}
+                heardText={liveHeardText}
+                checkCount={liveCheckCount}
+                latencyMs={liveLatencyMs}
+                whisperAttempted={liveWhisperAttempted}
+                whisperSucceeded={liveWhisperSucceeded}
+                whisperFailed={liveWhisperFailed}
+                whisperLastError={liveWhisperLastError}
+                whisperLastWords={liveWhisperLastWords}
+                startCursor={liveStartCursor}
+                detectedFlags={liveDetectedFlags}
+                signalLevel={liveSignalLevel}
+                inputQuality={liveInputDescription}
+                cursor={liveCursor}
+                totalWords={expectedWords.length}
+              />
+            ) : null}
             {liveBoothNotice ? <p className="booth-honesty" role="status">{liveBoothNotice}</p> : null}
 
             {livePunchRollStatus !== "idle" ? (
@@ -5661,11 +5678,15 @@ function Teleprompter({
                     </p>
                   );
                 })}
-                <section className="booth-end-card">
-                  <strong>Finished this chapter?</strong>
-                  <span>Hit Stop, choose the recording you want to use, then review it against the manuscript while it is still fresh.</span>
-                  <button type="button" className="primary-button" onClick={openReviewRecordingChooser}>Choose recording for Review</button>
-                </section>
+                {offerChapterReview ? (
+                  <section className="booth-end-card">
+                    <strong>Ready to review this chapter?</strong>
+                    <span>Stop and save the booth read first, then choose the recording you want to check against the manuscript.</span>
+                    {chapter.live_audio_path || chapter.audio_path ? (
+                      <button type="button" className="primary-button" onClick={openReviewRecordingChooser}>Review a recording…</button>
+                    ) : null}
+                  </section>
+                ) : null}
               </article>
             </div>
 
@@ -5695,31 +5716,10 @@ function Teleprompter({
                   <i style={{ width: `${Math.round(savedReadCoverage * 100)}%` }} />
                 </div>
                 <p className="stopped-read-explainer">
-                  Continue keeps this recording and appends {resumeAtWord ? <>at “<strong>{resumeAtWord}</strong>,” where you stopped</> : "from your saved page position"}. Start over begins at the first word and replaces this booth read only after you confirm.
+                  Continue appends {resumeAtWord ? <>at “<strong>{resumeAtWord}</strong>,” where you stopped</> : "from your saved page position"}. Use the action bar below to continue, review, or start over.
                 </p>
-                <div className="stopped-read-actions">
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={liveStatus === "starting"}
-                    onClick={() => requestNarration({ resumeExisting: true })}
-                  >
-                    <span aria-hidden="true">▶</span> Continue recording
-                  </button>
-                  <button type="button" className="secondary-button" onClick={openReviewRecordingChooser}>
-                    Choose recording for Review
-                  </button>
-                  <button
-                    type="button"
-                    className="replace-read-button"
-                    disabled={liveStatus === "starting"}
-                    onClick={() => setReplaceReadConfirmationOpen(true)}
-                  >
-                    Start over…
-                  </button>
-                </div>
                 <div className="stopped-read-audio">
-                  <span>Listen before deciding</span>
+                  <span>Listen to the saved read</span>
                   <audio controls src={tapeUrl} preload="metadata" />
                 </div>
               </section>
@@ -5820,42 +5820,52 @@ function Teleprompter({
                   onClick={() => setLiveEnabled(false)}
                 >
                   <span className="booth-start-icon" aria-hidden="true">■</span>
-                  <span>Stop</span>
+                  <span>Stop and save</span>
                 </button>
               </div>
             ) : (
               <div className="booth-recording-controls" aria-label="Stopped recording actions">
-                {stoppedFlow.canStartOver ? (
+                <button
+                  className="primary-button booth-start-button booth-narrate-button"
+                  type="button"
+                  disabled={liveStatus === "starting" || liveStatus === "processing"}
+                  onClick={() => stoppedFlow.primary === "continue"
+                    ? requestNarration({ resumeExisting: true })
+                    : setLiveEnabled(true)}
+                >
+                  <span className="booth-start-icon" aria-hidden="true">▶</span>
+                  <span>{workflow.primaryLabel ?? "Start recording"}</span>
+                </button>
+                {workflow.canReview ? (
+                  <button
+                    className="secondary-button booth-review-recording-button"
+                    type="button"
+                    disabled={liveStatus === "starting" || liveStatus === "processing"}
+                    onClick={openReviewRecordingChooser}
+                  >
+                    <span>Review recording…</span>
+                  </button>
+                ) : null}
+                {workflow.canStartOver ? (
                   <button
                     className="secondary-button booth-start-over-button"
                     type="button"
-                    disabled={liveStatus === "starting"}
+                    disabled={liveStatus === "starting" || liveStatus === "processing"}
                     onClick={() => setReplaceReadConfirmationOpen(true)}
                   >
                     <span className="booth-start-icon" aria-hidden="true">↺</span>
                     <span>Start over…</span>
                   </button>
                 ) : null}
-                <button
-                  className="primary-button booth-start-button booth-narrate-button"
-                  type="button"
-                  disabled={liveStatus === "starting"}
-                  onClick={() => stoppedFlow.primary === "continue"
-                    ? requestNarration({ resumeExisting: true })
-                    : setLiveEnabled(true)}
-                >
-                  <span className="booth-start-icon" aria-hidden="true">▶</span>
-                  <span>{stoppedFlow.primaryLabel}</span>
-                </button>
               </div>
             )
           ) : (
             <button className="primary-button booth-start-button" type="button" onClick={() => setMode("narrate")}>Back to narration</button>
           )}
           <div className="booth-progress-wrap">
-            <span>{mode === "narrate" ? remainingLabel : currentChapterStatus.label}</span>
-            <div className="booth-progress" role="progressbar" aria-label="Chapter reading progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
-              <i style={{ width: `${Math.round(progress * 100)}%` }} />
+            <span>{mode === "narrate" ? workflow.stage === "stopped" ? `${Math.round(savedReadCoverage * 100)}% recorded` : remainingLabel : currentChapterStatus.label}</span>
+            <div className="booth-progress" role="progressbar" aria-label={workflow.stage === "stopped" ? "Recorded manuscript coverage" : "Chapter reading progress"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((workflow.stage === "stopped" ? savedReadCoverage : progress) * 100)}>
+              <i style={{ width: `${Math.round((workflow.stage === "stopped" ? savedReadCoverage : progress) * 100)}%` }} />
             </div>
           </div>
           <div className="booth-font" aria-label="Font size">
@@ -6038,6 +6048,36 @@ function Teleprompter({
         />
       ) : null}
     </div>
+  );
+}
+
+function TeleprompterWorkflowGuide({ workflow }: { workflow: TeleprompterWorkflow }) {
+  const steps = [
+    { number: 1, title: "Start recording", detail: "Choose Start in the bar below." },
+    { number: 2, title: "Read naturally", detail: "Follow the highlighted line." },
+    { number: 3, title: "Stop and decide", detail: "Continue, listen, or open Review." },
+  ] as const;
+  return (
+    <section className={`teleprompter-workflow stage-${workflow.stage}`} aria-label="Recording workflow">
+      <div className="teleprompter-workflow-copy" role="status" aria-live="polite">
+        <span className="teleprompter-workflow-state" aria-hidden="true" />
+        <div>
+          <strong>{workflow.title}</strong>
+          <p>{workflow.detail}</p>
+        </div>
+      </div>
+      <ol aria-label="Three steps to record and review">
+        {steps.map((step) => (
+          <li key={step.number} className={step.number === workflow.activeStep ? "active" : step.number < workflow.activeStep ? "complete" : ""}>
+            <span aria-hidden="true">{step.number < workflow.activeStep ? "✓" : step.number}</span>
+            <div>
+              <strong>{step.title}</strong>
+              {workflow.showFirstReadGuide || step.number === workflow.activeStep ? <small>{step.detail}</small> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
@@ -8422,6 +8462,22 @@ function RecordPage({
   return (
     <div className="record-page">
       <div className="record-main">
+        <article className="surface-card record-teleprompter-entry">
+          <p className="card-kicker">Read with the manuscript</p>
+          <h3>Teleprompter</h3>
+          <p className="panel-honesty">Read naturally while Kosmos follows the highlighted line. Stop saves a booth read you can continue or review.</p>
+          <div className="desk-actions">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={chapterText.trim().length === 0 || busyAction !== null}
+              onClick={onOpenTeleprompter}
+            >
+              Open teleprompter
+            </button>
+          </div>
+        </article>
+
         <article className="surface-card">
           <header className="chapter-desk-heading">
             <div>
@@ -8430,22 +8486,6 @@ function RecordPage({
             </div>
           </header>
           <p className="manuscript-body">{chapterText || "Loading manuscript…"}</p>
-        </article>
-
-        <article className="surface-card">
-          <p className="card-kicker">Recorded here</p>
-          <h3>Open the page</h3>
-          <p className="panel-honesty">Read in the booth. Kosmos keeps a booth tape for Review.</p>
-          <div className="desk-actions">
-            <button
-              className="primary-button"
-              type="button"
-              disabled={chapterText.trim().length === 0 || busyAction !== null}
-              onClick={onOpenTeleprompter}
-            >
-              Open the page
-            </button>
-          </div>
         </article>
 
         <article className="surface-card">

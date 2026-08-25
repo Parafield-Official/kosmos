@@ -809,6 +809,15 @@ button {
   min-width: 0;
 }
 
+.record-teleprompter-entry {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--accent-soft) 58%, var(--surface)));
+}
+
+.record-teleprompter-entry .primary-button {
+  min-width: 172px;
+}
+
 .review-source-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -7438,6 +7447,161 @@ button {
   padding: 10px 22px 12px;
 }
 
+.teleprompter-workflow {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.35fr);
+  gap: 18px;
+  margin: 12px 22px 8px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 15px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.teleprompter-cream .teleprompter-workflow,
+.teleprompter-sepia .teleprompter-workflow {
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: 0 8px 20px rgba(45, 37, 31, 0.04);
+}
+
+.teleprompter-workflow-copy {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 11px;
+}
+
+.teleprompter-workflow-state {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  opacity: 0.38;
+}
+
+.teleprompter-workflow.stage-recording .teleprompter-workflow-state {
+  border-color: #39aa72;
+  background: #39aa72;
+  box-shadow: 0 0 0 5px rgba(57, 170, 114, 0.13);
+  opacity: 1;
+}
+
+.teleprompter-workflow.stage-paused .teleprompter-workflow-state,
+.teleprompter-workflow.stage-saving .teleprompter-workflow-state {
+  border-color: #d49a37;
+  background: #d49a37;
+  opacity: 1;
+}
+
+.teleprompter-workflow.stage-stopped .teleprompter-workflow-state {
+  border-color: #3ea8f5;
+  background: #3ea8f5;
+  opacity: 1;
+}
+
+.teleprompter-workflow-copy strong,
+.teleprompter-workflow-copy p {
+  display: block;
+  margin: 0;
+}
+
+.teleprompter-workflow-copy strong {
+  font-size: 14px;
+}
+
+.teleprompter-workflow-copy p {
+  max-width: 58ch;
+  margin-top: 4px;
+  opacity: 0.67;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.teleprompter-workflow ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.teleprompter-workflow li {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  opacity: 0.46;
+}
+
+.teleprompter-workflow li.active {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  opacity: 1;
+}
+
+.teleprompter-workflow li.complete {
+  opacity: 0.7;
+}
+
+.teleprompter-workflow li > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.teleprompter-workflow li strong,
+.teleprompter-workflow li small {
+  display: block;
+}
+
+.teleprompter-workflow li strong {
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.teleprompter-workflow li small {
+  margin-top: 2px;
+  opacity: 0.7;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.booth-recording-help {
+  margin: 0 22px 9px;
+  color: inherit;
+  opacity: 0.62;
+  font-size: 10px;
+}
+
+.booth-recording-help summary {
+  width: max-content;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.booth-recording-help p {
+  max-width: 78ch;
+  margin: 7px 0 0;
+  line-height: 1.5;
+}
+
+.booth-review-button {
+  white-space: nowrap;
+}
+
 .booth-stage-v2 .live-voice-status {
   margin-bottom: 10px;
 }
@@ -7500,6 +7664,8 @@ button {
 
 .booth-stage-v2 .booth-dock {
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   padding: 12px 22px 15px;
 }
 
@@ -7510,7 +7676,12 @@ button {
 .booth-recording-controls {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.booth-review-recording-button {
+  white-space: nowrap;
 }
 
 .booth-pause-button {
@@ -7908,6 +8079,10 @@ button {
     flex-wrap: wrap;
   }
 
+  .teleprompter-workflow {
+    grid-template-columns: 1fr;
+  }
+
   .booth-stage-v2 .booth-stage-top {
     align-items: flex-start;
     flex-direction: column;
@@ -7988,6 +8163,19 @@ button {
   .booth-top-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .teleprompter-workflow {
+    margin-inline: 12px;
+    padding: 12px;
+  }
+
+  .teleprompter-workflow ol {
+    grid-template-columns: 1fr;
+  }
+
+  .booth-recording-help {
+    margin-inline: 12px;
   }
 
   .booth-breadcrumbs h2 {
