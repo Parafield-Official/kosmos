@@ -6042,11 +6042,11 @@ function Teleprompter({
                   ))}
                 </div>
                 <label className="booth-toggle">
-                  <span><strong>Flag possible word changes</strong><em>Keeps a booth tape so you can Listen to flags. That tape is not the chapter take.</em></span>
+                  <span><strong>Check my reading</strong><em>Marks words that may not match the script so you can review them later.</em></span>
                   <input type="checkbox" checked={liveState.enabled} disabled={liveStatus === "starting" || liveStatus === "processing"} onChange={(event) => setLiveEnabled(event.target.checked)} />
                 </label>
                 <label className="booth-toggle">
-                  <span><strong>Stop when the read leaves the page</strong><em>Holds the page after {LIVE_HALT_RUN_WORDS} words in a row that do not match, and marks where the line was lost. One misheard word never stops you.</em></span>
+                  <span><strong>Pause if I lose my place</strong><em>Freezes the page after {LIVE_HALT_RUN_WORDS} words do not match. Recording keeps going.</em></span>
                   <input type="checkbox" checked={stopOnMismatch} onChange={(event) => setStopOnMismatch(event.target.checked)} />
                 </label>
                 <div className="booth-shortcuts" aria-label="Keyboard and foot pedal shortcuts">
