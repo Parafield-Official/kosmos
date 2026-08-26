@@ -1,0 +1,249 @@
+:root {
+  --liquid-blur: 12px;
+  --liquid-saturate: 180%;
+  --liquid-brightness: 1.08;
+  --liquid-contrast: 1.06;
+  --liquid-fill-top: rgba(255, 255, 255, 0.16);
+  --liquid-fill-mid: rgba(255, 255, 255, 0.04);
+  --liquid-fill-bottom: rgba(255, 255, 255, 0.07);
+  --liquid-well: rgba(8, 10, 18, 0.12);
+  --liquid-rim: rgba(255, 255, 255, 0.46);
+  --liquid-rim-inner: rgba(255, 255, 255, 0.58);
+  --liquid-rim-shade: rgba(255, 255, 255, 0.1);
+  --liquid-spec: rgba(255, 255, 255, 0.55);
+  --liquid-refract: rgba(186, 220, 255, 0.42);
+  --liquid-refract-hot: rgba(255, 255, 255, 0.7);
+  --liquid-shadow: rgba(0, 0, 0, 0.22);
+  --liquid-radius: 999px;
+}
+
+.liquid {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  padding: 0;
+  border-radius: var(--liquid-radius, 999px);
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: transform 100ms ease-out;
+}
+
+.liquid-circle {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.liquid-pill {
+  min-height: 2.4rem;
+}
+
+.liquid-lens {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.liquid-fill,
+.liquid-refract,
+.liquid-spec,
+.liquid-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.liquid-fill {
+  background:
+    linear-gradient(
+      165deg,
+      var(--liquid-fill-top) 0%,
+      var(--liquid-fill-mid) 46%,
+      var(--liquid-fill-bottom) 100%
+    ),
+    var(--liquid-well);
+  backdrop-filter:
+    blur(var(--liquid-blur))
+    saturate(var(--liquid-saturate))
+    brightness(var(--liquid-brightness))
+    contrast(var(--liquid-contrast));
+  -webkit-backdrop-filter:
+    blur(var(--liquid-blur))
+    saturate(var(--liquid-saturate))
+    brightness(var(--liquid-brightness))
+    contrast(var(--liquid-contrast));
+}
+
+.liquid-refract {
+  inset: -1px;
+  padding: 1.5px;
+  background: conic-gradient(
+    from 210deg,
+    transparent 0 6%,
+    var(--liquid-refract-hot) 10%,
+    transparent 18%,
+    var(--liquid-refract) 42%,
+    transparent 58%,
+    var(--liquid-refract-hot) 78%,
+    transparent 88%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.9;
+}
+
+.liquid-spec {
+  background: linear-gradient(
+    180deg,
+    var(--liquid-spec) 0%,
+    transparent 42%
+  );
+  opacity: 0.42;
+  mix-blend-mode: screen;
+}
+
+.liquid-rim {
+  border: 1px solid var(--liquid-rim);
+  box-shadow:
+    inset 0 1px 0 var(--liquid-rim-inner),
+    inset 0 -1px 0 var(--liquid-rim-shade),
+    0 6px 18px var(--liquid-shadow);
+}
+
+.liquid-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.liquid:hover .liquid-fill,
+.liquid.open .liquid-fill,
+.liquid:focus-visible .liquid-fill {
+  background:
+    linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.22) 0%,
+      rgba(255, 255, 255, 0.06) 46%,
+      rgba(255, 255, 255, 0.1) 100%
+    ),
+    var(--liquid-well);
+}
+
+.liquid:active {
+  transform: scale(0.97);
+}
+
+.liquid:focus,
+.liquid:focus-visible {
+  outline: none;
+}
+
+.liquid:focus-visible .liquid-rim {
+  box-shadow:
+    inset 0 1px 0 var(--liquid-rim-inner),
+    0 0 0 2px rgba(255, 255, 255, 0.28),
+    0 6px 18px var(--liquid-shadow);
+}
+
+.brand-mark {
+  position: absolute;
+  z-index: 20;
+  top: calc(var(--tl-top) + 2px);
+  left: 50%;
+  height: 2.55rem;
+  overflow: hidden;
+  transform: translateX(-50%);
+  cursor: default;
+}
+
+.brand-mark .liquid-content {
+  display: grid;
+  grid-template-columns: auto 0fr;
+  justify-content: start;
+  align-items: center;
+  gap: 0;
+  height: 100%;
+  padding: 0 0.72rem;
+  transition:
+    grid-template-columns 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1)),
+    gap 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1)),
+    padding 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1));
+}
+
+.brand-mark:hover .liquid-content,
+.brand-mark:focus-visible .liquid-content {
+  grid-template-columns: auto 1fr;
+  gap: 0.62rem;
+  padding: 0 0.95rem 0 0.72rem;
+}
+
+.brand-mark-logo {
+  width: 1.55rem;
+  height: auto;
+  display: block;
+  flex: none;
+  mix-blend-mode: screen;
+}
+
+.brand-mark-name {
+  overflow: hidden;
+  min-width: 0;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 280ms ease-out 60ms,
+    transform 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1));
+}
+
+.brand-mark:hover .brand-mark-name,
+.brand-mark:focus-visible .brand-mark-name {
+  opacity: 1;
+  transform: none;
+}
+
+.settings-toggle svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark .liquid-content,
+  .brand-mark-name {
+    transition: none;
+  }
+
+  .brand-mark:hover .liquid-content,
+  .brand-mark:focus-visible .liquid-content {
+    grid-template-columns: auto 1fr;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-fill {
+    background: rgba(28, 28, 32, 0.88);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
