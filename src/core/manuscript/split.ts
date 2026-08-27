@@ -36,6 +36,14 @@ export interface SplitManuscriptOptions {
   maxChapterMinutes?: number;
   /** Treat every line beginning with # as a chapter heading (plain text books). */
   hashStartsChapter?: boolean;
+  /**
+   * Drop a Table of Contents. Many books open with a contents page that lists
+   * "Chapter 1", "Chapter 2", … as bare lines; taken literally each becomes an
+   * empty (or near-empty) chapter, and the last entry swallows whatever front
+   * matter sits before the real first chapter. Off by default so existing
+   * callers are byte-for-byte unchanged; the audiobook importer turns it on.
+   */
+  dropContentsList?: boolean;
 }
 
 export interface PastedChapter {
@@ -85,7 +93,7 @@ export function splitManuscript(
   const sourceLines = sourceNormalized.split("\n");
   const lines = normalized.split("\n");
   let hashHeadingNumber = 0;
-  const headings = lines.flatMap((line, lineIndex) => {
+  const detectedHeadings = lines.flatMap((line, lineIndex) => {
     const hashTitle = options.hashStartsChapter
       ? hashHeadingTitle(sourceLines[lineIndex], hashHeadingNumber + 1)
       : null;
@@ -95,6 +103,9 @@ export function splitManuscript(
     const title = hashTitle ?? headingTitle(line, lineIndex, lines);
     return title ? [{ lineIndex, title }] : [];
   });
+  const headings = options.dropContentsList
+    ? dropContentsListHeadings(detectedHeadings, lines)
+    : detectedHeadings;
   const maxMinutes = options.maxChapterMinutes ?? MAX_CHAPTER_MINUTES;
   const idPrefix = options.idPrefix ?? "ch";
 
@@ -340,6 +351,49 @@ function lastNonWhitespaceEnd(value: string): number {
     end -= 1;
   }
   return end;
+}
+
+/** Words of narration between two heading lines, excluding the headings. */
+function bodyWordsBetween(lines: string[], firstHeadingLine: number, nextHeadingLine: number): number {
+  if (nextHeadingLine <= firstHeadingLine + 1) {
+    return 0;
+  }
+  return countWords(lines.slice(firstHeadingLine + 1, nextHeadingLine).join("\n"));
+}
+
+/**
+ * Remove headings that belong to a Table of Contents. A contents list is a run
+ * of headings stacked together with (almost) no narration between consecutive
+ * entries — the shape of "Chapter 1 / Chapter 2 / Chapter 3 …" on a contents
+ * page. Real chapters are always separated by prose, so a run of three or more
+ * near-touching headings is a list, not chapters. Dropping the headings lets
+ * their sparse text fold back into the preceding section instead of becoming
+ * empty chapters (or one phantom chapter that eats the front matter after it).
+ */
+function dropContentsListHeadings(headings: Heading[], lines: string[]): Heading[] {
+  const ADJACENT_MAX_WORDS = 2;
+  const MIN_RUN = 3;
+  const drop = new Set<number>();
+  let index = 0;
+  while (index < headings.length) {
+    let end = index;
+    while (
+      end + 1 < headings.length
+      && bodyWordsBetween(lines, headings[end].lineIndex, headings[end + 1].lineIndex) <= ADJACENT_MAX_WORDS
+    ) {
+      end += 1;
+    }
+    if (end - index + 1 >= MIN_RUN) {
+      for (let position = index; position <= end; position += 1) {
+        drop.add(position);
+      }
+    }
+    index = end + 1;
+  }
+  if (drop.size === 0) {
+    return headings;
+  }
+  return headings.filter((_, position) => !drop.has(position));
 }
 
 function headingTitle(line: string, lineIndex: number, lines: string[]): string | null {

@@ -68,7 +68,18 @@ export function manuscriptSource(name: string, bytes: Uint8Array): string | null
 
 /** Split source text into chapters (+ per-chapter HTML), reporting progress. */
 export async function analyzeSource(source: string, onProgress?: AnalyzeProgress): Promise<AnalyzeResult> {
-  const sections = splitManuscript(source, { hashStartsChapter: true, defaultTitle: "Chapter 1" });
+  const split = splitManuscript(source, {
+    hashStartsChapter: true,
+    defaultTitle: "Chapter 1",
+    dropContentsList: true,
+  });
+  // A chapter you can narrate must contain narration. Heading-shaped lines with
+  // no body under them — a Table of Contents, part dividers, a cluster of
+  // headings — otherwise become empty chapters whose teleprompter reads "No
+  // text yet." Keep only sections that carry words, so every chapter card the
+  // booth offers has a script behind it.
+  const withText = split.filter((section) => section.word_count > 0);
+  const sections = withText.length > 0 ? withText : split;
   if (sections.length === 0) {
     return { chapters: [], contents: [] };
   }

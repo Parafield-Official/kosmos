@@ -108,6 +108,61 @@ describe("manuscript chapter splitting", () => {
     expect(renameChapter(merged, "Renamed").title).toBe("Renamed");
   });
 
+  it("drops a table of contents instead of making phantom chapters", () => {
+    // A contents page lists the chapters as bare lines, then the last entry
+    // runs straight into the front matter before the real first chapter — the
+    // exact shape that produced empty chapters and a stray early "Chapter 17".
+    const manuscript = [
+      "My Book",
+      "",
+      "CONTENTS",
+      "Chapter 1",
+      "Chapter 2",
+      "Chapter 3",
+      "About the author.",
+      "",
+      "CHAPTER 1",
+      "It was a bright cold day in April.",
+      "",
+      "CHAPTER 2",
+      "The hallway smelt of boiled cabbage.",
+      "",
+      "CHAPTER 3",
+      "Outside the world looked cold.",
+    ].join("\n");
+
+    const withList = splitManuscript(manuscript, { dropContentsList: true });
+    expect(withList.map((chapter) => chapter.title)).toEqual([
+      "Front matter",
+      "CHAPTER 1",
+      "CHAPTER 2",
+      "CHAPTER 3",
+    ]);
+    // No empty chapters, and the contents-list residue folds into front matter.
+    expect(withList.every((chapter) => chapter.word_count > 0)).toBe(true);
+    expect(withList[0].text).toContain("About the author.");
+
+    // Default behavior is unchanged: the contents list still becomes chapters.
+    const withoutList = splitManuscript(manuscript);
+    expect(withoutList.length).toBeGreaterThan(withList.length);
+    expect(withoutList.some((chapter) => chapter.word_count === 0)).toBe(true);
+  });
+
+  it("keeps adjacent section dividers when they are too few to be a contents list", () => {
+    // "Part One" immediately followed by "Chapter 1" is a legitimate two-heading
+    // stack, not a table of contents; a run must reach three to be dropped.
+    const manuscript = [
+      "Prologue",
+      "The old man died on a Tuesday.",
+      "",
+      "Chapter 1",
+      "It began the next morning.",
+    ].join("\n");
+
+    const chapters = splitManuscript(manuscript, { dropContentsList: true });
+    expect(chapters.map((chapter) => chapter.title)).toEqual(["Prologue", "Chapter 1"]);
+  });
+
   it("slices styled spans without flattening DOCX emphasis", () => {
     const spans = [
       { text: "Chapter 1\n", seat: "narration" as const, style: [] },
