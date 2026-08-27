@@ -12,7 +12,7 @@ const {
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
-const { MODEL, downloadModel, modelStatus, modelStatusForFile } = require("./model.cjs");
+const { MODEL, downloadModel, downloadProofModel, proofModelStatus } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { strToU8, zipSync } = require("fflate");
 const { extractArchive } = require("./unzip.cjs");
@@ -3681,16 +3681,14 @@ ipcMain.on("live:pcm", (_event, payload) => {
     console.warn(`Live follow ingest failed: ${error?.message ?? error}`);
   }
 });
-ipcMain.handle("proof:model-status", async () => {
-  const cached = await modelStatus(app.getPath("userData"));
-  if (cached.available) {
-    return cached;
-  }
-  const bundled = await modelStatusForFile(path.join(process.resourcesPath, "models", MODEL.fileName));
-  return bundled.available ? { ...bundled, bundled: true } : cached;
-});
+ipcMain.handle("proof:model-status", async () => proofModelStatus({
+  userDataPath: app.getPath("userData"),
+  resourcesPath: process.resourcesPath,
+  appPath: app.getAppPath(),
+  cwd: process.cwd(),
+}));
 ipcMain.handle("proof:download-model", async (event) => {
-  return downloadModel(app.getPath("userData"), (progress) => {
+  return downloadProofModel(app.getPath("userData"), (progress) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send("proof:model-progress", progress);
     }

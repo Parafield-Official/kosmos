@@ -1,4 +1,4 @@
-export type Place = "mark" | "intro" | "brand" | "welcome" | "app";
+export type Place = "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app";
 
 export interface FrameSize {
   width: number;
@@ -6,14 +6,19 @@ export interface FrameSize {
 }
 
 export const STORAGE_KEY = "kosmos-next-onboarding";
+/** Persists across quits: once true, launches skip straight to the main app. */
+export const ONBOARDED_KEY = "kosmos-onboarded";
 
 export const INTRO_TAGLINE =
   "you’re creating an audiobook, but you’re paying softwares for recording, teleprompter, and sound mastering.";
 export const INTRO_HEADLINE = "Introducing Kosmos:";
 export const INTRO_STUDIO = "audiobook recording and mastering in one place.";
 export const INTRO_COPYRIGHT = "© Parafield Inc.";
-export const INTRO_DISCORD = "https://discord.gg/parafield";
-export const WELCOME_VIDEO = "/welcome.mp4";
+export const INTRO_DISCORD = "https://discord.gg/g4aVz59mQ9";
+export const INTRO_DISCORD_APP = "discord://-/invite/g4aVz59mQ9";
+export const INTRO_GITHUB = "https://github.com/Manishram-ai/kosmos";
+export const WELCOME_VIDEO = "/welcome.mov?v=0";
+export const WELCOME_VIDEO_GAIN = 1.45;
 export const WELCOME_PLACEHOLDER_S = 12;
 
 export const INTRO_CHAR_MS = 28;
@@ -24,10 +29,16 @@ export const MARK_MS = 1120;
 export const MARK_SIZE: FrameSize = { width: 600, height: 490 };
 export const INTRO_SIZE: FrameSize = MARK_SIZE;
 export const BRAND_SIZE: FrameSize = MARK_SIZE;
-export const WELCOME_SIZE: FrameSize = { width: 720, height: 560 };
+export const WELCOME_SIZE: FrameSize = { width: 600, height: 410 };
 export const APP_SIZE: FrameSize = { width: 1180, height: 760 };
 
-export const PLACES: Place[] = ["mark", "intro", "brand", "welcome", "app"];
+export const PLACES: Place[] = ["mark", "intro", "brand", "welcome", "community", "access", "app"];
+
+export function placeLabel(place: Place): string {
+  if (place === "app") return "main app";
+  if (place === "welcome") return "video";
+  return place;
+}
 
 export function sizeFor(place: Place): FrameSize {
   if (place === "app") {
@@ -39,16 +50,71 @@ export function sizeFor(place: Place): FrameSize {
   return MARK_SIZE;
 }
 
+export const ACCESS_HEADING = "Let\u2019s get everything set up.";
+export const ACCESS_MIC_TITLE = "Allow Kosmos to record audio";
+export const ACCESS_MIC_DESC = "Kosmos uses your microphone to capture narration and voice-over for your audiobooks.";
+export const ACCESS_MIC_DENIED = "Microphone access is blocked in System Settings.";
+export const ACCESS_MIC_PROMPT = "Tap to allow Kosmos to use your microphone.";
+export const ACCESS_MIC_PENDING = "Waiting for the system microphone prompt…";
+export const ACCESS_MIC_GRANTED = "Microphone access allowed.";
+export const ACCESS_OPEN_MIC_SETTINGS = "Open Microphone Settings";
+export const ACCESS_SPEECH_TITLE = "Download speech model";
+export const ACCESS_SPEECH_PROMPT = "For proofreading imported audio.";
+export const ACCESS_SPEECH_PENDING = "Downloading";
+export const ACCESS_SPEECH_GRANTED = "Ready.";
+export const ACCESS_SPEECH_DENIED = "Download failed. Tap to retry.";
+export const ACCESS_FOLDER_TITLE = "Choose your workspace";
+export const ACCESS_FOLDER_PROMPT = "Pick a folder for your Kosmos projects.";
+export const ACCESS_FOLDER_PENDING = "Waiting for the folder picker\u2026";
+export const ACCESS_FOLDER_GRANTED = "Workspace set.";
+export const ACCESS_FOLDER_DENIED = "No workspace chosen.";
+export const ACCESS_BRIDGE_MISSING = "Restart the Electron app to enable system permission dialogs.";
+export const DEBUG_RESET_ACCESS = "reset access";
+export const COMMUNITY_HEADING = "Join our community";
+export const COMMUNITY_POINT_1_TITLE = "Connect with creators";
+export const COMMUNITY_POINT_1_BODY = "A place for authors, narrators, and audiobook lovers to connect and engage in conversations.";
+export const COMMUNITY_POINT_2_TITLE = "Make Kosmos better";
+export const COMMUNITY_POINT_2_BODY = "Report any bugs or suggest features to the team behind Kosmos and make the project better together.";
+
 export function sameSize(left: FrameSize, right: FrameSize): boolean {
   return left.width === right.width && left.height === right.height;
+}
+
+export function isOnboarded(): boolean {
+  try {
+    return window.localStorage.getItem(ONBOARDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markOnboarded() {
+  try {
+    window.localStorage.setItem(ONBOARDED_KEY, "1");
+  } catch {
+    // Storage can be refused; onboarding simply repeats next launch.
+  }
+}
+
+export function clearOnboarded() {
+  try {
+    window.localStorage.removeItem(ONBOARDED_KEY);
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Non-fatal.
+  }
 }
 
 export function readStoredPlace(): Place {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
     const value = window.sessionStorage.getItem(STORAGE_KEY);
-    if (value === "mark" || value === "intro" || value === "brand" || value === "welcome" || value === "app") {
+    if (value === "mark" || value === "intro" || value === "brand" || value === "welcome" || value === "access" || value === "community" || value === "app") {
       return value;
+    }
+    // Returning, already-onboarded users land in the main app (Xcode-style).
+    if (isOnboarded()) {
+      return "app";
     }
   } catch {
     // Private windows can refuse storage; start from the first card.

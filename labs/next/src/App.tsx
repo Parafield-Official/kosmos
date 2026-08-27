@@ -8,6 +8,7 @@ import {
   INTRO_TAGLINE,
   MARK_MS,
   STATEMENT_MS,
+  markOnboarded,
   prefersReducedMotion,
   readStoredPlace,
   sameSize,
@@ -17,70 +18,181 @@ import {
 } from "./flow";
 import { useTypewriter } from "./useTypewriter";
 import { startMeshFlow } from "./mesh-flow";
-import { GlassLookSwitch } from "./GlassLookSwitch";
 import { StartSlider } from "./StartSlider";
 import { DebugDock } from "./DebugDock";
 import { BrandMark } from "./ui/BrandMark";
-import { Liquid } from "./ui/liquid-control";
+import { Liquid } from "./ui/liquid";
 import { WelcomeVideo } from "./WelcomeVideo";
+import { applyClearedAccess, syncAccessState, type AccessSnapshot } from "./access";
+import { AccessScreen } from "./AccessScreen";
+import { CommunityScreen } from "./CommunityScreen";
+import { MainApp } from "./main-app/MainApp";
+
+type WindowChrome = {
+  platform: NodeJS.Platform;
+  fullscreen: boolean;
+  maximized: boolean;
+  expanded: boolean;
+  showTrafficChrome: boolean;
+};
+
+function defaultWindowChrome(hosted: boolean): WindowChrome {
+  const platform = window.kosmosNext?.platform ?? "darwin";
+  return {
+    platform,
+    fullscreen: false,
+    maximized: false,
+    expanded: false,
+    showTrafficChrome: hosted,
+  };
+}
+
+function useWindowChrome(hosted: boolean): WindowChrome {
+  const [chrome, setChrome] = useState<WindowChrome>(() => defaultWindowChrome(hosted));
+
+  useEffect(() => {
+    if (hosted || !window.kosmosNext?.getWindowChrome) {
+      setChrome(defaultWindowChrome(hosted));
+      return;
+    }
+
+    let alive = true;
+    void window.kosmosNext.getWindowChrome().then((state) => {
+      if (alive) {
+        setChrome(state);
+      }
+    });
+    const off = window.kosmosNext.onWindowChrome?.((state) => {
+      setChrome(state);
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [hosted]);
+
+  return chrome;
+}
 
 export function App() {
   const [place, setPlace] = useState<Place>(readStoredPlace);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const [flowSeed, setFlowSeed] = useState(0);
+  const [accessSnapshot, setAccessSnapshot] = useState<AccessSnapshot | null>(null);
   const booted = useRef(false);
+  const jumpRef = useRef<(next: Place) => void>(() => {});
 
   const lastSize = useRef(sizeFor(place));
 
   useLayoutEffect(() => {
     const size = sizeFor(place);
+    if (place === "app") {
+      markOnboarded();
+    }
+    void window.kosmosNext?.setPlace?.(place);
+    window.kosmosNext?.reportPlace?.(place);
     if (!booted.current) {
       booted.current = true;
       lastSize.current = size;
-      window.kosmosNext?.ready(size);
+      window.kosmosNext?.ready({ ...size, place });
       return;
     }
-    if (sameSize(lastSize.current, size)) {
-      return;
+    if (!sameSize(lastSize.current, size)) {
+      lastSize.current = size;
+      void window.kosmosNext?.resize(size);
     }
-    lastSize.current = size;
-    void window.kosmosNext?.resize(size);
   }, [place]);
 
-  useEffect(() => {
-    return window.kosmosNext?.onJump?.((next) => {
-      setPinned(true);
-      setPlace(next);
-      storePlace(next);
-    });
-  }, []);
-
   function go(next: Place) {
-    setPinned(false);
     setPlace(next);
     storePlace(next);
   }
 
   function jump(next: Place) {
-    setPinned(true);
     setPlace(next);
     storePlace(next);
+    setFlowSeed((n) => n + 1);
   }
+
+  jumpRef.current = jump;
+
+  useEffect(() => {
+    return window.kosmosNext?.onJump?.((next) => {
+      jumpRef.current(next);
+    });
+  }, []);
+
+  useEffect(() => {
+    function clearAccess() {
+      applyClearedAccess();
+      void syncAccessState().then((snapshot) => {
+        setAccessSnapshot({
+          mic: { state: "prompt" },
+          folder: { state: "prompt" },
+          speechModel: snapshot.speechModel,
+        });
+      });
+      setFlowSeed((n) => n + 1);
+    }
+    const off = window.kosmosNext?.onAccessReset?.(() => {
+      clearAccess();
+    });
+    window.addEventListener("kosmos-access-reset", clearAccess);
+    return () => {
+      off?.();
+      window.removeEventListener("kosmos-access-reset", clearAccess);
+    };
+  }, []);
+
+  useEffect(() => {
+    function restart() {
+      jumpRef.current("mark");
+    }
+    window.addEventListener("kosmos-onboarding-restart", restart);
+    return () => window.removeEventListener("kosmos-onboarding-restart", restart);
+  }, []);
+
+  useEffect(() => {
+    if (place !== "community" && place !== "access") {
+      return;
+    }
+    let alive = true;
+    void syncAccessState().then((snapshot) => {
+      if (alive) {
+        setAccessSnapshot(snapshot);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [place, flowSeed]);
 
   const size = sizeFor(place);
   const electron = Boolean(window.kosmosNext);
+  const hosted = !electron;
+  const windowChrome = useWindowChrome(hosted);
+  const showTrafficGlass = place === "app" && (hosted || windowChrome.showTrafficChrome);
 
   let body: ReactNode;
   if (place === "mark") {
-    body = <IntroMark pinned={pinned} onComplete={() => go("intro")} />;
+    body = <IntroMark key={`mark-${flowSeed}`} onComplete={() => go("intro")} />;
   } else if (place === "intro") {
-    body = <IntroTagline pinned={pinned} onComplete={() => go("brand")} />;
+    body = <IntroTagline key={`intro-${flowSeed}`} onComplete={() => go("brand")} />;
   } else if (place === "brand") {
-    body = <IntroducingKosmos onComplete={() => go("welcome")} />;
+    body = <IntroducingKosmos key={`brand-${flowSeed}`} onComplete={() => go("welcome")} />;
   } else if (place === "welcome") {
-    body = <WelcomeVideo onComplete={() => go("app")} />;
+    body = <WelcomeVideo key={`welcome-${flowSeed}`} onComplete={() => go("community")} />;
+  } else if (place === "community") {
+    body = <CommunityScreen key={`community-${flowSeed}`} onComplete={() => go("access")} />;
+  } else if (place === "access") {
+    body = (
+      <AccessScreen
+        key={`access-${flowSeed}`}
+        initialSnapshot={accessSnapshot}
+        onComplete={() => go("app")}
+      />
+    );
   } else {
-    body = <Studio />;
+    body = <MainApp />;
   }
 
   return (
@@ -88,35 +200,19 @@ export function App() {
     <div
       className={electron ? "viewport native" : "viewport hosted"}
       data-place={place}
+      data-traffic-chrome={windowChrome.showTrafficChrome ? "true" : "false"}
+      data-window-expanded={windowChrome.expanded ? "true" : "false"}
       style={electron ? undefined : { width: size.width, height: size.height }}
     >
       <GlassMaterial />
-      <div className="drag-strip" aria-hidden="true" />
-      <TrafficGlass hosted={!electron} />
+      <div className="drag-strip drag-strip-start" aria-hidden="true" />
+      <div className="drag-strip drag-strip-end" aria-hidden="true" />
+      {showTrafficGlass ? <TrafficGlass hosted={hosted} /> : null}
       {place === "app" ? <BrandMark /> : null}
       <div className="frame">{body}</div>
       <p className="shell-footer">{INTRO_COPYRIGHT}</p>
-
-      <div className={settingsOpen ? "settings open" : "settings"}>
-        <Liquid
-          type="button"
-          shape="circle"
-          className={settingsOpen ? "settings-toggle open" : "settings-toggle"}
-          aria-label="Settings"
-          aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen((open) => !open)}
-        >
-          <SettingsIcon />
-        </Liquid>
-        {settingsOpen ? (
-          <div className="settings-panel" role="dialog" aria-label="Settings">
-            <p className="settings-kicker">theme</p>
-            <GlassLookSwitch />
-          </div>
-        ) : null}
-      </div>
     </div>
-    {electron ? null : <DebugDock place={place} onJump={jump} />}
+    {import.meta.env.DEV && !electron ? <DebugDock place={place} onJump={jump} /> : null}
     </>
   );
 }
@@ -167,7 +263,7 @@ function GlassMaterial() {
   );
 }
 
-function IntroMark({ onComplete, pinned }: { onComplete: () => void; pinned: boolean }) {
+function IntroMark({ onComplete }: { onComplete: () => void }) {
   const reduced = prefersReducedMotion();
   const completeRef = useRef(onComplete);
   completeRef.current = onComplete;
@@ -175,12 +271,9 @@ function IntroMark({ onComplete, pinned }: { onComplete: () => void; pinned: boo
 
   useEffect(() => {
     setVisible(true);
-    if (pinned) {
-      return;
-    }
     const doneId = window.setTimeout(() => completeRef.current(), reduced ? Math.min(MARK_MS, 650) : MARK_MS);
     return () => window.clearTimeout(doneId);
-  }, [pinned, reduced]);
+  }, [reduced]);
 
   return (
     <section className="intro intro-mark" data-visible={visible ? "true" : "false"} aria-label="Kosmos">
@@ -195,7 +288,7 @@ function IntroMark({ onComplete, pinned }: { onComplete: () => void; pinned: boo
   );
 }
 
-function IntroTagline({ onComplete, pinned }: { onComplete: () => void; pinned: boolean }) {
+function IntroTagline({ onComplete }: { onComplete: () => void }) {
   const reduced = prefersReducedMotion();
   const completeRef = useRef(onComplete);
   completeRef.current = onComplete;
@@ -203,7 +296,7 @@ function IntroTagline({ onComplete, pinned }: { onComplete: () => void; pinned: 
     reduced,
     charMs: INTRO_CHAR_MS,
     pauseMs: reduced ? Math.min(STATEMENT_MS, 900) : INTRO_PAUSE_MS,
-    onComplete: pinned ? undefined : () => completeRef.current(),
+    onComplete: () => completeRef.current(),
   });
 
   return (
@@ -220,8 +313,8 @@ function IntroducingKosmos({ onComplete }: { onComplete: () => void }) {
   const reduced = prefersReducedMotion();
   const completeRef = useRef(onComplete);
   completeRef.current = onComplete;
-  const [visible, setVisible] = useState(true);
-  const [phase, setPhase] = useState<"title" | "line">("line");
+  const [visible, setVisible] = useState(reduced);
+  const [phase, setPhase] = useState<"title" | "line">(reduced ? "line" : "title");
 
   useEffect(() => {
     if (reduced) {
@@ -234,7 +327,7 @@ function IntroducingKosmos({ onComplete }: { onComplete: () => void }) {
     const armId = window.requestAnimationFrame(() => {
       showId = window.requestAnimationFrame(() => setVisible(true));
     });
-    const lineId = window.setTimeout(() => setPhase("line"), 640);
+    const lineId = window.setTimeout(() => setPhase("line"), 720);
     return () => {
       window.cancelAnimationFrame(armId);
       window.cancelAnimationFrame(showId);
@@ -258,7 +351,7 @@ function IntroducingKosmos({ onComplete }: { onComplete: () => void }) {
             {INTRO_STUDIO}
           </p>
         </div>
-        <div className="intro-start" data-show={phase === "line" ? "true" : "false"}>
+        <div className="intro-start">
           <StartSlider onComplete={() => completeRef.current()} />
         </div>
       </div>
@@ -266,31 +359,3 @@ function IntroducingKosmos({ onComplete }: { onComplete: () => void }) {
   );
 }
 
-function Studio() {
-  return (
-    <main className="studio">
-      <div className="studio-body">
-        <p className="kicker">studio</p>
-        <h1>Open a book when the flow is ready.</h1>
-        <p className="lede">Main shell. Spec next.</p>
-      </div>
-    </main>
-  );
-}
-
-function SettingsIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.15"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}

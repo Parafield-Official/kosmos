@@ -27,8 +27,6 @@ body,
   background: rgba(18, 16, 22, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 16px;
-  -webkit-app-region: drag;
-  app-region: drag;
 }
 
 .debug-palette-drag {
@@ -46,10 +44,12 @@ body,
 .debug-list {
   display: grid;
   gap: 0.3rem;
+  max-height: calc(100% - 2.4rem);
   padding: 0.45rem;
   border-radius: 18px;
   background: rgba(18, 16, 22, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.14);
+  overflow-y: auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -66,9 +66,53 @@ body,
   text-transform: lowercase;
   text-align: left;
   cursor: pointer;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .debug-list button:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.debug-list button.on {
   background: #ffffff;
   color: #0c0b0e;
+}
+
+.debug-list button.on:hover {
+  background: #ffffff;
+  color: #0c0b0e;
+}
+
+.debug-dev {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem 0.45rem 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.debug-dev-action {
+  border: 0;
+  border-radius: 12px;
+  padding: 0.48rem 0.65rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.58);
+  font: inherit;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.debug-dev-action:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.82);
 }

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { PLACES, type Place } from "./flow";
+import { resetAccessState } from "./access";
+import { DEBUG_RESET_ACCESS, PLACES, placeLabel, type Place } from "./flow";
+import { GlassButton } from "./ui/liquid";
 
 const DEBUG_POS_KEY = "kosmos-debug-dock-v2";
 
@@ -124,27 +126,34 @@ export function DebugDock({
       onPointerCancel={onPointerUp}
     >
       <p className="debug-dock-handle">debug</p>
-      <button
+      <GlassButton
         type="button"
-        className="debug-toggle btn"
+        className="debug-toggle glass-btn-compact"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         {open ? "hide" : "show"}
-      </button>
+      </GlassButton>
       {open ? (
+        <>
         <div className="debug-list" role="group" aria-label="Jump">
           {PLACES.map((item) => (
-            <button
+            <GlassButton
               key={item}
               type="button"
-              className={item === place ? "btn on" : "btn"}
+              className={item === place ? "glass-btn-debug-item open" : "glass-btn-debug-item"}
               onClick={() => onJump(item)}
             >
-              {item === "app" ? "main app" : item === "welcome" ? "video" : item}
-            </button>
+              {placeLabel(item)}
+            </GlassButton>
           ))}
         </div>
+        <div className="debug-dev" role="group" aria-label="Dev tools">
+          <button type="button" className="debug-dev-action" onClick={() => void resetAccessState()}>
+            {DEBUG_RESET_ACCESS}
+          </button>
+        </div>
+        </>
       ) : null}
     </div>
   );

@@ -200,6 +200,59 @@ async function downloadVerifiedModel(spec, destination, onProgress) {
   }
 }
 
+function proofModelCandidates({ userDataPath, resourcesPath, appPath, cwd }) {
+  return [
+    userDataPath && path.join(userDataPath, "models", MODEL.fileName),
+    resourcesPath && path.join(resourcesPath, "models", MODEL.fileName),
+    appPath && path.join(appPath, "models", MODEL.fileName),
+    appPath && path.join(appPath, "vendor", "models", MODEL.fileName),
+    cwd && path.join(cwd, "vendor", "models", MODEL.fileName),
+  ].filter(Boolean);
+}
+
+/** Same readiness check the production app uses before proof can run. */
+async function proofModelStatus({ userDataPath, resourcesPath, appPath, cwd = process.cwd() }) {
+  const cached = await modelStatus(userDataPath);
+  if (cached.available) {
+    return cached;
+  }
+
+  for (const candidate of proofModelCandidates({ userDataPath, resourcesPath, appPath, cwd })) {
+    const status = await modelStatusForFile(candidate);
+    if (!status.available) {
+      continue;
+    }
+    if (userDataPath && path.resolve(candidate) === path.resolve(path.join(userDataPath, "models", MODEL.fileName))) {
+      return status;
+    }
+    return { ...status, bundled: true };
+  }
+
+  return cached;
+}
+
+/** Install only the Whisper proof model used by onboarding and chapter proof. */
+async function downloadProofModel(userDataPath, onProgress) {
+  const destination = path.join(userDataPath, "models", MODEL.fileName);
+  const active = inFlightDownloads.get(destination);
+  if (active) {
+    await active;
+  } else {
+    const task = downloadVerifiedModel(MODEL, destination, onProgress);
+    inFlightDownloads.set(destination, task);
+    try {
+      await task;
+    } finally {
+      inFlightDownloads.delete(destination);
+    }
+  }
+  const marked = await modelStatus(userDataPath);
+  if (marked.available) {
+    return marked;
+  }
+  return modelStatusForFile(destination);
+}
+
 function fileDigest(filePath, algorithm = "sha1") {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(algorithm);
@@ -296,4 +349,13 @@ function download(url, destination, onProgress, redirectCount = 0) {
   });
 }
 
-module.exports = { MODEL, LIVE_MODEL, MODELS, modelStatus, modelStatusForFile, downloadModel };
+module.exports = {
+  MODEL,
+  LIVE_MODEL,
+  MODELS,
+  modelStatus,
+  modelStatusForFile,
+  proofModelStatus,
+  downloadProofModel,
+  downloadModel,
+};
