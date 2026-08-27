@@ -1,14 +1,20 @@
 /// <reference path="./glass-test.d.ts" />
 import "./glass-test.css";
 
-const pane = document.getElementById("pane");
-const tintInput = document.getElementById("tint") as HTMLInputElement | null;
-const tintValue = document.getElementById("tint-value");
-const osBlurInput = document.getElementById("os-blur") as HTMLInputElement | null;
+const paneMaybe = document.getElementById("pane");
+const tintInputMaybe = document.getElementById("tint") as HTMLInputElement | null;
+const tintValueMaybe = document.getElementById("tint-value");
+const osBlurInputMaybe = document.getElementById("os-blur") as HTMLInputElement | null;
 
-if (!pane || !tintInput || !tintValue || !osBlurInput) {
+if (!paneMaybe || !tintInputMaybe || !tintValueMaybe || !osBlurInputMaybe) {
   throw new Error("Pure glass test markup is missing");
 }
+
+// Non-null consts so the narrowing survives into the apply() closure below.
+const pane: HTMLElement = paneMaybe;
+const tintInput: HTMLInputElement = tintInputMaybe;
+const tintValue: HTMLElement = tintValueMaybe;
+const osBlurInput: HTMLInputElement = osBlurInputMaybe;
 
 function apply() {
   const alpha = Number(tintInput.value);

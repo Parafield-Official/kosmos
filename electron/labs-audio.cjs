@@ -82,6 +82,38 @@ async function writeFileAtomic(target, data, encoding) {
   await fs.rename(tmp, target);
 }
 
+/** True when the buffer already carries a RIFF/WAVE header. */
+function isWavBuffer(bytes) {
+  return (
+    Buffer.isBuffer(bytes)
+    && bytes.length >= 12
+    && bytes.toString("latin1", 0, 4) === "RIFF"
+    && bytes.toString("latin1", 8, 12) === "WAVE"
+  );
+}
+
+/**
+ * Re-encode any imported take into a PCM16 WAV so the chapter tape model stays
+ * two honest `.wav` files. Sample rate and channels are preserved; only the
+ * container/codec is normalized. WAV input is passed straight through by the
+ * caller, so this only runs for imported mp3/m4a/ogg/webm takes.
+ */
+async function transcodeToWav(inputBytes) {
+  if (inputBytes.length > MAX_RECORDER_WAV_BYTES) {
+    throw new Error("Imported audio is larger than Kosmos's supported audio limit.");
+  }
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-labs-import-"));
+  const inputPath = path.join(tmpDir, "import");
+  const outputPath = path.join(tmpDir, "import.wav");
+  try {
+    await fs.writeFile(inputPath, inputBytes);
+    await runFfmpeg(["-y", "-v", "error", "-i", inputPath, "-c:a", "pcm_s16le", outputPath]);
+    return await fs.readFile(outputPath);
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 function float32View(bytes) {
   if (bytes.byteLength % 4 !== 0) {
     throw new Error("Decoded PCM output is not aligned to 32-bit samples");
@@ -571,6 +603,9 @@ async function exportDeliveryPack(payload) {
   const preset = masterCore.resolvePreset("acx");
   const profile = masterCore.deliveryProfile(preset);
   const outputFolder = path.join(folder, "export", profile.folderName);
+  // Linked/external books may not have an export/ folder yet; the staging dir
+  // is created inside it, so make sure it exists before mkdtemp.
+  await fs.mkdir(path.dirname(outputFolder), { recursive: true });
   const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), `.${profile.folderName}-staging-`));
   const temporaryFolder = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-labs-export-"));
   const entries = [];
@@ -696,4 +731,6 @@ module.exports = {
   undoLatestPunch,
   masterWorkingFile,
   exportDeliveryPack,
+  transcodeToWav,
+  isWavBuffer,
 };

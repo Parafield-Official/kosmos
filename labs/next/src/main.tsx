@@ -20,11 +20,14 @@ try {
   console.warn("[kosmos-next] glass boot failed", error);
 }
 
-const root = document.getElementById("root");
+const rootElement = document.getElementById("root");
 
-if (!root) {
+if (!rootElement) {
   throw new Error("Kosmos Next root element is missing");
 }
+
+// Explicitly-typed const so the non-null narrowing survives into the closures below.
+const root: HTMLElement = rootElement;
 
 function showBootError(message: string) {
   if (root.childElementCount > 0) {

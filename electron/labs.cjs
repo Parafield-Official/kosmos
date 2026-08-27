@@ -9,7 +9,14 @@ const { MODEL, downloadProofModel, proofModelStatus } = require("./model.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
 const { transcribeAudio, findLiveModel } = require("./asr.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
-const { applyPunch, undoLatestPunch, masterWorkingFile, exportDeliveryPack } = require("./labs-audio.cjs");
+const {
+  applyPunch,
+  undoLatestPunch,
+  masterWorkingFile,
+  exportDeliveryPack,
+  transcodeToWav,
+  isWavBuffer,
+} = require("./labs-audio.cjs");
 
 const execFileAsync = promisify(execFile);
 
@@ -359,15 +366,6 @@ async function readChapterContent(folder, chapterId) {
   }
 }
 
-function audioExtension(mime) {
-  if (typeof mime !== "string") return "webm";
-  if (mime.includes("webm")) return "webm";
-  if (mime.includes("ogg")) return "ogg";
-  if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) return "m4a";
-  if (mime.includes("wav")) return "wav";
-  return "webm";
-}
-
 async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   if (typeof folder !== "string" || typeof chapterId !== "string" || typeof base64 !== "string") {
     return { ok: false };
@@ -375,9 +373,20 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   const kind = slot === "working" ? "working" : "original";
   const dir = path.join(folder, "audio");
   await fs.mkdir(dir, { recursive: true });
-  const file = `${path.basename(chapterId)}-${kind}.${audioExtension(mime)}`;
-  await fs.writeFile(path.join(dir, file), Buffer.from(base64, "base64"));
-  return { ok: true, file };
+  // The chapter tape model is exactly two WAV files. Booth takes already arrive
+  // as WAV; imported mp3/m4a/ogg/webm takes are normalized to WAV so the slot is
+  // an honest `.wav` file rather than mislabeled bytes.
+  const bytes = Buffer.from(base64, "base64");
+  const file = `${path.basename(chapterId)}-${kind}.wav`;
+  const alreadyWav = isWavBuffer(bytes) || (typeof mime === "string" && mime.includes("wav"));
+  try {
+    const wav = alreadyWav ? bytes : await transcodeToWav(bytes);
+    await fs.writeFile(path.join(dir, file), wav);
+    return { ok: true, file };
+  } catch (error) {
+    console.warn(`[labs] write chapter audio failed: ${error?.message ?? error}`);
+    return { ok: false };
+  }
 }
 
 async function readChapterAudio(folder, file) {
