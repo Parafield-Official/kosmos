@@ -1,6 +1,6 @@
 /**
  * Per-book pronunciation list for Labs. Detection and CRUD come from the
- * original glossary engine; resolve-once and the record gate live here.
+ * original glossary engine; resolve-once lives here. Recording is not gated on this list.
  */
 
 import type { GlossaryEntry } from "../../../../src/core/project/types";

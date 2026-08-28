@@ -276,7 +276,6 @@ export function ChapterScreen({
   const glossary = project.glossary ?? [];
   const chapterEntries = entriesInText(glossary, chapterText);
   const chapterUnresolved = unresolvedInText(glossary, chapterText);
-  const recordBlocked = chapterUnresolved.length > 0;
 
   return (
     <section className="ma-screen ma-chapter" aria-label={chapter.title}>
@@ -313,7 +312,7 @@ export function ChapterScreen({
         entries={chapterUnresolved}
         bookTotal={glossary.length}
         allowAdd
-        emptyCopy="Nothing left to set here. Recording is open. Proofreading never waits on this list."
+        emptyCopy="Nothing left to set here. Proofreading never waits on this list."
         onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
         onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
         onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
@@ -332,7 +331,7 @@ export function ChapterScreen({
           }
         >
           <div className="ma-step-actions">
-            <button type="button" className="btn" disabled={recordBlocked} onClick={onRecord}>
+            <button type="button" className="btn" onClick={onRecord}>
               {complete
                 ? "Open booth"
                 : chapter.hasOriginalAudio
@@ -362,11 +361,6 @@ export function ChapterScreen({
             />
           </div>
           {complete ? <p className="ma-step-note">Original take saved.</p> : null}
-          {recordBlocked ? (
-            <p className="ma-step-note">
-              Set or remove the names above before recording. Importing a finished take or going straight to proof does not need this.
-            </p>
-          ) : null}
           {importError ? <p className="ma-error">{importError}</p> : null}
         </Step>
 
