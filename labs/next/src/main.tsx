@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { applyGlassTuning, applyNativeMaterial, readStoredGlassLook, subscribeGlassTuning, valuesForLook } from "./glass-tuning";
 import { applyFontScale, readFontScale } from "./main-app/display";
+import { applyReadingFont, readReadingFont } from "./main-app/reading-prefs";
 import "./ui/liquid.css";
 import "./styles.css";
 
@@ -11,6 +12,11 @@ try {
   applyFontScale(readFontScale());
 } catch (error) {
   console.warn("[kosmos-next] font scale boot failed", error);
+}
+try {
+  applyReadingFont(readReadingFont());
+} catch (error) {
+  console.warn("[kosmos-next] reading font boot failed", error);
 }
 try {
   const look = readStoredGlassLook();

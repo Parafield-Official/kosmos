@@ -17,7 +17,7 @@ const LAST_PROJECT_KEY = "kosmos-last-project";
 export type ChapterStage = "blank" | "recording" | "proofing" | "mastering" | "done";
 export type AudioSlot = "original" | "working";
 export type PromptHighlightMode = "word" | "line" | "paragraph";
-export type ReadingFont = "serif" | "sans" | "hyperlegible";
+export type ReadingFont = "serif" | "sans" | "palatino" | "courier" | "clear" | "hyperlegible";
 export type PromptTheme = "dark" | "sepia" | "cream";
 
 export type RoomCheckStatus = "pass" | "warn" | "fail";

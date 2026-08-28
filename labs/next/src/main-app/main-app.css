@@ -262,6 +262,14 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
+.ma-seg-fonts {
+  max-width: 28rem;
+}
+
+.ma-seg-fonts .ma-seg-btn {
+  min-width: 5.4rem;
+}
+
 .ma-set-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
@@ -2049,10 +2057,61 @@
 }
 
 .ma-teleprompter.font-sans .ma-teleprompter-inner {
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+.ma-teleprompter.font-palatino .ma-teleprompter-inner {
+  font-family: Palatino, "Palatino Linotype", "Book Antiqua", "Iowan Old Style", serif;
+}
+
+.ma-teleprompter.font-courier .ma-teleprompter-inner {
+  font-family: "Courier New", Courier, ui-monospace, Menlo, monospace;
+  letter-spacing: 0;
+}
+
+.ma-teleprompter.font-clear .ma-teleprompter-inner {
+  font-family: Verdana, Tahoma, "Trebuchet MS", sans-serif;
+  letter-spacing: 0.01em;
 }
 
 .ma-teleprompter.font-hyperlegible .ma-teleprompter-inner {
+  font-family: "Atkinson Hyperlegible", Verdana, Arial, sans-serif;
+  letter-spacing: 0.01em;
+}
+
+html[data-reading-font="serif"] .ma-prose,
+html[data-reading-font="serif"] .ma-prose-read,
+html[data-reading-font="serif"] .ma-teleprompter-inner {
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+}
+
+html[data-reading-font="sans"] .ma-prose,
+html[data-reading-font="sans"] .ma-prose-read,
+html[data-reading-font="sans"] .ma-teleprompter-inner {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif;
+}
+
+html[data-reading-font="palatino"] .ma-prose,
+html[data-reading-font="palatino"] .ma-prose-read,
+html[data-reading-font="palatino"] .ma-teleprompter-inner {
+  font-family: Palatino, "Palatino Linotype", "Book Antiqua", "Iowan Old Style", serif;
+}
+
+html[data-reading-font="courier"] .ma-prose,
+html[data-reading-font="courier"] .ma-prose-read,
+html[data-reading-font="courier"] .ma-teleprompter-inner {
+  font-family: "Courier New", Courier, ui-monospace, Menlo, monospace;
+}
+
+html[data-reading-font="clear"] .ma-prose,
+html[data-reading-font="clear"] .ma-prose-read,
+html[data-reading-font="clear"] .ma-teleprompter-inner {
+  font-family: Verdana, Tahoma, "Trebuchet MS", sans-serif;
+}
+
+html[data-reading-font="hyperlegible"] .ma-prose,
+html[data-reading-font="hyperlegible"] .ma-prose-read,
+html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   font-family: "Atkinson Hyperlegible", Verdana, Arial, sans-serif;
   letter-spacing: 0.01em;
 }

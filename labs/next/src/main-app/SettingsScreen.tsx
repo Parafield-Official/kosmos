@@ -15,6 +15,7 @@ import {
 import {
   PROMPT_THEME_OPTIONS,
   READING_FONT_OPTIONS,
+  READING_FONT_STACKS,
   readPromptTheme,
   readReadingFont,
   writePromptTheme,
@@ -180,9 +181,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <ReadingFontIcon />
             <strong>Reading font</strong>
           </div>
-          <p className="ma-set-sub">Typeface for the teleprompter page. Used the next time you open a chapter to record.</p>
+          <p className="ma-set-sub">
+            Typeface for the teleprompter, reader, and chapter text. Georgia is the book default; Courier is the
+            classic prompt face; Verdana and Atkinson are easier at a distance.
+          </p>
           <div className="ma-set-control">
-            <div className="ma-seg" role="radiogroup" aria-label="Reading font">
+            <div className="ma-seg ma-seg-fonts" role="radiogroup" aria-label="Reading font">
               {READING_FONT_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -190,6 +194,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                   role="radio"
                   aria-checked={readingFont === option.value}
                   className={readingFont === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  style={{ fontFamily: READING_FONT_STACKS[option.value] }}
                   onClick={() => chooseReadingFont(option.value)}
                 >
                   {option.label}

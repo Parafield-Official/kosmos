@@ -1,7 +1,6 @@
 /**
- * Teleprompter look: reading font and page theme. Stored app-wide so Settings
- * and the booth share one choice. Highlight, spacing, and live QC stay in the
- * booth panel.
+ * Teleprompter look: reading font and page theme. Stored app-wide so Settings,
+ * the booth, the reader, and chapter text share one choice.
  */
 
 import type { PromptTheme, ReadingFont } from "./store";
@@ -9,10 +8,32 @@ import type { PromptTheme, ReadingFont } from "./store";
 const FONT_KEY = "kosmos-booth-font";
 const THEME_KEY = "kosmos-booth-theme";
 
+export const READING_FONT_VALUES = [
+  "serif",
+  "sans",
+  "palatino",
+  "courier",
+  "clear",
+  "hyperlegible",
+] as const satisfies readonly ReadingFont[];
+
+/** Stacks that ship on Mac and Windows without bundling files. */
+export const READING_FONT_STACKS: Record<ReadingFont, string> = {
+  serif: 'Georgia, "Iowan Old Style", "Palatino Linotype", serif',
+  sans: 'ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", sans-serif',
+  palatino: 'Palatino, "Palatino Linotype", "Book Antiqua", "Iowan Old Style", serif',
+  courier: '"Courier New", Courier, ui-monospace, Menlo, monospace',
+  clear: 'Verdana, Tahoma, "Trebuchet MS", sans-serif',
+  hyperlegible: '"Atkinson Hyperlegible", Verdana, Arial, sans-serif',
+};
+
 export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: string }> = [
-  { value: "serif", label: "Book serif" },
-  { value: "sans", label: "Clean sans" },
-  { value: "hyperlegible", label: "Hyperlegible" },
+  { value: "serif", label: "Georgia" },
+  { value: "sans", label: "Helvetica" },
+  { value: "palatino", label: "Palatino" },
+  { value: "courier", label: "Courier" },
+  { value: "clear", label: "Verdana" },
+  { value: "hyperlegible", label: "Atkinson" },
 ];
 
 export const PROMPT_THEME_OPTIONS: ReadonlyArray<{ value: PromptTheme; label: string }> = [
@@ -42,11 +63,16 @@ function writeStored(key: string, value: string): void {
 }
 
 export function readReadingFont(): ReadingFont {
-  return readStored(FONT_KEY, ["serif", "sans", "hyperlegible"] as const, "serif");
+  return readStored(FONT_KEY, READING_FONT_VALUES, "serif");
+}
+
+export function applyReadingFont(font: ReadingFont): void {
+  document.documentElement.dataset.readingFont = font;
 }
 
 export function writeReadingFont(font: ReadingFont): void {
   writeStored(FONT_KEY, font);
+  applyReadingFont(font);
 }
 
 export function readPromptTheme(): PromptTheme {
