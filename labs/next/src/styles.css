@@ -105,12 +105,8 @@ body {
   app-region: drag;
 }
 
-/* Book screens are full of divs, not just buttons. Viewport drag would
-   swallow those clicks and scroll, so only the titlebar strips stay draggable. */
-.viewport[data-place="app"] {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
+/* Book screens stay no-drag on .main-app. The titlebar strips are siblings
+   of that layer so the window can still be moved. */
 
 button,
 .debug-dock,
@@ -134,8 +130,10 @@ select {
 .drag-strip {
   position: fixed;
   top: 0;
-  height: 48px;
-  z-index: 12;
+  height: 52px;
+  z-index: 20;
+  /* Transparent windows skip fully empty nodes, so this must paint a pixel. */
+  background: rgba(255, 255, 255, 0.02);
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -170,13 +168,17 @@ select {
   right: 88px;
 }
 
-/* Keep the centered logo pill out of the window drag band on the main app. */
+/*
+  One titlebar band on the book UI. A hole around the logo used to collapse
+  both strips to zero width on a smaller window, so nothing was draggable.
+  The logo and settings gear sit above this band and stay no-drag.
+*/
 .viewport[data-place="app"] .drag-strip-start {
-  right: calc(50% + 6.25rem);
+  right: 64px;
 }
 
 .viewport[data-place="app"] .drag-strip-end {
-  left: calc(50% + 6.25rem);
+  display: none;
 }
 
 .liquid.traffic-glass {
