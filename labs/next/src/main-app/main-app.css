@@ -1090,6 +1090,86 @@
   font-size: 0.88rem;
 }
 
+.ma-glossary {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem 1.05rem 1.1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(10, 8, 16, 0.28);
+}
+
+.ma-glossary-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.ma-glossary-head p {
+  margin: 0.25rem 0 0;
+  font-size: 0.83rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.ma-glossary-book {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--mute);
+}
+
+.ma-glossary-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--mute);
+}
+
+.ma-glossary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.ma-glossary-list li {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.9fr) minmax(7rem, 1.3fr) auto auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.ma-glossary-list li strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ma-glossary-list li.is-set strong {
+  color: var(--ink-soft);
+}
+
+.ma-glossary-add {
+  display: grid;
+  grid-template-columns: minmax(6rem, 0.9fr) minmax(7rem, 1.3fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .ma-glossary-list li,
+  .ma-glossary-add {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ma-glossary-list li strong {
+    grid-column: 1 / -1;
+  }
+}
+
 /* ── Chapter steps ──────────────────────────────────────────── */
 
 .ma-steps {

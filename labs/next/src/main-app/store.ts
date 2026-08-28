@@ -7,7 +7,7 @@
  * gives us a stable shape to swap onto a real backend bridge later.
  */
 
-import type { Pickup } from "../../../../src/core/project/types";
+import type { GlossaryEntry, Pickup } from "../../../../src/core/project/types";
 import { mergeLivePickup } from "../../../../src/core/teleprompter/live";
 
 const PROJECTS_KEY = "kosmos-projects";
@@ -87,6 +87,10 @@ export interface BookProject {
   external?: boolean;
   /** Filename of the imported manuscript, if any. */
   manuscript?: string;
+  /** Pronunciation rows for this book. Resolve once; later chapters inherit. */
+  glossary?: GlossaryEntry[];
+  /** Spellings the narrator removed so auto-scan will not flag them again. */
+  glossaryDismissed?: string[];
 }
 
 function now(): string {
@@ -173,6 +177,50 @@ function normalizePunches(raw: unknown, chapterId: string): ChapterPunch[] | und
   return punches.length ? punches : undefined;
 }
 
+function normalizeGlossary(raw: unknown): GlossaryEntry[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const entries = raw.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Partial<GlossaryEntry>;
+    if (typeof row.id !== "string" || typeof row.spelling !== "string" || !row.spelling.trim()) {
+      return [];
+    }
+    return [{
+      id: row.id,
+      spelling: row.spelling.trim(),
+      respell: typeof row.respell === "string" && row.respell.trim() ? row.respell.trim() : undefined,
+      voice_note: typeof row.voice_note === "string" && row.voice_note.trim() ? row.voice_note.trim() : undefined,
+      clip_path: typeof row.clip_path === "string" ? row.clip_path : undefined,
+      frequency: Number.isFinite(Number(row.frequency)) ? Number(row.frequency) : 0,
+      source: row.source === "user" ? "user" : "auto",
+    } satisfies GlossaryEntry];
+  });
+  return entries;
+}
+
+function normalizeDismissed(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") {
+      continue;
+    }
+    const key = item.trim().toLocaleLowerCase("en-US");
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      words.push(key);
+    }
+  }
+  return words;
+}
+
 /** Fill in any fields a legacy or partial record is missing so the UI never
  * hits an undefined title/author/chapters. */
 function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): BookProject {
@@ -223,6 +271,8 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
     folder: typeof raw.folder === "string" ? raw.folder : undefined,
     external: raw.external === true ? true : undefined,
     manuscript: typeof raw.manuscript === "string" ? raw.manuscript : undefined,
+    glossary: normalizeGlossary(raw.glossary),
+    glossaryDismissed: normalizeDismissed(raw.glossaryDismissed),
   };
 }
 

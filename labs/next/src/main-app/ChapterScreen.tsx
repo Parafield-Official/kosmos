@@ -1,7 +1,15 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { alignTranscript, preservePickupWorkflow } from "../../../../src/core/proof/align";
 import { paragraphsFromHtml } from "./booth";
 import { proofAlignOptions } from "./engine-prefs";
+import {
+  addGlossaryWord,
+  dismissGlossaryWord,
+  setGlossaryRespell,
+  unresolvedInText,
+  entriesInText,
+} from "./glossary";
+import { GlossaryPanel } from "./GlossaryPanel";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
 import {
   applyChapterPickups,
@@ -50,6 +58,19 @@ export function ChapterScreen({
   const [proofNote, setProofNote] = useState<string | null>(null);
   const [masterError, setMasterError] = useState<string | null>(null);
   const [mastering, setMastering] = useState(false);
+  const [chapterText, setChapterText] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    void readChapterContent(project, chapterId).then((html) => {
+      if (alive) {
+        setChapterText(paragraphsFromHtml(html).join("\n"));
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [project, chapterId]);
 
   if (!chapter) {
     return (
@@ -179,6 +200,10 @@ export function ChapterScreen({
 
   const openFlags = (current.pickups ?? []).filter((pickup) => pickup.status === "open").length;
   const canUndoPunch = (current.punches ?? []).some((punch) => punch.edit_status !== "reverted");
+  const glossary = project.glossary ?? [];
+  const chapterEntries = entriesInText(glossary, chapterText);
+  const chapterUnresolved = unresolvedInText(glossary, chapterText);
+  const recordBlocked = chapterUnresolved.length > 0;
 
   return (
     <section className="ma-screen ma-chapter" aria-label={chapter.title}>
@@ -198,6 +223,24 @@ export function ChapterScreen({
         </div>
       </header>
 
+      <GlossaryPanel
+        title="Pronunciations"
+        summary={
+          chapterEntries.length === 0
+            ? "No flagged names in this chapter."
+            : chapterUnresolved.length === 0
+              ? `All ${chapterEntries.length} ${chapterEntries.length === 1 ? "name" : "names"} in this chapter have a pronunciation.`
+              : `${chapterUnresolved.length} of ${chapterEntries.length} in this chapter still need a pronunciation.`
+        }
+        entries={chapterUnresolved}
+        bookTotal={glossary.length}
+        allowAdd
+        emptyCopy="Nothing left to set here. Recording is open. Proofreading never waits on this list."
+        onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
+        onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
+        onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
+      />
+
       <ol className="ma-steps">
         <Step
           n={1}
@@ -211,7 +254,7 @@ export function ChapterScreen({
           }
         >
           <div className="ma-step-actions">
-            <button type="button" className="btn" onClick={onRecord}>
+            <button type="button" className="btn" disabled={recordBlocked} onClick={onRecord}>
               {complete
                 ? "Open booth"
                 : chapter.hasOriginalAudio
@@ -241,6 +284,11 @@ export function ChapterScreen({
             />
           </div>
           {complete ? <p className="ma-step-note">Original take saved.</p> : null}
+          {recordBlocked ? (
+            <p className="ma-step-note">
+              Set or remove the names above before recording. Importing a finished take or going straight to proof does not need this.
+            </p>
+          ) : null}
           {importError ? <p className="ma-error">{importError}</p> : null}
         </Step>
 

@@ -1,5 +1,13 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
+import {
+  addGlossaryWord,
+  dismissGlossaryWord,
+  ensureBookGlossary,
+  isResolved,
+  setGlossaryRespell,
+} from "./glossary";
+import { GlossaryPanel } from "./GlossaryPanel";
 import { exportBookPack, masterChapterWorking } from "./punch";
 import {
   bookInitials,
@@ -73,6 +81,24 @@ export function OverviewScreen({
   const stats = useMemo(() => bookStats(project.chapters), [project.chapters]);
   const allProofed = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.proofed);
   const allMastered = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered);
+  const glossary = project.glossary ?? [];
+  const unresolvedCount = glossary.filter((entry) => !isResolved(entry)).length;
+  const glossaryEntries = [...glossary].sort((left, right) => Number(isResolved(left)) - Number(isResolved(right)));
+
+  useEffect(() => {
+    let alive = true;
+    if (project.glossary !== undefined) {
+      return;
+    }
+    void ensureBookGlossary(project).then((next) => {
+      if (alive && next) {
+        onChange(next);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [project.id]);
 
   async function masterAll() {
     setActionError(null);
@@ -210,6 +236,26 @@ export function OverviewScreen({
 
       {actionError ? <p className="ma-error">{actionError}</p> : null}
       {analyzeError ? <p className="ma-error">{analyzeError}</p> : null}
+
+      {project.chapters.length > 0 ? (
+        <GlossaryPanel
+          title="Pronunciations"
+          summary={
+            glossary.length === 0
+              ? "No names flagged in this book yet. Add one if a word needs a spelling."
+              : unresolvedCount === 0
+                ? `All ${glossary.length} ${glossary.length === 1 ? "name" : "names"} have a pronunciation.`
+                : `${unresolvedCount} of ${glossary.length} need a pronunciation.`
+          }
+          entries={glossaryEntries}
+          bookTotal={0}
+          allowAdd
+          emptyCopy="Add a word if the scanner missed a name. Resolving a word here clears it for every chapter."
+          onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
+          onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
+          onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
+        />
+      ) : null}
 
       <div className="ma-chapter-list">
         {project.chapters.map((chapter, index) => (

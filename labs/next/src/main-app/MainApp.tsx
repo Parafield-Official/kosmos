@@ -8,6 +8,8 @@ import {
   type BookProject,
 } from "./store";
 import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
+import { paragraphsFromHtml } from "./booth";
+import { scanGlossaryFromManuscript } from "./glossary";
 import { manuscriptMetaFromBytes } from "./manuscript-meta";
 import { LibraryScreen } from "./LibraryScreen";
 import { OverviewScreen } from "./OverviewScreen";
@@ -130,12 +132,16 @@ export function MainApp() {
       }
       const next = await persistBook(patch);
       await writeChapterContents(next, result.contents);
+      const manuscript = result.contents
+        .map((item) => paragraphsFromHtml(item.html).join("\n"))
+        .join("\n\n");
+      const saved = await persistBook(scanGlossaryFromManuscript(next, manuscript));
       setScreen((current) =>
-        current.name === "overview" && current.project.id === next.id
-          ? { name: "overview", project: next }
+        current.name === "overview" && current.project.id === saved.id
+          ? { name: "overview", project: saved }
           : current,
       );
-      return next;
+      return saved;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Could not read that manuscript.";
       setAnalyzeError(message);
