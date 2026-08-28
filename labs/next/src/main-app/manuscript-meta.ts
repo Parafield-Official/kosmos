@@ -17,6 +17,23 @@ export function splitAuthors(raw: string): string[] {
 
 const DUBLIN_CORE_NS = "http://purl.org/dc/elements/1.1/";
 
+/**
+ * Metadata often stores a name sort-first ("Quinn, Julia"). Narration credits
+ * want it spoken-first ("Julia Quinn"), so flip a lone "Last, First" pair.
+ */
+function spokenName(raw: string): string {
+  const name = raw.trim();
+  const parts = name.split(",");
+  if (parts.length === 2 && !/[&;/]|\band\b/i.test(name)) {
+    const last = parts[0].trim();
+    const first = parts[1].trim();
+    if (last && first && first.split(/\s+/).length <= 3) {
+      return `${first} ${last}`;
+    }
+  }
+  return name;
+}
+
 /** Read Dublin Core title/creator from an EPUB OPF or a DOCX core.xml document. */
 function metaFromDublinCore(doc: Document): ManuscriptMeta {
   const elements = (name: string): Element[] => {
@@ -27,9 +44,18 @@ function metaFromDublinCore(doc: Document): ManuscriptMeta {
   const creators = elements("creator")
     .map((element) => element.textContent?.trim() ?? "")
     .filter(Boolean);
-  // Separate <dc:creator> elements are already one author each; a single field
-  // may still pack several names ("A & B"), so let splitAuthors handle that.
-  const authors = creators.length > 1 ? creators.slice(0, 6) : splitAuthors(creators[0] ?? "");
+  // Separate <dc:creator> elements are one author each. A single field may pack
+  // a list ("A & B") — split that — but a lone comma is a sort-first name, not
+  // two authors, so keep it whole and flip it to spoken order.
+  let authors: string[];
+  if (creators.length > 1) {
+    authors = creators.map(spokenName).slice(0, 6);
+  } else if (creators.length === 1) {
+    const only = creators[0];
+    authors = /[&;/]|\band\b/i.test(only) ? splitAuthors(only).map(spokenName) : [spokenName(only)];
+  } else {
+    authors = [];
+  }
   return { title, authors: authors.length ? authors : undefined };
 }
 
