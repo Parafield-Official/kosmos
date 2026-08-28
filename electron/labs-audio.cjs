@@ -494,10 +494,13 @@ async function masterWorkingFile(payload) {
       };
     }
     const prepared = repairAssessment.applied ? repaired : decoded;
+    const requestedRms = Number(payload?.targetRmsDbfs);
     const masterOptions = {
       preset,
       profile,
-      targetRmsDbfs: -20,
+      targetRmsDbfs: Number.isFinite(requestedRms)
+        ? Math.min(-18, Math.max(-23, requestedRms))
+        : -20,
     };
     let master = masterCore.masterPcm({
       samples: float32View(prepared.pcm),

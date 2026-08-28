@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { alignTranscript, preservePickupWorkflow } from "../../../../src/core/proof/align";
 import { paragraphsFromHtml } from "./booth";
+import { proofAlignOptions } from "./engine-prefs";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
 import {
   applyChapterPickups,
@@ -123,6 +124,7 @@ export function ChapterScreen({
           manuscript,
           transcript: result.words ?? [],
           durationSeconds: (result.words ?? []).reduce((max, word) => Math.max(max, word.end), 1),
+          ...proofAlignOptions(),
         });
         pickups = preservePickupWorkflow(current.pickups ?? [], aligned.pickups);
         const mismatches = pickups.filter((pickup) => pickup.kind !== "pause" && pickup.status === "open").length;

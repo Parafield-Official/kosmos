@@ -170,6 +170,7 @@ declare global {
       masterChapter?: (payload: {
         folder: string;
         workingFile: string;
+        targetRmsDbfs?: number;
       }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; rms_dbfs?: number }>;
       exportDelivery?: (payload: {
         folder: string;

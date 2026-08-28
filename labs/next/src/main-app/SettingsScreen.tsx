@@ -3,12 +3,22 @@ import { GlassLookSwitch } from "../GlassLookSwitch";
 import { clearOnboarded } from "../flow";
 import type { AppUpdateStatus } from "../window";
 import { FONT_SCALE_OPTIONS, readFontScale, writeFontScale, type FontScale } from "./display";
+import {
+  CONFIDENCE_OPTIONS,
+  PAUSE_RANGE,
+  RMS_RANGE,
+  SENSITIVITY_OPTIONS,
+  readEnginePrefs,
+  writeEnginePrefs,
+  type EnginePrefs,
+} from "./engine-prefs";
 import { chooseWorkspace, getWorkspacePath } from "./store";
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [fontScale, setFontScale] = useState<FontScale>(() => readFontScale());
+  const [engine, setEngine] = useState<EnginePrefs>(() => readEnginePrefs());
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [update, setUpdate] = useState<AppUpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -16,6 +26,10 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   function chooseFontScale(scale: FontScale) {
     setFontScale(scale);
     writeFontScale(scale);
+  }
+
+  function patchEngine(patch: Partial<EnginePrefs>) {
+    setEngine(writeEnginePrefs(patch));
   }
 
   useEffect(() => {
@@ -101,6 +115,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
       <h1 className="ma-title">Settings</h1>
 
       <div className="ma-set-list">
+        <h2 className="ma-set-section">Display</h2>
+
         <div className="ma-set-item">
           <div className="ma-set-head">
             <ThemeIcon />
@@ -111,8 +127,6 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <GlassLookSwitch compact />
           </div>
         </div>
-
-        <div className="ma-set-divider" />
 
         <div className="ma-set-item">
           <div className="ma-set-head">
@@ -138,7 +152,113 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        <div className="ma-set-divider" />
+        <h2 className="ma-set-section">Proofreading</h2>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <ProofIcon />
+            <strong>Nearby flags</strong>
+          </div>
+          <p className="ma-set-sub">
+            {SENSITIVITY_OPTIONS.find((option) => option.value === engine.proof_sensitivity)?.hint}
+          </p>
+          <div className="ma-set-control">
+            <div className="ma-seg" role="radiogroup" aria-label="Nearby flags">
+              {SENSITIVITY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={engine.proof_sensitivity === option.value}
+                  className={engine.proof_sensitivity === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  onClick={() => patchEngine({ proof_sensitivity: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <PauseIcon />
+            <strong>Long pause</strong>
+          </div>
+          <p className="ma-set-sub">
+            A mid-sentence gap longer than this is flagged as a pause. Shorter breaths are ignored.
+          </p>
+          <div className="ma-set-control">
+            <label className="ma-set-slider">
+              <input
+                type="range"
+                min={PAUSE_RANGE.min}
+                max={PAUSE_RANGE.max}
+                step={PAUSE_RANGE.step}
+                value={engine.pause_threshold_seconds}
+                aria-label="Pause threshold in seconds"
+                onChange={(event) => patchEngine({ pause_threshold_seconds: Number(event.target.value) })}
+              />
+              <span className="ma-set-slider-value">{engine.pause_threshold_seconds.toFixed(1)} s</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <ShakyIcon />
+            <strong>Shaky alerts</strong>
+          </div>
+          <p className="ma-set-sub">
+            {CONFIDENCE_OPTIONS.find((option) => Math.abs(option.value - engine.proof_confidence_floor) < 0.001)?.hint}
+            {" "}
+            A shaky alert usually means the recogniser misheard, not that you misread.
+          </p>
+          <div className="ma-set-control">
+            <div className="ma-seg" role="radiogroup" aria-label="Shaky alerts">
+              {CONFIDENCE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={Math.abs(option.value - engine.proof_confidence_floor) < 0.001}
+                  className={Math.abs(option.value - engine.proof_confidence_floor) < 0.001 ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  onClick={() => patchEngine({ proof_confidence_floor: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <h2 className="ma-set-section">Sound &amp; mastering</h2>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <MasterIcon />
+            <strong>Loudness target</strong>
+          </div>
+          <p className="ma-set-sub">
+            RMS used when mastering the working file. ACX accepts −23 to −18 dBFS; −20 is the usual aim.
+          </p>
+          <div className="ma-set-control">
+            <label className="ma-set-slider">
+              <input
+                type="range"
+                min={RMS_RANGE.min}
+                max={RMS_RANGE.max}
+                step={RMS_RANGE.step}
+                value={engine.acx_target_rms_dbfs}
+                aria-label="ACX target RMS in dBFS"
+                onChange={(event) => patchEngine({ acx_target_rms_dbfs: Number(event.target.value) })}
+              />
+              <span className="ma-set-slider-value">{engine.acx_target_rms_dbfs.toFixed(1)} dBFS</span>
+            </label>
+          </div>
+        </div>
+
+        <h2 className="ma-set-section">App</h2>
 
         <div className="ma-set-item">
           <div className="ma-set-head">
@@ -156,8 +276,6 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        <div className="ma-set-divider" />
-
         <div className="ma-set-item">
           <div className="ma-set-head">
             <RestartIcon />
@@ -173,8 +291,6 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             </button>
           </div>
         </div>
-
-        <div className="ma-set-divider" />
 
         <div className="ma-set-item">
           <div className="ma-set-head">
@@ -265,6 +381,47 @@ function RestartIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function ProofIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M5 5h10l4 4v10H5V5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M15 5v4h4M8 13h8M8 16.5h5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M4 12h4M16 12h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <rect x="9" y="7" width="2.4" height="10" rx="0.6" fill="currentColor" />
+      <rect x="12.6" y="7" width="2.4" height="10" rx="0.6" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ShakyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path
+        d="M4 15c1.4-3 2.4-7 4-7s2.2 5 3.8 5 2.4-8 4.2-8 2.6 10 4 10"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function MasterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M4 16V8m4 10V6m4 12v-7m4 7V9m4 7V7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

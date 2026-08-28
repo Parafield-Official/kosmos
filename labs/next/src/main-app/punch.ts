@@ -1,4 +1,5 @@
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
+import { readEnginePrefs } from "./engine-prefs";
 import {
   applyChapterPickups,
   applyChapterPunches,
@@ -137,6 +138,7 @@ export async function masterChapterWorking(project: BookProject, chapterId: stri
   const result = await window.kosmosNext.masterChapter({
     folder: project.folder,
     workingFile: chapter.workingFile,
+    targetRmsDbfs: readEnginePrefs().acx_target_rms_dbfs,
   });
   if (!result.ok) {
     throw new Error(result.reason || "Mastering failed.");
