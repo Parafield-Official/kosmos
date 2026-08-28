@@ -76,6 +76,9 @@ export function OverviewScreen({
   const [newTitle, setNewTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [bookTitle, setBookTitle] = useState(project.title);
+  const [analyzeAsk, setAnalyzeAsk] = useState<"analyze" | "manuscript" | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const manuscriptRef = useRef<HTMLInputElement>(null);
 
   const progress = Math.round(bookProgress(project) * 100);
@@ -103,6 +106,54 @@ export function OverviewScreen({
       window.clearTimeout(timer);
     };
   }, [project.id]);
+
+  useEffect(() => {
+    setBookTitle(project.title);
+  }, [project.id, project.title]);
+
+  function saveBookTitle(raw = bookTitle) {
+    const next = raw.trim() || "Untitled book";
+    setBookTitle(next);
+    if (next !== project.title) {
+      onChange({ ...project, title: next });
+    }
+  }
+
+  const hasChapters = project.chapters.length > 0;
+  const hasRecordings = project.chapters.some(
+    (chapter) => chapter.hasOriginalAudio || chapter.hasWorkingAudio,
+  );
+
+  function requestAnalyze() {
+    if (hasChapters) {
+      setAnalyzeAsk("analyze");
+      return;
+    }
+    onAnalyze();
+  }
+
+  function requestManuscript(file: File) {
+    if (hasChapters) {
+      setPendingFile(file);
+      setAnalyzeAsk("manuscript");
+      return;
+    }
+    onChooseManuscript(file);
+  }
+
+  function confirmAnalyze() {
+    const kind = analyzeAsk;
+    const file = pendingFile;
+    setAnalyzeAsk(null);
+    setPendingFile(null);
+    if (kind === "manuscript" && file) {
+      onChooseManuscript(file);
+      return;
+    }
+    if (kind === "analyze") {
+      onAnalyze();
+    }
+  }
 
   async function masterAll() {
     setActionError(null);
@@ -160,7 +211,31 @@ export function OverviewScreen({
           )}
         </span>
         <div className="ma-hero-meta">
-          <h1 className="ma-title">{project.title}</h1>
+          <h1 className="ma-title">
+            <input
+              className="ma-title-input"
+              value={bookTitle}
+              aria-label="Book title"
+              onChange={(event) => {
+                const value = event.target.value;
+                setBookTitle(value);
+                const next = value.trim();
+                if (next && next !== project.title) {
+                  onChange({ ...project, title: next });
+                }
+              }}
+              onBlur={(event) => saveBookTitle(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  setBookTitle(project.title);
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </h1>
           <p className="ma-hero-author">{project.author || "Unknown author"}</p>
           <div className="ma-hero-progress">
             <span className="ma-progress ma-progress-lg">
@@ -213,12 +288,12 @@ export function OverviewScreen({
               const file = event.target.files?.[0];
               event.currentTarget.value = "";
               if (file) {
-                onChooseManuscript(file);
+                requestManuscript(file);
               }
             }}
           />
           {project.manuscript ? (
-            <button type="button" className="btn" onClick={onAnalyze}>
+            <button type="button" className="btn" onClick={requestAnalyze}>
               {project.chapters.length > 0 ? "Re-analyze" : "Analyze manuscript"}
             </button>
           ) : null}
@@ -240,6 +315,18 @@ export function OverviewScreen({
 
       {actionError ? <p className="ma-error">{actionError}</p> : null}
       {analyzeError ? <p className="ma-error">{analyzeError}</p> : null}
+
+      {analyzeAsk ? (
+        <AnalyzeConfirm
+          replaceManuscript={analyzeAsk === "manuscript"}
+          hasRecordings={hasRecordings}
+          onConfirm={confirmAnalyze}
+          onCancel={() => {
+            setAnalyzeAsk(null);
+            setPendingFile(null);
+          }}
+        />
+      ) : null}
 
       {project.chapters.length > 0 ? (
         <GlossaryPanel
@@ -347,6 +434,60 @@ export function OverviewScreen({
         ) : null}
       </div>
     </section>
+  );
+}
+
+function AnalyzeConfirm({
+  replaceManuscript,
+  hasRecordings,
+  onConfirm,
+  onCancel,
+}: {
+  replaceManuscript: boolean;
+  hasRecordings: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="ma-scrim" role="presentation" onClick={onCancel}>
+      <div
+        className="ma-alert neu-panel"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ma-reanalyze-title"
+        aria-describedby="ma-reanalyze-sub"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ma-alert-copy">
+          <h2 className="ma-alert-title" id="ma-reanalyze-title">
+            {replaceManuscript ? "Replace manuscript?" : "Re-analyze this book?"}
+          </h2>
+          <p className="ma-alert-sub" id="ma-reanalyze-sub">
+            {hasRecordings
+              ? "This rebuilds every chapter from the manuscript. Recordings, proof flags, and mastering on the current chapters will be lost."
+              : "This rebuilds every chapter from the manuscript. Chapter text and proof flags on the current chapters will be replaced."}
+          </p>
+        </div>
+        <div className="ma-alert-actions">
+          <button type="button" className="ma-alert-btn" onClick={onCancel} autoFocus>
+            Cancel
+          </button>
+          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm}>
+            {replaceManuscript ? "Replace" : "Re-analyze"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

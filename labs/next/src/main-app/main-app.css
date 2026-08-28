@@ -372,6 +372,34 @@
   line-height: 1.1;
 }
 
+.ma-title-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0.05rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.ma-title-input:hover {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.ma-title-input:focus {
+  outline: none;
+  box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.45);
+}
+
 .ma-workspace-path {
   margin: 0.3rem 0 0;
   max-width: 30rem;

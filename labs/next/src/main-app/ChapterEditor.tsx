@@ -31,6 +31,7 @@ export function ChapterEditor({
   const [loaded, setLoaded] = useState(false);
   const [words, setWords] = useState(chapter?.wordCount ?? 0);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [chapterTitle, setChapterTitle] = useState(chapter?.title ?? "");
 
   useEffect(() => {
     let alive = true;
@@ -51,7 +52,25 @@ export function ChapterEditor({
         window.clearTimeout(saveTimer.current);
       }
     };
-  }, [project, chapterId]);
+  }, [project.id, chapterId]);
+
+  useEffect(() => {
+    setChapterTitle(chapter?.title ?? "");
+  }, [chapter?.id, chapter?.title]);
+
+  function saveChapterTitle(raw = chapterTitle) {
+    if (!chapter) {
+      return;
+    }
+    const next = raw.trim() || "Untitled chapter";
+    setChapterTitle(next);
+    if (next !== chapter.title) {
+      onChange({
+        ...project,
+        chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, title: next } : item)),
+      });
+    }
+  }
 
   function scheduleSave() {
     setStatus("saving");
@@ -133,7 +152,34 @@ export function ChapterEditor({
         <span className="ma-editor-count">{words.toLocaleString()} words</span>
       </div>
 
-      <h1 className="ma-editor-title">{chapter.title}</h1>
+      <h1 className="ma-editor-title">
+        <input
+          className="ma-title-input"
+          value={chapterTitle}
+          aria-label="Chapter title"
+          onChange={(event) => {
+            const value = event.target.value;
+            setChapterTitle(value);
+            const next = value.trim();
+            if (chapter && next && next !== chapter.title) {
+              onChange({
+                ...project,
+                chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, title: next } : item)),
+              });
+            }
+          }}
+          onBlur={(event) => saveChapterTitle(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+            if (event.key === "Escape") {
+              setChapterTitle(chapter.title);
+              event.currentTarget.blur();
+            }
+          }}
+        />
+      </h1>
 
       <div
         ref={editorRef}

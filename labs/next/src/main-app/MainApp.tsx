@@ -87,6 +87,9 @@ export function MainApp() {
       ) {
         return { ...current, project: saved };
       }
+      if (current.name === "settings" && current.from.name !== "library") {
+        return { ...current, from: { ...current.from, project: saved } };
+      }
       return current;
     });
     return saved;
