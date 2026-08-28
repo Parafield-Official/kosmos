@@ -43,10 +43,9 @@ import {
   type BookProject,
   type ChapterPickup,
   type PromptHighlightMode,
-  type PromptTheme,
-  type ReadingFont,
   type RecordedWord,
 } from "./store";
+import { readPromptTheme, readReadingFont } from "./reading-prefs";
 import {
   buildBoothScript,
   concatWav,
@@ -61,8 +60,6 @@ import {
 } from "./booth";
 
 const HIGHLIGHT_KEY = "kosmos-booth-highlight";
-const FONT_KEY = "kosmos-booth-font";
-const THEME_KEY = "kosmos-booth-theme";
 const SPACING_KEY = "kosmos-booth-spacing";
 const CHECK_KEY = "kosmos-booth-check";
 const HALT_KEY = "kosmos-booth-halt";
@@ -171,12 +168,8 @@ export function RecordScreen({
   const [paragraphs, setParagraphs] = useState<string[]>([]);
   const script = useMemo(() => buildBoothScript(paragraphs), [paragraphs]);
   const [highlight, setHighlight] = useState<PromptHighlightMode>(readHighlight);
-  const [readingFont, setReadingFont] = useState<ReadingFont>(() =>
-    readStored(FONT_KEY, ["serif", "sans", "hyperlegible"] as const, "serif"),
-  );
-  const [theme, setTheme] = useState<PromptTheme>(() =>
-    readStored(THEME_KEY, ["dark", "sepia", "cream"] as const, "dark"),
-  );
+  const [readingFont] = useState(readReadingFont);
+  const [theme] = useState(readPromptTheme);
   const [lineSpacing, setLineSpacing] = useState(readSpacing);
   const [checkReading, setCheckReading] = useState(() => readFlag(CHECK_KEY, false));
   const [stopOnMismatch, setStopOnMismatch] = useState(() => readFlag(HALT_KEY, true));
@@ -1013,8 +1006,6 @@ export function RecordScreen({
           inputs={audioInputs}
           inputId={inputId}
           recording={recording}
-          readingFont={readingFont}
-          theme={theme}
           highlight={highlight}
           lineSpacing={lineSpacing}
           checkReading={checkReading}
@@ -1022,14 +1013,6 @@ export function RecordScreen({
           onInput={(deviceId) => {
             setInputId(deviceId);
             persistChoice(MIC_KEY, deviceId);
-          }}
-          onFont={(font) => {
-            setReadingFont(font);
-            persistChoice(FONT_KEY, font);
-          }}
-          onTheme={(next) => {
-            setTheme(next);
-            persistChoice(THEME_KEY, next);
           }}
           onHighlight={setHighlightMode}
           onSpacing={(value) => {

@@ -12,13 +12,24 @@ import {
   writeEnginePrefs,
   type EnginePrefs,
 } from "./engine-prefs";
+import {
+  PROMPT_THEME_OPTIONS,
+  READING_FONT_OPTIONS,
+  readPromptTheme,
+  readReadingFont,
+  writePromptTheme,
+  writeReadingFont,
+} from "./reading-prefs";
 import { chooseWorkspace, getWorkspacePath } from "./store";
+import type { PromptTheme, ReadingFont } from "./store";
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [fontScale, setFontScale] = useState<FontScale>(() => readFontScale());
   const [engine, setEngine] = useState<EnginePrefs>(() => readEnginePrefs());
+  const [readingFont, setReadingFont] = useState<ReadingFont>(() => readReadingFont());
+  const [promptTheme, setPromptTheme] = useState<PromptTheme>(() => readPromptTheme());
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [update, setUpdate] = useState<AppUpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -30,6 +41,16 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   function patchEngine(patch: Partial<EnginePrefs>) {
     setEngine(writeEnginePrefs(patch));
+  }
+
+  function chooseReadingFont(font: ReadingFont) {
+    setReadingFont(font);
+    writeReadingFont(font);
+  }
+
+  function choosePromptTheme(theme: PromptTheme) {
+    setPromptTheme(theme);
+    writePromptTheme(theme);
   }
 
   useEffect(() => {
@@ -144,6 +165,56 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                   aria-checked={fontScale === option.value}
                   className={fontScale === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
                   onClick={() => chooseFontScale(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <h2 className="ma-set-section">Reading</h2>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <ReadingFontIcon />
+            <strong>Reading font</strong>
+          </div>
+          <p className="ma-set-sub">Typeface for the teleprompter page. Used the next time you open a chapter to record.</p>
+          <div className="ma-set-control">
+            <div className="ma-seg" role="radiogroup" aria-label="Reading font">
+              {READING_FONT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={readingFont === option.value}
+                  className={readingFont === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  onClick={() => chooseReadingFont(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <PageThemeIcon />
+            <strong>Reading page</strong>
+          </div>
+          <p className="ma-set-sub">Paper colour behind the script. Cream is easiest in a bright room; dark is for a dim booth.</p>
+          <div className="ma-set-control">
+            <div className="ma-set-themes" role="radiogroup" aria-label="Reading page">
+              {PROMPT_THEME_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={promptTheme === option.value}
+                  className={`ma-set-theme is-${option.value}${promptTheme === option.value ? " is-on" : ""}`}
+                  onClick={() => choosePromptTheme(option.value)}
                 >
                   {option.label}
                 </button>
@@ -422,6 +493,24 @@ function MasterIcon() {
   return (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
       <path d="M4 16V8m4 10V6m4 12v-7m4 7V9m4 7V7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ReadingFontIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M5 19V6.5c0-.8.6-1.5 1.5-1.5H12v14H6.5A1.5 1.5 0 0 1 5 19z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M12 5h5.5c.8 0 1.5.7 1.5 1.5V19" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PageThemeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <rect x="5" y="4" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M8 8h8M8 12h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

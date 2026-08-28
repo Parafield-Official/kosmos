@@ -135,6 +135,44 @@
 }
 
 
+.ma-set-themes {
+  display: flex;
+  gap: 0.35rem;
+  max-width: 22rem;
+}
+
+.ma-set-theme {
+  flex: 1;
+  min-height: 2.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ma-set-theme.is-cream {
+  background: #f3eee6;
+  color: #1a1714;
+}
+
+.ma-set-theme.is-sepia {
+  background: #cbb49a;
+  color: #3d2d22;
+}
+
+.ma-set-theme.is-dark {
+  background: #1a1714;
+  color: #f3eee6;
+}
+
+.ma-set-theme.is-on {
+  box-shadow: 0 0 0 2px var(--ink);
+}
+
+
+
 .ma-set-item {
   display: grid;
   gap: 0.5rem;

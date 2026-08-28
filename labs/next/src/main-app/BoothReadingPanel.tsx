@@ -1,19 +1,15 @@
 import { LIVE_HALT_RUN_WORDS } from "../../../../src/core/teleprompter/live";
-import type { PromptHighlightMode, PromptTheme, ReadingFont } from "./store";
+import type { PromptHighlightMode } from "./store";
 
 export function BoothReadingPanel({
   inputs,
   inputId,
   recording,
-  readingFont,
-  theme,
   highlight,
   lineSpacing,
   checkReading,
   stopOnMismatch,
   onInput,
-  onFont,
-  onTheme,
   onHighlight,
   onSpacing,
   onCheckReading,
@@ -22,15 +18,11 @@ export function BoothReadingPanel({
   inputs: MediaDeviceInfo[];
   inputId: string;
   recording: boolean;
-  readingFont: ReadingFont;
-  theme: PromptTheme;
   highlight: PromptHighlightMode;
   lineSpacing: number;
   checkReading: boolean;
   stopOnMismatch: boolean;
   onInput: (deviceId: string) => void;
-  onFont: (font: ReadingFont) => void;
-  onTheme: (theme: PromptTheme) => void;
   onHighlight: (mode: PromptHighlightMode) => void;
   onSpacing: (value: number) => void;
   onCheckReading: (enabled: boolean) => void;
@@ -51,42 +43,6 @@ export function BoothReadingPanel({
         </select>
         <em>Raw mono capture. Change inputs between reads.</em>
       </label>
-
-      <p className="ma-booth-kicker">Reading font</p>
-      <div className="ma-booth-choices" role="radiogroup" aria-label="Reading font">
-        {([
-          ["serif", "Book serif"],
-          ["sans", "Clean sans"],
-          ["hyperlegible", "Hyperlegible"],
-        ] as const).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={readingFont === value}
-            className={readingFont === value ? "is-on" : undefined}
-            onClick={() => onFont(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <p className="ma-booth-kicker">Theme</p>
-      <div className="ma-booth-themes" role="radiogroup" aria-label="Reading theme">
-        {(["cream", "sepia", "dark"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={theme === value}
-            className={`ma-booth-theme is-${value}${theme === value ? " is-on" : ""}`}
-            onClick={() => onTheme(value)}
-          >
-            {value === "cream" ? "Cream" : value === "sepia" ? "Sepia" : "Dark"}
-          </button>
-        ))}
-      </div>
 
       <p className="ma-booth-kicker">Highlight as you read</p>
       <div className="ma-booth-choices" role="radiogroup" aria-label="Highlight as you read">
