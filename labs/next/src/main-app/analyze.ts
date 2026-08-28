@@ -39,6 +39,23 @@ export function chapterHtmlFromText(text: string): string {
     .join("\n");
 }
 
+/**
+ * Build a chapter's teleprompter HTML with its heading as the first line.
+ * Audiobook narrators announce each chapter break aloud ("Chapter One",
+ * "Prologue"), so the heading belongs in the script, not just in the sidebar.
+ * The synthetic "Front matter" label is not a spoken heading, so it is skipped;
+ * its body (title, author, copyright) is still shown.
+ */
+export function chapterHtmlWithHeading(title: string, text: string): string {
+  const heading = title.trim();
+  const body = chapterHtmlFromText(text);
+  if (!heading || heading.toLowerCase() === "front matter") {
+    return body;
+  }
+  const headingHtml = `<h2>${inlineMarkup(heading)}</h2>`;
+  return body ? `${headingHtml}\n${body}` : headingHtml;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -100,7 +117,7 @@ export async function analyzeSource(source: string, onProgress?: AnalyzeProgress
       proofed: false,
       mastered: false,
     });
-    contents.push({ id, html: chapterHtmlFromText(section.text) });
+    contents.push({ id, html: chapterHtmlWithHeading(section.title, section.text) });
     onProgress?.((index + 1) / total, section.title);
     // Let the progress bar paint; keep the whole animation short.
     if (total <= 80) {
