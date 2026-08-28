@@ -2096,38 +2096,6 @@
   flex-shrink: 0;
 }
 
-.ma-pronunciation-cue {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.45rem 0.7rem;
-  padding: 0.55rem 0.85rem;
-  border-radius: 14px;
-  border: 1px solid rgba(196, 168, 255, 0.28);
-  background: rgba(48, 28, 78, 0.42);
-}
-
-.ma-pronunciation-cue-kicker {
-  padding: 0.12rem 0.45rem;
-  border-radius: 999px;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #efe6ff;
-  background: rgba(168, 132, 255, 0.28);
-}
-
-.ma-pronunciation-cue strong {
-  font-size: 0.92rem;
-  letter-spacing: -0.02em;
-}
-
-.ma-pronunciation-cue span:last-child {
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-}
-
 .ma-teleprompter .is-dialogue {
   color: #e4b07a;
 }

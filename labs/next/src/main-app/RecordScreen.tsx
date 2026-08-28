@@ -31,7 +31,6 @@ import {
   truncateLiveTape,
 } from "../../../../src/core/teleprompter/session-tape";
 import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow";
-import { nextPronunciationCueByRows } from "../../../../src/core/glossary/workflow";
 import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import {
@@ -200,11 +199,6 @@ export function RecordScreen({
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
-  const [upcoming, setUpcoming] = useState<{
-    spelling: string;
-    respell?: string;
-    rowsAhead: number;
-  } | null>(null);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -355,21 +349,6 @@ export function RecordScreen({
       scrollToCursor(cursor);
     }
   }, [cursor, highlight, recording, paused, scrollToCursor, updateBand]);
-
-  useEffect(() => {
-    if (!recording || paused) {
-      setUpcoming(null);
-      return;
-    }
-    const tops = script.expected.map((word) => wordRefs.current.get(word.index)?.getBoundingClientRect().top ?? null);
-    const measured = nextPronunciationCueByRows(script.cues, cursor, tops);
-    if (!measured) {
-      setUpcoming(null);
-      return;
-    }
-    const entry = (project.glossary ?? []).find((item) => item.id === measured.cue.entryId);
-    setUpcoming(entry ? { spelling: entry.spelling, respell: entry.respell, rowsAhead: measured.rowsAhead } : null);
-  }, [cursor, paused, project.glossary, recording, script.cues, script.expected]);
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
@@ -1104,16 +1083,6 @@ export function RecordScreen({
             </button>
           </div>
         </div>
-      ) : null}
-
-      {recording && !paused && upcoming ? (
-        <aside className="ma-pronunciation-cue" aria-label={`Pronunciation coming up: ${upcoming.spelling}`}>
-          <span className="ma-pronunciation-cue-kicker">
-            {upcoming.rowsAhead === 0 ? "On this line" : upcoming.rowsAhead === 1 ? "Next line" : "Coming up"}
-          </span>
-          <strong>{upcoming.spelling}</strong>
-          <span>{upcoming.respell?.trim() || "No respelling yet"}</span>
-        </aside>
       ) : null}
 
       <div className={`ma-teleprompter is-${theme} font-${readingFont}`}>
