@@ -7,7 +7,12 @@ interface BoothDeskBridge {
   openProject: () => Promise<ProjectEnvelope | null>;
   reopenRecentProject: () => Promise<ProjectEnvelope | null>;
   saveProject: (payload: ProjectEnvelope) => Promise<ProjectEnvelope>;
-  importText: (payload: ProjectEnvelope) => Promise<ManuscriptImportResult | null>;
+  importText: (payload: ProjectEnvelope & {
+    sourcePath?: string;
+    fileName?: string;
+    bytesBase64?: string;
+    replace?: boolean;
+  }) => Promise<ManuscriptImportResult | null>;
   pasteText: (payload: ProjectEnvelope & { title: string; text: string }) => Promise<ProjectEnvelope>;
   renameChapter: (payload: ProjectEnvelope & { chapterId: string; title: string }) => Promise<ProjectEnvelope>;
   splitChapter: (payload: ProjectEnvelope & { chapterId: string; offset: number; secondTitle: string }) => Promise<ChapterEditResult>;

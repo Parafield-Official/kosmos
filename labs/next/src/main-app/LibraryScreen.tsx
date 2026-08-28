@@ -28,6 +28,8 @@ export function LibraryScreen({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [externalPrompt, setExternalPrompt] = useState<BookProject | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BookProject | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const shelfRef = useRef<HTMLDivElement>(null);
   const columns = useColumns(shelfRef);
@@ -157,10 +159,7 @@ export function LibraryScreen({
                         key={project.id}
                         project={project}
                         onOpen={() => onOpen(project)}
-                        onDelete={async () => {
-                          await deleteBook(project);
-                          await refresh();
-                        }}
+                        onDelete={() => setDeleteTarget(project)}
                       />
                     ))}
                   </div>
@@ -216,7 +215,88 @@ export function LibraryScreen({
           }}
         />
       ) : null}
+
+      {deleteTarget ? (
+        <ConfirmDelete
+          project={deleteTarget}
+          busy={deleting}
+          onCancel={() => {
+            if (!deleting) {
+              setDeleteTarget(null);
+            }
+          }}
+          onConfirm={async () => {
+            setDeleting(true);
+            try {
+              await deleteBook(deleteTarget);
+              await refresh();
+              setDeleteTarget(null);
+            } catch (error) {
+              setNotice(error instanceof Error ? error.message : "Could not delete the book.");
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ConfirmDelete({
+  project,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  project: BookProject;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) {
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+
+  return (
+    <div className="ma-scrim" role="presentation" onClick={onCancel}>
+      <div
+        className="ma-alert neu-panel"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ma-alert-title"
+        aria-describedby="ma-alert-sub"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ma-alert-copy">
+          <h2 className="ma-alert-title" id="ma-alert-title">
+            Delete book?
+          </h2>
+          <p className="ma-alert-sub" id="ma-alert-sub">
+            “{project.title}” and all of its chapters and recordings will be permanently deleted. This can’t be undone.
+          </p>
+        </div>
+        <div className="ma-alert-actions">
+          <button type="button" className="ma-alert-btn" onClick={onCancel} disabled={busy} autoFocus>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="ma-alert-btn ma-alert-btn-danger"
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -266,33 +346,35 @@ function BookCard({
 
   return (
     <div className="ma-book" role="listitem">
-      <button type="button" className="ma-book-hit" onClick={onOpen} aria-label={`Open ${label}`} title={label}>
-        <span className="ma-book-cover">
-          {project.coverDataUrl ? (
-            <img src={project.coverDataUrl} alt="" className="ma-book-art" />
-          ) : (
-            <GeneratedCover project={project} />
-          )}
-          {project.completedAt ? <span className="ma-book-badge ma-badge-done">Completed</span> : null}
-          {project.external ? <span className="ma-book-badge ma-badge-linked">Linked</span> : null}
-          {progress > 0 && progress < 100 ? (
-            <span className="ma-book-progress" aria-hidden="true">
-              <span className="ma-book-progress-fill" style={{ width: `${progress}%` }} />
-            </span>
-          ) : null}
-        </span>
-      </button>
-      <button
-        type="button"
-        className="ma-book-delete"
-        aria-label={`Delete ${project.title}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-      >
-        <TrashIcon />
-      </button>
+      <div className="ma-book-lift">
+        <button type="button" className="ma-book-hit" onClick={onOpen} aria-label={`Open ${label}`} title={label}>
+          <span className="ma-book-cover">
+            {project.coverDataUrl ? (
+              <img src={project.coverDataUrl} alt="" className="ma-book-art" />
+            ) : (
+              <GeneratedCover project={project} />
+            )}
+            {project.completedAt ? <span className="ma-book-badge ma-badge-done">Completed</span> : null}
+            {project.external ? <span className="ma-book-badge ma-badge-linked">Linked</span> : null}
+            {progress > 0 && progress < 100 ? (
+              <span className="ma-book-progress" aria-hidden="true">
+                <span className="ma-book-progress-fill" style={{ width: `${progress}%` }} />
+              </span>
+            ) : null}
+          </span>
+        </button>
+        <button
+          type="button"
+          className="ma-book-delete"
+          aria-label={`Delete ${project.title}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          <TrashIcon />
+        </button>
+      </div>
     </div>
   );
 }

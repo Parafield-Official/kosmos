@@ -152,10 +152,14 @@ function createWindow() {
 }
 
 async function createProjectFolder() {
-  const result = await dialog.showOpenDialog({
+  const dialogOptions = {
     title: "Choose a folder for the Kosmos project",
     properties: ["openDirectory", "createDirectory"],
-  });
+  };
+  const parent = dialogParentWindow();
+  const result = parent
+    ? await dialog.showOpenDialog(parent, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
 
   if (result.canceled || result.filePaths.length === 0) {
     return null;
@@ -163,18 +167,13 @@ async function createProjectFolder() {
 
   const folder = result.filePaths[0];
   const projectPath = path.join(folder, "project.json");
-  let projectExists = true;
-  try {
-    await fs.access(projectPath);
-  } catch (error) {
-    if (error && error.code === "ENOENT") {
-      projectExists = false;
-    } else {
-      throw error;
-    }
+  const existing = await readJsonIfPresent(projectPath);
+  if (isLabsProjectDocument(existing)) {
+    throw new Error(
+      "This folder is a Kosmos Labs book. Create a new book in an empty folder, then use Choose manuscript to load your EPUB.",
+    );
   }
-
-  if (projectExists) {
+  if (existing) {
     const opened = await readProjectFolder(folder);
     await rememberRecentProject(folder);
     return opened;
@@ -218,20 +217,52 @@ async function createProjectFolder() {
   await writeJsonAtomic(projectPath, project);
   await writeBundledSpec(folder);
   await rememberRecentProject(folder);
+  const localManuscript = await findLocalManuscript(folder);
+  if (localManuscript) {
+    try {
+      const imported = await parseManuscriptFile(localManuscript);
+      return await writeImportedManuscript(folder, project, localManuscript, imported);
+    } catch {
+      // The book is still usable; Choose manuscript can load the file next.
+    }
+  }
   return { folder, project };
 }
 
+async function findLocalManuscript(folder) {
+  try {
+    const entries = await fs.readdir(folder, { withFileTypes: true });
+    const name = entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .find((fileName) => /\.(epub|docx|md|markdown|txt|pdf)$/i.test(fileName));
+    return name ? path.join(folder, name) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function openProjectFolder() {
-  const result = await dialog.showOpenDialog({
+  const dialogOptions = {
     title: "Open a Kosmos project",
     properties: ["openDirectory"],
-  });
+  };
+  const parent = dialogParentWindow();
+  const result = parent
+    ? await dialog.showOpenDialog(parent, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
 
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
 
   const folder = result.filePaths[0];
+  const existing = await readJsonIfPresent(path.join(folder, "project.json"));
+  if (isLabsProjectDocument(existing)) {
+    throw new Error(
+      "This folder is a Kosmos Labs book. Create a new book in an empty folder, then use Choose manuscript to load your EPUB.",
+    );
+  }
   const opened = await readProjectFolder(folder);
   const refreshed = await refreshGlossaryOnOpen(opened);
   await rememberRecentProject(folder);
@@ -325,8 +356,29 @@ async function saveProjectFolder(folder, project) {
  * so a stale/forged snapshot cannot write project B's references into project
  * A. The folder is still the source of truth for the final save.
  */
+function isLabsProjectDocument(value) {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && typeof value.title === "string"
+    && value.name === undefined
+    && (value.app === "kosmos-labs" || typeof value.schema !== "number"),
+  );
+}
+
+async function readJsonIfPresent(filePath) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function assertProjectEnvelope(folder, project) {
-  const root = await assertProjectFolder(folder);
   if (!project || typeof project !== "object" || Array.isArray(project)) {
     throw new Error("Project payload must be an object");
   }
@@ -335,6 +387,20 @@ async function assertProjectEnvelope(folder, project) {
     settings: normalizeProjectSettings(project.settings),
   };
   loadCoreModule("project").validateProject(candidate);
+
+  const projectPath = path.join(path.resolve(folder), "project.json");
+  const existing = await readJsonIfPresent(projectPath);
+  if (isLabsProjectDocument(existing)) {
+    throw new Error(
+      "This folder is a Kosmos Labs book. Create a new book in an empty folder, then use Choose manuscript to load your EPUB.",
+    );
+  }
+  if (!existing) {
+    await ensureProjectLayout(folder);
+    await writeJsonAtomic(projectPath, candidate);
+  }
+
+  const root = await assertProjectFolder(folder);
   const diskProject = JSON.parse(await fs.readFile(projectAssetPath(root, "project.json"), "utf8"));
   if (!diskProject || typeof diskProject.id !== "string" || diskProject.id !== candidate.id) {
     throw new Error("Project payload does not belong to the selected project folder");
@@ -342,59 +408,100 @@ async function assertProjectEnvelope(folder, project) {
   return root;
 }
 
-async function importTextFile(folder, project) {
-  await assertProjectEnvelope(folder, project);
-  const result = await dialog.showOpenDialog({
-    title: "Import a chapter manuscript",
-    properties: ["openFile"],
-    filters: [{ name: "Manuscript", extensions: ["txt", "md", "markdown", "docx", "epub", "pdf"] }],
-  });
-  if (result.canceled || result.filePaths.length === 0) {
-    return null;
-  }
+function dialogParentWindow() {
+  return BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || undefined;
+}
 
-  const sourcePath = result.filePaths[0];
+function manuscriptImportError(error, extension = "") {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/unsupported manuscript format/i.test(raw)) {
+    return new Error("Kosmos can open .txt, .md, .docx, .epub, and searchable PDFs.");
+  }
+  if (extension === ".pdf" && /pdftotext|ENOENT|spawn/i.test(raw)) {
+    return new Error("Could not read that PDF. Use a PDF with a text layer, or try .txt, .md, .docx, or .epub.");
+  }
+  return error instanceof Error ? error : new Error(raw);
+}
+
+async function parseManuscriptFile(sourcePath) {
   const sourceStat = await fs.stat(sourcePath);
   if (!sourceStat.isFile() || sourceStat.size > MAX_MANUSCRIPT_BYTES) {
     throw new Error(`Manuscript files must be regular files smaller than ${MAX_MANUSCRIPT_BYTES} bytes.`);
   }
   const manuscriptCore = loadCoreModule("manuscript");
   const extension = path.extname(sourcePath).toLowerCase();
-  let imported;
-  const convertedMarkdown = await convertWithMarkItDown({
-    sourcePath,
-    extension,
-    resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
-    cwd: process.cwd(),
-    requireBundled: app.isPackaged,
-  });
-  if (convertedMarkdown) {
-    imported = {
-      ...manuscriptCore.fromPlainText(convertedMarkdown, "md"),
-      format: extension.replace(/^\./u, ""),
-    };
-  } else if (extension === ".pdf") {
-    let extracted;
-    try {
-      extracted = await runCommand(resolveRuntimeBinary({
+  try {
+    const convertedMarkdown = await convertWithMarkItDown({
+      sourcePath,
+      extension,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      cwd: process.cwd(),
+      requireBundled: app.isPackaged,
+    });
+    if (convertedMarkdown) {
+      return {
+        ...manuscriptCore.fromPlainText(convertedMarkdown, "md"),
+        format: extension.replace(/^\./u, ""),
+      };
+    }
+    if (extension === ".pdf") {
+      const extracted = await runCommand(resolveRuntimeBinary({
         name: "pdftotext",
         envVar: "PDFTOTEXT_PATH",
         resourcesPath: process.resourcesPath,
         appPath: app.getAppPath(),
       }), ["-layout", sourcePath, "-"], { maxOutputBytes: 100_000_000 });
-    } catch (error) {
-      throw new Error(`Could not extract a PDF text layer. Scanned PDFs are not supported (${String(error)}).`);
+      return manuscriptCore.fromPlainText(extracted.toString("utf8"), "pdf");
     }
-    imported = manuscriptCore.fromPlainText(extracted.toString("utf8"), "pdf");
-  } else {
     const bytes = await fs.readFile(sourcePath);
-    imported = manuscriptCore.importManuscriptBytes(
+    return manuscriptCore.importManuscriptBytes(
       new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
       path.extname(sourcePath),
     );
+  } catch (error) {
+    throw manuscriptImportError(error, extension);
   }
-  return writeImportedManuscript(folder, project, sourcePath, imported);
+}
+
+async function importTextFile(folder, project, options = {}) {
+  await assertProjectEnvelope(folder, project);
+  let sourcePath = typeof options.sourcePath === "string" && options.sourcePath ? options.sourcePath : null;
+  let tempPath = null;
+  if (!sourcePath && typeof options.bytesBase64 === "string" && typeof options.fileName === "string") {
+    const safe = path.basename(options.fileName) || "manuscript.txt";
+    tempPath = path.join(os.tmpdir(), `kosmos-ms-${crypto.randomUUID()}-${safe}`);
+    await fs.writeFile(tempPath, Buffer.from(options.bytesBase64, "base64"));
+    sourcePath = tempPath;
+  }
+  if (!sourcePath) {
+    const dialogOptions = {
+      title: "Choose a manuscript",
+      defaultPath: folder,
+      properties: ["openFile"],
+      filters: [{ name: "Manuscript", extensions: ["txt", "md", "markdown", "docx", "epub", "pdf"] }],
+    };
+    const parent = dialogParentWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    sourcePath = result.filePaths[0];
+  }
+
+  try {
+    const imported = await parseManuscriptFile(sourcePath);
+    const target = options.replace
+      ? { ...project, chapters: [], glossary: [], chapter_notes: [], punch_recordings: [] }
+      : project;
+    return writeImportedManuscript(folder, target, sourcePath, imported);
+  } finally {
+    if (tempPath) {
+      await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    }
+  }
 }
 
 async function writePastedText(folder, project, title, text) {
@@ -523,7 +630,7 @@ async function writeImportedManuscript(folder, project, sourcePath, imported) {
     const chapter = {
       id: `ch${padded}`,
       index,
-      title: section.title,
+      title: (section.title || "").trim() || `Chapter ${index}`,
       text_path: `manuscript/chapters/${padded}.json`,
       pickups_path: `alignment/${padded}.json`,
       word_count: section.word_count,
@@ -2394,17 +2501,6 @@ async function mixDuetChapterFile(folder, project, chapterId, narrationSeat = "N
   return { ...saved, mixPath, n1StemPath, n2StemPath, segments: segments.length, timingSource };
 }
 
-async function readJsonIfPresent(filePath) {
-  try {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
-  } catch (error) {
-    if (error && error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
 function padFloat32(samples, length) {
   const output = new Float32Array(length);
   output.set(samples.subarray(0, length));
@@ -3204,6 +3300,11 @@ async function reopenRecentProject() {
     return null;
   }
   try {
+    const existing = await readJsonIfPresent(path.join(state.recentProject, "project.json"));
+    if (isLabsProjectDocument(existing)) {
+      await fs.rm(statePath, { force: true });
+      return null;
+    }
     const opened = await readProjectFolder(state.recentProject);
     return await refreshGlossaryOnOpen(opened);
   } catch (error) {
@@ -3271,7 +3372,12 @@ ipcMain.handle("project:import-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {
     throw new Error("Invalid manuscript import request");
   }
-  return importTextFile(payload.folder, payload.project);
+  return importTextFile(payload.folder, payload.project, {
+    sourcePath: payload.sourcePath,
+    fileName: payload.fileName,
+    bytesBase64: payload.bytesBase64,
+    replace: Boolean(payload.replace),
+  });
 });
 ipcMain.handle("project:paste-text", (_event, payload) => {
   if (!payload?.folder || !payload?.project) {

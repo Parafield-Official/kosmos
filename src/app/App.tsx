@@ -65,8 +65,8 @@ import {
   type PromptPronunciationCue,
   type PronunciationCheck,
 } from "../core/glossary/workflow";
-import { fromPlainText } from "../core/manuscript/import";
-import { hideMarkdownHeadingMarkers, parsePastedChapter } from "../core/manuscript/split";
+import { fromPlainText, importManuscriptBytes } from "../core/manuscript/import";
+import { hideMarkdownHeadingMarkers, parsePastedChapter, splitManuscript } from "../core/manuscript/split";
 import { normalizeToken, tokenizeManuscript } from "../core/proof/normalize";
 import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
@@ -703,26 +703,104 @@ function ProjectHome({
     };
   }, [project.id, folder]);
 
-  async function importChapter() {
+  async function importChapter(file?: File) {
+    const replace = project.chapters.length > 0;
+    if (
+      replace
+      && !window.confirm("Replace this book's manuscript? Existing chapters will be swapped for the new file so you can test with different text.")
+    ) {
+      return;
+    }
+
     if (!window.boothDesk || folder === "(browser preview)") {
-      setComposerOpen(true);
+      if (!file) {
+        setComposerOpen(true);
+        return;
+      }
+      await runAction("import", async () => {
+        await importBrowserManuscript(file, replace);
+      });
       return;
     }
 
     await runAction("import", async () => {
-      const result = await window.boothDesk?.importText(envelope);
+      const sourcePath = filePathFromUpload(file);
+      const result = await window.boothDesk?.importText({
+        ...envelope,
+        replace,
+        sourcePath,
+        fileName: file?.name,
+        bytesBase64: file && !sourcePath ? await readFileAsBase64(file) : undefined,
+      });
       if (result) {
         onChange(result);
         const chapter = result.chapters[0] ?? result.project.chapters[result.project.chapters.length - 1];
         if (chapter) {
           setSelectedChapterId(chapter.id);
         }
+        setChapterReloadVersion((version) => version + 1);
         setNotice(
           `${result.chapters.length} ${result.chapters.length === 1 ? "chapter" : "chapters"} imported${result.format ? ` from ${result.format.toUpperCase()}` : ""}. `
           + `${result.project.glossary?.length ?? 0} pronunciation entries are ready to review.`,
         );
       }
     });
+  }
+
+  async function importBrowserManuscript(file: File, replace: boolean) {
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (extension === "pdf") {
+      throw new Error("PDF manuscripts need the desktop app. Try .txt, .md, .docx, or .epub.");
+    }
+    const buffer = await file.arrayBuffer();
+    let imported;
+    try {
+      imported = importManuscriptBytes(new Uint8Array(buffer), extension);
+    } catch (error) {
+      throw new Error(
+        error instanceof Error && /unsupported/i.test(error.message)
+          ? "Kosmos can open .txt, .md, .docx, and .epub here. PDFs need the desktop app."
+          : messageFor(error, "Could not read that manuscript."),
+      );
+    }
+    const sections = splitManuscript(imported.source_text ?? imported.text, {
+      idPrefix: "ch",
+      hashStartsChapter: imported.format === "txt",
+      dropContentsList: true,
+    });
+    if (sections.length === 0) {
+      throw new Error("The manuscript is empty; add some text before importing.");
+    }
+    let next = replace
+      ? { ...project, chapters: [], chapter_notes: [], punch_recordings: [], glossary: [] }
+      : project;
+    const created: Array<{ chapter: ChapterFile; text: string }> = [];
+    for (const section of sections) {
+      const index = next.chapters.length + 1;
+      const padded = String(index).padStart(2, "0");
+      const chapter: ChapterFile = {
+        id: `ch${padded}`,
+        index,
+        title: section.title.trim() || `Chapter ${index}`,
+        text_path: `manuscript/chapters/${padded}.json`,
+        pickups_path: `alignment/${padded}.json`,
+        word_count: section.word_count,
+        estimated_duration_minutes: section.estimated_duration_minutes,
+        author_status: "draft",
+      };
+      next = addChapter(next, chapter);
+      created.push({ chapter, text: section.text });
+    }
+    onChange({ folder, project: next });
+    const first = created[0];
+    if (first) {
+      setSelectedChapterId(first.chapter.id);
+      setChapterText(first.text);
+      setChapterSpans(fromPlainText(first.text, "txt").spans);
+    }
+    setNotice(
+      `${created.length} ${created.length === 1 ? "chapter" : "chapters"} imported from ${file.name}.`,
+    );
   }
 
   async function addPastedChapter() {
@@ -2863,7 +2941,7 @@ function ProjectHome({
               onSelect={setSelectedChapterId}
               onAttach={(chapter) => void attachAudio(chapter)}
               onPaste={() => setComposerOpen(true)}
-              onImport={() => void importChapter()}
+              onImport={(file) => void importChapter(file)}
               onExample={() => void loadExample()}
               onManage={() => setChapterManagerOpen(true)}
               onAssignSpanSeat={(index, seat) => void applySpanSeat(index, seat)}
@@ -8348,7 +8426,7 @@ function BookPage({
   onSelect: (id: string) => void;
   onAttach: (chapter: ChapterFile) => void;
   onPaste: () => void;
-  onImport: () => void;
+  onImport: (file?: File) => void;
   onExample: () => void;
   onManage: () => void;
   onAssignSpanSeat: (index: number, seat: "narration" | "N1" | "N2") => void;
@@ -8358,6 +8436,7 @@ function BookPage({
 }) {
   const [dashboardTab, setDashboardTab] = useState<"prep" | "proofing">("prep");
   const [chapterQuery, setChapterQuery] = useState("");
+  const manuscriptRef = useRef<HTMLInputElement>(null);
   const stats = useMemo(() => bookDashboardStats(project.chapters), [project.chapters]);
   const visibleChapters = useMemo(
     () => filterPromptChapters(project.chapters, chapterQuery),
@@ -8390,7 +8469,33 @@ function BookPage({
 
       <div className="page-toolbar book-dashboard-toolbar">
         <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onPaste}>Paste chapter</button>
-        <button className="primary-button compact-button" type="button" disabled={busyAction !== null} onClick={onImport}>Update manuscript</button>
+        <button
+          className="primary-button compact-button"
+          type="button"
+          disabled={busyAction !== null}
+          onClick={() => {
+            if (window.boothDesk) {
+              onImport();
+              return;
+            }
+            manuscriptRef.current?.click();
+          }}
+        >
+          {busyAction === "import" ? "Reading manuscript…" : "Choose manuscript"}
+        </button>
+        <input
+          ref={manuscriptRef}
+          type="file"
+          accept=".txt,.md,.markdown,.docx,.epub,.pdf,text/plain"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = "";
+            if (file) {
+              onImport(file);
+            }
+          }}
+        />
         {project.chapters.length === 0 ? (
           <button className="compact-button" type="button" disabled={busyAction !== null} onClick={onExample}>{busyAction === "example" ? "Loading example…" : "Try an example chapter"}</button>
         ) : null}
@@ -8400,7 +8505,7 @@ function BookPage({
         <div className="empty-chapters">
           <div className="empty-icon" aria-hidden="true">+</div>
           <h3>Add chapter 1</h3>
-          <p>Paste the page or import a manuscript. Recording waits until the words are here.</p>
+          <p>Paste the page or choose a manuscript. Recording waits until the words are here.</p>
         </div>
       ) : (
         <>
@@ -10487,5 +10592,35 @@ function formatTime(seconds: number): string {
 }
 
 function messageFor(reason: unknown, fallback: string): string {
-  return reason instanceof Error && reason.message ? reason.message : fallback;
+  let text = reason instanceof Error && reason.message ? reason.message : fallback;
+  text = text.replace(/^Error invoking remote method '[^']+': (?:Error:\s*)?/u, "");
+  if (/^ENOENT:/u.test(text) || /lstat '.+project\.json'/u.test(text)) {
+    return "This folder isn’t a Kosmos book yet. Use Choose manuscript to load a file, or create a new book in an empty folder.";
+  }
+  return text;
+}
+
+function filePathFromUpload(file: File | undefined): string | undefined {
+  if (!file) {
+    return undefined;
+  }
+  const path = (file as File & { path?: string }).path;
+  return typeof path === "string" && path.length > 0 ? path : undefined;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Could not read that manuscript."));
+        return;
+      }
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read that manuscript."));
+    reader.readAsDataURL(file);
+  });
 }

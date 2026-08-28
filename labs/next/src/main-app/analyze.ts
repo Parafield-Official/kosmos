@@ -75,8 +75,10 @@ export function manuscriptSource(name: string, bytes: Uint8Array): string | null
     try {
       const imported = importManuscriptBytes(bytes, ext);
       return imported.source_text ?? imported.text;
-    } catch {
-      return null;
+    } catch (error) {
+      throw error instanceof Error
+        ? error
+        : new Error("Kosmos couldn't read that Word or EPUB file.");
     }
   }
   // PDF needs a native text extractor; not available in the renderer yet.
@@ -143,7 +145,11 @@ export async function analyzeFile(file: File, onProgress?: AnalyzeProgress): Pro
     }
   }
   if (!source || !source.trim()) {
-    return { chapters: [], contents: [] };
+    throw new Error(
+      ext === "pdf"
+        ? "PDF manuscripts need a text layer. Try .txt, .md, .docx, or .epub."
+        : "Kosmos couldn't read any text from that file. Try a .txt, .md, .docx, or .epub.",
+    );
   }
   return analyzeSource(source, onProgress);
 }

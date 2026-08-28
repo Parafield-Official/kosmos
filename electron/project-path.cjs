@@ -16,9 +16,20 @@ async function assertProjectFolder(folder) {
   if (!folderStat.isDirectory() || folderStat.isSymbolicLink()) {
     throw new Error("Project folder must be a regular directory, not a symbolic link");
   }
-  const projectStat = await fs.lstat(path.join(root, "project.json"));
-  if (!projectStat.isFile() || projectStat.isSymbolicLink()) {
-    throw new Error("Project folder must contain a regular project.json file");
+  try {
+    const projectStat = await fs.lstat(path.join(root, "project.json"));
+    if (!projectStat.isFile() || projectStat.isSymbolicLink()) {
+      throw new Error("Project folder must contain a regular project.json file");
+    }
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      const missing = new Error(
+        "This folder isn’t a Kosmos book yet. Use Choose manuscript to load a file, or create a new book in an empty folder.",
+      );
+      missing.code = "ENOENT";
+      throw missing;
+    }
+    throw error;
   }
   return root;
 }

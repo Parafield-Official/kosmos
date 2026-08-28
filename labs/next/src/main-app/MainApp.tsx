@@ -4,6 +4,7 @@ import {
   persistBook,
   readManuscriptBytes,
   writeChapterContents,
+  writeManuscript,
   type BookProject,
 } from "./store";
 import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
@@ -35,6 +36,7 @@ export function MainApp() {
   // Always land on the Library (start screen) each launch, Xcode-style.
   const [screen, setScreen] = useState<MainScreen>({ name: "library" });
   const [analyzing, setAnalyzing] = useState<Analyzing>(null);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   const openProject = useCallback((project: BookProject) => {
     setScreen({ name: "overview", project });
@@ -90,6 +92,7 @@ export function MainApp() {
 
   /** Parse a manuscript into chapters (from an upload or from disk), with progress. */
   const analyzeAndApply = useCallback(async (project: BookProject, file?: File) => {
+    setAnalyzeError(null);
     setAnalyzing({ progress: 0, label: "Reading manuscript…" });
     try {
       const report = (fraction: number, label: string) =>
@@ -100,36 +103,66 @@ export function MainApp() {
       } else {
         const manuscript = await readManuscriptBytes(project);
         const source = manuscript ? manuscriptSource(manuscript.name, manuscript.bytes) : null;
-        result = source ? await analyzeSource(source, report) : { chapters: [], contents: [] };
-      }
-      let next = project;
-      if (result.chapters.length) {
-        let patch: BookProject = { ...project, chapters: result.chapters };
-        // Backfill the author from the manuscript's own metadata when the book
-        // was created without one (older imports, or a manuscript picked before
-        // the field was filled). Never overwrite an author the user already set.
-        if (!project.author.trim()) {
-          const source = file
-            ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }
-            : await readManuscriptBytes(project);
-          const meta = source ? manuscriptMetaFromBytes(source.name, source.bytes) : {};
-          if (meta.authors?.length) {
-            patch = { ...patch, author: meta.authors.join(", ") };
-          }
+        if (!source) {
+          throw new Error(
+            manuscript && /\.pdf$/i.test(manuscript.name)
+              ? "PDF manuscripts need a text layer. Try .txt, .md, .docx, or .epub."
+              : "Kosmos couldn't read that manuscript. Try a .txt, .md, .docx, or .epub.",
+          );
         }
-        next = await persistBook(patch);
-        await writeChapterContents(next, result.contents);
+        result = await analyzeSource(source, report);
       }
+      if (!result.chapters.length) {
+        throw new Error("Kosmos couldn't find chapter text in that manuscript.");
+      }
+      let patch: BookProject = { ...project, chapters: result.chapters };
+      // Backfill the author from the manuscript's own metadata when the book
+      // was created without one (older imports, or a manuscript picked before
+      // the field was filled). Never overwrite an author the user already set.
+      if (!project.author.trim()) {
+        const source = file
+          ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }
+          : await readManuscriptBytes(project);
+        const meta = source ? manuscriptMetaFromBytes(source.name, source.bytes) : {};
+        if (meta.authors?.length) {
+          patch = { ...patch, author: meta.authors.join(", ") };
+        }
+      }
+      const next = await persistBook(patch);
+      await writeChapterContents(next, result.contents);
       setScreen((current) =>
         current.name === "overview" && current.project.id === next.id
           ? { name: "overview", project: next }
           : current,
       );
       return next;
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : "Could not read that manuscript.";
+      setAnalyzeError(message);
+      return project;
     } finally {
       setAnalyzing(null);
     }
   }, []);
+
+  const chooseManuscript = useCallback(
+    async (project: BookProject, file: File) => {
+      setAnalyzeError(null);
+      try {
+        const name = await writeManuscript(project.folder, file);
+        const next = await persistBook({ ...project, manuscript: name ?? file.name });
+        setScreen((current) =>
+          current.name === "overview" && current.project.id === next.id
+            ? { name: "overview", project: next }
+            : current,
+        );
+        await analyzeAndApply(next, file);
+      } catch (reason) {
+        setAnalyzeError(reason instanceof Error ? reason.message : "Could not open that manuscript.");
+      }
+    },
+    [analyzeAndApply],
+  );
 
   const onCreatedBook = useCallback(
     async (project: BookProject, file?: File) => {
@@ -162,7 +195,9 @@ export function MainApp() {
           onRead={(chapterId) => openReader(screen.project, chapterId)}
           onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
           onAnalyze={() => void analyzeAndApply(screen.project)}
+          onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
           onChange={(next) => void commit(next)}
+          analyzeError={analyzeError}
         />
       ) : null}
 

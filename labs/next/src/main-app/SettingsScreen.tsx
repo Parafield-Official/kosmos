@@ -96,7 +96,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           <div className="ma-set-control">
             <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
               <RestartIcon />
-              Reset &amp; restart
+              Reset
             </button>
           </div>
         </div>
