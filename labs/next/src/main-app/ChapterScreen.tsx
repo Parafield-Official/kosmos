@@ -10,6 +10,7 @@ import {
   entriesInText,
 } from "./glossary";
 import { GlossaryPanel } from "./GlossaryPanel";
+import { RoomCheck } from "./RoomCheck";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
 import {
   applyChapterPickups,
@@ -222,6 +223,11 @@ export function ChapterScreen({
           <span className={`ma-stage-chip ma-stage-${stage}`}>{chapter.title}</span>
         </div>
       </header>
+
+      <RoomCheck
+        report={project.roomCheck}
+        onReport={(roomCheck) => onChange({ ...project, roomCheck })}
+      />
 
       <GlossaryPanel
         title="Pronunciations"

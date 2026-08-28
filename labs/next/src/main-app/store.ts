@@ -19,6 +19,21 @@ export type PromptHighlightMode = "word" | "line" | "paragraph";
 export type ReadingFont = "serif" | "sans" | "hyperlegible";
 export type PromptTheme = "dark" | "sepia" | "cream";
 
+export type RoomCheckStatus = "pass" | "warn" | "fail";
+
+/** Last room-tone measurement for this book. */
+export interface RoomCheckReport {
+  recordedAt: string;
+  durationSeconds: number;
+  noiseFloorDbfs: number;
+  speechRmsDbfs: number;
+  neededBoostDb: number;
+  predictedFloorDbfs: number;
+  targetRmsDbfs: number;
+  status: RoomCheckStatus;
+  warning: string;
+}
+
 /** Live or proof flag kept on the chapter for Review / punch-in. */
 export type ChapterPickup = Pickup;
 
@@ -91,6 +106,8 @@ export interface BookProject {
   glossary?: GlossaryEntry[];
   /** Spellings the narrator removed so auto-scan will not flag them again. */
   glossaryDismissed?: string[];
+  /** Last 10–20s room-tone measurement. */
+  roomCheck?: RoomCheckReport;
 }
 
 function now(): string {
@@ -221,6 +238,28 @@ function normalizeDismissed(raw: unknown): string[] | undefined {
   return words;
 }
 
+function normalizeRoomCheck(raw: unknown): RoomCheckReport | undefined {
+  if (!raw || typeof raw !== "object") {
+    return undefined;
+  }
+  const row = raw as Partial<RoomCheckReport>;
+  const status = row.status === "pass" || row.status === "warn" || row.status === "fail" ? row.status : null;
+  if (!status || typeof row.warning !== "string") {
+    return undefined;
+  }
+  return {
+    recordedAt: typeof row.recordedAt === "string" ? row.recordedAt : new Date().toISOString(),
+    durationSeconds: Number(row.durationSeconds) || 0,
+    noiseFloorDbfs: Number(row.noiseFloorDbfs),
+    speechRmsDbfs: Number(row.speechRmsDbfs),
+    neededBoostDb: Number(row.neededBoostDb) || 0,
+    predictedFloorDbfs: Number(row.predictedFloorDbfs),
+    targetRmsDbfs: Number(row.targetRmsDbfs) || -20,
+    status,
+    warning: row.warning,
+  };
+}
+
 /** Fill in any fields a legacy or partial record is missing so the UI never
  * hits an undefined title/author/chapters. */
 function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): BookProject {
@@ -273,6 +312,7 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
     manuscript: typeof raw.manuscript === "string" ? raw.manuscript : undefined,
     glossary: normalizeGlossary(raw.glossary),
     glossaryDismissed: normalizeDismissed(raw.glossaryDismissed),
+    roomCheck: normalizeRoomCheck(raw.roomCheck),
   };
 }
 

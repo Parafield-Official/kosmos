@@ -1159,6 +1159,65 @@
   align-items: center;
 }
 
+.ma-room {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem 1.05rem 1.1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(10, 8, 16, 0.28);
+}
+
+.ma-room-result {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.ma-room-status {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ma-room-result.is-pass .ma-room-status {
+  color: #7cf5b0;
+}
+
+.ma-room-result.is-warn .ma-room-status {
+  color: #ffe1b8;
+}
+
+.ma-room-result.is-fail .ma-room-status {
+  color: #ffb4b4;
+}
+
+.ma-room-result dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.2rem;
+  margin: 0;
+}
+
+.ma-room-result dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.ma-room-result dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.ma-room-result p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 @media (max-width: 720px) {
   .ma-glossary-list li,
   .ma-glossary-add {
