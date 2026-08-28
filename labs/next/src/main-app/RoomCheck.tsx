@@ -5,11 +5,57 @@ import type { RoomCheckReport } from "./store";
 
 const TARGET_SECONDS = 12;
 
+const AUDIBLE_FLOOR_DBFS = -60;
+
 function formatDb(value: number): string {
   if (!Number.isFinite(value)) {
     return "—";
   }
   return `${value.toFixed(1)} dBFS`;
+}
+
+function roomQuality(report: RoomCheckReport): { title: string; detail: string } {
+  const noMic = !Number.isFinite(report.noiseFloorDbfs);
+  if (report.status === "fail" && (report.durationSeconds === 0 || noMic)) {
+    return {
+      title: "Check failed",
+      detail: "That recording didn't come through. Try again with the microphone on.",
+    };
+  }
+  if (report.status === "warn" && report.durationSeconds > 0 && report.durationSeconds < 10) {
+    return {
+      title: "Try that again",
+      detail: "That was too short. Sit still and don't talk for about 12 seconds, then check again.",
+    };
+  }
+  if (report.status === "warn" && report.durationSeconds > 20) {
+    return {
+      title: "Try that again",
+      detail: "That ran long. Sit still for about 12 seconds, then check again.",
+    };
+  }
+  if (report.status === "warn" && noMic) {
+    return {
+      title: "No room sound",
+      detail: "The mic picked up nothing — computer silence, not the room. Choose a real microphone and make sure it isn't muted.",
+    };
+  }
+  if (report.status === "fail") {
+    return {
+      title: "Too noisy",
+      detail: `This place is too loud to record a whole book. Background noise would sit at ${formatDb(report.predictedFloorDbfs)}; Audible needs ${AUDIBLE_FLOOR_DBFS} dBFS or quieter. Fans, HVAC, traffic, and a loud computer all count. Move somewhere quieter, then check again.`,
+    };
+  }
+  if (report.status === "warn") {
+    return {
+      title: "A bit noisy",
+      detail: `Close to Audible's limit. After your voice is brought up to level, background noise would sit at ${formatDb(report.predictedFloorDbfs)} (needs ${AUDIBLE_FLOOR_DBFS} dBFS or quieter). You can record, but listen to a take before you do the whole book.`,
+    };
+  }
+  return {
+    title: "Quiet enough",
+    detail: "Background noise is low enough for Audible. This is a good room to record the book.",
+  };
 }
 
 function toSaved(report: RoomTestReport): RoomCheckReport {
@@ -121,13 +167,16 @@ export function RoomCheck({
   }
 
   const shown = report;
-  const statusLabel = shown?.status === "pass" ? "Pass" : shown?.status === "warn" ? "Close" : shown?.status === "fail" ? "Treat the room" : null;
+  const quality = shown ? roomQuality(shown) : null;
 
   return (
     <section className="ma-room" aria-label="Room check">
       <header className="ma-glossary-head">
         <h2>Room check</h2>
-        <p>Record {TARGET_SECONDS} seconds of intended silence. If the floor is loud, treat the room before a whole book.</p>
+        <p>
+          Sit still and don&apos;t talk for {TARGET_SECONDS} seconds. This measures how noisy the room is — fans,
+          traffic, computer — not your voice.
+        </p>
       </header>
       <div className="ma-step-actions">
         <button type="button" className="btn" disabled={recording} onClick={() => void runCheck()}>
@@ -140,24 +189,24 @@ export function RoomCheck({
         ) : null}
       </div>
       {error ? <p className="ma-error">{error}</p> : null}
-      {shown ? (
-        <div className={`ma-room-result is-${shown.status}`}>
-          <p className="ma-room-status">{statusLabel}</p>
+      {shown && quality ? (
+        <div className={`ma-room-result is-${shown.status}`} aria-live="polite">
+          <p className="ma-room-status">{quality.title}</p>
+          <p className="ma-room-detail">{quality.detail}</p>
           <dl>
             <div>
-              <dt>Silence</dt>
+              <dt>Quiet time</dt>
               <dd>{shown.durationSeconds.toFixed(1)} s</dd>
             </div>
             <div>
-              <dt>Room noise</dt>
+              <dt>Background noise</dt>
               <dd>{formatDb(shown.noiseFloorDbfs)}</dd>
             </div>
             <div>
-              <dt>After boost</dt>
+              <dt>What Audible hears</dt>
               <dd>{formatDb(shown.predictedFloorDbfs)}</dd>
             </div>
           </dl>
-          <p>{shown.warning}</p>
         </div>
       ) : null}
     </section>

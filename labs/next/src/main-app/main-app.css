@@ -1203,10 +1203,12 @@
   gap: 0.45rem;
 }
 
-.ma-room-status {
+.ma-room-result .ma-room-status {
   margin: 0;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 1.12rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
 }
 
 .ma-room-result.is-pass .ma-room-status {
@@ -1246,6 +1248,12 @@
   font-size: 0.82rem;
   line-height: 1.45;
   color: var(--ink-soft);
+}
+
+.ma-room-result .ma-room-detail {
+  max-width: 38em;
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 @media (max-width: 720px) {

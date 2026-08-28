@@ -25,7 +25,7 @@ describe("room test gain budget", () => {
     });
 
     expect(result.status).toBe("fail");
-    expect(result.warning).toMatch(/treat the room/i);
+    expect(result.warning).toMatch(/too noisy/i);
   });
 
   it("warns when the recording is outside the intended 10–20 second window", () => {

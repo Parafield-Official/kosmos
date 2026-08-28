@@ -64,7 +64,7 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
       neededBoostDb: neededBoost,
       predictedFloorDbfs: predictedFloor,
       status: "warn",
-      warning: "Record 10–20 seconds of intended silence for a reliable room estimate.",
+      warning: "Sit still and don't talk for 10–20 seconds so we can measure how noisy the room is.",
     };
   }
   if (noiseFloor === -Infinity) {
@@ -76,7 +76,7 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
       neededBoostDb: neededBoost,
       predictedFloorDbfs: predictedFloor,
       status: "warn",
-      warning: "This is digital silence, not room tone. Measure a real microphone signal.",
+      warning: "The mic picked up nothing — computer silence, not the room. Choose a real microphone and make sure it isn't muted.",
     };
   }
   if (predictedFloor > floorMax) {
@@ -88,7 +88,7 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
       neededBoostDb: neededBoost,
       predictedFloorDbfs: predictedFloor,
       status: "fail",
-      warning: `Treat the room before recording a whole book. After a ${neededBoost.toFixed(1)} dB boost, the predicted floor is ${formatDb(predictedFloor)} (ACX needs ≤ ${floorMax} dBFS).`,
+      warning: `This room is too noisy for Audible. After raising the voice to level, background noise would sit at ${formatDb(predictedFloor)} (Audible needs ≤ ${floorMax} dBFS). Fans, HVAC, traffic, and a loud computer all count — record somewhere quieter.`,
     };
   }
   const status = floorMax - predictedFloor <= 0.5 ? "warn" : "pass";
@@ -101,8 +101,8 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
     predictedFloorDbfs: predictedFloor,
     status,
     warning: status === "warn"
-      ? "The predicted floor is close to the ACX limit. Leave headroom and listen to a finished take."
-      : "Room estimate is below the ACX floor after the expected gain.",
+      ? "A bit noisy — close to Audible's limit. You can record, but listen to a take before you do the whole book."
+      : "Quiet enough for Audible. Background noise stays below the limit after the voice is brought up to level.",
   };
 }
 
