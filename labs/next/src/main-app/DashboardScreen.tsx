@@ -160,15 +160,15 @@ export function DashboardScreen({
           </div>
           {project.chapters.length > 0 ? (
             <dl className="ma-hero-stats">
-              <div>
+              <div className="neu-inset">
                 <dt>Total chapters</dt>
                 <dd>{project.chapters.length}</dd>
               </div>
-              <div>
+              <div className="neu-inset">
                 <dt>Words</dt>
                 <dd>{stats.words.toLocaleString()}</dd>
               </div>
-              <div>
+              <div className="neu-inset">
                 <dt>PFH</dt>
                 <dd>{stats.pfh}</dd>
               </div>

@@ -3,11 +3,10 @@ import { pickupKindPresentation } from "../../../../src/core/proof/pickup-displa
 import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
 import { BoothReadingPanel } from "./BoothReadingPanel";
-import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import { paragraphsFromHtml } from "./booth";
 import { flagKindLabel, flagWrongCopy } from "./flag-kind";
 import { PunchRecorder } from "./PunchRecorder";
-import { applyPunchRecording, previewPunchRecording, undoLatestChapterPunch } from "./punch";
+import { applyPunchRecording, previewPunchRecording } from "./punch";
 import { ReviewScript } from "./ReviewScript";
 import { markKindEnabled } from "./engine-prefs";
 import {
@@ -147,7 +146,6 @@ export function ReviewScreen({
     .sort((left, right) => (left.line_start ?? left.t_start) - (right.line_start ?? right.t_start));
   const resolved = (current.pickups ?? []).filter((pickup) => pickup.status !== "open");
   const punches = (current.punches ?? []).filter((punch) => punch.edit_status !== "reverted");
-  const canUndo = punches.length > 0;
   const focusedPickupId = playing?.includes("-") ? playing.slice(playing.indexOf("-") + 1) : null;
 
   function stopPlayback() {
@@ -202,19 +200,6 @@ export function ReviewScreen({
     setNotice(`“${word}” is filtered for the whole book.`);
   }
 
-  function startSession() {
-    const session = buildPickupSession(current.pickups ?? []);
-    const first = session.items[0];
-    if (!first) {
-      return;
-    }
-    setSessionTotal(session.items.length);
-    setSessionIndex(0);
-    setSessionIds(first.pickupIds);
-    setPunching(first.pickup);
-    setError(null);
-  }
-
   async function applyWav(wav: Uint8Array, bound: ChapterPickup) {
     setBusy(true);
     setError(null);
@@ -243,24 +228,10 @@ export function ReviewScreen({
     }
   }
 
-  async function undoLatest() {
-    setBusy(true);
-    setError(null);
-    try {
-      onChange(await undoLatestChapterPunch(project, chapterId));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not undo.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <section className={embedded ? "ma-review-embed" : "ma-screen ma-review"} aria-label={`Review ${chapter.title}`}>
       <header className="ma-overview-head">
-        {embedded ? (
-          <h2 className="ma-record-chapter">{chapter.title}</h2>
-        ) : (
+        {embedded ? null : (
           <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
             <ChevronLeft />
             <span>{chapter.title}</span>
@@ -272,30 +243,21 @@ export function ReviewScreen({
               Start over
             </button>
           ) : null}
-          {open.length > 0 ? (
-            <button type="button" className="btn" onClick={startSession} disabled={busy}>
-              Fix open flags
-            </button>
-          ) : null}
-          {canUndo ? (
-            <button type="button" className="btn btn-clear" onClick={() => void undoLatest()} disabled={busy}>
-              Undo latest punch
-            </button>
-          ) : null}
           {onContinueMaster ? (
             <button type="button" className="btn btn-clear" onClick={onContinueMaster} disabled={mastering}>
               {mastering ? "Mastering…" : "Mastering"}
             </button>
           ) : null}
-          {embedded ? null : <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />}
         </div>
       </header>
 
-      {error && !punching ? <p className="ma-error">{error}</p> : null}
-      {notice ? <p className="ma-review-note">{notice}</p> : null}
+      <div className="ma-proof-alerts">
+        {error && !punching ? <p className="ma-error">{error}</p> : null}
+        {notice ? <p className="ma-review-note">{notice}</p> : null}
+      </div>
 
-      {manuscript ? (
-        <>
+      <div className="ma-proof-prompt">
+        {manuscript ? (
           <ReviewScript
             chapterId={chapterId}
             manuscript={manuscript}
@@ -313,151 +275,138 @@ export function ReviewScreen({
               setError(null);
             }}
           />
-          <section className="ma-flow-block" aria-label="Teleprompter setting">
-            <h2 className="ma-flow-block-title">Teleprompter setting</h2>
-            <BoothReadingPanel
-              inputs={[]}
-              inputId=""
-              recording={false}
-              highlight={highlight}
-              lineSpacing={lineSpacing}
-              checkReading={false}
-              stopOnMismatch={false}
-              includeMic={false}
-              includeReadingChecks={false}
-              onInput={() => undefined}
-              onHighlight={setHighlight}
-              onSpacing={setLineSpacing}
-              onCheckReading={() => undefined}
-              onStopOnMismatch={() => undefined}
-              theme={theme}
-              onTheme={(value) => {
-                setTheme(value);
-                writePromptTheme(value);
-              }}
-              fontPx={fontPx}
-              onFontPx={(value) => setFontPx(writeBoothFontPx(value))}
-            />
-          </section>
-        </>
-      ) : null}
+        ) : null}
+      </div>
 
-      {open.length === 0 ? (
-        <p className="ma-chapter-empty">
-          {resolved.length
-            ? "No open flags. Kept takes and punched lines are filed below."
-            : "No flags on this chapter. Listen through the take once, then master."}
-        </p>
-      ) : (
-        <ul className="ma-pickup-list">
-          {open.map((pickup) => (
-            <PickupRow
-              key={pickup.id}
-              pickup={pickup}
-              playing={playing}
-              hasOriginal={Boolean(chapter.originalFile)}
-              hasWorking={Boolean(chapter.workingFile)}
-              onPlayOriginal={() => playRange("original", pickup)}
-              onPlayWorking={() => playRange("working", pickup)}
-              onKeep={() => patchPickup(pickup, "ignored")}
-              onFixed={() => patchPickup(pickup, "done")}
-              onNeverFlag={pickup.kind === "pause" ? undefined : () => neverFlag(pickup)}
-              onPunch={() => {
-                setSessionIds(null);
-                setPunching(pickup);
-                setError(null);
-              }}
-            />
-          ))}
-        </ul>
-      )}
-
-      {resolved.length > 0 ? (
-        <div className="ma-pickup-resolved">
-          <h2 className="ma-section-title">History</h2>
-          <ul className="ma-pickup-list ma-pickup-list-quiet">
-            {resolved.map((pickup) => (
-              <li key={pickup.id} className="ma-pickup-row neu-inset">
-                <span className="ma-pickup-kind">{pickup.status === "ignored" ? "Kept" : "Fixed"}</span>
-                <p className="ma-pickup-line">{pickup.line_text || pickup.expected || pickup.heard}</p>
-                <div className="ma-step-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={!chapter.originalFile}
-                    onClick={() => playRange("original", pickup)}
-                  >
-                    {playing === `original-${pickup.id}` ? "Playing original" : "Listen original"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={!chapter.workingFile}
-                    onClick={() => playRange("working", pickup)}
-                  >
-                    {playing === `working-${pickup.id}` ? "Playing newer" : "Listen newer"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      patchPickup(pickup, "open");
-                      setSessionIds(null);
-                      setPunching({ ...pickup, status: "open" });
-                    }}
-                  >
-                    Re-record
-                  </button>
-                </div>
-              </li>
+      <aside className="ma-proof-side" aria-label="Flagged parts">
+        {open.length === 0 ? (
+          <p className="ma-chapter-empty">
+            {resolved.length || punches.length
+              ? "No open flags."
+              : "No flags on this chapter."}
+          </p>
+        ) : (
+          <ul className="ma-pickup-list">
+            {open.map((pickup) => (
+              <PickupRow
+                key={pickup.id}
+                pickup={pickup}
+                playing={playing}
+                hasOriginal={Boolean(chapter.originalFile)}
+                hasWorking={Boolean(chapter.workingFile)}
+                onPlayOriginal={() => playRange("original", pickup)}
+                onPlayWorking={() => playRange("working", pickup)}
+                onKeep={() => patchPickup(pickup, "ignored")}
+                onFixed={() => patchPickup(pickup, "done")}
+                onNeverFlag={pickup.kind === "pause" ? undefined : () => neverFlag(pickup)}
+                onPunch={() => {
+                  setSessionIds(null);
+                  setPunching(pickup);
+                  setError(null);
+                }}
+              />
             ))}
           </ul>
-        </div>
-      ) : null}
+        )}
 
-      {punches.length > 0 ? (
-        <div className="ma-pickup-resolved">
-          <h2 className="ma-section-title">Punch-ins</h2>
-          <ul className="ma-pickup-list ma-pickup-list-quiet">
-            {punches.map((punch) => (
-              <li key={punch.id} className="ma-pickup-row neu-inset">
-                <span className="ma-pickup-kind">Modified</span>
-                <p className="ma-pickup-line">{punch.expected || punch.heard || `${punch.t_start.toFixed(1)}s`}</p>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => {
-                    const related = (current.pickups ?? []).find((item) => item.id === punch.pickup_id);
-                    if (related) {
-                      setPunching({ ...related, status: "open" });
-                      return;
-                    }
-                    setPunching({
-                      id: punch.pickup_id || punch.id,
-                      chapter_id: chapterId,
-                      t_start: punch.t_start,
-                      t_end: punch.t_end,
-                      line_start: punch.t_start,
-                      line_end: punch.t_end,
-                      line_text: punch.expected || "",
-                      expected: punch.expected || "",
-                      heard: punch.heard || punch.expected || "",
-                      kind: "sub",
-                      seat: "narration",
-                      status: "open",
-                      confidence: 1,
-                      intent: "performance",
-                      selection_kind: "sentence",
-                    });
-                  }}
-                >
-                  Re-record
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+        {resolved.length > 0 || punches.length > 0 ? (
+          <div className="ma-pickup-resolved">
+            <h2 className="ma-section-title">History</h2>
+            <ul className="ma-pickup-list ma-pickup-list-quiet">
+              {resolved.map((pickup) => (
+                <li key={pickup.id} className="ma-pickup-row neu-inset">
+                  <span className="ma-pickup-kind">{pickup.status === "ignored" ? "Kept" : "Fixed"}</span>
+                  <p className="ma-pickup-line">{pickup.line_text || pickup.expected || pickup.heard}</p>
+                  <div className="ma-step-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={!chapter.originalFile}
+                      onClick={() => playRange("original", pickup)}
+                    >
+                      {playing === `original-${pickup.id}` ? "Playing original" : "Listen original"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={!chapter.workingFile}
+                      onClick={() => playRange("working", pickup)}
+                    >
+                      {playing === `working-${pickup.id}` ? "Playing newer" : "Listen newer"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        patchPickup(pickup, "open");
+                        setSessionIds(null);
+                        setPunching({ ...pickup, status: "open" });
+                      }}
+                    >
+                      Re-record
+                    </button>
+                  </div>
+                </li>
+              ))}
+              {punches.map((punch) => (
+                <li key={punch.id} className="ma-pickup-row neu-inset">
+                  <span className="ma-pickup-kind">Modified</span>
+                  <p className="ma-pickup-line">{punch.expected || punch.heard || `${punch.t_start.toFixed(1)}s`}</p>
+                  <div className="ma-step-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        const related = (current.pickups ?? []).find((item) => item.id === punch.pickup_id);
+                        if (related) {
+                          setPunching({ ...related, status: "open" });
+                          return;
+                        }
+                        setPunching({
+                          id: punch.pickup_id || punch.id,
+                          chapter_id: chapterId,
+                          t_start: punch.t_start,
+                          t_end: punch.t_end,
+                          line_start: punch.t_start,
+                          line_end: punch.t_end,
+                          line_text: punch.expected || "",
+                          expected: punch.expected || "",
+                          heard: punch.heard || punch.expected || "",
+                          kind: "sub",
+                          seat: "narration",
+                          status: "open",
+                          confidence: 1,
+                          intent: "performance",
+                          selection_kind: "sentence",
+                        });
+                      }}
+                    >
+                      Re-record
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </aside>
+
+      <section className="ma-flow-block ma-proof-settings" aria-label="Teleprompter setting">
+        <h2 className="ma-flow-block-title">Teleprompter setting</h2>
+        <BoothReadingPanel
+          highlight={highlight}
+          lineSpacing={lineSpacing}
+          onHighlight={setHighlight}
+          onSpacing={setLineSpacing}
+          theme={theme}
+          onTheme={(value) => {
+            setTheme(value);
+            writePromptTheme(value);
+          }}
+          fontPx={fontPx}
+          onFontPx={(value) => setFontPx(writeBoothFontPx(value))}
+        />
+      </section>
 
       {punching ? (
         <PunchRecorder

@@ -535,7 +535,19 @@ export function appendChapter(project: BookProject, title: string): BookProject 
 /** Drop a chapter from the book and delete its text and audio files. */
 export async function removeChapter(project: BookProject, chapterId: string): Promise<BookProject> {
   if (project.folder && window.kosmosNext?.deleteChapterFiles) {
-    await window.kosmosNext.deleteChapterFiles({ folder: project.folder, chapterId });
+    try {
+      await window.kosmosNext.deleteChapterFiles({ folder: project.folder, chapterId });
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason);
+      if (!/No handler registered/i.test(message)) {
+        throw reason;
+      }
+      try {
+        window.localStorage.removeItem(chapterContentKey(project, chapterId));
+      } catch {
+        // Drop the chapter row even if files could not be deleted.
+      }
+    }
   } else {
     try {
       window.localStorage.removeItem(chapterContentKey(project, chapterId));

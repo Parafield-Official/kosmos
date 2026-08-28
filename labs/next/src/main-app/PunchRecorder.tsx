@@ -330,7 +330,6 @@ export function PunchRecorder({
                 ))}
               </select>
             </label>
-            <p className="ma-rec-people">You can record this stretch.</p>
             <div className="ma-booth-choices" role="radiogroup" aria-label="Re-record length">
               <button
                 type="button"

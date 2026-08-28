@@ -26,6 +26,21 @@ const execFileAsync = promisify(execFile);
 /** Shared GitHub Releases updater; reuses the same feed as the original app. */
 let labsAppUpdater = null;
 
+function bindHandle(channel, listener) {
+  try {
+    ipcMain.removeHandler(channel);
+  } catch {
+    // First registration in this process.
+  }
+  ipcMain.handle(channel, listener);
+}
+
+function bindChapterDelete() {
+  bindHandle("labs:chapter-delete", (_event, payload) =>
+    deleteChapterFiles(payload?.folder, payload?.chapterId),
+  );
+}
+
 function broadcastLabsUpdate(status) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
@@ -424,6 +439,8 @@ async function deleteChapterFiles(folder, chapterId) {
   }
   return { ok: true };
 }
+
+bindChapterDelete();
 
 async function readChapterContent(folder, chapterId) {
   if (typeof folder !== "string" || typeof chapterId !== "string") {
@@ -1200,6 +1217,7 @@ function openLab() {
       scheduleNativeGlass(labWindow, material);
     }
   });
+  bindChapterDelete();
   ipcMain.on("labs:push-tuning", onPushTuning);
 
   labWindow.on("closed", () => {
@@ -1297,9 +1315,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("labs:chapter-write", (_event, payload) =>
     writeChapterContent(payload?.folder, payload?.chapterId, payload?.html),
   );
-  ipcMain.handle("labs:chapter-delete", (_event, payload) =>
-    deleteChapterFiles(payload?.folder, payload?.chapterId),
-  );
+  bindChapterDelete();
   ipcMain.handle("labs:chapter-read", (_event, payload) =>
     readChapterContent(payload?.folder, payload?.chapterId),
   );

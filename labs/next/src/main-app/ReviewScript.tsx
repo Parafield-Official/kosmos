@@ -141,15 +141,7 @@ export function ReviewScript({
   const selection = ranges?.selection ?? null;
 
   return (
-    <section className="ma-review-script" aria-label="Chapter text">
-      <header className="ma-review-script-head">
-        <h2 className="ma-section-title">On the page</h2>
-        <p>
-          {transcript.length === 0
-            ? "Proofread (or finish the booth read) so Kosmos knows where each sentence sits on the tape. Then select a line to say again."
-            : "Select a sentence or paragraph to say again. Click a coloured flag to re-record it."}
-        </p>
-      </header>
+    <section className="ma-review-script" aria-label="Teleprompter">
       {sentence || selection ? (
         <div className="ma-redo-bar neu-inset">
           <p>

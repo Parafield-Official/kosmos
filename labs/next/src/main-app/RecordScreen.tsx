@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { resamplePcmToMono } from "../../../../src/core/audio/resample";
 import { encodeWavPcm16 } from "../../../../src/core/audio/wav";
 import { boothShortcutAction } from "../../../../src/core/teleprompter/booth-controls";
@@ -100,14 +100,6 @@ function readFlag(key: string, fallback: boolean): boolean {
   return fallback;
 }
 
-function writeFlag(key: string, value: boolean) {
-  try {
-    window.localStorage.setItem(key, value ? "1" : "0");
-  } catch {
-    // Non-fatal.
-  }
-}
-
 function readSpacing(): number {
   try {
     const value = Number(window.localStorage.getItem(SPACING_KEY));
@@ -158,6 +150,8 @@ export function RecordScreen({
   onChange,
   embedded,
   onContinueProof,
+  importSlot,
+  proofing,
 }: {
   project: BookProject;
   chapterId: string;
@@ -165,6 +159,8 @@ export function RecordScreen({
   onChange: (next: BookProject) => void;
   embedded?: boolean;
   onContinueProof?: () => void;
+  importSlot?: ReactNode;
+  proofing?: boolean;
 }) {
   const chapter = useMemo(
     () => project.chapters.find((item) => item.id === chapterId) ?? null,
@@ -181,8 +177,8 @@ export function RecordScreen({
   const [theme, setTheme] = useState(readPromptTheme);
   const [boothFontPx, setBoothFontPx] = useState(readBoothFontPx);
   const [lineSpacing, setLineSpacing] = useState(readSpacing);
-  const [checkReading, setCheckReading] = useState(() => readFlag(CHECK_KEY, false));
-  const [stopOnMismatch, setStopOnMismatch] = useState(() => readFlag(HALT_KEY, true));
+  const [checkReading] = useState(() => readFlag(CHECK_KEY, false));
+  const [stopOnMismatch, setStopOnMismatch] = useState(() => readFlag(HALT_KEY, false));
   const [inputId, setInputId] = useState(() => {
     try {
       return window.localStorage.getItem(MIC_KEY) ?? "";
@@ -977,96 +973,66 @@ export function RecordScreen({
 
   return (
     <section className={embedded ? "ma-record-embed" : "ma-screen ma-record"} aria-label={`Record ${chapter.title}`}>
-      <header className="ma-record-head">
-        {embedded ? (
-          <h2 className="ma-record-chapter">{chapter.title}</h2>
-        ) : (
+      {!embedded ? (
+        <header className="ma-record-head">
           <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
             <ChevronLeft />
             <span>{chapter.title}</span>
           </button>
-        )}
-        <div className="ma-record-progress" aria-label={`${shownPct} percent recorded`}>
-          <span className="ma-progress">
-            <span className="ma-progress-fill" style={{ width: `${shownPct}%` }} />
-          </span>
-          <span className="ma-record-pct">{shownPct}%</span>
-        </div>
-        <div className="ma-record-tools">
-          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
-          {embedded && onContinueProof && shownPct >= 100 ? (
-            <button type="button" className="btn btn-sm btn-clear" onClick={onContinueProof}>
-              Proofread
-            </button>
-          ) : null}
-        </div>
-      </header>
-
-      <div className="ma-booth-status" role="status">
-        <strong>{workflow.title}</strong>
-        <span>{workflow.detail}</span>
-        <em>{followHint}</em>
-      </div>
-
-      {boothNotice ? <p className="ma-booth-notice" role="status">{boothNotice}</p> : null}
-
-      {punchStatus !== "idle" ? (
-        <div className="ma-booth-halt" role="status">
-          <strong>
-            {punchStatus === "cueing"
-              ? "Rolling into the sentence"
-              : punchStatus === "counting"
-                ? "Counting into the sentence"
-                : "Rewinding the clean take"}
-          </strong>
-          <span>
-            {punchStatus === "cueing"
-              ? "Listen for your rhythm; recording resumes at the marked boundary."
-              : punchStatus === "counting"
-                ? "There is no earlier voice in this session, so three tones mark the restart."
-                : "Replacing the false start and resetting voice follow…"}
-          </span>
-        </div>
+        </header>
       ) : null}
 
-      {halt && punchStatus === "idle" ? (
-        <div className="ma-booth-halt" role="alert">
-          <div>
-            <strong>{liveHaltCopy(halt).title}</strong>
-            <span>{liveHaltCopy(halt).detail}</span>
-          </div>
-          <div className="ma-booth-halt-actions">
-            <button type="button" className="btn btn-sm" onClick={() => void restartSentence()}>
-              Restart sentence
-            </button>
-            <button type="button" className="btn" onClick={resumeFromHalt}>
-              Continue
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <section className="ma-flow-block" aria-label="Mic and control">
+      <section className="ma-flow-block ma-booth-mic" aria-label="Mic and control">
         <h2 className="ma-flow-block-title">Mic and control</h2>
-        <label className="ma-booth-input">
-          <span>Microphone</span>
-          <select
-            value={inputId}
-            disabled={recording}
-            onChange={(event) => {
-              setInputId(event.target.value);
-              persistChoice(MIC_KEY, event.target.value);
-            }}
-          >
-            <option value="">System default</option>
-            {audioInputs.map((device, index) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || `Microphone ${index + 1}`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="ma-rec-people">You can record this chapter.</p>
+        {boothNotice ? <p className="ma-booth-notice" role="status">{boothNotice}</p> : null}
+        {punchStatus !== "idle" ? (
+          <div className="ma-booth-halt" role="status">
+            <strong>
+              {punchStatus === "cueing"
+                ? "Rolling into the sentence"
+                : punchStatus === "counting"
+                  ? "Counting into the sentence"
+                  : "Rewinding the clean take"}
+            </strong>
+          </div>
+        ) : null}
+        {halt && punchStatus === "idle" ? (
+          <div className="ma-booth-halt" role="alert">
+            <div>
+              <strong>{liveHaltCopy(halt).title}</strong>
+              <span>{liveHaltCopy(halt).detail}</span>
+            </div>
+            <div className="ma-booth-halt-actions">
+              <button type="button" className="btn btn-sm" onClick={() => void restartSentence()}>
+                Restart sentence
+              </button>
+              <button type="button" className="btn" onClick={resumeFromHalt}>
+                Continue
+              </button>
+            </div>
+          </div>
+        ) : null}
+        <div className="ma-booth-mic-row">
+          <label className="ma-booth-input">
+            <span>Microphone</span>
+            <select
+              value={inputId}
+              disabled={recording}
+              onChange={(event) => {
+                setInputId(event.target.value);
+                persistChoice(MIC_KEY, event.target.value);
+              }}
+            >
+              <option value="">System default</option>
+              {audioInputs.map((device, index) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Microphone ${index + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+          {importSlot}
+        </div>
         <div className="ma-recorder">
         <div className="ma-level" aria-hidden="true">
           <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
@@ -1108,6 +1074,11 @@ export function RecordScreen({
               Delete audio
             </button>
           ) : null}
+          {embedded && onContinueProof && shownPct >= 100 ? (
+            <button type="button" className="btn btn-sm btn-clear" onClick={onContinueProof} disabled={proofing}>
+              {proofing ? "Proofing…" : "Proofread"}
+            </button>
+          ) : null}
           <div className="ma-rec-meta">
             <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
             <span className="ma-rec-mark">
@@ -1121,8 +1092,9 @@ export function RecordScreen({
             <audio className="ma-audio" src={originalUrl} controls />
           </div>
         ) : null}
-        {chapter.workingFile ? <p className="ma-step-note">Working file exists from proof. Original is unchanged.</p> : null}
         {error ? <p className="ma-error">{error}</p> : null}
+        <p className="ma-visually-hidden">{followHint}</p>
+        <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </section>
 
@@ -1201,34 +1173,12 @@ export function RecordScreen({
       <section className="ma-flow-block" aria-label="Teleprompter setting">
         <h2 className="ma-flow-block-title">Teleprompter setting</h2>
         <BoothReadingPanel
-          inputs={audioInputs}
-          inputId={inputId}
-          recording={recording}
           highlight={highlight}
           lineSpacing={lineSpacing}
-          checkReading={checkReading}
-          stopOnMismatch={stopOnMismatch}
-          includeMic={false}
-          onInput={(deviceId) => {
-            setInputId(deviceId);
-            persistChoice(MIC_KEY, deviceId);
-          }}
           onHighlight={setHighlightMode}
           onSpacing={(value) => {
             setLineSpacing(value);
             persistChoice(SPACING_KEY, String(value));
-          }}
-          onCheckReading={(enabled) => {
-            setCheckReading(enabled);
-            writeFlag(CHECK_KEY, enabled);
-          }}
-          onStopOnMismatch={(enabled) => {
-            setStopOnMismatch(enabled);
-            writeFlag(HALT_KEY, enabled);
-            if (!enabled) {
-              haltRef.current = null;
-              setHalt(null);
-            }
           }}
           theme={theme}
           onTheme={(value) => {

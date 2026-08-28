@@ -248,8 +248,6 @@ export function MainApp() {
             step={screen.step}
             onStep={(step) => setScreen({ ...screen, step })}
             onBack={() => openProject(screen.project, "chapters")}
-            onEdit={() => openEditor(screen.project, screen.chapterId)}
-            onRead={() => openReader(screen.project, screen.chapterId)}
             onChange={(next) => void commit(next)}
             onNextChapter={() => {
               const index = screen.project.chapters.findIndex((item) => item.id === screen.chapterId);

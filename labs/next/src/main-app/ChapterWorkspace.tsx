@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AcxReport } from "../../../../src/core/acx/measure";
 import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
 import { recordingGate, stepLocked, type ChapterStep } from "./chapter-flow";
-import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import { readEnginePrefs } from "./engine-prefs";
 import {
   addGlossaryWord,
@@ -38,8 +37,6 @@ export function ChapterWorkspace({
   step,
   onStep,
   onBack,
-  onEdit,
-  onRead,
   onChange,
   onNextChapter,
 }: {
@@ -48,8 +45,6 @@ export function ChapterWorkspace({
   step: ChapterStep;
   onStep: (step: ChapterStep) => void;
   onBack: () => void;
-  onEdit: () => void;
-  onRead: () => void;
   onChange: (next: BookProject) => void;
   onNextChapter?: () => void;
 }) {
@@ -133,8 +128,10 @@ export function ChapterWorkspace({
     onStep("recording");
   }
 
+  const booth = (step === "recording" && gate.ok) || step === "proofreading";
+
   return (
-    <section className={`ma-chapter-workspace${step === "recording" && gate.ok ? " is-booth" : ""}`} aria-label={chapter.title}>
+    <section className={booth ? "ma-chapter-workspace is-booth" : "ma-chapter-workspace"} aria-label={chapter.title}>
       <header className="ma-chapter-workspace-head">
         <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapters">
           <ChevronLeft />
@@ -156,15 +153,6 @@ export function ChapterWorkspace({
             );
           })}
         </nav>
-        <div className="ma-chapter-head-actions">
-          <button type="button" className="btn btn-sm" onClick={onEdit}>
-            Edit
-          </button>
-          <button type="button" className="btn btn-sm" onClick={onRead}>
-            Read
-          </button>
-          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
-        </div>
       </header>
 
       {proofError ? <p className="ma-error ma-chapter-workspace-error">{proofError}</p> : null}
@@ -259,6 +247,62 @@ function RecordingStep({
   onChange: (next: BookProject) => void;
   onProof: () => void;
 }) {
+  if (!gateOk) {
+    return (
+      <div className="ma-record-gate">
+        <RoomCheck report={project.roomCheck} onReport={(roomCheck) => onChange({ ...project, roomCheck })} />
+        <GlossaryPanel
+          title="Pronunciations in this chapter"
+          summary={
+            entriesCount === 0
+              ? "No flagged names in this chapter."
+              : unresolved.length === 0
+                ? entriesCount === 1
+                  ? "This name has a pronunciation."
+                  : `All ${entriesCount} names in this chapter have a pronunciation.`
+                : unresolved.length === 1
+                  ? "1 name in this chapter still needs a pronunciation."
+                  : `${unresolved.length} of ${entriesCount} in this chapter still need a pronunciation.`
+          }
+          entries={unresolved}
+          bookTotal={glossaryTotal}
+          allowAdd
+          emptyCopy="Nothing left to set here. Finish the room check, then you can record."
+          onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
+          onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
+          onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
+        />
+        <div className="ma-record-entry">
+          <ChapterAudioImport project={project} chapterId={chapterId} onChange={onChange} />
+          {gateReason ? <p className="ma-note">{gateReason}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <RecordScreen
+      project={project}
+      chapterId={chapterId}
+      embedded
+      onBack={() => undefined}
+      onChange={onChange}
+      onContinueProof={complete ? onProof : undefined}
+      importSlot={<ChapterAudioImport project={project} chapterId={chapterId} onChange={onChange} />}
+      proofing={proofing}
+    />
+  );
+}
+
+function ChapterAudioImport({
+  project,
+  chapterId,
+  onChange,
+}: {
+  project: BookProject;
+  chapterId: string;
+  onChange: (next: BookProject) => void;
+}): ReactNode {
   const importRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -281,67 +325,28 @@ function RecordingStep({
 
   return (
     <>
-      <RoomCheck report={project.roomCheck} onReport={(roomCheck) => onChange({ ...project, roomCheck })} />
-      <GlossaryPanel
-        title="Pronunciations in this chapter"
-        summary={
-          entriesCount === 0
-            ? "No flagged names in this chapter."
-            : unresolved.length === 0
-              ? `All ${entriesCount} ${entriesCount === 1 ? "name" : "names"} in this chapter have a pronunciation.`
-              : `${unresolved.length} of ${entriesCount} in this chapter still need a pronunciation.`
-        }
-        entries={unresolved}
-        bookTotal={glossaryTotal}
-        allowAdd
-        emptyCopy="Nothing left to set here. You can record once the room check also passes."
-        onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
-        onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
-        onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
+      <button
+        type="button"
+        className="btn btn-clear"
+        disabled={importing}
+        onClick={() => importRef.current?.click()}
+      >
+        {importing ? "Importing…" : chapter?.hasOriginalAudio ? "Replace original" : "Upload audio file"}
+      </button>
+      <input
+        ref={importRef}
+        className="ma-visually-hidden"
+        type="file"
+        accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.webm"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            void importAudio(file);
+          }
+        }}
       />
-
-      <div className="ma-record-entry">
-        <button
-          type="button"
-          className="btn btn-clear"
-          disabled={importing}
-          onClick={() => importRef.current?.click()}
-        >
-          {importing ? "Importing…" : chapter?.hasOriginalAudio ? "Replace original" : "Upload audio file"}
-        </button>
-        <input
-          ref={importRef}
-          className="ma-visually-hidden"
-          type="file"
-          accept="audio/*,.wav,.mp3,.m4a,.aac,.ogg,.webm"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) {
-              void importAudio(file);
-            }
-          }}
-        />
-        {complete ? (
-          <button type="button" className="btn btn-clear" onClick={onProof} disabled={proofing}>
-            {proofing ? "Proofing…" : "Proofread"}
-          </button>
-        ) : null}
-        {importError ? <p className="ma-error">{importError}</p> : null}
-      </div>
-
-      {!gateOk ? <p className="ma-note">{gateReason}</p> : null}
-
-      {gateOk ? (
-        <RecordScreen
-          project={project}
-          chapterId={chapterId}
-          embedded
-          onBack={() => undefined}
-          onChange={onChange}
-          onContinueProof={complete ? onProof : undefined}
-        />
-      ) : null}
+      {importError ? <p className="ma-error">{importError}</p> : null}
     </>
   );
 }
