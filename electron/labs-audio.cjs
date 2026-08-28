@@ -2,8 +2,8 @@
  * Punch, master, and ACX export for Kosmos Labs.
  *
  * Original stays immutable. Punch rebuilds `{id}-working.wav` from original plus
- * a clip manifest. Master overwrites that working file in place. Export encodes
- * mastered working files into `export/acx/` — never a third chapter slot.
+ * a clip manifest. Master writes `{id}-mastered.wav` and leaves working alone.
+ * Export encodes the mastered file (falling back to working) into `export/acx/`.
  */
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
@@ -474,10 +474,15 @@ function reportStatus(report) {
 async function masterWorkingFile(payload) {
   const folder = payload?.folder;
   const workingFile = payload?.workingFile;
+  const chapterId = typeof payload?.chapterId === "string" ? payload.chapterId : null;
   if (typeof folder !== "string" || typeof workingFile !== "string") {
     return { ok: false, reason: "A working file is required to master." };
   }
   const filePath = audioPath(folder, workingFile);
+  const destName = chapterId
+    ? `${path.basename(chapterId)}-mastered.wav`
+    : String(workingFile).replace(/-working(\.[^.]+)?$/i, "-mastered$1");
+  const destPath = audioPath(folder, destName);
   const masterCore = loadCoreModule("master");
   const audioCore = loadCoreModule("audio");
   const preset = masterCore.resolvePreset("acx");
@@ -545,12 +550,13 @@ async function masterWorkingFile(payload) {
     }
 
     await writeFileAtomic(
-      filePath,
+      destPath,
       Buffer.from(audioCore.encodeWavPcm16(master.samples, master.sampleRate, 1)),
     );
     return {
       ok: true,
       workingFile: path.basename(workingFile),
+      masteredFile: destName,
       after: master.after ?? master.before,
       rms_dbfs: master.after?.rms_dbfs ?? master.before.rms_dbfs,
     };
@@ -595,7 +601,7 @@ async function exportDeliveryPack(payload) {
   if (chapters.length === 0) {
     return { ok: false, reason: "Add at least one chapter before exporting." };
   }
-  const missing = chapters.filter((chapter) => !chapter?.workingFile || !chapter.mastered);
+  const missing = chapters.filter((chapter) => !(chapter?.masteredFile || chapter?.workingFile) || !chapter.mastered);
   if (missing.length) {
     return {
       ok: false,
@@ -620,7 +626,8 @@ async function exportDeliveryPack(payload) {
 
   try {
     for (const [index, chapter] of chapters.entries()) {
-      const filePath = audioPath(folder, chapter.workingFile);
+      const sourceFile = chapter.masteredFile || chapter.workingFile;
+      const filePath = audioPath(folder, sourceFile);
       const decoded = await decodeAudioPcm(filePath);
       const samples = mixInterleavedToMono(float32View(decoded.pcm), decoded.channels);
       const resampled = resampleLinearArray(samples, decoded.sampleRate, profile.sampleRate);
@@ -668,7 +675,7 @@ async function exportDeliveryPack(payload) {
         index: index + 1,
         title: chapter.title ?? `Chapter ${index + 1}`,
         text_path: "",
-        audio_path: `audio/${chapter.workingFile}`,
+        audio_path: `audio/${chapter.masteredFile || chapter.workingFile}`,
         author_status: "approved",
       })),
     };

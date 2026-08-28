@@ -248,9 +248,9 @@ export function PunchRecorder({
 
         {error ? <p className="ma-error">{error}</p> : null}
         <div className="ma-dialog-actions">
-          <button type="button" className="btn btn-clear" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
+            <button type="button" className="btn btn-clear" onClick={onCancel} disabled={busy}>
+              Use original
+            </button>
           {recording ? (
             <button type="button" className="btn" onClick={() => void finish()} disabled={busy}>
               Stop
@@ -258,7 +258,7 @@ export function PunchRecorder({
           ) : pending ? (
             <>
               <button type="button" className="btn btn-clear" onClick={() => void startCapture()} disabled={busy || previewing}>
-                Record again
+                Start over
               </button>
               <button
                 type="button"
@@ -266,7 +266,7 @@ export function PunchRecorder({
                 onClick={() => onApply(pending)}
                 disabled={busy || previewing}
               >
-                {busy ? "Saving…" : "Keep this take"}
+                {busy ? "Saving…" : "Adopt"}
               </button>
             </>
           ) : (

@@ -104,7 +104,13 @@ declare global {
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
       getWorkspace?: () => Promise<{ workspace: string | null }>;
       listProjects?: () => Promise<{ workspace: string | null; projects: StoredProjectFile[] }>;
-      createProject?: (input: { title: string; author: string; coverDataUrl?: string }) => Promise<StoredProjectFile>;
+      createProject?: (input: {
+        title: string;
+        author: string;
+        coverDataUrl?: string;
+        parentFolder?: string;
+      }) => Promise<StoredProjectFile>;
+      pickProjectParent?: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
       saveProjectFile?: (project: StoredProjectFile) => Promise<StoredProjectFile>;
       openProjectFolder?: () => Promise<{ ok: boolean; canceled?: boolean; invalid?: boolean; folder?: string; project?: StoredProjectFile; external?: boolean }>;
       deleteProjectFolder?: (folder: string) => Promise<{ ok: boolean }>;
@@ -122,7 +128,7 @@ declare global {
         chapterId: string;
         base64: string;
         mime?: string;
-        slot?: "original" | "working";
+        slot?: "original" | "working" | "mastered";
       }) => Promise<{ ok: boolean; file?: string }>;
       readChapterAudio?: (payload: { folder: string; file: string }) => Promise<{ ok: boolean; base64?: string }>;
       transcribeChapter?: (payload: { folder: string; file: string }) => Promise<{
@@ -185,9 +191,10 @@ declare global {
       }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; punches?: ChapterPunchDto[]; undonePunchId?: string }>;
       masterChapter?: (payload: {
         folder: string;
+        chapterId?: string;
         workingFile: string;
         targetRmsDbfs?: number;
-      }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; rms_dbfs?: number }>;
+      }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; masteredFile?: string; rms_dbfs?: number }>;
       measureChapter?: (payload: {
         folder: string;
         file: string;
@@ -198,6 +205,7 @@ declare global {
           id: string;
           title: string;
           workingFile?: string;
+          masteredFile?: string;
           mastered?: boolean;
           pickups?: unknown[];
         }>;

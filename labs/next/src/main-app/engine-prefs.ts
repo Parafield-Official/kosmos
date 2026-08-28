@@ -3,16 +3,20 @@
  * applied to every book — not cloned into each project.json.
  */
 
-import type { ProofSensitivity } from "../../../../src/core/project/types";
+import type { PickupKind, ProofSensitivity } from "../../../../src/core/project/types";
 import { DEFAULT_PROJECT_SETTINGS, proofMergeWindowSeconds } from "../../../../src/core/project/settings";
 
 const PREFS_KEY = "kosmos-labs-engine-prefs";
+
+export type ProofMarkKind = Extract<PickupKind, "sub" | "insert" | "skip" | "pause">;
 
 export type EnginePrefs = {
   proof_sensitivity: ProofSensitivity;
   pause_threshold_seconds: number;
   proof_confidence_floor: number;
   acx_target_rms_dbfs: number;
+  /** Which mismatch kinds to paint on the page and list in Review. */
+  mark_kinds: ProofMarkKind[];
 };
 
 export const SENSITIVITY_OPTIONS: ReadonlyArray<{ value: ProofSensitivity; label: string; hint: string }> = [
@@ -30,11 +34,21 @@ export const CONFIDENCE_OPTIONS: ReadonlyArray<{ value: number; label: string; h
 export const PAUSE_RANGE = { min: 2, max: 12, step: 0.5, fallback: 4 } as const;
 export const RMS_RANGE = { min: -23, max: -18, step: 0.5, fallback: -20 } as const;
 
+export const PROOF_MARK_OPTIONS: ReadonlyArray<{ value: ProofMarkKind; label: string; hint: string }> = [
+  { value: "sub", label: "Misread", hint: "Wrong word on the tape." },
+  { value: "insert", label: "Added", hint: "Extra sound that is not on the page, like um." },
+  { value: "skip", label: "Missing", hint: "A word on the page that was not heard." },
+  { value: "pause", label: "Long pause", hint: "A mid-sentence gap longer than the pause setting." },
+];
+
+const ALL_MARK_KINDS: ProofMarkKind[] = ["sub", "insert", "skip", "pause"];
+
 const DEFAULT_PREFS: EnginePrefs = {
   proof_sensitivity: DEFAULT_PROJECT_SETTINGS.proof_sensitivity,
   pause_threshold_seconds: DEFAULT_PROJECT_SETTINGS.pause_threshold_seconds,
   proof_confidence_floor: DEFAULT_PROJECT_SETTINGS.proof_confidence_floor,
   acx_target_rms_dbfs: DEFAULT_PROJECT_SETTINGS.acx_target_rms_dbfs,
+  mark_kinds: [...ALL_MARK_KINDS],
 };
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
@@ -75,7 +89,21 @@ export function normalizeEnginePrefs(value: unknown): EnginePrefs {
       RMS_RANGE.step,
       RMS_RANGE.fallback,
     ),
+    mark_kinds: normalizeMarkKinds(candidate.mark_kinds),
   };
+}
+
+function normalizeMarkKinds(value: unknown): ProofMarkKind[] {
+  if (!Array.isArray(value)) {
+    return [...ALL_MARK_KINDS];
+  }
+  const allowed = new Set<ProofMarkKind>(ALL_MARK_KINDS);
+  const next = value.filter((item): item is ProofMarkKind => allowed.has(item as ProofMarkKind));
+  return next.length > 0 ? [...new Set(next)] : [...ALL_MARK_KINDS];
+}
+
+export function markKindEnabled(kind: PickupKind): boolean {
+  return readEnginePrefs().mark_kinds.includes(kind as ProofMarkKind);
 }
 
 export function readEnginePrefs(): EnginePrefs {

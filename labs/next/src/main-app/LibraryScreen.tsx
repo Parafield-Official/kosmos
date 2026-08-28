@@ -113,18 +113,18 @@ export function LibraryScreen({
   }
 
   return (
-    <section className="ma-screen ma-library" aria-label="Your books">
+    <section className="ma-screen ma-library" aria-label="Your projects">
       <header className="ma-library-head">
         <div>
-          <h1 className="ma-title">Your books</h1>
+          <h1 className="ma-title">Your projects</h1>
           {workspace ? <p className="ma-workspace-path" title={workspace}>{workspace}</p> : null}
         </div>
         <div className="ma-library-actions">
           <button type="button" className="btn" onClick={() => void openExisting()}>
-            Open existing
+            Open existing project
           </button>
           <button type="button" className="btn btn-clear" onClick={() => void startNewBook()}>
-            New book
+            Create new project
           </button>
           <input
             ref={importRef}
@@ -184,6 +184,7 @@ export function LibraryScreen({
                 title: input.title,
                 author: input.author,
                 coverDataUrl: input.coverDataUrl,
+                parentFolder: input.parentFolder,
               });
               if (input.manuscript) {
                 const name = await writeManuscript(project.folder, input.manuscript);
@@ -372,7 +373,9 @@ function BookCard({
             onDelete();
           }}
         >
-          <TrashIcon />
+          <span className="ma-book-delete-glyph" aria-hidden="true">
+            <TrashIcon />
+          </span>
         </button>
       </div>
     </div>
@@ -450,7 +453,7 @@ function EmptyShelf({ onCreate }: { onCreate: () => void }) {
       <h2 className="ma-empty-title">Start your first book</h2>
       <p className="ma-empty-copy">Create a project, add a chapter, and record your first take.</p>
       <button type="button" className="btn btn-clear" onClick={onCreate}>
-        New book
+        Create new project
       </button>
     </div>
   );
@@ -458,11 +461,11 @@ function EmptyShelf({ onCreate }: { onCreate: () => void }) {
 
 function TrashIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"
+        d="M4 7h16M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M7 7l.8 12.2A2 2 0 0 0 9.8 21h4.4a2 2 0 0 0 2-1.8L17 7"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

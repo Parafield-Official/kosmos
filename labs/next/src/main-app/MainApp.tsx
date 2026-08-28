@@ -11,45 +11,57 @@ import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
 import { paragraphsFromHtml } from "./booth";
 import { scanGlossaryFromManuscript } from "./glossary";
 import { manuscriptMetaFromBytes } from "./manuscript-meta";
+import { defaultChapterStep, type BookTab, type ChapterStep } from "./chapter-flow";
 import { LibraryScreen } from "./LibraryScreen";
-import { OverviewScreen } from "./OverviewScreen";
-import { ChapterScreen } from "./ChapterScreen";
+import { BookShell } from "./BookShell";
+import { DashboardScreen } from "./DashboardScreen";
+import { ChaptersScreen } from "./ChaptersScreen";
+import { PronunciationScreen } from "./PronunciationScreen";
+import { ChapterWorkspace } from "./ChapterWorkspace";
 import { ChapterEditor } from "./ChapterEditor";
 import { ReaderScreen } from "./ReaderScreen";
-import { RecordScreen } from "./RecordScreen";
-import { ReviewScreen } from "./ReviewScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import "./main-app.css";
 
 type WorkScreen =
   | { name: "library" }
-  | { name: "overview"; project: BookProject }
-  | { name: "chapter"; project: BookProject; chapterId: string }
+  | { name: "book"; project: BookProject; tab: BookTab }
+  | { name: "chapter"; project: BookProject; chapterId: string; step: ChapterStep }
   | { name: "editor"; project: BookProject; chapterId: string }
-  | { name: "reader"; project: BookProject; chapterId: string }
-  | { name: "record"; project: BookProject; chapterId: string }
-  | { name: "review"; project: BookProject; chapterId: string };
+  | { name: "reader"; project: BookProject; chapterId: string };
 
 type MainScreen = WorkScreen | { name: "settings"; from: WorkScreen };
 
 type Analyzing = { progress: number; label: string } | null;
 
+function withProject(screen: WorkScreen, project: BookProject): WorkScreen {
+  if (screen.name === "library") {
+    return screen;
+  }
+  return { ...screen, project };
+}
+
 export function MainApp() {
-  // Always land on the Library (start screen) each launch, Xcode-style.
   const [screen, setScreen] = useState<MainScreen>({ name: "library" });
   const [analyzing, setAnalyzing] = useState<Analyzing>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
-  const openProject = useCallback((project: BookProject) => {
-    setScreen({ name: "overview", project });
+  const openProject = useCallback((project: BookProject, tab: BookTab = "dashboard") => {
+    setScreen({ name: "book", project, tab });
   }, []);
 
   const openLibrary = useCallback(() => {
     setScreen({ name: "library" });
   }, []);
 
-  const openChapter = useCallback((project: BookProject, chapterId: string) => {
-    setScreen({ name: "chapter", project, chapterId });
+  const openChapter = useCallback((project: BookProject, chapterId: string, step?: ChapterStep) => {
+    const chapter = project.chapters.find((item) => item.id === chapterId);
+    setScreen({
+      name: "chapter",
+      project,
+      chapterId,
+      step: step ?? (chapter ? defaultChapterStep(chapter) : "recording"),
+    });
   }, []);
 
   const openEditor = useCallback((project: BookProject, chapterId: string) => {
@@ -60,14 +72,6 @@ export function MainApp() {
     setScreen({ name: "reader", project, chapterId });
   }, []);
 
-  const openRecord = useCallback((project: BookProject, chapterId: string) => {
-    setScreen({ name: "record", project, chapterId });
-  }, []);
-
-  const openReview = useCallback((project: BookProject, chapterId: string) => {
-    setScreen({ name: "review", project, chapterId });
-  }, []);
-
   const openSettings = useCallback(() => {
     setScreen((current) => (current.name === "settings" ? current : { name: "settings", from: current }));
   }, []);
@@ -75,27 +79,20 @@ export function MainApp() {
   const commit = useCallback(async (next: BookProject) => {
     const saved = await persistBook(next);
     setScreen((current) => {
-      if (current.name === "overview") {
-        return { name: "overview", project: saved };
+      if (current.name === "library") {
+        return current;
       }
-      if (
-        current.name === "chapter" ||
-        current.name === "editor" ||
-        current.name === "reader" ||
-        current.name === "record" ||
-        current.name === "review"
-      ) {
-        return { ...current, project: saved };
+      if (current.name === "settings") {
+        if (current.from.name === "library") {
+          return current;
+        }
+        return { ...current, from: withProject(current.from, saved) };
       }
-      if (current.name === "settings" && current.from.name !== "library") {
-        return { ...current, from: { ...current.from, project: saved } };
-      }
-      return current;
+      return withProject(current, saved);
     });
     return saved;
   }, []);
 
-  /** Parse a manuscript into chapters (from an upload or from disk), with progress. */
   const analyzeAndApply = useCallback(async (project: BookProject, file?: File) => {
     setAnalyzeError(null);
     setAnalyzing({ progress: 0, label: "Reading manuscript…" });
@@ -121,9 +118,6 @@ export function MainApp() {
         throw new Error("Kosmos couldn't find chapter text in that manuscript.");
       }
       let patch: BookProject = { ...project, chapters: result.chapters };
-      // Backfill the author from the manuscript's own metadata when the book
-      // was created without one (older imports, or a manuscript picked before
-      // the field was filled). Never overwrite an author the user already set.
       if (!project.author.trim()) {
         const source = file
           ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }
@@ -142,11 +136,15 @@ export function MainApp() {
         requestAnimationFrame(() => window.setTimeout(resolve, 0));
       });
       const saved = await persistBook(scanGlossaryFromManuscript(next, manuscript));
-      setScreen((current) =>
-        current.name === "overview" && current.project.id === saved.id
-          ? { name: "overview", project: saved }
-          : current,
-      );
+      setScreen((current) => {
+        if (current.name === "book" && current.project.id === saved.id) {
+          return { name: "book", project: saved, tab: "chapters" };
+        }
+        if (current.name === "chapter" && current.project.id === saved.id) {
+          return { ...current, project: saved };
+        }
+        return current;
+      });
       return saved;
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : "Could not read that manuscript.";
@@ -164,8 +162,8 @@ export function MainApp() {
         const name = await writeManuscript(project.folder, file);
         const next = await persistBook({ ...project, manuscript: name ?? file.name });
         setScreen((current) =>
-          current.name === "overview" && current.project.id === next.id
-            ? { name: "overview", project: next }
+          current.name === "book" && current.project.id === next.id
+            ? { name: "book", project: next, tab: current.tab }
             : current,
         );
         await analyzeAndApply(next, file);
@@ -178,7 +176,7 @@ export function MainApp() {
 
   const onCreatedBook = useCallback(
     async (project: BookProject, file?: File) => {
-      setScreen({ name: "overview", project });
+      setScreen({ name: "book", project, tab: "dashboard" });
       if (file) {
         await analyzeAndApply(project, file);
       }
@@ -188,7 +186,7 @@ export function MainApp() {
 
   return (
     <div className="main-app" data-screen={screen.name}>
-      {screen.name !== "settings" && screen.name !== "record" ? (
+      {screen.name !== "settings" ? (
         <button type="button" className="ma-gear" aria-label="Settings" onClick={openSettings}>
           <GearIcon />
         </button>
@@ -198,67 +196,85 @@ export function MainApp() {
         <LibraryScreen onOpen={openProject} onCreated={onCreatedBook} />
       ) : null}
 
-      {screen.name === "overview" ? (
-        <OverviewScreen
+      {screen.name === "book" ? (
+        <BookShell
           project={screen.project}
+          tab={screen.tab}
+          onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
           onBack={openLibrary}
-          onOpenChapter={(chapterId) => openChapter(screen.project, chapterId)}
-          onEditChapter={(chapterId) => openEditor(screen.project, chapterId)}
-          onRead={(chapterId) => openReader(screen.project, chapterId)}
-          onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
-          onAnalyze={() => void analyzeAndApply(screen.project)}
-          onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
-          onChange={(next) => void commit(next)}
-          analyzeError={analyzeError}
-        />
+        >
+          {screen.tab === "dashboard" ? (
+            <DashboardScreen
+              project={screen.project}
+              onChange={(next) => void commit(next)}
+              onRead={() => {
+                const first = screen.project.chapters[0];
+                if (first) {
+                  openReader(screen.project, first.id);
+                }
+              }}
+              onGoChapters={() => setScreen({ name: "book", project: screen.project, tab: "chapters" })}
+              onAnalyze={() => void analyzeAndApply(screen.project)}
+              onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
+              analyzeError={analyzeError}
+            />
+          ) : null}
+          {screen.tab === "chapters" ? (
+            <ChaptersScreen
+              project={screen.project}
+              onOpenChapter={(chapterId) => openChapter(screen.project, chapterId)}
+              onEditChapter={(chapterId) => openEditor(screen.project, chapterId)}
+              onRead={(chapterId) => openReader(screen.project, chapterId)}
+              onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
+              onChange={(next) => void commit(next)}
+            />
+          ) : null}
+          {screen.tab === "pronunciation" ? (
+            <PronunciationScreen project={screen.project} onChange={(next) => void commit(next)} />
+          ) : null}
+        </BookShell>
       ) : null}
 
       {screen.name === "chapter" ? (
-        <ChapterScreen
+        <BookShell
           project={screen.project}
-          chapterId={screen.chapterId}
-          onBack={() => openProject(screen.project)}
-          onEdit={() => openEditor(screen.project, screen.chapterId)}
-          onRead={() => openReader(screen.project, screen.chapterId)}
-          onRecord={() => openRecord(screen.project, screen.chapterId)}
-          onReview={() => openReview(screen.project, screen.chapterId)}
-          onChange={(next) => void commit(next)}
-        />
-      ) : null}
-
-      {screen.name === "record" ? (
-        <RecordScreen
-          project={screen.project}
-          chapterId={screen.chapterId}
-          onBack={() => openChapter(screen.project, screen.chapterId)}
-          onChange={(next) => void commit(next)}
-        />
-      ) : null}
-
-      {screen.name === "review" ? (
-        <ReviewScreen
-          project={screen.project}
-          chapterId={screen.chapterId}
-          onBack={() => openChapter(screen.project, screen.chapterId)}
-          onChange={(next) => void commit(next)}
-        />
+          tab="chapters"
+          onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
+          onBack={openLibrary}
+        >
+          <ChapterWorkspace
+            project={screen.project}
+            chapterId={screen.chapterId}
+            step={screen.step}
+            onStep={(step) => setScreen({ ...screen, step })}
+            onBack={() => openProject(screen.project, "chapters")}
+            onEdit={() => openEditor(screen.project, screen.chapterId)}
+            onRead={() => openReader(screen.project, screen.chapterId)}
+            onChange={(next) => void commit(next)}
+            onNextChapter={() => {
+              const index = screen.project.chapters.findIndex((item) => item.id === screen.chapterId);
+              const next = screen.project.chapters[index + 1];
+              if (next) {
+                openChapter(screen.project, next.id);
+              } else {
+                openProject(screen.project, "chapters");
+              }
+            }}
+          />
+        </BookShell>
       ) : null}
 
       {screen.name === "editor" ? (
         <ChapterEditor
           project={screen.project}
           chapterId={screen.chapterId}
-          onBack={() => openProject(screen.project)}
+          onBack={() => openProject(screen.project, "chapters")}
           onChange={(next) => void commit(next)}
         />
       ) : null}
 
       {screen.name === "reader" ? (
-        <ReaderScreen
-          project={screen.project}
-          chapterId={screen.chapterId}
-          onBack={() => openProject(screen.project)}
-        />
+        <ReaderScreen project={screen.project} chapterId={screen.chapterId} onBack={() => openProject(screen.project, "chapters")} />
       ) : null}
 
       {screen.name === "settings" ? <SettingsScreen onBack={() => setScreen(screen.from)} /> : null}
@@ -296,7 +312,7 @@ function GearIcon() {
       aria-hidden="true"
     >
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   );
 }

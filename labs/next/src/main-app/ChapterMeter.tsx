@@ -58,7 +58,7 @@ export function ChapterMeter({
   const inHand = masteringPlan ? trouble.filter((row) => exportSettles(row.key, profile)) : [];
   const yours = trouble.filter((row) => !inHand.includes(row));
   const light = yours.length === 0 && inHand.length > 0 ? "in-hand" : report.traffic_light;
-  const [open, setOpen] = useState(trouble.length > 0);
+  const [open, setOpen] = useState(true);
 
   return (
     <div className={`ma-meter neu-inset ma-meter-${light}`}>

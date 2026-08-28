@@ -7,6 +7,7 @@ import type { PromptTheme, ReadingFont } from "./store";
 
 const FONT_KEY = "kosmos-booth-font";
 const THEME_KEY = "kosmos-booth-theme";
+const BOOTH_SIZE_KEY = "kosmos-booth-font-px";
 
 export const READING_FONT_VALUES = [
   "serif",
@@ -81,4 +82,28 @@ export function readPromptTheme(): PromptTheme {
 
 export function writePromptTheme(theme: PromptTheme): void {
   writeStored(THEME_KEY, theme);
+}
+
+export const BOOTH_FONT_RANGE = { min: 20, max: 48, fallback: 28 } as const;
+
+export function readBoothFontPx(): number {
+  try {
+    const raw = Number(window.localStorage.getItem(BOOTH_SIZE_KEY));
+    if (Number.isFinite(raw)) {
+      return Math.min(BOOTH_FONT_RANGE.max, Math.max(BOOTH_FONT_RANGE.min, Math.round(raw)));
+    }
+  } catch {
+    // Fall through.
+  }
+  return BOOTH_FONT_RANGE.fallback;
+}
+
+export function writeBoothFontPx(size: number): number {
+  const next = Math.min(BOOTH_FONT_RANGE.max, Math.max(BOOTH_FONT_RANGE.min, Math.round(size)));
+  try {
+    window.localStorage.setItem(BOOTH_SIZE_KEY, String(next));
+  } catch {
+    // Best effort.
+  }
+  return next;
 }

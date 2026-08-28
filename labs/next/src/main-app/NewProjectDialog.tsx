@@ -6,6 +6,7 @@ import {
   textMeta,
   type ManuscriptMeta,
 } from "./manuscript-meta";
+import { pickProjectParent } from "./store";
 
 const MAX_COVER_BYTES = 6 * 1024 * 1024;
 
@@ -14,6 +15,7 @@ export interface NewProjectInput {
   author: string;
   coverDataUrl?: string;
   manuscript?: File;
+  parentFolder?: string;
 }
 
 function titleFromFileName(name: string): string {
@@ -139,8 +141,11 @@ export function NewProjectDialog({
   const [coverDataUrl, setCoverDataUrl] = useState<string | undefined>(undefined);
   const [coverError, setCoverError] = useState<string | null>(null);
   const [manuscript, setManuscript] = useState<File | null>(null);
+  const [parentFolder, setParentFolder] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const manuscriptRef = useRef<HTMLInputElement>(null);
+  const hasBridge = Boolean(window.kosmosNext?.createProject);
 
   async function pickManuscript(file: File | undefined) {
     if (!file) {
@@ -187,19 +192,49 @@ export function NewProjectDialog({
   }
 
   function submit() {
-    if (!title.trim()) {
+    if (!title.trim() || !manuscript) {
       return;
     }
-    onCreated({ title: title.trim(), author: author.trim(), coverDataUrl, manuscript: manuscript ?? undefined });
+    onCreated({
+      title: title.trim(),
+      author: author.trim(),
+      coverDataUrl,
+      manuscript,
+      parentFolder: parentFolder ?? undefined,
+    });
   }
 
   return (
     <div className="ma-scrim" role="dialog" aria-modal="true" aria-label="New project" onClick={onClose}>
       <div className="ma-dialog neu-panel" onClick={(event) => event.stopPropagation()}>
-        <h2 className="ma-dialog-title">New book</h2>
+        <h2 className="ma-dialog-title">Create a project</h2>
         <p className="ma-dialog-sub">
-          It’s created in your workspace. Upload a manuscript to get started — title and cover are optional.
+          Upload the manuscript first. Then pick a folder on this computer — Kosmos creates a project folder there and
+          saves the manuscript inside it.
         </p>
+
+        <div className="ma-field ma-field-full">
+          <span>Manuscript</span>
+          <button
+            type="button"
+            className="ma-manuscript-pick neu-inset"
+            onClick={() => manuscriptRef.current?.click()}
+          >
+            <UploadIcon />
+            {manuscript ? (
+              <span className="ma-manuscript-name">{manuscript.name}</span>
+            ) : (
+              <span className="ma-manuscript-empty">Choose a .txt, .md, .docx, .epub, or .pdf</span>
+            )}
+          </button>
+          <input
+            ref={manuscriptRef}
+            type="file"
+            accept=".txt,.md,.docx,.epub,.pdf,text/plain"
+            className="ma-visually-hidden"
+            onChange={(event) => pickManuscript(event.target.files?.[0])}
+          />
+        </div>
 
         <div className="ma-dialog-body">
           <button
@@ -231,7 +266,6 @@ export function NewProjectDialog({
               <input
                 className="neu-input"
                 value={title}
-                autoFocus
                 placeholder="The Silent Orbit"
                 onChange={(event) => setTitle(event.target.value)}
                 onKeyDown={(event) => {
@@ -255,34 +289,50 @@ export function NewProjectDialog({
         </div>
 
         <div className="ma-field ma-field-full">
-          <span>Manuscript</span>
-          <button
-            type="button"
-            className="ma-manuscript-pick neu-inset"
-            onClick={() => manuscriptRef.current?.click()}
-          >
-            <UploadIcon />
-            {manuscript ? (
-              <span className="ma-manuscript-name">{manuscript.name}</span>
-            ) : (
-              <span className="ma-manuscript-empty">Choose a .txt, .md, .docx, .epub, or .pdf</span>
-            )}
-          </button>
-          <input
-            ref={manuscriptRef}
-            type="file"
-            accept=".txt,.md,.docx,.epub,.pdf,text/plain"
-            className="ma-visually-hidden"
-            onChange={(event) => pickManuscript(event.target.files?.[0])}
-          />
+          <span>Save location</span>
+          {hasBridge ? (
+            <button
+              type="button"
+              className="ma-manuscript-pick neu-inset"
+              disabled={picking}
+              onClick={() => {
+                setPicking(true);
+                void pickProjectParent()
+                  .then((path) => {
+                    if (path) {
+                      setParentFolder(path);
+                    }
+                  })
+                  .finally(() => setPicking(false));
+              }}
+            >
+              <UploadIcon />
+              {parentFolder ? (
+                <span className="ma-manuscript-name" title={parentFolder}>
+                  {parentFolder}
+                </span>
+              ) : (
+                <span className="ma-manuscript-empty">
+                  {picking ? "Opening picker…" : "Choose a folder. A project folder is created inside it."}
+                </span>
+              )}
+            </button>
+          ) : (
+            <p className="ma-dialog-sub">In the browser preview, the book is stored in this browser.</p>
+          )}
         </div>
 
         <div className="ma-dialog-actions">
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-clear" onClick={submit} disabled={!title.trim()}>
-            Create book
+          <button
+            type="button"
+            className="btn btn-clear"
+            onClick={submit}
+            disabled={!title.trim() || !manuscript || (hasBridge && !parentFolder)}
+          >
+            Create project
           </button>
         </div>
       </div>

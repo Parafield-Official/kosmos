@@ -3,6 +3,7 @@ import { readEnginePrefs } from "./engine-prefs";
 import {
   applyChapterPickups,
   applyChapterPunches,
+  applyMasteredTape,
   applyWorkingTape,
   copyOriginalToWorking,
   type BookProject,
@@ -145,16 +146,15 @@ export async function masterChapterWorking(project: BookProject, chapterId: stri
   }
   const result = await window.kosmosNext.masterChapter({
     folder: project.folder,
+    chapterId,
     workingFile: chapter.workingFile,
     targetRmsDbfs: readEnginePrefs().acx_target_rms_dbfs,
   });
   if (!result.ok) {
     throw new Error(result.reason || "Mastering failed.");
   }
-  return {
-    ...project,
-    chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, mastered: true } : item)),
-  };
+  const masteredFile = result.masteredFile ?? `${chapterId}-mastered.wav`;
+  return applyMasteredTape(project, chapterId, masteredFile);
 }
 
 export async function exportBookPack(project: BookProject): Promise<BookProject> {
@@ -167,6 +167,7 @@ export async function exportBookPack(project: BookProject): Promise<BookProject>
       id: chapter.id,
       title: chapter.title,
       workingFile: chapter.workingFile,
+      masteredFile: chapter.masteredFile,
       mastered: chapter.mastered,
       pickups: chapter.pickups,
     })),

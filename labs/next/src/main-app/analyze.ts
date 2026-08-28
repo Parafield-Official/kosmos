@@ -115,6 +115,7 @@ export async function analyzeSource(source: string, onProgress?: AnalyzeProgress
       recordedPct: 0,
       hasOriginalAudio: false,
       hasWorkingAudio: false,
+      hasMasteredAudio: false,
       resumeWordIndex: 0,
       proofed: false,
       mastered: false,

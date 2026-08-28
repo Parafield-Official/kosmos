@@ -46,7 +46,7 @@ import {
   type PromptHighlightMode,
   type RecordedWord,
 } from "./store";
-import { readPromptTheme, readReadingFont } from "./reading-prefs";
+import { readPromptTheme, readReadingFont, writePromptTheme, readBoothFontPx, writeBoothFontPx } from "./reading-prefs";
 import { pickupIsSuppressed } from "./suppress";
 import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import {
@@ -156,11 +156,15 @@ export function RecordScreen({
   chapterId,
   onBack,
   onChange,
+  embedded,
+  onContinueProof,
 }: {
   project: BookProject;
   chapterId: string;
   onBack: () => void;
   onChange: (next: BookProject) => void;
+  embedded?: boolean;
+  onContinueProof?: () => void;
 }) {
   const chapter = useMemo(
     () => project.chapters.find((item) => item.id === chapterId) ?? null,
@@ -174,7 +178,8 @@ export function RecordScreen({
   );
   const [highlight, setHighlight] = useState<PromptHighlightMode>(readHighlight);
   const [readingFont] = useState(readReadingFont);
-  const [theme] = useState(readPromptTheme);
+  const [theme, setTheme] = useState(readPromptTheme);
+  const [boothFontPx, setBoothFontPx] = useState(readBoothFontPx);
   const [lineSpacing, setLineSpacing] = useState(readSpacing);
   const [checkReading, setCheckReading] = useState(() => readFlag(CHECK_KEY, false));
   const [stopOnMismatch, setStopOnMismatch] = useState(() => readFlag(HALT_KEY, true));
@@ -972,12 +977,16 @@ export function RecordScreen({
   }
 
   return (
-    <section className="ma-screen ma-record" aria-label={`Record ${chapter.title}`}>
+    <section className={embedded ? "ma-record-embed" : "ma-screen ma-record"} aria-label={`Record ${chapter.title}`}>
       <header className="ma-record-head">
-        <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
-          <ChevronLeft />
-          <span>{chapter.title}</span>
-        </button>
+        {embedded ? (
+          <h2 className="ma-record-chapter">{chapter.title}</h2>
+        ) : (
+          <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
+            <ChevronLeft />
+            <span>{chapter.title}</span>
+          </button>
+        )}
         <div className="ma-record-progress" aria-label={`${shownPct} percent recorded`}>
           <span className="ma-progress">
             <span className="ma-progress-fill" style={{ width: `${shownPct}%` }} />
@@ -1007,6 +1016,11 @@ export function RecordScreen({
             Reading
           </button>
           <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
+          {embedded && onContinueProof && shownPct >= 100 ? (
+            <button type="button" className="btn btn-sm btn-clear" onClick={onContinueProof}>
+              Proofread
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -1040,6 +1054,13 @@ export function RecordScreen({
               setHalt(null);
             }
           }}
+          theme={theme}
+          onTheme={(value) => {
+            setTheme(value);
+            writePromptTheme(value);
+          }}
+          fontPx={boothFontPx}
+          onFontPx={(value) => setBoothFontPx(writeBoothFontPx(value))}
         />
       ) : null}
 
@@ -1087,7 +1108,7 @@ export function RecordScreen({
         </div>
       ) : null}
 
-      <div className={`ma-teleprompter is-${theme} font-${readingFont}`}>
+      <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
         <div className="ma-teleprompter-scroll" ref={promptRef}>
           <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
             {script.paragraphs.length ? (
@@ -1182,6 +1203,19 @@ export function RecordScreen({
           {workflow.canStartOver ? (
             <button type="button" className="btn btn-sm" onClick={() => void startOver()}>
               Start over
+            </button>
+          ) : null}
+          {chapter.originalFile && !recording ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
+                  onChange(clearOriginalTape(projectRef.current, chapterId));
+                }
+              }}
+            >
+              Delete audio
             </button>
           ) : null}
           <div className="ma-rec-meta">

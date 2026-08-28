@@ -7,6 +7,7 @@ import { paragraphsFromHtml } from "./booth";
 import { PunchRecorder } from "./PunchRecorder";
 import { applyPunchRecording, previewPunchRecording, undoLatestChapterPunch } from "./punch";
 import { ReviewScript } from "./ReviewScript";
+import { markKindEnabled } from "./engine-prefs";
 import { workingChapterTranscript } from "./review-timing";
 import { addSuppressedWord, suppressLabel } from "./suppress";
 import {
@@ -26,11 +27,17 @@ export function ReviewScreen({
   chapterId,
   onBack,
   onChange,
+  embedded,
+  onStartOver,
+  onContinueMaster,
 }: {
   project: BookProject;
   chapterId: string;
   onBack: () => void;
   onChange: (next: BookProject) => void;
+  embedded?: boolean;
+  onStartOver?: () => void;
+  onContinueMaster?: () => void;
 }) {
   const chapter = useMemo(
     () => project.chapters.find((item) => item.id === chapterId) ?? null,
@@ -121,10 +128,12 @@ export function ReviewScreen({
   const current = chapter;
 
   const open = (current.pickups ?? [])
-    .filter((pickup) => pickup.status === "open")
+    .filter((pickup) => pickup.status === "open" && markKindEnabled(pickup.kind))
     .sort((left, right) => (left.line_start ?? left.t_start) - (right.line_start ?? right.t_start));
   const resolved = (current.pickups ?? []).filter((pickup) => pickup.status !== "open");
-  const canUndo = (current.punches ?? []).some((punch) => punch.edit_status !== "reverted");
+  const punches = (current.punches ?? []).filter((punch) => punch.edit_status !== "reverted");
+  const canUndo = punches.length > 0;
+  const focusedPickupId = playing?.includes("-") ? playing.slice(playing.indexOf("-") + 1) : null;
 
   function stopPlayback() {
     audioRef.current?.pause();
@@ -235,13 +244,22 @@ export function ReviewScreen({
   }
 
   return (
-    <section className="ma-screen ma-review" aria-label={`Review ${chapter.title}`}>
+    <section className={embedded ? "ma-review-embed" : "ma-screen ma-review"} aria-label={`Review ${chapter.title}`}>
       <header className="ma-overview-head">
-        <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
-          <ChevronLeft />
-          <span>{chapter.title}</span>
-        </button>
+        {embedded ? (
+          <h2 className="ma-record-chapter">{chapter.title}</h2>
+        ) : (
+          <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
+            <ChevronLeft />
+            <span>{chapter.title}</span>
+          </button>
+        )}
         <div className="ma-chapter-head-actions">
+          {onStartOver ? (
+            <button type="button" className="btn btn-sm" onClick={onStartOver}>
+              Start over
+            </button>
+          ) : null}
           {open.length > 0 ? (
             <button type="button" className="btn" onClick={startSession} disabled={busy}>
               Fix open flags
@@ -252,7 +270,12 @@ export function ReviewScreen({
               Undo latest punch
             </button>
           ) : null}
-          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
+          {onContinueMaster ? (
+            <button type="button" className="btn btn-clear" onClick={onContinueMaster}>
+              Sound mastering
+            </button>
+          ) : null}
+          {embedded ? null : <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />}
         </div>
       </header>
 
@@ -264,12 +287,15 @@ export function ReviewScreen({
           chapterId={chapterId}
           manuscript={manuscript}
           transcript={transcript}
+          pickups={open}
+          focusedPickupId={focusedPickupId}
           sourceKind={chapter.recordedWords?.length ? "live" : "take"}
           onRedo={(pickup) => {
             setSessionIds(null);
             setPunching(pickup);
             setError(null);
           }}
+          onSelectFlag={(pickup) => playRange("working", pickup)}
         />
       ) : null}
 
@@ -305,14 +331,40 @@ export function ReviewScreen({
 
       {resolved.length > 0 ? (
         <div className="ma-pickup-resolved">
-          <h2 className="ma-section-title">Filed</h2>
+          <h2 className="ma-section-title">History</h2>
           <ul className="ma-pickup-list ma-pickup-list-quiet">
             {resolved.map((pickup) => (
               <li key={pickup.id} className="ma-pickup-row neu-inset">
                 <span className="ma-pickup-kind">{pickup.status === "ignored" ? "Kept" : "Fixed"}</span>
                 <p className="ma-pickup-line">{pickup.line_text || pickup.expected || pickup.heard}</p>
                 <button type="button" className="btn btn-sm" onClick={() => patchPickup(pickup, "open")}>
-                  Reopen
+                  Re-record
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {punches.length > 0 ? (
+        <div className="ma-pickup-resolved">
+          <h2 className="ma-section-title">Punch-ins</h2>
+          <ul className="ma-pickup-list ma-pickup-list-quiet">
+            {punches.map((punch) => (
+              <li key={punch.id} className="ma-pickup-row neu-inset">
+                <span className="ma-pickup-kind">Modified</span>
+                <p className="ma-pickup-line">{punch.expected || punch.heard || `${punch.t_start.toFixed(1)}s`}</p>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => {
+                    const related = (current.pickups ?? []).find((item) => item.id === punch.pickup_id);
+                    if (related) {
+                      setPunching({ ...related, status: "open" });
+                    }
+                  }}
+                >
+                  Re-record
                 </button>
               </li>
             ))}
@@ -399,7 +451,7 @@ function PickupRow({
           Keep take
         </button>
         <button type="button" className="btn btn-sm" onClick={onFixed}>
-          Mark fixed
+          Mark resolved
         </button>
         <button type="button" className="btn btn-sm" onClick={onPunch}>
           Punch-in

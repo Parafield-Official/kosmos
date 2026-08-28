@@ -15,7 +15,7 @@ const PROJECTS_KEY = "kosmos-projects";
 const LAST_PROJECT_KEY = "kosmos-last-project";
 
 export type ChapterStage = "blank" | "recording" | "proofing" | "mastering" | "done";
-export type AudioSlot = "original" | "working";
+export type AudioSlot = "original" | "working" | "mastered";
 export type PromptHighlightMode = "word" | "line" | "paragraph";
 export type ReadingFont = "serif" | "sans" | "palatino" | "courier" | "clear" | "hyperlegible";
 export type PromptTheme = "dark" | "sepia" | "cream";
@@ -81,8 +81,12 @@ export interface BookChapter {
   hasWorkingAudio: boolean;
   /** Stable original tape filename (`{chapterId}-original.wav`). */
   originalFile?: string;
-  /** Stable working tape filename (`{chapterId}-working.wav`). Proof then master. */
+  /** Stable working tape filename (`{chapterId}-working.wav`). Punches land here; mastering does not overwrite it. */
   workingFile?: string;
+  /** Latest mastered filename (`{chapterId}-mastered.wav`). */
+  masteredFile?: string;
+  /** True once a mastered file exists. */
+  hasMasteredAudio: boolean;
   /** Next manuscript word to continue from. */
   resumeWordIndex: number;
   /** Aligned words on the original tape. */
@@ -340,8 +344,15 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
         recordedPct: typeof chapter?.recordedPct === "number" ? chapter.recordedPct : 0,
         originalFile,
         workingFile,
+        masteredFile:
+          typeof chapter?.masteredFile === "string"
+            ? chapter.masteredFile
+            : undefined,
         hasOriginalAudio: Boolean(originalFile) || Boolean(chapter?.hasOriginalAudio),
         hasWorkingAudio: Boolean(workingFile) || Boolean(chapter?.hasWorkingAudio),
+        hasMasteredAudio:
+          Boolean(typeof chapter?.masteredFile === "string" && chapter.masteredFile) ||
+          Boolean(chapter?.hasMasteredAudio),
         resumeWordIndex: typeof chapter?.resumeWordIndex === "number" ? chapter.resumeWordIndex : 0,
         recordedWords,
         proofTranscript,
@@ -461,6 +472,7 @@ export function addChapter(projectId: string, title: string): BookProject | null
     recordedPct: 0,
     hasOriginalAudio: false,
     hasWorkingAudio: false,
+    hasMasteredAudio: false,
     resumeWordIndex: 0,
     proofed: false,
     mastered: false,
@@ -512,6 +524,7 @@ export function appendChapter(project: BookProject, title: string): BookProject 
     recordedPct: 0,
     hasOriginalAudio: false,
     hasWorkingAudio: false,
+    hasMasteredAudio: false,
     resumeWordIndex: 0,
     proofed: false,
     mastered: false,
@@ -589,12 +602,25 @@ export async function createBook(input: {
   title: string;
   author: string;
   coverDataUrl?: string;
+  parentFolder?: string;
 }): Promise<BookProject> {
   if (hasProjectBridge()) {
     const created = await window.kosmosNext!.createProject!(input);
     return normalizeProject(created as Partial<BookProject> & Record<string, unknown>);
   }
   return createProject(input);
+}
+
+/** Pick a folder that will hold the new book project. */
+export async function pickProjectParent(): Promise<string | null> {
+  if (window.kosmosNext?.pickProjectParent) {
+    const result = await window.kosmosNext.pickProjectParent();
+    if (result.ok && result.path) {
+      return result.path;
+    }
+    return null;
+  }
+  return getWorkspacePath();
 }
 
 export async function persistBook(project: BookProject): Promise<BookProject> {
@@ -817,7 +843,7 @@ function slotFileName(chapterId: string, slot: AudioSlot, mime?: string, name?: 
   return `${chapterId}-${slot}.${audioExtension(mime, name)}`;
 }
 
-/** Write the original or working slot. There are only two files per chapter. */
+/** Write the original, working, or mastered slot. */
 export async function writeChapterAudio(
   project: BookProject,
   chapterId: string,
@@ -969,6 +995,12 @@ export function applyOriginalTape(
         recordedWords: patch.recordedWords ?? chapter.recordedWords,
         proofTranscript: reset || patch.recordedWords ? undefined : chapter.proofTranscript,
         acxTrafficLight: reset ? undefined : chapter.acxTrafficLight,
+        pickups: reset ? [] : chapter.pickups,
+        punches: reset ? [] : chapter.punches,
+        workingFile: reset ? undefined : chapter.workingFile,
+        hasWorkingAudio: reset ? false : chapter.hasWorkingAudio,
+        masteredFile: reset ? undefined : chapter.masteredFile,
+        hasMasteredAudio: reset ? false : chapter.hasMasteredAudio,
         proofed: reset ? false : chapter.proofed,
         mastered: reset ? false : chapter.mastered,
       };
@@ -988,11 +1020,17 @@ export function clearOriginalTape(project: BookProject, chapterId: string): Book
         ...chapter,
         originalFile: undefined,
         hasOriginalAudio: false,
+        workingFile: undefined,
+        hasWorkingAudio: false,
+        masteredFile: undefined,
+        hasMasteredAudio: false,
         recordedPct: 0,
         resumeWordIndex: 0,
         recordedWords: undefined,
         proofTranscript: undefined,
         acxTrafficLight: undefined,
+        pickups: [],
+        punches: [],
         proofed: false,
         mastered: false,
       };
@@ -1000,12 +1038,26 @@ export function clearOriginalTape(project: BookProject, chapterId: string): Book
   };
 }
 
-/** Point the working slot at a proof/master file derived from original. */
+/** Point the working slot at a punch file derived from original. */
 export function applyWorkingTape(project: BookProject, chapterId: string, file: string): BookProject {
   return {
     ...project,
     chapters: project.chapters.map((chapter) =>
-      chapter.id === chapterId ? { ...chapter, workingFile: file, hasWorkingAudio: true } : chapter,
+      chapter.id === chapterId
+        ? { ...chapter, workingFile: file, hasWorkingAudio: true, mastered: false, acxTrafficLight: undefined }
+        : chapter,
+    ),
+  };
+}
+
+/** Point the mastered slot at the latest master output. Working stays unmastered. */
+export function applyMasteredTape(project: BookProject, chapterId: string, file: string): BookProject {
+  return {
+    ...project,
+    chapters: project.chapters.map((chapter) =>
+      chapter.id === chapterId
+        ? { ...chapter, masteredFile: file, hasMasteredAudio: true, mastered: true }
+        : chapter,
     ),
   };
 }

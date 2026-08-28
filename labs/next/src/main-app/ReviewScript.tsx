@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { tokenizeManuscript } from "../../../../src/core/proof/normalize";
+import { pickupKindPresentation } from "../../../../src/core/proof/pickup-display";
 import {
   buildNarrationRedoRanges,
   createNarratorRedoPickup,
@@ -16,14 +17,20 @@ export function ReviewScript({
   chapterId,
   manuscript,
   transcript,
+  pickups = [],
+  focusedPickupId = null,
   sourceKind,
   onRedo,
+  onSelectFlag,
 }: {
   chapterId: string;
   manuscript: string;
   transcript: TranscriptWord[];
+  pickups?: ChapterPickup[];
+  focusedPickupId?: string | null;
   sourceKind: "live" | "take";
   onRedo: (pickup: ChapterPickup) => void;
+  onSelectFlag?: (pickup: ChapterPickup) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => tokenizeManuscript(manuscript), [manuscript]);
@@ -72,6 +79,16 @@ export function ReviewScript({
     }
   }
 
+  const pickupByToken = useMemo(() => {
+    const map = new Map<number, ChapterPickup>();
+    for (const pickup of pickups) {
+      if (typeof pickup.manuscript_index === "number") {
+        map.set(pickup.manuscript_index, pickup);
+      }
+    }
+    return map;
+  }, [pickups]);
+
   if (tokens.length === 0) {
     return null;
   }
@@ -88,7 +105,7 @@ export function ReviewScript({
         <p>
           {transcript.length === 0
             ? "Proofread (or finish the booth read) so Kosmos knows where each sentence sits on the tape. Then select a line to say again."
-            : "Select a sentence you want to say again. Kosmos replaces just that stretch on the working take — the original tape stays as it is."}
+            : "Select a sentence or paragraph to say again. Click a coloured flag to hear it, then re-record."}
         </p>
       </header>
       {sentence || selection ? (
@@ -104,9 +121,9 @@ export function ReviewScript({
                 Record this sentence
               </button>
             ) : null}
-            {selection && selection.timing !== "unavailable" && selection.scope === "selection" ? (
-              <button type="button" className="btn btn-clear" onClick={() => record(selection)}>
-                Only the words I selected
+            {ranges?.paragraph && ranges.paragraph.timing !== "unavailable" ? (
+              <button type="button" className="btn btn-clear" onClick={() => record(ranges.paragraph)}>
+                Record this paragraph
               </button>
             ) : null}
             {sentence?.timing === "unavailable" && selection?.timing === "unavailable" ? (
@@ -127,17 +144,18 @@ export function ReviewScript({
               part.tokenIndex === undefined ? (
                 <span key={partIndex}>{part.text}</span>
               ) : (
-                <span
+                <FlagWord
                   key={partIndex}
-                  data-token={part.tokenIndex}
-                  className={
-                    range && part.tokenIndex >= range.from && part.tokenIndex <= range.to
-                      ? "ma-review-word is-selected"
-                      : "ma-review-word"
-                  }
-                >
-                  {part.text}
-                </span>
+                  tokenIndex={part.tokenIndex}
+                  text={part.text}
+                  selected={Boolean(range && part.tokenIndex >= range.from && part.tokenIndex <= range.to)}
+                  pickup={pickupByToken.get(part.tokenIndex)}
+                  focused={Boolean(
+                    pickupByToken.get(part.tokenIndex) &&
+                      pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
+                  )}
+                  onFlag={(pickup) => onSelectFlag?.(pickup)}
+                />
               ),
             )}
           </p>
@@ -148,6 +166,46 @@ export function ReviewScript({
 }
 
 type ScriptPart = { text: string; tokenIndex?: number };
+
+function FlagWord({
+  tokenIndex,
+  text,
+  selected,
+  pickup,
+  focused,
+  onFlag,
+}: {
+  tokenIndex: number;
+  text: string;
+  selected: boolean;
+  pickup?: ChapterPickup;
+  focused: boolean;
+  onFlag: (pickup: ChapterPickup) => void;
+}) {
+  const kind = pickup ? pickupKindPresentation(pickup.kind).label.replace(" ", "-") : null;
+  const classes = [
+    "ma-review-word",
+    selected ? "is-selected" : "",
+    pickup ? `is-flag is-flag-${pickup.kind}` : "",
+    focused ? "is-focused" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <span
+      data-token={tokenIndex}
+      className={classes}
+      title={kind ?? undefined}
+      onClick={() => {
+        if (pickup) {
+          onFlag(pickup);
+        }
+      }}
+    >
+      {text}
+    </span>
+  );
+}
 
 function scriptBlocks(
   manuscript: string,

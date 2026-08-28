@@ -14,6 +14,10 @@ export function BoothReadingPanel({
   onSpacing,
   onCheckReading,
   onStopOnMismatch,
+  theme,
+  onTheme,
+  fontPx,
+  onFontPx,
 }: {
   inputs: MediaDeviceInfo[];
   inputId: string;
@@ -27,6 +31,10 @@ export function BoothReadingPanel({
   onSpacing: (value: number) => void;
   onCheckReading: (enabled: boolean) => void;
   onStopOnMismatch: (enabled: boolean) => void;
+  theme: import("./store").PromptTheme;
+  onTheme: (theme: import("./store").PromptTheme) => void;
+  fontPx: number;
+  onFontPx: (size: number) => void;
 }) {
   return (
     <div className="ma-booth-settings" role="dialog" aria-label="Reading settings">
@@ -86,6 +94,36 @@ export function BoothReadingPanel({
           </button>
         ))}
       </div>
+
+      <p className="ma-booth-kicker">Page texture</p>
+      <div className="ma-booth-choices" role="radiogroup" aria-label="Page texture">
+        {(["dark", "sepia", "cream"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={theme === value}
+            className={theme === value ? "is-on" : undefined}
+            onClick={() => onTheme(value)}
+          >
+            {value === "dark" ? "Dark" : value === "sepia" ? "Sepia" : "Cream"}
+          </button>
+        ))}
+      </div>
+
+      <p className="ma-booth-kicker">Teleprompter size</p>
+      <label className="ma-set-slider">
+        <input
+          type="range"
+          min={20}
+          max={48}
+          step={1}
+          value={fontPx}
+          aria-label="Teleprompter font size"
+          onChange={(event) => onFontPx(Number(event.target.value))}
+        />
+        <span className="ma-set-slider-value">{fontPx} px</span>
+      </label>
 
       <label className="ma-booth-toggle">
         <span>

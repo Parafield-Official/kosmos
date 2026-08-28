@@ -6,11 +6,13 @@ import { FONT_SCALE_OPTIONS, readFontScale, writeFontScale, type FontScale } fro
 import {
   CONFIDENCE_OPTIONS,
   PAUSE_RANGE,
+  PROOF_MARK_OPTIONS,
   RMS_RANGE,
   SENSITIVITY_OPTIONS,
   readEnginePrefs,
   writeEnginePrefs,
   type EnginePrefs,
+  type ProofMarkKind,
 } from "./engine-prefs";
 import {
   PROMPT_THEME_OPTIONS,
@@ -311,10 +313,42 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         <div className="ma-set-item">
           <div className="ma-set-head">
             <FilterIcon />
+            <strong>Marks on the page</strong>
+          </div>
+          <p className="ma-set-sub">Choose which mismatches to paint on the manuscript and list in proofreading.</p>
+          <div className="ma-set-control ma-set-checks">
+            {PROOF_MARK_OPTIONS.map((option) => (
+              <label key={option.value} className="ma-set-check">
+                <input
+                  type="checkbox"
+                  checked={engine.mark_kinds.includes(option.value)}
+                  onChange={() => {
+                    const on = engine.mark_kinds.includes(option.value);
+                    const next = on
+                      ? engine.mark_kinds.filter((kind) => kind !== option.value)
+                      : [...engine.mark_kinds, option.value];
+                    if (next.length === 0) {
+                      return;
+                    }
+                    patchEngine({ mark_kinds: next as ProofMarkKind[] });
+                  }}
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  <em>{option.hint}</em>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <FilterIcon />
             <strong>Never-flagged words</strong>
           </div>
           <p className="ma-set-sub">
-            Per book, not app-wide. On a Review flag, tap Never flag this word. The list lives on the book overview.
+            Per book, not app-wide. On a proof flag, tap Never flag this word. The list lives under Pronunciation.
           </p>
         </div>
 
@@ -326,7 +360,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <strong>Loudness target</strong>
           </div>
           <p className="ma-set-sub">
-            RMS used when mastering the working file. ACX accepts −23 to −18 dBFS; −20 is the usual aim.
+            RMS used when mastering. The unmastered punch file is kept; mastering writes a separate file. ACX accepts −23
+            to −18 dBFS; −20 is the usual aim.
           </p>
           <div className="ma-set-control">
             <label className="ma-set-slider">

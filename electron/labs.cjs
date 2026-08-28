@@ -441,12 +441,12 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   if (typeof folder !== "string" || typeof chapterId !== "string" || typeof base64 !== "string") {
     return { ok: false };
   }
-  const kind = slot === "working" ? "working" : "original";
+  const kind = slot === "working" || slot === "mastered" ? slot : "original";
   const dir = path.join(folder, "audio");
   await fs.mkdir(dir, { recursive: true });
-  // The chapter tape model is exactly two WAV files. Booth takes already arrive
-  // as WAV; imported mp3/m4a/ogg/webm takes are normalized to WAV so the slot is
-  // an honest `.wav` file rather than mislabeled bytes.
+  // The chapter tape model is original + working (punches) + mastered (pipeline).
+  // Booth takes already arrive as WAV; imported mp3/m4a/ogg/webm takes are normalized
+  // to WAV so the slot is an honest `.wav` file rather than mislabeled bytes.
   const bytes = Buffer.from(base64, "base64");
   const file = `${path.basename(chapterId)}-${kind}.wav`;
   const alreadyWav = isWavBuffer(bytes) || (typeof mime === "string" && mime.includes("wav"));
@@ -536,11 +536,14 @@ async function readProjectManuscriptFile(folder, name) {
 }
 
 async function createWorkspaceProject(input) {
-  const workspace = grantedFolderPath;
-  if (!workspace) {
-    throw new Error("Choose a workspace before creating a book.");
+  const parent =
+    typeof input?.parentFolder === "string" && input.parentFolder.trim()
+      ? input.parentFolder.trim()
+      : grantedFolderPath;
+  if (!parent) {
+    throw new Error("Choose a folder for this book.");
   }
-  const dir = await uniqueProjectDir(workspace, safeFolderName(input?.title));
+  const dir = await uniqueProjectDir(parent, safeFolderName(input?.title));
   await fs.mkdir(dir, { recursive: true });
   await Promise.all([
     fs.mkdir(path.join(dir, "manuscript"), { recursive: true }),
@@ -560,7 +563,7 @@ async function createWorkspaceProject(input) {
     updatedAt: nowIso,
   };
   await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project), "utf8");
-  return { ...project, folder: dir };
+  return { ...project, folder: dir, external: !isInsideWorkspace(dir) };
 }
 
 async function saveWorkspaceProject(project) {
@@ -571,6 +574,22 @@ async function saveWorkspaceProject(project) {
   const next = { ...rest, updatedAt: new Date().toISOString() };
   await fs.writeFile(path.join(folder, PROJECT_MARKER), JSON.stringify(next), "utf8");
   return { ...next, folder };
+}
+
+async function pickProjectParent() {
+  if (!labWindow || labWindow.isDestroyed()) {
+    return { ok: false };
+  }
+  const result = await dialog.showOpenDialog(labWindow, {
+    title: "Where should this book live?",
+    message: "Kosmos will create a folder here for the manuscript and recordings.",
+    properties: ["openDirectory", "createDirectory"],
+    defaultPath: grantedFolderPath || undefined,
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { ok: false, canceled: true };
+  }
+  return { ok: true, path: result.filePaths[0] };
 }
 
 async function openWorkspaceProject() {
@@ -1258,6 +1277,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("labs:workspace-get", () => getWorkspace());
   ipcMain.handle("labs:projects-list", () => listWorkspaceProjects());
   ipcMain.handle("labs:project-create", (_event, input) => createWorkspaceProject(input));
+  ipcMain.handle("labs:project-pick-parent", () => pickProjectParent());
   ipcMain.handle("labs:project-save", (_event, project) => saveWorkspaceProject(project));
   ipcMain.handle("labs:project-open", () => openWorkspaceProject());
   ipcMain.handle("labs:project-delete", (_event, folder) => deleteWorkspaceProject(folder));
