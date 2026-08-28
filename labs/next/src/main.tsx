@@ -2,10 +2,16 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { applyGlassTuning, applyNativeMaterial, readStoredGlassLook, subscribeGlassTuning, valuesForLook } from "./glass-tuning";
+import { applyFontScale, readFontScale } from "./main-app/display";
 import "./ui/liquid.css";
 import "./styles.css";
 
 document.documentElement.dataset.shell = window.kosmosNext ? "native" : "hosted";
+try {
+  applyFontScale(readFontScale());
+} catch (error) {
+  console.warn("[kosmos-next] font scale boot failed", error);
+}
 try {
   const look = readStoredGlassLook();
   document.documentElement.dataset.glassLook = look;

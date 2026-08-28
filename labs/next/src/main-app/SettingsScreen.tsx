@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import { GlassLookSwitch } from "../GlassLookSwitch";
 import { clearOnboarded } from "../flow";
+import { FONT_SCALE_OPTIONS, readFontScale, writeFontScale, type FontScale } from "./display";
 import { chooseWorkspace, getWorkspacePath } from "./store";
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
+  const [fontScale, setFontScale] = useState<FontScale>(() => readFontScale());
+
+  function chooseFontScale(scale: FontScale) {
+    setFontScale(scale);
+    writeFontScale(scale);
+  }
 
   useEffect(() => {
     let alive = true;
@@ -69,6 +76,32 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
         <div className="ma-set-item">
           <div className="ma-set-head">
+            <TextSizeIcon />
+            <strong>Text size</strong>
+          </div>
+          <p className="ma-set-sub">Overall size of text across the whole app.</p>
+          <div className="ma-set-control">
+            <div className="ma-seg" role="radiogroup" aria-label="Text size">
+              {FONT_SCALE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={fontScale === option.value}
+                  className={fontScale === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  onClick={() => chooseFontScale(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="ma-set-divider" />
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
             <FolderIcon />
             <strong>Workspace</strong>
           </div>
@@ -123,6 +156,15 @@ function ThemeIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function TextSizeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M4 7V5h10v2M9 5v14M7 19h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 12V11h6v1M17 11v8M15.5 19h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

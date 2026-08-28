@@ -142,6 +142,35 @@
   max-width: 100%;
 }
 
+.ma-seg {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 12px;
+  background: rgba(120, 120, 130, 0.14);
+}
+
+.ma-seg-btn {
+  min-width: 4.2rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.ma-seg-btn.is-on {
+  background: var(--surface, rgba(255, 255, 255, 0.9));
+  color: var(--ink);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
 .ma-set-divider {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
