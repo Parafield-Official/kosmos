@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
 import { unzipSync } from "fflate";
+import {
+  docxMetaFromBytes,
+  epubMetaFromBytes,
+  textMeta,
+  type ManuscriptMeta,
+} from "./manuscript-meta";
 
 const MAX_COVER_BYTES = 6 * 1024 * 1024;
 
@@ -14,64 +20,23 @@ function titleFromFileName(name: string): string {
   return name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
 }
 
-function splitAuthors(raw: string): string[] {
-  return raw
-    .split(/\s*(?:,|&|;|\/|\band\b)\s*/i)
-    .map((part) => part.trim().replace(/[.]+$/, ""))
-    .filter((part) => part.length > 1 && part.length < 60)
-    .slice(0, 6);
-}
-
-async function readManuscriptText(file: File): Promise<string | null> {
+/** Detect a title and author(s) from a manuscript, using each format's metadata. */
+async function detectManuscriptMeta(file: File): Promise<ManuscriptMeta> {
   const name = file.name.toLowerCase();
+  if (name.endsWith(".epub") || file.type === "application/epub+zip") {
+    return epubMetaFromBytes(new Uint8Array(await file.arrayBuffer()));
+  }
+  if (name.endsWith(".docx") || file.type.includes("wordprocessingml")) {
+    return docxMetaFromBytes(new Uint8Array(await file.arrayBuffer()));
+  }
   if (file.type.startsWith("text/") || name.endsWith(".txt") || name.endsWith(".md")) {
     try {
-      return await file.text();
+      return textMeta(await file.text());
     } catch {
-      return null;
+      return {};
     }
   }
-  // docx/epub/pdf need the parsing engine; skip metadata for now.
-  return null;
-}
-
-/** Light heuristic: pull a title and author(s) from the top of a text manuscript. */
-async function detectManuscriptMeta(file: File): Promise<{ title?: string; authors?: string[] }> {
-  const text = await readManuscriptText(file);
-  if (!text) {
-    return {};
-  }
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 40);
-
-  let title: string | undefined;
-  let authors: string[] | undefined;
-
-  for (const line of lines) {
-    if (!title) {
-      const titled = line.match(/^title\s*[:\-–]\s*(.+)$/i);
-      if (titled) {
-        title = titled[1].trim();
-        continue;
-      }
-    }
-    if (!authors) {
-      const labelled = line.match(/^authors?\s*[:\-–]\s*(.+)$/i);
-      if (labelled) {
-        authors = splitAuthors(labelled[1]);
-        continue;
-      }
-      const byline = line.match(/^by\s+(.{2,60})$/i);
-      if (byline && byline[1].split(/\s+/).length <= 10) {
-        authors = splitAuthors(byline[1]);
-      }
-    }
-  }
-
-  return { title, authors: authors && authors.length ? authors : undefined };
+  return {};
 }
 
 function normalizeZipPath(input: string): string {

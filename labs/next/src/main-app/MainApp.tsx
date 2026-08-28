@@ -7,6 +7,7 @@ import {
   type BookProject,
 } from "./store";
 import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
+import { manuscriptMetaFromBytes } from "./manuscript-meta";
 import { LibraryScreen } from "./LibraryScreen";
 import { OverviewScreen } from "./OverviewScreen";
 import { ChapterScreen } from "./ChapterScreen";
@@ -103,7 +104,20 @@ export function MainApp() {
       }
       let next = project;
       if (result.chapters.length) {
-        next = await persistBook({ ...project, chapters: result.chapters });
+        let patch: BookProject = { ...project, chapters: result.chapters };
+        // Backfill the author from the manuscript's own metadata when the book
+        // was created without one (older imports, or a manuscript picked before
+        // the field was filled). Never overwrite an author the user already set.
+        if (!project.author.trim()) {
+          const source = file
+            ? { name: file.name, bytes: new Uint8Array(await file.arrayBuffer()) }
+            : await readManuscriptBytes(project);
+          const meta = source ? manuscriptMetaFromBytes(source.name, source.bytes) : {};
+          if (meta.authors?.length) {
+            patch = { ...patch, author: meta.authors.join(", ") };
+          }
+        }
+        next = await persistBook(patch);
         await writeChapterContents(next, result.contents);
       }
       setScreen((current) =>
