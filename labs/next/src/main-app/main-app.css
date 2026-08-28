@@ -35,6 +35,8 @@
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .ma-screen::-webkit-scrollbar {

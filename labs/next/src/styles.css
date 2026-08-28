@@ -105,6 +105,13 @@ body {
   app-region: drag;
 }
 
+/* Book screens are full of divs, not just buttons. Viewport drag would
+   swallow those clicks and scroll, so only the titlebar strips stay draggable. */
+.viewport[data-place="app"] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 button,
 .debug-dock,
 .settings,
