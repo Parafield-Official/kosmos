@@ -375,7 +375,7 @@
   letter-spacing: inherit;
   line-height: inherit;
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -866,7 +866,8 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
-.ma-overview-hero {
+.ma-overview-hero,
+.ma-dash-board {
   display: flex;
   gap: 2rem;
   padding: 2rem 2.1rem;
@@ -890,17 +891,18 @@
 }
 
 .ma-hero-author {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.9rem;
+  margin: 0.15rem 0 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 1.05rem;
+  font-weight: 400;
 }
 
 .ma-hero-progress {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  margin-top: 1rem;
-  max-width: none;
+  margin-top: 0.85rem;
+  max-width: 28rem;
 }
 
 .ma-hero-progress-label {
@@ -2878,25 +2880,78 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-book-main > .ma-dashboard {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 1.5rem;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  min-height: 0;
+  gap: 0.85rem;
 }
 
-.ma-book-main > .ma-dashboard .ma-overview-hero {
-  height: 100%;
-}
-
-.ma-book-main > .ma-dashboard .ma-hero-meta {
+.ma-dash-board {
   flex: 1;
-  align-content: center;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 28%) minmax(0, 1fr);
+  gap: 2.1rem;
+  padding: 1.6rem 1.85rem;
+  align-items: stretch;
+}
+
+.ma-dashboard .ma-hero-cover {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  aspect-ratio: auto;
+  align-self: stretch;
+}
+
+.ma-dash-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  gap: 1.25rem;
+}
+
+.ma-dash-identity {
+  display: grid;
+  gap: 0;
+}
+
+.ma-dashboard .ma-title {
+  font-size: clamp(1.7rem, 2.8vw, 2.45rem);
+}
+
+.ma-dash-copy .ma-hero-stats,
+.ma-dash-copy .ma-hero-stat {
+  flex: 1;
+  align-content: stretch;
+  margin: 0;
+  min-height: 0;
+}
+
+.ma-dash-copy .ma-hero-stats {
+  grid-auto-rows: minmax(0, 1fr);
+}
+
+.ma-dash-copy .ma-hero-stats > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 0;
+  padding: 1.1rem 1.15rem;
+}
+
+.ma-dash-copy .ma-hero-stats dd {
+  font-size: clamp(1.7rem, 3vw, 2.55rem);
 }
 
 .ma-dash-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+  margin-top: auto;
 }
 
 .ma-book-main > .ma-pronounce {
@@ -2961,36 +3016,81 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   font: inherit;
 }
 
-.ma-orb-disc {
+.ma-orb-page {
   position: relative;
-  width: 10.5rem;
-  height: 10.5rem;
-  border-radius: 50%;
+  width: 8.6rem;
+  aspect-ratio: 3 / 4;
+  border-radius: 6px;
   overflow: hidden;
+  background: #f3eee4;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 10px 22px rgba(0, 0, 0, 0.28);
 }
 
-.ma-orb-cover,
-.ma-orb-initials {
+.ma-orb-folio {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  overflow: hidden;
+  color: #1c1814;
 }
 
-.ma-orb-initials {
-  display: grid;
-  place-items: center;
-  font-size: 1.4rem;
-  letter-spacing: 0.08em;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.ma-orb-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
+.ma-orb-folio-body {
+  display: block;
+  width: 340px;
+  min-height: 453px;
+  padding: 22px 20px;
+  transform: scale(0.25);
+  transform-origin: top left;
+  color: #1c1814;
+  font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 14px;
+  line-height: 1.55;
   pointer-events: none;
-  background: conic-gradient(#e8d5a3 var(--orb-pct, 0%), transparent 0);
-  mask: radial-gradient(farthest-side, transparent calc(50% - 3px), #000 calc(50% - 2px));
+}
+
+.ma-orb-folio-body p {
+  margin: 0 0 0.7em;
+}
+
+.ma-orb-folio-body h1,
+.ma-orb-folio-body h2,
+.ma-orb-folio-body h3 {
+  margin: 0 0 0.45em;
+  font-size: 1.05em;
+  line-height: 1.25;
+}
+
+.ma-orb-folio-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  height: 100%;
+  padding: 0.75rem 0.7rem;
+  color: rgba(28, 24, 20, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
+
+.ma-orb-folio-empty strong {
+  font-size: 0.82rem;
+}
+
+.ma-orb-folio-empty em {
+  font-style: normal;
+  opacity: 0.62;
+}
+
+.ma-orb-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  max-width: 100%;
+  background: #e8d5a3;
+  pointer-events: none;
 }
 
 .ma-orb-index {

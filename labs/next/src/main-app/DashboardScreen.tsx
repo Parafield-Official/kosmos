@@ -106,7 +106,7 @@ export function DashboardScreen({
 
   return (
     <section className="ma-screen ma-dashboard" aria-label="Dashboard">
-      <div className="ma-overview-hero neu-card">
+      <div className="ma-dash-board neu-card">
         <span className="ma-hero-cover neu-inset">
           {project.coverDataUrl ? (
             <img src={project.coverDataUrl} alt="" className="ma-book-art" />
@@ -114,50 +114,53 @@ export function DashboardScreen({
             <span className="ma-book-spine">{bookInitials(project)}</span>
           )}
         </span>
-        <div className="ma-hero-meta">
-          <h1 className="ma-title">
-            <input
-              className="ma-title-input"
-              value={bookTitle}
-              aria-label="Book title"
-              onChange={(event) => setBookTitle(event.target.value)}
-              onBlur={(event) => saveTitle(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  setBookTitle(project.title);
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-          </h1>
-          <p className="ma-hero-author">
-            <input
-              className="ma-title-input ma-author-input"
-              value={bookAuthor}
-              aria-label="Author"
-              placeholder="Author"
-              onChange={(event) => setBookAuthor(event.target.value)}
-              onBlur={(event) => saveAuthor(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  setBookAuthor(project.author);
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-          </p>
-          <div className="ma-hero-progress">
-            <span className="ma-progress ma-progress-lg">
-              <span className="ma-progress-fill" style={{ width: `${progress}%` }} />
-            </span>
-            <span className="ma-hero-progress-label">Total completion {progress}%</span>
+        <div className="ma-dash-copy">
+          <div className="ma-dash-identity">
+            <h1 className="ma-title">
+              <input
+                className="ma-title-input"
+                value={bookTitle}
+                aria-label="Book title"
+                onChange={(event) => setBookTitle(event.target.value)}
+                onBlur={(event) => saveTitle(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setBookTitle(project.title);
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+            </h1>
+            <p className="ma-hero-author">
+              <input
+                className="ma-title-input ma-author-input"
+                value={bookAuthor}
+                aria-label="Author"
+                placeholder="Author"
+                onChange={(event) => setBookAuthor(event.target.value)}
+                onBlur={(event) => saveAuthor(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setBookAuthor(project.author);
+                    event.currentTarget.blur();
+                  }
+                }}
+              />
+            </p>
+            <div className="ma-hero-progress">
+              <span className="ma-progress ma-progress-lg">
+                <span className="ma-progress-fill" style={{ width: `${progress}%` }} />
+              </span>
+              <span className="ma-hero-progress-label">Total completion {progress}%</span>
+            </div>
           </div>
+
           {project.chapters.length > 0 ? (
             <dl className="ma-hero-stats">
               <div className="neu-inset">
@@ -176,44 +179,44 @@ export function DashboardScreen({
           ) : (
             <p className="ma-hero-stat">No chapters yet</p>
           )}
-        </div>
-      </div>
 
-      <div className="ma-dash-controls">
-        {project.chapters.length > 0 ? (
-          <button type="button" className="btn" onClick={onRead}>
-            Read
-          </button>
-        ) : null}
-        <button type="button" className="btn" onClick={() => manuscriptRef.current?.click()}>
-          {project.manuscript ? "Update manuscript" : "Choose manuscript"}
-        </button>
-        <input
-          ref={manuscriptRef}
-          type="file"
-          accept=".txt,.md,.markdown,.docx,.epub,.pdf,text/plain"
-          hidden
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.currentTarget.value = "";
-            if (file) {
-              requestManuscript(file);
-            }
-          }}
-        />
-        {project.manuscript ? (
-          <button type="button" className="btn" onClick={requestAnalyze}>
-            {project.chapters.length > 0 ? "Re-analyze" : "Analyze manuscript"}
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="btn btn-clear"
-          onClick={() => void exportBook()}
-          disabled={busy || !allMastered}
-        >
-          {busy ? "Exporting…" : "Export audio ACX"}
-        </button>
+          <div className="ma-dash-controls">
+            {project.chapters.length > 0 ? (
+              <button type="button" className="btn" onClick={onRead}>
+                Read
+              </button>
+            ) : null}
+            <button type="button" className="btn" onClick={() => manuscriptRef.current?.click()}>
+              {project.manuscript ? "Update manuscript" : "Choose manuscript"}
+            </button>
+            <input
+              ref={manuscriptRef}
+              type="file"
+              accept=".txt,.md,.markdown,.docx,.epub,.pdf,text/plain"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.currentTarget.value = "";
+                if (file) {
+                  requestManuscript(file);
+                }
+              }}
+            />
+            {project.manuscript ? (
+              <button type="button" className="btn" onClick={requestAnalyze}>
+                {project.chapters.length > 0 ? "Re-analyze" : "Analyze manuscript"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-clear"
+              onClick={() => void exportBook()}
+              disabled={busy || !allMastered}
+            >
+              {busy ? "Exporting…" : "Export audio ACX"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {actionError ? <p className="ma-error">{actionError}</p> : null}
