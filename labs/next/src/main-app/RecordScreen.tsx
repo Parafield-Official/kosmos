@@ -31,6 +31,8 @@ import {
   truncateLiveTape,
 } from "../../../../src/core/teleprompter/session-tape";
 import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow";
+import { nextPronunciationCueByRows } from "../../../../src/core/glossary/workflow";
+import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import {
   applyChapterPickup,
@@ -48,7 +50,7 @@ import {
 import { readPromptTheme, readReadingFont } from "./reading-prefs";
 import { pickupIsSuppressed } from "./suppress";
 import {
-  buildBoothScript,
+  buildBoothScriptFromHtml,
   concatWav,
   coverageOf,
   encodePcmWav,
@@ -56,7 +58,6 @@ import {
   highlightBand,
   measureRows,
   mergeRecordedWords,
-  paragraphsFromHtml,
   resumeSecondsOf,
 } from "./booth";
 
@@ -166,8 +167,11 @@ export function RecordScreen({
     [project, chapterId],
   );
 
-  const [paragraphs, setParagraphs] = useState<string[]>([]);
-  const script = useMemo(() => buildBoothScript(paragraphs), [paragraphs]);
+  const [chapterHtml, setChapterHtml] = useState("");
+  const script = useMemo(
+    () => buildBoothScriptFromHtml(chapterHtml, project.glossary ?? []),
+    [chapterHtml, project.glossary],
+  );
   const [highlight, setHighlight] = useState<PromptHighlightMode>(readHighlight);
   const [readingFont] = useState(readReadingFont);
   const [theme] = useState(readPromptTheme);
@@ -196,6 +200,11 @@ export function RecordScreen({
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
+  const [upcoming, setUpcoming] = useState<{
+    spelling: string;
+    respell?: string;
+    rowsAhead: number;
+  } | null>(null);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -245,7 +254,7 @@ export function RecordScreen({
     let alive = true;
     void readChapterContent(project, chapterId).then((html) => {
       if (alive) {
-        setParagraphs(paragraphsFromHtml(html));
+        setChapterHtml(html);
       }
     });
     return () => {
@@ -346,6 +355,21 @@ export function RecordScreen({
       scrollToCursor(cursor);
     }
   }, [cursor, highlight, recording, paused, scrollToCursor, updateBand]);
+
+  useEffect(() => {
+    if (!recording || paused) {
+      setUpcoming(null);
+      return;
+    }
+    const tops = script.expected.map((word) => wordRefs.current.get(word.index)?.getBoundingClientRect().top ?? null);
+    const measured = nextPronunciationCueByRows(script.cues, cursor, tops);
+    if (!measured) {
+      setUpcoming(null);
+      return;
+    }
+    const entry = (project.glossary ?? []).find((item) => item.id === measured.cue.entryId);
+    setUpcoming(entry ? { spelling: entry.spelling, respell: entry.respell, rowsAhead: measured.rowsAhead } : null);
+  }, [cursor, paused, project.glossary, recording, script.cues, script.expected]);
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
@@ -1082,6 +1106,16 @@ export function RecordScreen({
         </div>
       ) : null}
 
+      {recording && !paused && upcoming ? (
+        <aside className="ma-pronunciation-cue" aria-label={`Pronunciation coming up: ${upcoming.spelling}`}>
+          <span className="ma-pronunciation-cue-kicker">
+            {upcoming.rowsAhead === 0 ? "On this line" : upcoming.rowsAhead === 1 ? "Next line" : "Coming up"}
+          </span>
+          <strong>{upcoming.spelling}</strong>
+          <span>{upcoming.respell?.trim() || "No respelling yet"}</span>
+        </aside>
+      ) : null}
+
       <div className={`ma-teleprompter is-${theme} font-${readingFont}`}>
         <div className="ma-teleprompter-scroll" ref={promptRef}>
           <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
@@ -1095,8 +1129,20 @@ export function RecordScreen({
                     className={`ma-tp-line${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
                   >
                     {para.tokens.map((token, tokenIndex) => {
+                      const glossary = token.glossaryId
+                        ? glossaryEntry(project.glossary, token.glossaryId)
+                        : undefined;
+                      const markClass = tokenMarkClass(token);
                       if (!token.isWord) {
-                        return <span key={tokenIndex}>{token.text}</span>;
+                        return (
+                          <span
+                            key={tokenIndex}
+                            className={markClass.trim() || undefined}
+                            style={tokenMarkStyle(token)}
+                          >
+                            {token.text}
+                          </span>
+                        );
                       }
                       const index = word;
                       word += 1;
@@ -1116,7 +1162,9 @@ export function RecordScreen({
                               wordRefs.current.delete(index);
                             }
                           }}
-                          className={`ma-tp-word${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
+                          className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
+                          style={tokenMarkStyle(token)}
+                          title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
                           onClick={() => chooseResume(index)}
                         >
                           {token.text}
@@ -1239,4 +1287,40 @@ function ChevronLeft() {
       <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
+}
+
+function glossaryEntry(glossary: GlossaryEntry[] | undefined, id: string): GlossaryEntry | undefined {
+  return glossary?.find((entry) => entry.id === id);
+}
+
+function tokenMarkClass(token: { dialogue?: boolean; seat?: string; glossaryId?: string }): string {
+  const classes: string[] = [];
+  if (token.seat === "N1") {
+    classes.push("is-n1");
+  } else if (token.seat === "N2") {
+    classes.push("is-n2");
+  } else if (token.dialogue) {
+    classes.push("is-dialogue");
+  }
+  if (token.glossaryId) {
+    classes.push("is-glossary");
+  }
+  return classes.length ? ` ${classes.join(" ")}` : "";
+}
+
+function tokenMarkStyle(token: { style?: Array<"bold" | "italic" | "underline" | "highlight"> }): {
+  fontWeight?: number;
+  fontStyle?: string;
+  textDecoration?: string;
+  background?: string;
+} | undefined {
+  if (!token.style?.length) {
+    return undefined;
+  }
+  return {
+    fontWeight: token.style.includes("bold") ? 700 : undefined,
+    fontStyle: token.style.includes("italic") ? "italic" : undefined,
+    textDecoration: token.style.includes("underline") ? "underline" : undefined,
+    background: token.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+  };
 }

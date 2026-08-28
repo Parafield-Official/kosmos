@@ -2096,6 +2096,63 @@
   flex-shrink: 0;
 }
 
+.ma-pronunciation-cue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.7rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(196, 168, 255, 0.28);
+  background: rgba(48, 28, 78, 0.42);
+}
+
+.ma-pronunciation-cue-kicker {
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #efe6ff;
+  background: rgba(168, 132, 255, 0.28);
+}
+
+.ma-pronunciation-cue strong {
+  font-size: 0.92rem;
+  letter-spacing: -0.02em;
+}
+
+.ma-pronunciation-cue span:last-child {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.ma-teleprompter .is-dialogue {
+  color: #e4b07a;
+}
+
+.ma-teleprompter .is-n1 {
+  color: #d88a64;
+}
+
+.ma-teleprompter .is-n2 {
+  color: #82a9d7;
+}
+
+.ma-teleprompter .is-glossary {
+  border-bottom: 2px dotted currentColor;
+}
+
+.ma-teleprompter.is-cream .is-dialogue,
+.ma-teleprompter.is-sepia .is-dialogue {
+  color: #9a6238;
+}
+
+.ma-tp-word.is-now {
+  color: #211a14;
+}
+
 .ma-booth-settings {
   display: grid;
   gap: 0.55rem;

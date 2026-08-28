@@ -1,28 +1,28 @@
 import { decodeWavPcm16, encodeWavPcm16 } from "../../../../src/core/audio/wav";
 import { resamplePcmToMono } from "../../../../src/core/audio/resample";
+import type { GlossaryEntry, ScriptSpan } from "../../../../src/core/project/types";
+import {
+  boothScriptFromParagraphs,
+  boothScriptFromSpans,
+  decorateScriptSpans,
+  type BoothMarkedParagraph,
+} from "../../../../src/core/teleprompter/script-marks";
 import {
   promptHighlightRange,
-  promptSentenceEnds,
-  promptTextTokens,
   promptWordRows,
   type PromptHighlightMode,
   type PromptWordRange,
 } from "../../../../src/core/teleprompter/model";
-import type { LiveExpectedWord } from "../../../../src/core/teleprompter/live";
 import type { RecordedWord } from "./store";
 
 export type { PromptHighlightMode };
+export type BoothParagraph = BoothMarkedParagraph;
 
-export interface BoothParagraph {
-  text: string;
-  tokens: ReturnType<typeof promptTextTokens>;
-  firstWord: number;
-  wordCount: number;
-}
+const BLOCK_SELECTOR = "p, h1, h2, h3, li, blockquote";
 
 export function paragraphsFromHtml(html: string): string[] {
   const doc = new DOMParser().parseFromString(html || "", "text/html");
-  const nodes = Array.from(doc.body.querySelectorAll("p, h1, h2, h3, li, blockquote"));
+  const nodes = Array.from(doc.body.querySelectorAll(BLOCK_SELECTOR));
   const paras = nodes.map((node) => node.textContent?.trim() ?? "").filter(Boolean);
   if (paras.length) {
     return paras;
@@ -31,33 +31,66 @@ export function paragraphsFromHtml(html: string): string[] {
   return text ? [text] : [];
 }
 
-export function buildBoothScript(paragraphs: string[]): {
-  paragraphs: BoothParagraph[];
-  expected: LiveExpectedWord[];
-} {
-  const expected: LiveExpectedWord[] = [];
-  const built: BoothParagraph[] = [];
-  for (let lineIndex = 0; lineIndex < paragraphs.length; lineIndex += 1) {
-    const text = paragraphs[lineIndex];
-    const tokens = promptTextTokens(text);
-    const ends = promptSentenceEnds(text);
-    const firstWord = expected.length;
-    let wordCount = 0;
-    for (const token of tokens) {
-      if (!token.isWord) {
-        continue;
-      }
-      expected.push({
-        index: expected.length,
-        lineIndex,
-        text: token.text,
-        endsSentence: ends[wordCount] === true,
-      });
-      wordCount += 1;
+function styleFromAncestors(node: Node): ScriptSpan["style"] {
+  const styles: ScriptSpan["style"] = [];
+  let current = node.parentElement;
+  while (current && current !== current.ownerDocument?.body) {
+    const tag = current.tagName.toLowerCase();
+    if (tag === "strong" || tag === "b") {
+      styles.push("bold");
     }
-    built.push({ text, tokens, firstWord, wordCount });
+    if (tag === "em" || tag === "i") {
+      styles.push("italic");
+    }
+    if (tag === "u") {
+      styles.push("underline");
+    }
+    if (tag === "mark") {
+      styles.push("highlight");
+    }
+    current = current.parentElement;
   }
-  return { paragraphs: built, expected };
+  return [...new Set(styles)];
+}
+
+function spansFromBlock(element: Element): ScriptSpan[] {
+  const spans: ScriptSpan[] = [];
+  const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const text = node.textContent ?? "";
+    if (text.length > 0) {
+      spans.push({ text, seat: "narration", style: styleFromAncestors(node) });
+    }
+    node = walker.nextNode();
+  }
+  return spans;
+}
+
+export function spansFromHtml(html: string): ScriptSpan[] {
+  const doc = new DOMParser().parseFromString(html || "", "text/html");
+  const nodes = Array.from(doc.body.querySelectorAll(BLOCK_SELECTOR));
+  const blocks = nodes.length > 0 ? nodes : doc.body.textContent?.trim() ? [doc.body] : [];
+  const spans: ScriptSpan[] = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const piece = spansFromBlock(blocks[index]);
+    if (piece.length === 0) {
+      continue;
+    }
+    if (spans.length > 0) {
+      spans.push({ text: "\n", seat: "narration", style: [] });
+    }
+    spans.push(...piece);
+  }
+  return spans;
+}
+
+export function buildBoothScript(paragraphs: string[], glossary: GlossaryEntry[] = []) {
+  return boothScriptFromParagraphs(paragraphs, glossary);
+}
+
+export function buildBoothScriptFromHtml(html: string, glossary: GlossaryEntry[] = []) {
+  return boothScriptFromSpans(decorateScriptSpans(spansFromHtml(html), glossary));
 }
 
 export function coverageOf(resumeWordIndex: number, total: number): number {
