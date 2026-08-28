@@ -46,6 +46,7 @@ import {
   type RecordedWord,
 } from "./store";
 import { readPromptTheme, readReadingFont } from "./reading-prefs";
+import { pickupIsSuppressed } from "./suppress";
 import {
   buildBoothScript,
   concatWav,
@@ -348,6 +349,9 @@ export function RecordScreen({
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
+      if (pickupIsSuppressed(pickup, projectRef.current.suppressedWords)) {
+        return;
+      }
       pickupsRef.current = mergeLivePickup(pickupsRef.current, pickup);
       onChange(applyChapterPickup(projectRef.current, chapterId, pickup));
     },

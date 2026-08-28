@@ -12,6 +12,7 @@ import {
 import { GlossaryPanel } from "./GlossaryPanel";
 import { RoomCheck } from "./RoomCheck";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
+import { dropSuppressedPickups } from "./suppress";
 import {
   applyChapterPickups,
   applyOriginalTape,
@@ -147,6 +148,7 @@ export function ChapterScreen({
           transcript: result.words ?? [],
           durationSeconds: (result.words ?? []).reduce((max, word) => Math.max(max, word.end), 1),
           ...proofAlignOptions(),
+          suppressedWords: project.suppressedWords,
         });
         pickups = preservePickupWorkflow(current.pickups ?? [], aligned.pickups);
         const mismatches = pickups.filter((pickup) => pickup.kind !== "pause" && pickup.status === "open").length;
@@ -156,6 +158,7 @@ export function ChapterScreen({
             : `${mismatches} word ${mismatches === 1 ? "mismatch" : "mismatches"} filed.`,
         );
       }
+      pickups = dropSuppressedPickups(pickups, project.suppressedWords) ?? [];
       const working = await copyOriginalToWorking(project, chapterId);
       if (!working) {
         throw new Error("Could not create the working file from original.");

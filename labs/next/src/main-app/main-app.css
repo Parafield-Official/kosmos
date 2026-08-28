@@ -1159,6 +1159,36 @@
   align-items: center;
 }
 
+.ma-suppress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.ma-suppress-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.35rem 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ma-suppress-list li span {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.ma-review-note {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
 .ma-room {
   display: grid;
   gap: 0.7rem;

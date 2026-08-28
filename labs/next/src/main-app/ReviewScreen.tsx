@@ -4,6 +4,7 @@ import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
 import { PunchRecorder } from "./PunchRecorder";
 import { applyPunchRecording, undoLatestChapterPunch } from "./punch";
+import { addSuppressedWord, suppressLabel } from "./suppress";
 import {
   applyChapterPickups,
   readChapterAudioUrl,
@@ -36,6 +37,7 @@ export function ReviewScreen({
   const [sessionTotal, setSessionTotal] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const originalUrl = useRef<string | null>(null);
   const workingUrl = useRef<string | null>(null);
@@ -143,6 +145,16 @@ export function ReviewScreen({
     );
   }
 
+  function neverFlag(pickup: ChapterPickup) {
+    const word = suppressLabel(pickup);
+    if (!word) {
+      setNotice("There is no word here to filter.");
+      return;
+    }
+    onChange(addSuppressedWord(project, word));
+    setNotice(`“${word}” is filtered for the whole book.`);
+  }
+
   function startSession() {
     const session = buildPickupSession(current.pickups ?? []);
     const first = session.items[0];
@@ -221,6 +233,7 @@ export function ReviewScreen({
       </header>
 
       {error && !punching ? <p className="ma-error">{error}</p> : null}
+      {notice ? <p className="ma-review-note">{notice}</p> : null}
 
       {open.length === 0 ? (
         <p className="ma-chapter-empty">
@@ -241,6 +254,7 @@ export function ReviewScreen({
               onPlayWorking={() => playRange("working", pickup)}
               onKeep={() => patchPickup(pickup, "ignored")}
               onFixed={() => patchPickup(pickup, "done")}
+              onNeverFlag={pickup.kind === "pause" ? undefined : () => neverFlag(pickup)}
               onPunch={() => {
                 setSessionIds(null);
                 setPunching(pickup);
@@ -295,6 +309,7 @@ function PickupRow({
   onPlayWorking,
   onKeep,
   onFixed,
+  onNeverFlag,
   onPunch,
 }: {
   pickup: ChapterPickup;
@@ -305,6 +320,7 @@ function PickupRow({
   onPlayWorking: () => void;
   onKeep: () => void;
   onFixed: () => void;
+  onNeverFlag?: () => void;
   onPunch: () => void;
 }) {
   const kind = pickupKindPresentation(pickup.kind);
@@ -349,6 +365,11 @@ function PickupRow({
         <button type="button" className="btn btn-sm" onClick={onPunch}>
           Punch-in
         </button>
+        {onNeverFlag && suppressLabel(pickup) ? (
+          <button type="button" className="btn btn-sm btn-clear" onClick={onNeverFlag}>
+            Never flag “{suppressLabel(pickup)}”
+          </button>
+        ) : null}
       </div>
     </li>
   );

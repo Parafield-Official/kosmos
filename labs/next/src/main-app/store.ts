@@ -8,6 +8,7 @@
  */
 
 import type { GlossaryEntry, Pickup } from "../../../../src/core/project/types";
+import { normalizeProjectSettings } from "../../../../src/core/project/settings";
 import { mergeLivePickup } from "../../../../src/core/teleprompter/live";
 
 const PROJECTS_KEY = "kosmos-projects";
@@ -108,6 +109,8 @@ export interface BookProject {
   glossaryDismissed?: string[];
   /** Last 10–20s room-tone measurement. */
   roomCheck?: RoomCheckReport;
+  /** Proof words this book should never flag. Set from Review. */
+  suppressedWords?: string[];
 }
 
 function now(): string {
@@ -238,6 +241,11 @@ function normalizeDismissed(raw: unknown): string[] | undefined {
   return words;
 }
 
+function normalizeSuppressedField(raw: unknown): string[] | undefined {
+  const words = normalizeProjectSettings({ suppressed_words: raw }).suppressed_words;
+  return words.length ? words : undefined;
+}
+
 function normalizeRoomCheck(raw: unknown): RoomCheckReport | undefined {
   if (!raw || typeof raw !== "object") {
     return undefined;
@@ -313,6 +321,7 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
     glossary: normalizeGlossary(raw.glossary),
     glossaryDismissed: normalizeDismissed(raw.glossaryDismissed),
     roomCheck: normalizeRoomCheck(raw.roomCheck),
+    suppressedWords: normalizeSuppressedField(raw.suppressedWords),
   };
 }
 

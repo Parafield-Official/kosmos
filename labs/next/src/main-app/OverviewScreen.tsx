@@ -9,6 +9,7 @@ import {
 } from "./glossary";
 import { GlossaryPanel } from "./GlossaryPanel";
 import { exportBookPack, masterChapterWorking } from "./punch";
+import { removeSuppressedWord } from "./suppress";
 import {
   bookInitials,
   bookProgress,
@@ -255,6 +256,36 @@ export function OverviewScreen({
           onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
           onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
         />
+      ) : null}
+
+      {project.chapters.length > 0 ? (
+        <section className="ma-glossary ma-suppress" aria-label="Words this book never flags">
+          <header className="ma-glossary-head">
+            <h2>Words this book never flags</h2>
+            <p>
+              {(project.suppressedWords ?? []).length === 0
+                ? "None yet. On a Review flag, tap Never flag this word."
+                : "Skipped on proof and while recording. Remove one to flag it again after the next proof."}
+            </p>
+          </header>
+          {(project.suppressedWords ?? []).length > 0 ? (
+            <ul className="ma-suppress-list">
+              {(project.suppressedWords ?? []).map((word) => (
+                <li key={word}>
+                  <span>{word}</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-clear"
+                    aria-label={`Flag ${word} again`}
+                    onClick={() => onChange(removeSuppressedWord(project, word))}
+                  >
+                    Flag again
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
       ) : null}
 
       <div className="ma-chapter-list">

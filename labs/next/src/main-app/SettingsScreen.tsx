@@ -303,6 +303,16 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <FilterIcon />
+            <strong>Never-flagged words</strong>
+          </div>
+          <p className="ma-set-sub">
+            Per book, not app-wide. On a Review flag, tap Never flag this word. The list lives on the book overview.
+          </p>
+        </div>
+
         <h2 className="ma-set-section">Sound &amp; mastering</h2>
 
         <div className="ma-set-item">
@@ -484,6 +494,19 @@ function ShakyIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function FilterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h16M7 12h10M10 18h4"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
       />
     </svg>
   );
