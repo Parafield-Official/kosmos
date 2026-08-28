@@ -46,6 +46,8 @@ export interface ChapterPunch {
   path: string;
   t_start: number;
   t_end: number;
+  /** How many seconds the working file grew or shrank when this punch landed. */
+  durationDelta?: number;
   trim_silence?: boolean;
   edit_status: "applied" | "reverted";
   expected?: string;
@@ -56,6 +58,13 @@ export interface ChapterPunch {
 /** Word-clock for the original booth tape so Continue can resume in place. */
 export interface RecordedWord {
   index: number;
+  start: number;
+  end: number;
+}
+
+/** Word clock from proof or booth, without a manuscript index. */
+export interface RecordedWordTiming {
+  text: string;
   start: number;
   end: number;
 }
@@ -78,6 +87,10 @@ export interface BookChapter {
   resumeWordIndex: number;
   /** Aligned words on the original tape. */
   recordedWords?: RecordedWord[];
+  /** Whisper or booth word timings on the original tape, used to highlight-redo. */
+  proofTranscript?: RecordedWordTiming[];
+  /** Last ACX check on the working file. */
+  acxTrafficLight?: "green" | "yellow" | "red";
   /** Live and proof flags on this chapter. */
   pickups?: ChapterPickup[];
   /** Punch clips applied onto the working file (history for rebuild/undo). */
@@ -163,6 +176,25 @@ function normalizePickups(raw: unknown, chapterId: string): ChapterPickup[] | un
   return pickups.length ? pickups : undefined;
 }
 
+function normalizeProofTranscript(raw: unknown): RecordedWordTiming[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  const words = raw.flatMap((item) => {
+    if (!item || typeof item !== "object") {
+      return [];
+    }
+    const row = item as Partial<RecordedWordTiming>;
+    const start = Number(row.start);
+    const end = Number(row.end);
+    if (typeof row.text !== "string" || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return [];
+    }
+    return [{ text: row.text, start, end } satisfies RecordedWordTiming];
+  });
+  return words.length ? words : undefined;
+}
+
 function normalizePunches(raw: unknown, chapterId: string): ChapterPunch[] | undefined {
   if (!Array.isArray(raw)) {
     return undefined;
@@ -180,6 +212,9 @@ function normalizePunches(raw: unknown, chapterId: string): ChapterPunch[] | und
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
       return [];
     }
+    const deltaRaw = (row as { durationDelta?: number; duration_delta?: number }).durationDelta
+      ?? (row as { duration_delta?: number }).duration_delta;
+    const durationDelta = Number(deltaRaw);
     return [{
       id: row.id,
       chapter_id: typeof row.chapter_id === "string" ? row.chapter_id : chapterId,
@@ -187,6 +222,7 @@ function normalizePunches(raw: unknown, chapterId: string): ChapterPunch[] | und
       path: row.path,
       t_start: start,
       t_end: end,
+      durationDelta: Number.isFinite(durationDelta) ? durationDelta : undefined,
       trim_silence: row.trim_silence !== false,
       edit_status: row.edit_status === "reverted" ? "reverted" : "applied",
       expected: typeof row.expected === "string" ? row.expected : undefined,
@@ -295,6 +331,8 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
             (word) => word && typeof word.index === "number" && Number.isFinite(word.start),
           )
         : undefined;
+      const proofTranscript = normalizeProofTranscript(chapter?.proofTranscript);
+      const light = chapter?.acxTrafficLight;
       return {
         id: typeof chapter?.id === "string" ? chapter.id : uid("ch"),
         title: typeof chapter?.title === "string" ? chapter.title : "Untitled chapter",
@@ -306,6 +344,8 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
         hasWorkingAudio: Boolean(workingFile) || Boolean(chapter?.hasWorkingAudio),
         resumeWordIndex: typeof chapter?.resumeWordIndex === "number" ? chapter.resumeWordIndex : 0,
         recordedWords,
+        proofTranscript,
+        acxTrafficLight: light === "green" || light === "yellow" || light === "red" ? light : undefined,
         pickups: normalizePickups(chapter?.pickups, typeof chapter?.id === "string" ? chapter.id : ""),
         punches: normalizePunches(chapter?.punches, typeof chapter?.id === "string" ? chapter.id : ""),
         proofed: Boolean(chapter?.proofed),
@@ -896,6 +936,7 @@ export function applyOriginalTape(
     recordedPct: number;
     resumeWordIndex: number;
     recordedWords?: RecordedWord[];
+    freshTape?: boolean;
   },
 ): BookProject {
   return {
@@ -904,6 +945,7 @@ export function applyOriginalTape(
       if (chapter.id !== chapterId) {
         return chapter;
       }
+      const reset = Boolean(patch.freshTape);
       return {
         ...chapter,
         originalFile: patch.file ?? chapter.originalFile,
@@ -911,6 +953,10 @@ export function applyOriginalTape(
         recordedPct: Math.min(1, Math.max(0, patch.recordedPct)),
         resumeWordIndex: Math.max(0, patch.resumeWordIndex),
         recordedWords: patch.recordedWords ?? chapter.recordedWords,
+        proofTranscript: reset || patch.recordedWords ? undefined : chapter.proofTranscript,
+        acxTrafficLight: reset ? undefined : chapter.acxTrafficLight,
+        proofed: reset ? false : chapter.proofed,
+        mastered: reset ? false : chapter.mastered,
       };
     }),
   };
@@ -931,6 +977,8 @@ export function clearOriginalTape(project: BookProject, chapterId: string): Book
         recordedPct: 0,
         resumeWordIndex: 0,
         recordedWords: undefined,
+        proofTranscript: undefined,
+        acxTrafficLight: undefined,
         proofed: false,
         mastered: false,
       };
@@ -972,5 +1020,16 @@ export function applyChapterPunches(project: BookProject, chapterId: string, pun
   return {
     ...project,
     chapters: project.chapters.map((chapter) => (chapter.id === chapterId ? { ...chapter, punches } : chapter)),
+  };
+}
+
+export function patchChapter(
+  project: BookProject,
+  chapterId: string,
+  patch: Partial<BookChapter>,
+): BookProject {
+  return {
+    ...project,
+    chapters: project.chapters.map((chapter) => (chapter.id === chapterId ? { ...chapter, ...patch } : chapter)),
   };
 }

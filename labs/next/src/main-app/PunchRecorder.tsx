@@ -9,8 +9,8 @@ const MIC_KEY = "kosmos-booth-mic";
 const TARGET_RATE = 44_100;
 
 /**
- * Record a retake of one flagged line. The WAV is handed to Electron, which
- * splices it into the working file and leaves original alone.
+ * Record a retake of one line. Stop, hear the old stretch vs the new one in
+ * the chapter, then keep it or throw it away. Original tape stays untouched.
  */
 export function PunchRecorder({
   pickup,
@@ -18,6 +18,7 @@ export function PunchRecorder({
   busy,
   error,
   onCancel,
+  onPreview,
   onApply,
 }: {
   pickup: ChapterPickup;
@@ -25,21 +26,48 @@ export function PunchRecorder({
   busy?: boolean;
   error?: string | null;
   onCancel: () => void;
+  onPreview?: (wav: Uint8Array) => Promise<{ currentWavBase64: string; patchedWavBase64: string }>;
   onApply: (wav: Uint8Array) => void;
 }) {
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [level, setLevel] = useState(0);
+  const [pending, setPending] = useState<Uint8Array | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [clipsReady, setClipsReady] = useState(false);
+  const [playing, setPlaying] = useState<"current" | "patched" | null>(null);
   const chunksRef = useRef<Float32Array[]>([]);
   const countRef = useRef(0);
   const streamRef = useRef<MediaStream | null>(null);
   const ctxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const timerRef = useRef<number | null>(null);
+  const currentUrl = useRef<string | null>(null);
+  const patchedUrl = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const kind = pickupKindPresentation(pickup.kind);
   const bounds = pickupLineBounds(pickup);
 
-  useEffect(() => () => stopCapture(), []);
+  useEffect(() => () => {
+    stopCapture();
+    stopPlayback();
+    revokePreview();
+  }, []);
+
+  function revokePreview() {
+    if (currentUrl.current) URL.revokeObjectURL(currentUrl.current);
+    if (patchedUrl.current) URL.revokeObjectURL(patchedUrl.current);
+    currentUrl.current = null;
+    patchedUrl.current = null;
+    setClipsReady(false);
+  }
+
+  function stopPlayback() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    setPlaying(null);
+  }
 
   function stopCapture() {
     setRecording(false);
@@ -56,6 +84,10 @@ export function PunchRecorder({
   }
 
   async function startCapture() {
+    stopPlayback();
+    revokePreview();
+    setPending(null);
+    setPreviewError(null);
     chunksRef.current = [];
     countRef.current = 0;
     setSeconds(0);
@@ -108,7 +140,7 @@ export function PunchRecorder({
     }
   }
 
-  function finish() {
+  async function finish() {
     const total = countRef.current;
     const samples = new Float32Array(total);
     let offset = 0;
@@ -120,7 +152,37 @@ export function PunchRecorder({
     if (samples.length < TARGET_RATE * 0.2) {
       return;
     }
-    onApply(encodeWavPcm16(samples, TARGET_RATE, 1));
+    const wav = encodeWavPcm16(samples, TARGET_RATE, 1);
+    setPending(wav);
+    if (!onPreview) {
+      return;
+    }
+    setPreviewing(true);
+    setPreviewError(null);
+    try {
+      const clip = await onPreview(wav);
+      revokePreview();
+      currentUrl.current = wavUrl(clip.currentWavBase64);
+      patchedUrl.current = wavUrl(clip.patchedWavBase64);
+      setClipsReady(true);
+    } catch (reason) {
+      setPreviewError(reason instanceof Error ? reason.message : "Couldn't build a before/after clip.");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function play(which: "current" | "patched") {
+    const url = which === "current" ? currentUrl.current : patchedUrl.current;
+    if (!url) {
+      return;
+    }
+    stopPlayback();
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setPlaying(which);
+    audio.addEventListener("ended", () => setPlaying(null));
+    void audio.play().catch(() => setPlaying(null));
   }
 
   return (
@@ -139,32 +201,90 @@ export function PunchRecorder({
           <span>Expected</span>
           {pickup.line_text || pickup.expected || "—"}
         </p>
-        {pickup.heard ? (
+        {pickup.heard && pickup.heard !== pickup.expected ? (
           <p className="ma-punch-heard">
             <span>Heard</span>
             {pickup.heard}
           </p>
         ) : null}
-        <div className="ma-punch-meter" aria-hidden="true">
-          <span style={{ transform: `scaleX(${level})` }} />
-        </div>
-        <p className="ma-punch-time">{seconds.toFixed(1)}s</p>
+
+        {pending ? (
+          <div className="ma-punch-compare">
+            <p className="ma-punch-compare-copy">
+              {previewing
+                ? "Building a before and after…"
+                : "Hear the old line, then this take, in the chapter. Keep it only if you like the new one."}
+            </p>
+            <div className="ma-dialog-actions">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!clipsReady || previewing}
+                onClick={() => play("current")}
+                aria-pressed={playing === "current"}
+              >
+                {playing === "current" ? "Playing old" : "Play as it is now"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!clipsReady || previewing}
+                onClick={() => play("patched")}
+                aria-pressed={playing === "patched"}
+              >
+                {playing === "patched" ? "Playing new" : "Play with this take"}
+              </button>
+            </div>
+            {previewError ? <p className="ma-error">{previewError}</p> : null}
+          </div>
+        ) : (
+          <>
+            <div className="ma-punch-meter" aria-hidden="true">
+              <span style={{ transform: `scaleX(${level})` }} />
+            </div>
+            <p className="ma-punch-time">{seconds.toFixed(1)}s</p>
+          </>
+        )}
+
         {error ? <p className="ma-error">{error}</p> : null}
         <div className="ma-dialog-actions">
           <button type="button" className="btn btn-clear" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
           {recording ? (
-            <button type="button" className="btn" onClick={finish} disabled={busy}>
-              Stop and apply
+            <button type="button" className="btn" onClick={() => void finish()} disabled={busy}>
+              Stop
             </button>
+          ) : pending ? (
+            <>
+              <button type="button" className="btn btn-clear" onClick={() => void startCapture()} disabled={busy || previewing}>
+                Record again
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => onApply(pending)}
+                disabled={busy || previewing}
+              >
+                {busy ? "Saving…" : "Keep this take"}
+              </button>
+            </>
           ) : (
             <button type="button" className="btn" onClick={() => void startCapture()} disabled={busy}>
-              {busy ? "Applying…" : "Record"}
+              Record
             </button>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function wavUrl(base64: string): string {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
 }

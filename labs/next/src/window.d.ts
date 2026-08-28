@@ -42,6 +42,7 @@ export interface ChapterPunchDto {
   expected?: string;
   heard?: string;
   created_at?: string;
+  duration_delta?: number;
 }
 
 declare global {
@@ -160,6 +161,20 @@ declare global {
         appliedEnd?: number;
         durationDelta?: number;
       }>;
+      previewPunch?: (payload: {
+        folder: string;
+        originalFile: string;
+        workingFile?: string;
+        tStart: number;
+        tEnd: number;
+        wavBase64: string;
+        trimSilence?: boolean;
+      }) => Promise<{
+        ok: boolean;
+        reason?: string;
+        currentWavBase64?: string;
+        patchedWavBase64?: string;
+      }>;
       undoLatestPunch?: (payload: {
         folder: string;
         chapterId: string;
@@ -172,6 +187,10 @@ declare global {
         workingFile: string;
         targetRmsDbfs?: number;
       }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; rms_dbfs?: number }>;
+      measureChapter?: (payload: {
+        folder: string;
+        file: string;
+      }) => Promise<{ ok: boolean; reason?: string; report?: import("../../../src/core/acx/measure").AcxReport }>;
       exportDelivery?: (payload: {
         folder: string;
         chapters: Array<{

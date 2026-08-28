@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { pickupKindPresentation } from "../../../../src/core/proof/pickup-display";
 import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
+import { paragraphsFromHtml } from "./booth";
 import { PunchRecorder } from "./PunchRecorder";
-import { applyPunchRecording, undoLatestChapterPunch } from "./punch";
+import { applyPunchRecording, previewPunchRecording, undoLatestChapterPunch } from "./punch";
+import { ReviewScript } from "./ReviewScript";
+import { workingChapterTranscript } from "./review-timing";
 import { addSuppressedWord, suppressLabel } from "./suppress";
 import {
   applyChapterPickups,
   readChapterAudioUrl,
+  readChapterContent,
   type BookProject,
   type ChapterPickup,
 } from "./store";
@@ -39,9 +43,22 @@ export function ReviewScreen({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [manuscript, setManuscript] = useState("");
   const originalUrl = useRef<string | null>(null);
   const workingUrl = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readChapterContent(project, chapterId).then((html) => {
+      if (!cancelled) {
+        setManuscript(paragraphsFromHtml(html).join("\n"));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [project, chapterId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +99,11 @@ export function ReviewScreen({
       }
     };
   }, [chapter, project]);
+
+  const transcript = useMemo(
+    () => (chapter && manuscript ? workingChapterTranscript(manuscript, chapter) : []),
+    [chapter, manuscript],
+  );
 
   if (!chapter) {
     return (
@@ -235,6 +257,20 @@ export function ReviewScreen({
       {error && !punching ? <p className="ma-error">{error}</p> : null}
       {notice ? <p className="ma-review-note">{notice}</p> : null}
 
+      {manuscript ? (
+        <ReviewScript
+          chapterId={chapterId}
+          manuscript={manuscript}
+          transcript={transcript}
+          sourceKind={chapter.recordedWords?.length ? "live" : "take"}
+          onRedo={(pickup) => {
+            setSessionIds(null);
+            setPunching(pickup);
+            setError(null);
+          }}
+        />
+      ) : null}
+
       {open.length === 0 ? (
         <p className="ma-chapter-empty">
           {resolved.length
@@ -285,7 +321,7 @@ export function ReviewScreen({
       {punching ? (
         <PunchRecorder
           pickup={punching}
-          progress={sessionIds ? `Flag ${sessionIndex + 1} of ${sessionTotal}` : undefined}
+          progress={sessionIds ? `Flag ${sessionIndex + 1} of ${sessionTotal}` : "Record this line"}
           busy={busy}
           error={error}
           onCancel={() => {
@@ -293,6 +329,7 @@ export function ReviewScreen({
             setSessionIds(null);
             setError(null);
           }}
+          onPreview={(wav) => previewPunchRecording(project, chapterId, punching, wav)}
           onApply={(wav) => void applyWav(wav)}
         />
       ) : null}

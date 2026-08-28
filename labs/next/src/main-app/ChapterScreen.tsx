@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { AcxReport } from "../../../../src/core/acx/measure";
 import { alignTranscript, preservePickupWorkflow } from "../../../../src/core/proof/align";
 import { paragraphsFromHtml } from "./booth";
+import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { proofAlignOptions } from "./engine-prefs";
 import {
   addGlossaryWord,
@@ -12,6 +14,7 @@ import {
 import { GlossaryPanel } from "./GlossaryPanel";
 import { RoomCheck } from "./RoomCheck";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
+import { transcriptFromRecordedWords } from "./review-timing";
 import { dropSuppressedPickups } from "./suppress";
 import {
   applyChapterPickups,
@@ -19,6 +22,8 @@ import {
   applyWorkingTape,
   chapterStage,
   copyOriginalToWorking,
+  patchChapter,
+  readChapterAudioUrl,
   readChapterContent,
   writeChapterAudio,
   type BookProject,
@@ -61,6 +66,10 @@ export function ChapterScreen({
   const [masterError, setMasterError] = useState<string | null>(null);
   const [mastering, setMastering] = useState(false);
   const [chapterText, setChapterText] = useState("");
+  const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const checkAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -109,6 +118,7 @@ export function ChapterScreen({
           file: saved,
           recordedPct: 1,
           resumeWordIndex: current.wordCount,
+          freshTape: true,
         }),
       );
     } catch {
@@ -129,6 +139,7 @@ export function ChapterScreen({
       const html = await readChapterContent(project, chapterId);
       const manuscript = paragraphsFromHtml(html).join("\n");
       let pickups = current.pickups ?? [];
+      let proofTranscript = transcriptFromRecordedWords(manuscript, current.recordedWords);
       if (current.recordedWords && current.recordedWords.length > 0) {
         setProofNote("Booth tape is mapped to the manuscript. Live flags are kept; the working file is a copy of original.");
       } else {
@@ -142,6 +153,11 @@ export function ChapterScreen({
         if (!result.ok) {
           throw new Error(result.reason || "Could not transcribe the original tape.");
         }
+        proofTranscript = (result.words ?? []).map((word) => ({
+          text: word.text,
+          start: word.start,
+          end: word.end,
+        }));
         const aligned = alignTranscript({
           chapterId,
           manuscript,
@@ -166,7 +182,7 @@ export function ChapterScreen({
       onChange(
         applyWorkingTape(
           applyChapterPickups(
-            { ...project, chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, proofed: true } : item)) },
+            patchChapter(project, chapterId, { proofed: true, proofTranscript }),
             chapterId,
             pickups,
           ),
@@ -186,6 +202,7 @@ export function ChapterScreen({
     setMastering(true);
     try {
       onChange(await masterChapterWorking(project, chapterId));
+      setAcxReport(null);
     } catch (reason) {
       setMasterError(reason instanceof Error ? reason.message : "Mastering failed.");
     } finally {
@@ -197,9 +214,61 @@ export function ChapterScreen({
     setMasterError(null);
     try {
       onChange(await undoLatestChapterPunch(project, chapterId));
+      setAcxReport(null);
     } catch (reason) {
       setMasterError(reason instanceof Error ? reason.message : "Could not undo that punch.");
     }
+  }
+
+  async function checkAudio() {
+    const file = current.workingFile ?? current.originalFile;
+    if (!file || !project.folder || !window.kosmosNext?.measureChapter) {
+      setCheckError("Check audio needs the desktop app and a take.");
+      return;
+    }
+    setCheckError(null);
+    setChecking(true);
+    try {
+      const result = await window.kosmosNext.measureChapter({ folder: project.folder, file });
+      if (!result.ok || !result.report) {
+        throw new Error(result.reason || "Could not measure this chapter.");
+      }
+      setAcxReport(result.report);
+      onChange(patchChapter(project, chapterId, { acxTrafficLight: result.report.traffic_light }));
+    } catch (reason) {
+      setCheckError(reason instanceof Error ? reason.message : "Could not measure this chapter.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function listenQuiet() {
+    if (!acxReport) {
+      return;
+    }
+    const file = current.workingFile ?? current.originalFile;
+    if (!file) {
+      return;
+    }
+    checkAudioRef.current?.pause();
+    const url = await readChapterAudioUrl(project, file);
+    if (!url) {
+      return;
+    }
+    const range = quietListenRange(acxReport);
+    const audio = new Audio(url);
+    checkAudioRef.current = audio;
+    audio.currentTime = range.start;
+    const onTime = () => {
+      if (audio.currentTime >= range.end) {
+        audio.pause();
+        audio.removeEventListener("timeupdate", onTime);
+        URL.revokeObjectURL(url);
+      }
+    };
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(url));
+    void audio.play().catch(() => URL.revokeObjectURL(url));
   }
 
   const openFlags = (current.pickups ?? []).filter((pickup) => pickup.status === "open").length;
@@ -348,22 +417,45 @@ export function ChapterScreen({
           active={chapter.proofed && !chapter.mastered}
           done={chapter.mastered}
           locked={!chapter.proofed}
-          desc="Level and clean the chapter to spec. You can also master every chapter at once from the overview."
+          desc="Level and clean the chapter to spec. Check this file for a pass/fail before you export the whole book."
         >
           {chapter.proofed ? (
-            <div className="ma-step-actions">
-              <button
-                type="button"
-                className="btn btn-clear"
-                onClick={() => void runMaster()}
-                disabled={chapter.mastered || mastering}
-              >
-                {chapter.mastered ? "Mastered" : mastering ? "Mastering…" : "Master chapter"}
-              </button>
-            </div>
+            <>
+              <div className="ma-step-actions">
+                <button
+                  type="button"
+                  className="btn btn-clear"
+                  onClick={() => void runMaster()}
+                  disabled={chapter.mastered || mastering}
+                >
+                  {chapter.mastered ? "Mastered" : mastering ? "Mastering…" : "Master chapter"}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => void checkAudio()}
+                  disabled={checking}
+                >
+                  {checking ? "Measuring…" : "Check this audio"}
+                </button>
+              </div>
+              {chapter.acxTrafficLight && !acxReport ? (
+                <p className="ma-step-note">
+                  Last check: {chapter.acxTrafficLight === "green" ? "ready" : chapter.acxTrafficLight === "yellow" ? "close" : "needs a fix"}. Run it again after you master or punch.
+                </p>
+              ) : null}
+              {acxReport ? (
+                <ChapterMeter
+                  report={acxReport}
+                  masteringPlan={!chapter.mastered}
+                  onListenQuiet={() => void listenQuiet()}
+                />
+              ) : null}
+            </>
           ) : (
             <p className="ma-step-note">Finish proofreading first.</p>
           )}
+          {checkError ? <p className="ma-error">{checkError}</p> : null}
           {masterError ? <p className="ma-error">{masterError}</p> : null}
         </Step>
       </ol>

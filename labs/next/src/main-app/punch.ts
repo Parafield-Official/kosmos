@@ -68,6 +68,7 @@ export async function applyPunchRecording(
   if (!working) {
     throw new Error("Could not create the working file from original.");
   }
+  const existing = chapter.pickups ?? [];
   const bounds = pickupLineBounds(pickup);
   const result = await window.kosmosNext.applyPunch({
     folder: project.folder,
@@ -85,19 +86,24 @@ export async function applyPunchRecording(
   if (!result.ok || !result.workingFile) {
     throw new Error(result.reason || "Could not apply that punch.");
   }
-  const punches = (result.punches ?? []) as ChapterPunch[];
-  const patched = applyPunchToPickups(chapter.pickups ?? [], {
-    pickupIds,
-    start: result.appliedStart ?? bounds.start,
-    end: result.appliedEnd ?? bounds.end,
-    durationDelta: result.durationDelta ?? 0,
-  });
+  const punches = punchesFromResult(result.punches, chapterId);
+  const patched = applyPunchToPickups(
+    existing.some((item) => item.id === pickup.id) ? existing : [...existing, pickup],
+    {
+      pickupIds,
+      start: result.appliedStart ?? bounds.start,
+      end: result.appliedEnd ?? bounds.end,
+      durationDelta: result.durationDelta ?? 0,
+    },
+  );
   let next = applyWorkingTape(project, chapterId, result.workingFile);
   next = applyChapterPunches(next, chapterId, punches);
   next = applyChapterPickups(next, chapterId, patched);
   return {
     ...next,
-    chapters: next.chapters.map((item) => (item.id === chapterId ? { ...item, mastered: false } : item)),
+    chapters: next.chapters.map((item) =>
+      item.id === chapterId ? { ...item, mastered: false, acxTrafficLight: undefined } : item,
+    ),
   };
 }
 
@@ -120,10 +126,12 @@ export async function undoLatestChapterPunch(project: BookProject, chapterId: st
     throw new Error(result.reason || "Could not undo that punch.");
   }
   let next = applyWorkingTape(project, chapterId, result.workingFile);
-  next = applyChapterPunches(next, chapterId, (result.punches ?? []) as ChapterPunch[]);
+  next = applyChapterPunches(next, chapterId, punchesFromResult(result.punches, chapterId));
   return {
     ...next,
-    chapters: next.chapters.map((item) => (item.id === chapterId ? { ...item, mastered: false } : item)),
+    chapters: next.chapters.map((item) =>
+      item.id === chapterId ? { ...item, mastered: false, acxTrafficLight: undefined } : item,
+    ),
   };
 }
 
@@ -167,4 +175,64 @@ export async function exportBookPack(project: BookProject): Promise<BookProject>
     throw new Error(result.reason || "Export failed.");
   }
   return { ...project, completedAt: new Date().toISOString() };
+}
+
+export async function previewPunchRecording(
+  project: BookProject,
+  chapterId: string,
+  pickup: ChapterPickup,
+  wavBytes: Uint8Array,
+): Promise<{ currentWavBase64: string; patchedWavBase64: string }> {
+  const chapter = project.chapters.find((item) => item.id === chapterId);
+  if (!chapter?.originalFile || !project.folder || !window.kosmosNext?.previewPunch) {
+    throw new Error("A before/after listen needs the desktop app and an original take.");
+  }
+  const bounds = pickupLineBounds(pickup);
+  const result = await window.kosmosNext.previewPunch({
+    folder: project.folder,
+    originalFile: chapter.originalFile,
+    workingFile: chapter.workingFile,
+    tStart: bounds.start,
+    tEnd: bounds.end,
+    wavBase64: bytesToBase64(wavBytes),
+  });
+  if (!result.ok || !result.currentWavBase64 || !result.patchedWavBase64) {
+    throw new Error(result.reason || "Could not build a before/after clip.");
+  }
+  return { currentWavBase64: result.currentWavBase64, patchedWavBase64: result.patchedWavBase64 };
+}
+
+function punchesFromResult(
+  rows: Array<{
+    id: string;
+    chapter_id: string;
+    pickup_id?: string;
+    path: string;
+    t_start: number;
+    t_end: number;
+    trim_silence?: boolean;
+    edit_status?: string;
+    expected?: string;
+    heard?: string;
+    created_at?: string;
+    duration_delta?: number;
+  }> | undefined,
+  chapterId: string,
+): ChapterPunch[] {
+  return (rows ?? []).map((row) => ({
+    id: row.id,
+    chapter_id: row.chapter_id || chapterId,
+    pickup_id: row.pickup_id,
+    path: row.path,
+    t_start: row.t_start,
+    t_end: row.t_end,
+    durationDelta: Number.isFinite(Number(row.duration_delta ?? (row as { durationDelta?: number }).durationDelta))
+      ? Number(row.duration_delta ?? (row as { durationDelta?: number }).durationDelta)
+      : undefined,
+    trim_silence: row.trim_silence !== false,
+    edit_status: row.edit_status === "reverted" ? "reverted" : "applied",
+    expected: row.expected,
+    heard: row.heard,
+    created_at: row.created_at,
+  }));
 }

@@ -11,8 +11,10 @@ const { transcribeAudio, findLiveModel } = require("./asr.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const {
   applyPunch,
+  previewPunch,
   undoLatestPunch,
   masterWorkingFile,
+  measureChapterAudio,
   exportDeliveryPack,
   transcodeToWav,
   isWavBuffer,
@@ -1263,8 +1265,10 @@ app.whenReady().then(async () => {
     copyToWorking(payload?.folder, payload?.chapterId, payload?.file),
   );
   ipcMain.handle("labs:apply-punch", (_event, payload) => applyPunch(payload));
+  ipcMain.handle("labs:preview-punch", (_event, payload) => previewPunch(payload));
   ipcMain.handle("labs:undo-punch", (_event, payload) => undoLatestPunch(payload));
   ipcMain.handle("labs:chapter-master", (_event, payload) => masterWorkingFile(payload));
+  ipcMain.handle("labs:chapter-measure", (_event, payload) => measureChapterAudio(payload));
   ipcMain.handle("labs:delivery-export", (_event, payload) => exportDeliveryPack(payload));
   ipcMain.handle("labs:live-start", () => startLiveFollow());
   ipcMain.handle("labs:live-stop", () => stopLiveFollow());

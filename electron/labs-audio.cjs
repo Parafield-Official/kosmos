@@ -17,6 +17,7 @@ const {
   rebuildPunchTimeline,
   normalizePunchBounds,
   latestActivePunch,
+  buildPunchPreview,
 } = require("./punch.cjs");
 
 const MAX_AUDIO_SECONDS = 2 * 60 * 60;
@@ -395,6 +396,8 @@ async function applyPunch(payload) {
     if (hadWorking) {
       await fs.rm(rollbackAbsolute, { force: true }).catch(() => undefined);
     }
+    const durationDelta = (edited.length - current.length) / 44100;
+    nextPunch.duration_delta = durationDelta;
     return {
       ok: true,
       workingFile: destName,
@@ -402,7 +405,7 @@ async function applyPunch(payload) {
       punches: [...(payload.punches ?? []).filter((punch) => punch?.chapter_id === chapterId), nextPunch],
       appliedStart: punchBounds.start,
       appliedEnd: punchBounds.end,
-      durationDelta: (edited.length - current.length) / 44100,
+      durationDelta,
     };
   } catch (error) {
     await fs.rm(pickupClipPath(folder, clipName), { force: true }).catch(() => undefined);
@@ -729,10 +732,101 @@ async function exportDeliveryPack(payload) {
   }
 }
 
+/** Before/after clip around a punch, without writing the working file. */
+async function previewPunch(payload) {
+  const folder = payload?.folder;
+  const originalFile = payload?.originalFile;
+  const workingFile = payload?.workingFile;
+  if (typeof folder !== "string" || typeof originalFile !== "string") {
+    return { ok: false, reason: "A project folder and original tape are required." };
+  }
+  if (typeof payload?.wavBase64 !== "string" || payload.wavBase64.length < 44) {
+    return { ok: false, reason: "Punch recording did not contain a WAV file." };
+  }
+  if (!Number.isFinite(payload?.tStart) || !Number.isFinite(payload?.tEnd) || payload.tEnd <= payload.tStart) {
+    return { ok: false, reason: "Punch boundaries must be a valid time range." };
+  }
+
+  const audioCore = loadCoreModule("audio");
+  const spliceCore = loadCoreModule("splice");
+  const replacementBytes = Buffer.from(payload.wavBase64, "base64");
+  if (replacementBytes.length > MAX_RECORDER_WAV_BYTES) {
+    return { ok: false, reason: "Punch WAV is larger than Kosmos's supported audio limit." };
+  }
+
+  let replacementSamples;
+  try {
+    replacementSamples = punchSamplesFromWav(audioCore, spliceCore, replacementBytes, payload.trimSilence);
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error) };
+  }
+  if (!replacementSamples.length) {
+    return { ok: false, reason: "Punch WAV contains no audio samples." };
+  }
+
+  const originalAbsolute = audioPath(folder, originalFile);
+  const workingAbsolute = typeof workingFile === "string" && workingFile
+    ? audioPath(folder, workingFile)
+    : originalAbsolute;
+
+  let current;
+  try {
+    current = fsSync.existsSync(workingAbsolute)
+      ? await decodeMono44100(workingAbsolute)
+      : await decodeMono44100(originalAbsolute);
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error) };
+  }
+
+  try {
+    const preview = buildPunchPreview({
+      current,
+      replacement: replacementSamples,
+      sampleRate: 44100,
+      startSeconds: payload.tStart,
+      endSeconds: payload.tEnd,
+      contextSeconds: 3,
+      splicePunch: spliceCore.splicePunch,
+    });
+    return {
+      ok: true,
+      currentWavBase64: Buffer.from(audioCore.encodeWavPcm16(preview.currentContext, 44100, 1)).toString("base64"),
+      patchedWavBase64: Buffer.from(audioCore.encodeWavPcm16(preview.patchedContext, 44100, 1)).toString("base64"),
+    };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error) };
+  }
+}
+
+/** ACX traffic-light report for a chapter working (or original) file. */
+async function measureChapterAudio(payload) {
+  const folder = payload?.folder;
+  const file = payload?.file;
+  if (typeof folder !== "string" || typeof file !== "string") {
+    return { ok: false, reason: "A chapter audio file is required." };
+  }
+  try {
+    const decoded = await decodeAudioPcm(audioPath(folder, file));
+    const masterCore = loadCoreModule("master");
+    const report = masterCore.measurePcm({
+      samples: float32View(decoded.pcm),
+      sampleRate: decoded.sampleRate,
+      channels: decoded.channels,
+      format: decoded.format,
+      bitrate_kbps: decoded.bitrateKbps,
+    }, { preset: masterCore.resolvePreset("acx") });
+    return { ok: true, report };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error) };
+  }
+}
+
 module.exports = {
   applyPunch,
+  previewPunch,
   undoLatestPunch,
   masterWorkingFile,
+  measureChapterAudio,
   exportDeliveryPack,
   transcodeToWav,
   isWavBuffer,
