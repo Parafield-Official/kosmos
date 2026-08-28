@@ -129,8 +129,13 @@ export function extractGlossaryCandidates(
     if (unusual) {
       current.unusualFrequency += 1;
     }
-    if ([...token.raw].some((character) => (character.codePointAt(0) ?? 0) > 0x7f)) {
-      current.nonAsciiFrequency += 1;
+    if (token.raw.length > 0) {
+      for (let i = 0; i < token.raw.length; i += 1) {
+        if ((token.raw.codePointAt(i) ?? 0) > 0x7f) {
+          current.nonAsciiFrequency += 1;
+          break;
+        }
+      }
     }
     if (token.raw.length > 1 && token.raw === token.raw.toLocaleUpperCase("en-US") && token.raw !== token.raw.toLocaleLowerCase("en-US")) {
       current.acronymFrequency += 1;
@@ -557,10 +562,13 @@ function normalizeToken(raw: string): string {
 }
 
 function isSentenceStart(text: string, start: number): boolean {
-  const before = text.slice(0, start);
+  // Only the few characters before this token matter. Slicing the whole
+  // prefix is O(n²) across a novel and freezes the UI on open.
+  const from = Math.max(0, start - 32);
+  const before = text.slice(from, start);
   const withoutWhitespace = before.replace(/\s+$/u, "");
   if (withoutWhitespace.length === 0) {
-    return true;
+    return from === 0;
   }
   const last = withoutWhitespace.at(-1) ?? "";
   if (/[.!?。！？:：—–]/.test(last)) {
@@ -572,7 +580,7 @@ function isSentenceStart(text: string, start: number): boolean {
   // Only an opening quote starts a sentence. A closer after "then," does not.
   const beforeQuote = withoutWhitespace.slice(0, -1).replace(/\s+$/u, "");
   if (beforeQuote.length === 0) {
-    return true;
+    return from === 0;
   }
   const previous = beforeQuote.at(-1) ?? "";
   return /[.!?。！？:：—–]/.test(previous);

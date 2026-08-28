@@ -91,8 +91,21 @@ export async function ensureBookGlossary(project: BookProject): Promise<BookProj
   for (const chapter of project.chapters) {
     const html = await readChapterContent(project, chapter.id);
     texts.push(paragraphsFromHtml(html).join("\n"));
+    await yieldPaint();
   }
+  await yieldPaint();
   return scanGlossaryFromManuscript(project, texts.join("\n\n"));
+}
+
+function yieldPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    const later = () => window.setTimeout(resolve, 0);
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(later);
+      return;
+    }
+    later();
+  });
 }
 
 export function addGlossaryWord(

@@ -310,6 +310,16 @@ describe("offline glossary candidates", () => {
     ]);
   });
 
+  it("scans a novel-length manuscript without quadratic freeze", () => {
+    const sentence = "The rain stopped. Elena said hello to Kael. ";
+    const repeats = 12_000;
+    const text = sentence.repeat(repeats);
+    const started = Date.now();
+    const candidates = extractGlossaryCandidates(text);
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(candidates.find((candidate) => candidate.spelling === "Elena")?.frequency).toBe(repeats);
+  });
+
   it("chooses the next available generated user ID after entries have been removed", () => {
     const first = addGlossaryEntry([], "Elena");
     const second = addGlossaryEntry(first, "Kael");

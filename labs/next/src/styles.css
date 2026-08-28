@@ -250,6 +250,11 @@ button {
     height 520ms var(--ease);
 }
 
+.viewport[data-place="app"] .glass-backdrop {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .viewport[data-place="welcome"] .glass-mesh {
   opacity: 0.35;
 }

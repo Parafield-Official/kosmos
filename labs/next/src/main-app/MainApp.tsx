@@ -135,6 +135,9 @@ export function MainApp() {
       const manuscript = result.contents
         .map((item) => paragraphsFromHtml(item.html).join("\n"))
         .join("\n\n");
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => window.setTimeout(resolve, 0));
+      });
       const saved = await persistBook(scanGlossaryFromManuscript(next, manuscript));
       setScreen((current) =>
         current.name === "overview" && current.project.id === saved.id

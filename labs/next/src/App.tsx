@@ -204,7 +204,7 @@ export function App() {
       data-window-expanded={windowChrome.expanded ? "true" : "false"}
       style={electron ? undefined : { width: size.width, height: size.height }}
     >
-      <GlassMaterial />
+      <GlassMaterial animate={place !== "app"} />
       <div className="drag-strip drag-strip-start" aria-hidden="true" />
       <div className="drag-strip drag-strip-end" aria-hidden="true" />
       {showTrafficGlass ? <TrafficGlass hosted={hosted} /> : null}
@@ -231,13 +231,13 @@ function TrafficGlass({ hosted }: { hosted: boolean }) {
   );
 }
 
-function GlassMaterial() {
+function GlassMaterial({ animate }: { animate: boolean }) {
   const meshRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!meshRef.current || prefersReducedMotion()) return;
+    if (!animate || !meshRef.current || prefersReducedMotion()) return;
     return startMeshFlow(meshRef.current);
-  }, []);
+  }, [animate]);
 
   return (
     <div className="glass" aria-hidden="true">

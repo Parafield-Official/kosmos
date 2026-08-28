@@ -530,7 +530,7 @@ async function createWorkspaceProject(input) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project, null, 2), "utf8");
+  await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project), "utf8");
   return { ...project, folder: dir };
 }
 
@@ -540,7 +540,7 @@ async function saveWorkspaceProject(project) {
   }
   const { folder, ...rest } = project;
   const next = { ...rest, updatedAt: new Date().toISOString() };
-  await fs.writeFile(path.join(folder, PROJECT_MARKER), JSON.stringify(next, null, 2), "utf8");
+  await fs.writeFile(path.join(folder, PROJECT_MARKER), JSON.stringify(next), "utf8");
   return { ...next, folder };
 }
 

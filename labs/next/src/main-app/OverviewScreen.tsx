@@ -91,13 +91,16 @@ export function OverviewScreen({
     if (project.glossary !== undefined) {
       return;
     }
-    void ensureBookGlossary(project).then((next) => {
-      if (alive && next) {
-        onChange(next);
-      }
-    });
+    const timer = window.setTimeout(() => {
+      void ensureBookGlossary(project).then((next) => {
+        if (alive && next) {
+          onChange(next);
+        }
+      });
+    }, 0);
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
   }, [project.id]);
 
