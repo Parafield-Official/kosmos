@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { exportBookPack, masterChapterWorking } from "./punch";
 import {
   bookInitials,
@@ -8,6 +9,28 @@ import {
   type BookProject,
   type ChapterStage,
 } from "./store";
+
+/** Aggregate book analysis shown in the overview hero: words, run time, recorded. */
+function bookStats(chapters: BookChapter[]): {
+  words: number;
+  readTime: string;
+  recorded: number;
+} {
+  let words = 0;
+  let minutes = 0;
+  let recorded = 0;
+  for (const chapter of chapters) {
+    const count = Math.max(0, chapter.wordCount || 0);
+    words += count;
+    minutes += estimateDurationMinutes(count);
+    if (chapter.hasOriginalAudio) {
+      recorded += 1;
+    }
+  }
+  const hours = minutes / 60;
+  const readTime = hours >= 1 ? `${hours.toFixed(1)} hr` : `${Math.max(1, Math.round(minutes))} min`;
+  return { words, readTime, recorded };
+}
 
 const STAGE_LABEL: Record<ChapterStage, string> = {
   blank: "Not started",
@@ -25,7 +48,9 @@ export function OverviewScreen({
   onRead,
   onAddChapter,
   onAnalyze,
+  onChooseManuscript,
   onChange,
+  analyzeError,
 }: {
   project: BookProject;
   onBack: () => void;
@@ -34,14 +59,18 @@ export function OverviewScreen({
   onRead: (chapterId: string) => void;
   onAddChapter: (title: string) => void;
   onAnalyze: () => void;
+  onChooseManuscript: (file: File) => void;
   onChange: (next: BookProject) => void;
+  analyzeError?: string | null;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const manuscriptRef = useRef<HTMLInputElement>(null);
 
   const progress = Math.round(bookProgress(project) * 100);
+  const stats = useMemo(() => bookStats(project.chapters), [project.chapters]);
   const allProofed = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.proofed);
   const allMastered = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered);
 
@@ -109,9 +138,28 @@ export function OverviewScreen({
             </span>
             <span className="ma-hero-progress-label">{progress}% complete</span>
           </div>
-          <p className="ma-hero-stat">
-            {project.chapters.length} {project.chapters.length === 1 ? "chapter" : "chapters"}
-          </p>
+          {project.chapters.length > 0 ? (
+            <dl className="ma-hero-stats">
+              <div>
+                <dt>Chapters</dt>
+                <dd>{project.chapters.length}</dd>
+              </div>
+              <div>
+                <dt>Words</dt>
+                <dd>{stats.words.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Read time</dt>
+                <dd>{stats.readTime}</dd>
+              </div>
+              <div>
+                <dt>Recorded</dt>
+                <dd>{stats.recorded}/{project.chapters.length}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="ma-hero-stat">No chapters yet</p>
+          )}
         </div>
       </div>
 
@@ -123,6 +171,22 @@ export function OverviewScreen({
               Read
             </button>
           ) : null}
+          <button type="button" className="btn" onClick={() => manuscriptRef.current?.click()}>
+            {project.manuscript ? "Choose different manuscript" : "Choose manuscript"}
+          </button>
+          <input
+            ref={manuscriptRef}
+            type="file"
+            accept=".txt,.md,.markdown,.docx,.epub,.pdf,text/plain"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.currentTarget.value = "";
+              if (file) {
+                onChooseManuscript(file);
+              }
+            }}
+          />
           {project.manuscript ? (
             <button type="button" className="btn" onClick={onAnalyze}>
               {project.chapters.length > 0 ? "Re-analyze" : "Analyze manuscript"}
@@ -145,6 +209,7 @@ export function OverviewScreen({
       </div>
 
       {actionError ? <p className="ma-error">{actionError}</p> : null}
+      {analyzeError ? <p className="ma-error">{analyzeError}</p> : null}
 
       <div className="ma-chapter-list">
         {project.chapters.map((chapter, index) => (
@@ -185,13 +250,18 @@ export function OverviewScreen({
           <div className="ma-chapter-empty">
             {project.manuscript ? (
               <>
-                <p>Manuscript uploaded. Analyze it to split the book into chapters.</p>
+                <p>Manuscript uploaded. Analyze it to split the book into chapters, or pick a different file.</p>
                 <button type="button" className="btn btn-clear" onClick={onAnalyze}>
                   Analyze manuscript
                 </button>
               </>
             ) : (
-              <p>No chapters yet. Add your first chapter to start recording.</p>
+              <>
+                <p>No chapters yet. Choose a manuscript to split into chapters, or add one by hand.</p>
+                <button type="button" className="btn btn-clear" onClick={() => manuscriptRef.current?.click()}>
+                  Choose manuscript
+                </button>
+              </>
             )}
           </div>
         ) : null}
@@ -213,6 +283,8 @@ function ChapterRow({
 }) {
   const stage = chapterStage(chapter);
   const pct = Math.round(Math.min(1, Math.max(0, chapter.recordedPct)) * 100);
+  const words = Math.max(0, chapter.wordCount || 0);
+  const overLength = estimateDurationMinutes(words) > MAX_CHAPTER_MINUTES;
 
   return (
     <div className="ma-chapter-row neu-card">
@@ -220,6 +292,17 @@ function ChapterRow({
         <span className="ma-chapter-index">{String(index).padStart(2, "0")}</span>
         <span className="ma-chapter-main">
           <span className="ma-chapter-title">{chapter.title}</span>
+          <span className="ma-chapter-meta">
+            <span>{words.toLocaleString()} words</span>
+            {overLength ? (
+              <span
+                className="ma-chapter-warn"
+                title={`Estimated over ${MAX_CHAPTER_MINUTES} minutes; ACX requires splitting this chapter.`}
+              >
+                Over {MAX_CHAPTER_MINUTES} min
+              </span>
+            ) : null}
+          </span>
           <span className="ma-progress">
             <span className="ma-progress-fill" style={{ width: `${pct}%` }} />
           </span>

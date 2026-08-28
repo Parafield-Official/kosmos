@@ -476,6 +476,20 @@
   max-width: 150px;
 }
 
+.ma-book-lift {
+  position: relative;
+  transform-origin: bottom center;
+  transition: transform 180ms var(--ease);
+}
+
+.ma-book:hover .ma-book-lift {
+  transform: translateY(-6px);
+}
+
+.ma-book:has(.ma-book-hit:active) .ma-book-lift {
+  transform: translateY(-2px) scale(0.99);
+}
+
 .ma-book-hit {
   display: block;
   width: 100%;
@@ -499,21 +513,15 @@
     0 2px 4px rgba(0, 0, 0, 0.4),
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     inset 7px 0 12px rgba(0, 0, 0, 0.4);
-  transition: transform 180ms var(--ease), box-shadow 220ms var(--ease);
-  transform-origin: bottom center;
+  transition: box-shadow 220ms var(--ease);
 }
 
-.ma-book-hit:hover .ma-book-cover {
-  transform: translateY(-6px);
+.ma-book:hover .ma-book-cover {
   box-shadow:
     0 22px 32px rgba(0, 0, 0, 0.55),
     0 3px 6px rgba(0, 0, 0, 0.45),
     inset 0 0 0 1px rgba(255, 255, 255, 0.14),
     inset 7px 0 12px rgba(0, 0, 0, 0.4);
-}
-
-.ma-book-hit:active .ma-book-cover {
-  transform: translateY(-2px) scale(0.99);
 }
 
 .ma-book-art {
@@ -611,18 +619,31 @@
   position: absolute;
   top: 0.35rem;
   right: 0.35rem;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.6rem;
   height: 1.6rem;
+  margin: 0;
+  padding: 0;
   border: 0;
   border-radius: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  line-height: 0;
   background: rgba(10, 8, 16, 0.6);
   color: rgba(255, 255, 255, 0.8);
   opacity: 0;
   cursor: pointer;
   z-index: 3;
   transition: opacity 140ms var(--ease), background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.ma-book-delete svg {
+  display: block;
+  flex-shrink: 0;
+  /* Lid handle is light; nudge the glyph down so it reads centered. */
+  translate: 0 0.5px;
 }
 
 .ma-book:hover .ma-book-delete {
@@ -753,6 +774,35 @@
   color: var(--mute);
 }
 
+.ma-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  margin: 0.5rem 0 0;
+}
+
+.ma-hero-stats > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.ma-hero-stats dt {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.ma-hero-stats dd {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
 .ma-section-head {
   display: flex;
   align-items: center;
@@ -853,6 +903,26 @@
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ma-chapter-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.ma-chapter-warn {
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #ffd9a8;
+  border: 1px solid rgba(255, 190, 100, 0.4);
+  background: rgba(255, 190, 100, 0.08);
   white-space: nowrap;
 }
 
@@ -1128,6 +1198,71 @@
   justify-content: flex-end;
   gap: 0.6rem;
   margin-top: 1.3rem;
+}
+
+/* ── Apple-style confirm alert ──────────────────────────────── */
+
+.ma-alert {
+  width: min(17rem, 100%);
+  overflow: hidden;
+  padding: 0;
+  animation: ma-pop 240ms var(--ease) both;
+  text-align: center;
+}
+
+.ma-alert-copy {
+  padding: 1.35rem 1.25rem 1.15rem;
+}
+
+.ma-alert-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.ma-alert-sub {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.ma-alert-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ma-alert-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.85rem 0.5rem;
+  font-family: var(--font);
+  font-size: 0.94rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}
+
+.ma-alert-btn + .ma-alert-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ma-alert-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ma-alert-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ma-alert-btn-danger {
+  color: #ff6b6b;
+  font-weight: 600;
 }
 
 /* ── Shared prose (editor + reader) ─────────────────────────── */
@@ -1956,10 +2091,12 @@
 @media (prefers-reduced-motion: reduce) {
   .ma-scrim,
   .ma-dialog,
+  .ma-alert,
   .ma-analyze-scrim,
   .ma-analyze,
   .ma-progress-fill,
   .ma-book,
+  .ma-book-lift,
   .ma-chapter-row,
   .ma-tp-line,
   .ma-rec-btn,
