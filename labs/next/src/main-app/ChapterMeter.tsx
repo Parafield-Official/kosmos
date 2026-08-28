@@ -101,10 +101,10 @@ export function ChapterMeter({
         <table className="ma-meter-table">
           <thead>
             <tr>
-              <th>Check</th>
+              <th>What</th>
               <th>Target</th>
-              <th>This file</th>
-              <th></th>
+              <th>Measured</th>
+              <th>Verdict</th>
             </tr>
           </thead>
           <tbody>

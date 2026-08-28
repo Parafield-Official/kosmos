@@ -156,12 +156,12 @@ export function DashboardScreen({
             <span className="ma-progress ma-progress-lg">
               <span className="ma-progress-fill" style={{ width: `${progress}%` }} />
             </span>
-            <span className="ma-hero-progress-label">{progress}% complete</span>
+            <span className="ma-hero-progress-label">Total completion {progress}%</span>
           </div>
           {project.chapters.length > 0 ? (
             <dl className="ma-hero-stats">
               <div>
-                <dt>Chapters</dt>
+                <dt>Total chapters</dt>
                 <dd>{project.chapters.length}</dd>
               </div>
               <div>
@@ -171,12 +171,6 @@ export function DashboardScreen({
               <div>
                 <dt>PFH</dt>
                 <dd>{stats.pfh}</dd>
-              </div>
-              <div>
-                <dt>Recorded</dt>
-                <dd>
-                  {stats.recorded}/{project.chapters.length}
-                </dd>
               </div>
             </dl>
           ) : (

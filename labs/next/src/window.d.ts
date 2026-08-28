@@ -99,6 +99,7 @@ declare global {
       openMicrophoneSettings?: () => Promise<{ ok: boolean }>;
       getAppInfo?: () => Promise<{ version: string; update: AppUpdateStatus }>;
       checkForUpdates?: () => Promise<AppUpdateStatus>;
+      installAppUpdate?: () => Promise<{ installed: boolean }>;
       openReleasePage?: () => Promise<unknown>;
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
@@ -194,13 +195,16 @@ declare global {
         chapterId?: string;
         workingFile: string;
         targetRmsDbfs?: number;
+        presetId?: string;
       }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; masteredFile?: string; rms_dbfs?: number }>;
       measureChapter?: (payload: {
         folder: string;
         file: string;
+        presetId?: string;
       }) => Promise<{ ok: boolean; reason?: string; report?: import("../../../src/core/acx/measure").AcxReport }>;
       exportDelivery?: (payload: {
         folder: string;
+        presetId?: string;
         chapters: Array<{
           id: string;
           title: string;

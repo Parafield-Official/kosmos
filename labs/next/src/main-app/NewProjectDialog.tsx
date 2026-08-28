@@ -236,6 +236,44 @@ export function NewProjectDialog({
           />
         </div>
 
+        <div className="ma-field ma-field-full">
+          <span>Save location</span>
+          {hasBridge ? (
+            <button
+              type="button"
+              className="ma-manuscript-pick neu-inset"
+              disabled={picking || !manuscript}
+              onClick={() => {
+                setPicking(true);
+                void pickProjectParent()
+                  .then((path) => {
+                    if (path) {
+                      setParentFolder(path);
+                    }
+                  })
+                  .finally(() => setPicking(false));
+              }}
+            >
+              <UploadIcon />
+              {parentFolder ? (
+                <span className="ma-manuscript-name" title={parentFolder}>
+                  {parentFolder}
+                </span>
+              ) : (
+                <span className="ma-manuscript-empty">
+                  {!manuscript
+                    ? "Upload the manuscript first."
+                    : picking
+                      ? "Opening picker…"
+                      : "Choose a folder. A project folder is created inside it."}
+                </span>
+              )}
+            </button>
+          ) : (
+            <p className="ma-dialog-sub">In the browser preview, the book is stored in this browser.</p>
+          )}
+        </div>
+
         <div className="ma-dialog-body">
           <button
             type="button"
@@ -286,40 +324,6 @@ export function NewProjectDialog({
             </label>
             {coverError ? <p className="ma-error">{coverError}</p> : null}
           </div>
-        </div>
-
-        <div className="ma-field ma-field-full">
-          <span>Save location</span>
-          {hasBridge ? (
-            <button
-              type="button"
-              className="ma-manuscript-pick neu-inset"
-              disabled={picking}
-              onClick={() => {
-                setPicking(true);
-                void pickProjectParent()
-                  .then((path) => {
-                    if (path) {
-                      setParentFolder(path);
-                    }
-                  })
-                  .finally(() => setPicking(false));
-              }}
-            >
-              <UploadIcon />
-              {parentFolder ? (
-                <span className="ma-manuscript-name" title={parentFolder}>
-                  {parentFolder}
-                </span>
-              ) : (
-                <span className="ma-manuscript-empty">
-                  {picking ? "Opening picker…" : "Choose a folder. A project folder is created inside it."}
-                </span>
-              )}
-            </button>
-          ) : (
-            <p className="ma-dialog-sub">In the browser preview, the book is stored in this browser.</p>
-          )}
         </div>
 
         <div className="ma-dialog-actions">

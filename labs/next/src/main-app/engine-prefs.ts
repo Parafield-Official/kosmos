@@ -10,11 +10,14 @@ const PREFS_KEY = "kosmos-labs-engine-prefs";
 
 export type ProofMarkKind = Extract<PickupKind, "sub" | "insert" | "skip" | "pause">;
 
+export type SpecPresetId = "acx" | "ebu-r128";
+
 export type EnginePrefs = {
   proof_sensitivity: ProofSensitivity;
   pause_threshold_seconds: number;
   proof_confidence_floor: number;
   acx_target_rms_dbfs: number;
+  spec_preset_id: SpecPresetId;
   /** Which mismatch kinds to paint on the page and list in Review. */
   mark_kinds: ProofMarkKind[];
 };
@@ -36,9 +39,22 @@ export const RMS_RANGE = { min: -23, max: -18, step: 0.5, fallback: -20 } as con
 
 export const PROOF_MARK_OPTIONS: ReadonlyArray<{ value: ProofMarkKind; label: string; hint: string }> = [
   { value: "sub", label: "Misread", hint: "Wrong word on the tape." },
-  { value: "insert", label: "Added", hint: "Extra sound that is not on the page, like um." },
-  { value: "skip", label: "Missing", hint: "A word on the page that was not heard." },
+  { value: "insert", label: "Extra", hint: "Extra sound that is not on the page, like um." },
+  { value: "skip", label: "Lacked", hint: "A word on the page that was not heard." },
   { value: "pause", label: "Long pause", hint: "A mid-sentence gap longer than the pause setting." },
+];
+
+export const SPEC_PRESET_OPTIONS: ReadonlyArray<{ value: SpecPresetId; label: string; hint: string }> = [
+  {
+    value: "acx",
+    label: "ACX / Audible",
+    hint: "Loudness as RMS (−23 to −18 dBFS), true peak, noise floor, and room tone.",
+  },
+  {
+    value: "ebu-r128",
+    label: "EBU R 128",
+    hint: "Integrated loudness −23 LUFS and a −1 dBTP ceiling.",
+  },
 ];
 
 const ALL_MARK_KINDS: ProofMarkKind[] = ["sub", "insert", "skip", "pause"];
@@ -48,6 +64,7 @@ const DEFAULT_PREFS: EnginePrefs = {
   pause_threshold_seconds: DEFAULT_PROJECT_SETTINGS.pause_threshold_seconds,
   proof_confidence_floor: DEFAULT_PROJECT_SETTINGS.proof_confidence_floor,
   acx_target_rms_dbfs: DEFAULT_PROJECT_SETTINGS.acx_target_rms_dbfs,
+  spec_preset_id: "acx",
   mark_kinds: [...ALL_MARK_KINDS],
 };
 
@@ -89,6 +106,7 @@ export function normalizeEnginePrefs(value: unknown): EnginePrefs {
       RMS_RANGE.step,
       RMS_RANGE.fallback,
     ),
+    spec_preset_id: candidate.spec_preset_id === "ebu-r128" ? "ebu-r128" : "acx",
     mark_kinds: normalizeMarkKinds(candidate.mark_kinds),
   };
 }

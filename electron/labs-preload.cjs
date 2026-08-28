@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   openMicrophoneSettings: () => ipcRenderer.invoke("labs:open-microphone-settings"),
   getAppInfo: () => ipcRenderer.invoke("labs:app-info"),
   checkForUpdates: () => ipcRenderer.invoke("labs:update-check"),
+  installAppUpdate: () => ipcRenderer.invoke("labs:update-install"),
   openReleasePage: () => ipcRenderer.invoke("labs:open-release"),
   onAppUpdate: (callback) => {
     const listener = (_event, status) => {

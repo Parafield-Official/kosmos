@@ -1,14 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { tokenizeManuscript } from "../../../../src/core/proof/normalize";
-import { pickupKindPresentation } from "../../../../src/core/proof/pickup-display";
 import {
   buildNarrationRedoRanges,
   createNarratorRedoPickup,
   type NarrationRedoRange,
 } from "../../../../src/core/proof/selection";
 import type { TranscriptWord } from "../../../../src/core/proof/align";
+import { flagKindLabel } from "./flag-kind";
 import { tokenSpanFromSelection } from "./review-timing";
-import type { ChapterPickup } from "./store";
+import type { ChapterPickup, PromptHighlightMode, PromptTheme } from "./store";
 
 /**
  * Select words on the page and turn that stretch into a punch on the working file.
@@ -20,8 +20,11 @@ export function ReviewScript({
   pickups = [],
   focusedPickupId = null,
   sourceKind,
+  highlight = "word",
+  theme = "dark",
+  fontPx,
+  lineSpacing,
   onRedo,
-  onSelectFlag,
 }: {
   chapterId: string;
   manuscript: string;
@@ -29,8 +32,11 @@ export function ReviewScript({
   pickups?: ChapterPickup[];
   focusedPickupId?: string | null;
   sourceKind: "live" | "take";
+  highlight?: PromptHighlightMode;
+  theme?: PromptTheme;
+  fontPx?: number;
+  lineSpacing?: number;
   onRedo: (pickup: ChapterPickup) => void;
-  onSelectFlag?: (pickup: ChapterPickup) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => tokenizeManuscript(manuscript), [manuscript]);
@@ -89,6 +95,42 @@ export function ReviewScript({
     return map;
   }, [pickups]);
 
+  const focused = useMemo(
+    () => pickups.find((pickup) => pickup.id === focusedPickupId) ?? null,
+    [focusedPickupId, pickups],
+  );
+
+  const focusBand = useMemo(() => {
+    if (!focused || typeof focused.manuscript_index !== "number" || transcript.length === 0) {
+      return focused && typeof focused.manuscript_index === "number"
+        ? { from: focused.manuscript_index, to: focused.manuscript_index }
+        : null;
+    }
+    if (highlight === "word") {
+      return { from: focused.manuscript_index, to: focused.manuscript_index };
+    }
+    try {
+      const ranges = buildNarrationRedoRanges({
+        manuscript,
+        transcript,
+        fromToken: focused.manuscript_index,
+        toToken: focused.manuscript_index,
+      });
+      const range = highlight === "paragraph" ? ranges.paragraph : ranges.sentence;
+      return { from: range.fromToken, to: range.toToken };
+    } catch {
+      return { from: focused.manuscript_index, to: focused.manuscript_index };
+    }
+  }, [focused, highlight, manuscript, transcript]);
+
+  useEffect(() => {
+    if (!focusedPickupId) {
+      return;
+    }
+    const el = rootRef.current?.querySelector(`[data-pickup="${focusedPickupId}"]`);
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [focusedPickupId]);
+
   if (tokens.length === 0) {
     return null;
   }
@@ -105,7 +147,7 @@ export function ReviewScript({
         <p>
           {transcript.length === 0
             ? "Proofread (or finish the booth read) so Kosmos knows where each sentence sits on the tape. Then select a line to say again."
-            : "Select a sentence or paragraph to say again. Click a coloured flag to hear it, then re-record."}
+            : "Select a sentence or paragraph to say again. Click a coloured flag to re-record it."}
         </p>
       </header>
       {sentence || selection ? (
@@ -135,7 +177,11 @@ export function ReviewScript({
       {fail ? <p className="ma-error">{fail}</p> : null}
       <div
         ref={rootRef}
-        className="ma-review-prose neu-card"
+        className={`ma-review-prose neu-card is-${theme}`}
+        style={{
+          ...(fontPx ? { fontSize: `${fontPx}px` } : {}),
+          ...(lineSpacing ? { lineHeight: lineSpacing } : {}),
+        }}
         onMouseUp={onMouseUp}
       >
         {blocks.map((block, index) => (
@@ -154,7 +200,10 @@ export function ReviewScript({
                     pickupByToken.get(part.tokenIndex) &&
                       pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
                   )}
-                  onFlag={(pickup) => onSelectFlag?.(pickup)}
+                  inBand={Boolean(
+                    focusBand && part.tokenIndex >= focusBand.from && part.tokenIndex <= focusBand.to,
+                  )}
+                  onFlag={(pickup) => onRedo(pickup)}
                 />
               ),
             )}
@@ -173,6 +222,7 @@ function FlagWord({
   selected,
   pickup,
   focused,
+  inBand,
   onFlag,
 }: {
   tokenIndex: number;
@@ -180,22 +230,25 @@ function FlagWord({
   selected: boolean;
   pickup?: ChapterPickup;
   focused: boolean;
+  inBand: boolean;
   onFlag: (pickup: ChapterPickup) => void;
 }) {
-  const kind = pickup ? pickupKindPresentation(pickup.kind).label.replace(" ", "-") : null;
+  const kind = pickup ? flagKindLabel(pickup.kind) : null;
   const classes = [
     "ma-review-word",
     selected ? "is-selected" : "",
     pickup ? `is-flag is-flag-${pickup.kind}` : "",
-    focused ? "is-focused" : "",
+    focused ? "is-focused is-now" : "",
+    inBand && !focused ? "in-band" : "",
   ]
     .filter(Boolean)
     .join(" ");
   return (
     <span
       data-token={tokenIndex}
+      data-pickup={pickup?.id}
       className={classes}
-      title={kind ?? undefined}
+      title={kind ? `${kind} — click to re-record` : undefined}
       onClick={() => {
         if (pickup) {
           onFlag(pickup);

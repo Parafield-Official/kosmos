@@ -40,6 +40,11 @@ function loadCoreModule(name) {
   throw new Error("The audio core is not bundled. Run npm run build:core first.");
 }
 
+function presetFromPayload(masterCore, payload) {
+  const id = typeof payload?.presetId === "string" ? payload.presetId : "acx";
+  return masterCore.resolvePreset(id);
+}
+
 function audioPath(folder, file) {
   return path.join(folder, "audio", path.basename(file));
 }
@@ -485,7 +490,7 @@ async function masterWorkingFile(payload) {
   const destPath = audioPath(folder, destName);
   const masterCore = loadCoreModule("master");
   const audioCore = loadCoreModule("audio");
-  const preset = masterCore.resolvePreset("acx");
+  const preset = presetFromPayload(masterCore, payload);
   const profile = masterCore.deliveryProfile(preset);
 
   try {
@@ -612,7 +617,7 @@ async function exportDeliveryPack(payload) {
   const masterCore = loadCoreModule("master");
   const exportCore = loadCoreModule("export");
   const markersCore = loadCoreModule("markers");
-  const preset = masterCore.resolvePreset("acx");
+  const preset = presetFromPayload(masterCore, payload);
   const profile = masterCore.deliveryProfile(preset);
   const outputFolder = path.join(folder, "export", profile.folderName);
   // Linked/external books may not have an export/ folder yet; the staging dir
@@ -821,7 +826,7 @@ async function measureChapterAudio(payload) {
       channels: decoded.channels,
       format: decoded.format,
       bitrate_kbps: decoded.bitrateKbps,
-    }, { preset: masterCore.resolvePreset("acx") });
+    }, { preset: presetFromPayload(masterCore, payload) });
     return { ok: true, report };
   } catch (error) {
     return { ok: false, reason: String(error?.message ?? error) };

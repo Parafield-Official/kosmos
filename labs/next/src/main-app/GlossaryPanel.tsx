@@ -61,8 +61,8 @@ export function GlossaryPanel({
           <input
             className="neu-input"
             value={draftSpelling}
-            placeholder="Add a word"
-            aria-label="Word to pronounce"
+            placeholder="Add a word or phrase"
+            aria-label="Word or phrase to pronounce"
             onChange={(event) => setDraftSpelling(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -73,8 +73,8 @@ export function GlossaryPanel({
           <input
             className="neu-input"
             value={draftRespell}
-            placeholder="Say it like…"
-            aria-label="How to say it"
+            placeholder="Pronunciation guide"
+            aria-label="Pronunciation guide"
             onChange={(event) => setDraftRespell(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -114,8 +114,8 @@ function GlossaryRow({
       <input
         className="neu-input"
         value={respell}
-        placeholder="How to say it"
-        aria-label={`How to say ${entry.spelling}`}
+        placeholder="Pronunciation guide"
+        aria-label={`Pronunciation guide for ${entry.spelling}`}
         onChange={(event) => setRespell(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && respell.trim()) {

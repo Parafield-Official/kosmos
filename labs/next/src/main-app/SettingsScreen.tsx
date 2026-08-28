@@ -9,6 +9,7 @@ import {
   PROOF_MARK_OPTIONS,
   RMS_RANGE,
   SENSITIVITY_OPTIONS,
+  SPEC_PRESET_OPTIONS,
   readEnginePrefs,
   writeEnginePrefs,
   type EnginePrefs,
@@ -379,6 +380,41 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <MasterIcon />
+            <strong>Delivery target</strong>
+          </div>
+          <p className="ma-set-sub">
+            {SPEC_PRESET_OPTIONS.find((option) => option.value === engine.spec_preset_id)?.hint}
+          </p>
+          <div className="ma-set-control">
+            <div className="ma-seg" role="radiogroup" aria-label="Delivery target">
+              {SPEC_PRESET_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={engine.spec_preset_id === option.value}
+                  className={engine.spec_preset_id === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                  onClick={() => patchEngine({ spec_preset_id: option.value })}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <MasterIcon />
+            <strong>Audio format</strong>
+          </div>
+          <p className="ma-set-value">Mono (ACX default)</p>
+          <p className="ma-set-sub">Used for chapter exports.</p>
+        </div>
+
         <h2 className="ma-set-section">App</h2>
 
         <div className="ma-set-item">
@@ -429,6 +465,15 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             >
               {checking ? "Checking…" : "Check for updates"}
             </button>
+            {update?.canInstall ? (
+              <button
+                type="button"
+                className="btn btn-clear"
+                onClick={() => void window.kosmosNext?.installAppUpdate?.()}
+              >
+                Get update
+              </button>
+            ) : null}
             <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
               View releases
             </button>

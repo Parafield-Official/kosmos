@@ -30,7 +30,7 @@ export function BookShell({
           className={tab === "dashboard" ? "ma-book-nav-item is-on" : "ma-book-nav-item"}
           onClick={() => onTab("dashboard")}
         >
-          Dashboard
+          Home
         </button>
         <button
           type="button"

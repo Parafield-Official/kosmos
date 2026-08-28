@@ -203,7 +203,6 @@ export function RecordScreen({
   const [error, setError] = useState<string | null>(null);
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
 
   const promptRef = useRef<HTMLDivElement>(null);
@@ -994,27 +993,6 @@ export function RecordScreen({
           <span className="ma-record-pct">{shownPct}%</span>
         </div>
         <div className="ma-record-tools">
-          <div className="ma-highlight-modes" role="radiogroup" aria-label="Highlight as you read">
-            {(["word", "line", "paragraph"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                role="radio"
-                aria-checked={highlight === mode}
-                className={highlight === mode ? "ma-tool is-on" : "ma-tool"}
-                onClick={() => setHighlightMode(mode)}
-              >
-                {mode === "word" ? "Word" : mode === "line" ? "Line" : "Paragraph"}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className={settingsOpen ? "ma-tool is-on" : "ma-tool"}
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            Reading
-          </button>
           <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
           {embedded && onContinueProof && shownPct >= 100 ? (
             <button type="button" className="btn btn-sm btn-clear" onClick={onContinueProof}>
@@ -1023,46 +1001,6 @@ export function RecordScreen({
           ) : null}
         </div>
       </header>
-
-      {settingsOpen ? (
-        <BoothReadingPanel
-          inputs={audioInputs}
-          inputId={inputId}
-          recording={recording}
-          highlight={highlight}
-          lineSpacing={lineSpacing}
-          checkReading={checkReading}
-          stopOnMismatch={stopOnMismatch}
-          onInput={(deviceId) => {
-            setInputId(deviceId);
-            persistChoice(MIC_KEY, deviceId);
-          }}
-          onHighlight={setHighlightMode}
-          onSpacing={(value) => {
-            setLineSpacing(value);
-            persistChoice(SPACING_KEY, String(value));
-          }}
-          onCheckReading={(enabled) => {
-            setCheckReading(enabled);
-            writeFlag(CHECK_KEY, enabled);
-          }}
-          onStopOnMismatch={(enabled) => {
-            setStopOnMismatch(enabled);
-            writeFlag(HALT_KEY, enabled);
-            if (!enabled) {
-              haltRef.current = null;
-              setHalt(null);
-            }
-          }}
-          theme={theme}
-          onTheme={(value) => {
-            setTheme(value);
-            writePromptTheme(value);
-          }}
-          fontPx={boothFontPx}
-          onFontPx={(value) => setBoothFontPx(writeBoothFontPx(value))}
-        />
-      ) : null}
 
       <div className="ma-booth-status" role="status">
         <strong>{workflow.title}</strong>
@@ -1108,6 +1046,88 @@ export function RecordScreen({
         </div>
       ) : null}
 
+      <section className="ma-flow-block" aria-label="Mic and control">
+        <h2 className="ma-flow-block-title">Mic and control</h2>
+        <label className="ma-booth-input">
+          <span>Microphone</span>
+          <select
+            value={inputId}
+            disabled={recording}
+            onChange={(event) => {
+              setInputId(event.target.value);
+              persistChoice(MIC_KEY, event.target.value);
+            }}
+          >
+            <option value="">System default</option>
+            {audioInputs.map((device, index) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Microphone ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="ma-rec-people">You can record this chapter.</p>
+        <div className="ma-recorder">
+        <div className="ma-level" aria-hidden="true">
+          <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
+        </div>
+        <div className="ma-recorder-controls">
+          {workflow.primaryLabel ? (
+            <button
+              type="button"
+              className={recording && !paused ? "ma-rec-btn is-recording" : "ma-rec-btn"}
+              onClick={onPrimary}
+              disabled={saving}
+            >
+              <span className={recording && !paused ? "ma-rec-dot is-stop" : "ma-rec-dot"} />
+              {saving ? "Saving…" : workflow.primaryLabel === "Resume recording" ? "Continue" : workflow.primaryLabel}
+            </button>
+          ) : (
+            <span className="ma-rec-time">Saving…</span>
+          )}
+          {recording && !paused ? (
+            <button type="button" className="btn btn-sm" onClick={pauseRecording}>
+              Pause
+            </button>
+          ) : null}
+          {workflow.canStartOver ? (
+            <button type="button" className="btn btn-sm" onClick={() => void startOver()}>
+              Start over
+            </button>
+          ) : null}
+          {chapter.originalFile && !recording ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
+                  onChange(clearOriginalTape(projectRef.current, chapterId));
+                }
+              }}
+            >
+              Delete audio
+            </button>
+          ) : null}
+          <div className="ma-rec-meta">
+            <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
+            <span className="ma-rec-mark">
+              {shownPct}% · Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
+            </span>
+          </div>
+        </div>
+        {originalUrl && !recording ? (
+          <div className="ma-take-latest">
+            <span className="ma-take-label">Original</span>
+            <audio className="ma-audio" src={originalUrl} controls />
+          </div>
+        ) : null}
+        {chapter.workingFile ? <p className="ma-step-note">Working file exists from proof. Original is unchanged.</p> : null}
+        {error ? <p className="ma-error">{error}</p> : null}
+        </div>
+      </section>
+
+      <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
+        <h2 className="ma-flow-block-title">Teleprompter</h2>
       <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
         <div className="ma-teleprompter-scroll" ref={promptRef}>
           <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
@@ -1176,64 +1196,49 @@ export function RecordScreen({
           <span className="ma-teleprompter-caret is-right" />
         </div>
       </div>
+      </section>
 
-      <div className="ma-recorder">
-        <div className="ma-level" aria-hidden="true">
-          <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
-        </div>
-        <div className="ma-recorder-controls">
-          {workflow.primaryLabel ? (
-            <button
-              type="button"
-              className={recording && !paused ? "ma-rec-btn is-recording" : "ma-rec-btn"}
-              onClick={onPrimary}
-              disabled={saving}
-            >
-              <span className={recording && !paused ? "ma-rec-dot is-stop" : "ma-rec-dot"} />
-              {saving ? "Saving…" : workflow.primaryLabel}
-            </button>
-          ) : (
-            <span className="ma-rec-time">Saving…</span>
-          )}
-          {recording && !paused ? (
-            <button type="button" className="btn btn-sm" onClick={pauseRecording}>
-              Pause
-            </button>
-          ) : null}
-          {workflow.canStartOver ? (
-            <button type="button" className="btn btn-sm" onClick={() => void startOver()}>
-              Start over
-            </button>
-          ) : null}
-          {chapter.originalFile && !recording ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
-                  onChange(clearOriginalTape(projectRef.current, chapterId));
-                }
-              }}
-            >
-              Delete audio
-            </button>
-          ) : null}
-          <div className="ma-rec-meta">
-            <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
-            <span className="ma-rec-mark">
-              Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
-            </span>
-          </div>
-        </div>
-        {originalUrl && !recording ? (
-          <div className="ma-take-latest">
-            <span className="ma-take-label">Original</span>
-            <audio className="ma-audio" src={originalUrl} controls />
-          </div>
-        ) : null}
-        {chapter.workingFile ? <p className="ma-step-note">Working file exists from proof/master. Original is unchanged.</p> : null}
-        {error ? <p className="ma-error">{error}</p> : null}
-      </div>
+      <section className="ma-flow-block" aria-label="Teleprompter setting">
+        <h2 className="ma-flow-block-title">Teleprompter setting</h2>
+        <BoothReadingPanel
+          inputs={audioInputs}
+          inputId={inputId}
+          recording={recording}
+          highlight={highlight}
+          lineSpacing={lineSpacing}
+          checkReading={checkReading}
+          stopOnMismatch={stopOnMismatch}
+          includeMic={false}
+          onInput={(deviceId) => {
+            setInputId(deviceId);
+            persistChoice(MIC_KEY, deviceId);
+          }}
+          onHighlight={setHighlightMode}
+          onSpacing={(value) => {
+            setLineSpacing(value);
+            persistChoice(SPACING_KEY, String(value));
+          }}
+          onCheckReading={(enabled) => {
+            setCheckReading(enabled);
+            writeFlag(CHECK_KEY, enabled);
+          }}
+          onStopOnMismatch={(enabled) => {
+            setStopOnMismatch(enabled);
+            writeFlag(HALT_KEY, enabled);
+            if (!enabled) {
+              haltRef.current = null;
+              setHalt(null);
+            }
+          }}
+          theme={theme}
+          onTheme={(value) => {
+            setTheme(value);
+            writePromptTheme(value);
+          }}
+          fontPx={boothFontPx}
+          onFontPx={(value) => setBoothFontPx(writeBoothFontPx(value))}
+        />
+      </section>
     </section>
   );
 }

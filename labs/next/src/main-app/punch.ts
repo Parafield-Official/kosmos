@@ -149,6 +149,7 @@ export async function masterChapterWorking(project: BookProject, chapterId: stri
     chapterId,
     workingFile: chapter.workingFile,
     targetRmsDbfs: readEnginePrefs().acx_target_rms_dbfs,
+    presetId: readEnginePrefs().spec_preset_id,
   });
   if (!result.ok) {
     throw new Error(result.reason || "Mastering failed.");
@@ -163,6 +164,7 @@ export async function exportBookPack(project: BookProject): Promise<BookProject>
   }
   const result = await window.kosmosNext.exportDelivery({
     folder: project.folder,
+    presetId: readEnginePrefs().spec_preset_id,
     chapters: project.chapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,

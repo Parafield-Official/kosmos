@@ -1273,6 +1273,7 @@ app.whenReady().then(async () => {
     update: labsAppUpdater?.getStatus() ?? idleUpdateStatus(),
   }));
   ipcMain.handle("labs:update-check", () => (labsAppUpdater ? labsAppUpdater.check() : idleUpdateStatus()));
+  ipcMain.handle("labs:update-install", () => (labsAppUpdater ? labsAppUpdater.install() : { installed: false }));
   ipcMain.handle("labs:open-release", () => shell.openExternal(RELEASE_PAGE));
   ipcMain.handle("labs:workspace-get", () => getWorkspace());
   ipcMain.handle("labs:projects-list", () => listWorkspaceProjects());

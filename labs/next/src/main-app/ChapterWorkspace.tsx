@@ -4,6 +4,7 @@ import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
 import { recordingGate, stepLocked, type ChapterStep } from "./chapter-flow";
 import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
+import { readEnginePrefs } from "./engine-prefs";
 import {
   addGlossaryWord,
   dismissGlossaryWord,
@@ -59,6 +60,7 @@ export function ChapterWorkspace({
   const [chapterText, setChapterText] = useState("");
   const [proofing, setProofing] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
+  const [masteringOut, setMasteringOut] = useState(false);
   const [startOverAsk, setStartOverAsk] = useState(false);
 
   useEffect(() => {
@@ -109,6 +111,19 @@ export function ChapterWorkspace({
       setProofError(reason instanceof Error ? reason.message : "Proofread failed.");
     } finally {
       setProofing(false);
+    }
+  }
+
+  async function goMaster() {
+    setProofError(null);
+    setMasteringOut(true);
+    try {
+      onChange(await masterChapterWorking(project, chapterId));
+      onStep("mastering");
+    } catch (reason) {
+      setProofError(reason instanceof Error ? reason.message : "Mastering failed.");
+    } finally {
+      setMasteringOut(false);
     }
   }
 
@@ -179,7 +194,8 @@ export function ChapterWorkspace({
             onBack={onBack}
             onChange={onChange}
             onStartOver={() => setStartOverAsk(true)}
-            onContinueMaster={() => onStep("mastering")}
+            onContinueMaster={() => void goMaster()}
+            mastering={masteringOut}
           />
         ) : null}
 
@@ -308,7 +324,7 @@ function RecordingStep({
         />
         {complete ? (
           <button type="button" className="btn btn-clear" onClick={onProof} disabled={proofing}>
-            {proofing ? "Proofing…" : "Continue to proofreading"}
+            {proofing ? "Proofing…" : "Proofread"}
           </button>
         ) : null}
         {importError ? <p className="ma-error">{importError}</p> : null}
@@ -348,11 +364,33 @@ function MasteringStep({
   const [checkError, setCheckError] = useState<string | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [measureNonce, setMeasureNonce] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => () => {
     audioRef.current?.pause();
   }, []);
+
+  useEffect(() => {
+    const file = chapter?.masteredFile;
+    if (!file || !project.folder || !window.kosmosNext?.measureChapter) {
+      return;
+    }
+    let cancelled = false;
+    void window.kosmosNext.measureChapter({
+      folder: project.folder,
+      file,
+      presetId: readEnginePrefs().spec_preset_id,
+    }).then((result) => {
+      if (cancelled || !result.ok || !result.report) {
+        return;
+      }
+      setAcxReport(result.report);
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [chapter?.masteredFile, project.folder, measureNonce]);
 
   if (!chapter) {
     return null;
@@ -365,6 +403,7 @@ function MasteringStep({
     try {
       onChange(await masterChapterWorking(project, chapterId));
       setAcxReport(null);
+      setMeasureNonce((value) => value + 1);
     } catch (reason) {
       setMasterError(reason instanceof Error ? reason.message : "Mastering failed.");
     } finally {
@@ -381,7 +420,11 @@ function MasteringStep({
     setCheckError(null);
     setChecking(true);
     try {
-      const result = await window.kosmosNext.measureChapter({ folder: project.folder, file: target });
+      const result = await window.kosmosNext.measureChapter({
+        folder: project.folder,
+        file: target,
+        presetId: readEnginePrefs().spec_preset_id,
+      });
       if (!result.ok || !result.report) {
         throw new Error(result.reason || "Could not measure this chapter.");
       }
