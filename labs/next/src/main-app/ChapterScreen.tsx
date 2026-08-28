@@ -16,6 +16,7 @@ import { RoomCheck } from "./RoomCheck";
 import { masterChapterWorking, undoLatestChapterPunch } from "./punch";
 import { transcriptFromRecordedWords } from "./review-timing";
 import { dropSuppressedPickups } from "./suppress";
+import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import {
   applyChapterPickups,
   applyOriginalTape,
@@ -291,6 +292,7 @@ export function ChapterScreen({
           <button type="button" className="btn btn-sm" onClick={onRead}>
             Read
           </button>
+          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
           <span className={`ma-stage-chip ma-stage-${stage}`}>{chapter.title}</span>
         </div>
       </header>

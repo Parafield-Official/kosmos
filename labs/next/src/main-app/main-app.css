@@ -1039,6 +1039,15 @@
   color: #ffb4b4;
 }
 
+.ma-debug-finish {
+  flex: none;
+  opacity: 0.72;
+}
+
+.ma-debug-finish:hover {
+  opacity: 1;
+}
+
 .ma-chapter-head-actions {
   display: flex;
   align-items: center;

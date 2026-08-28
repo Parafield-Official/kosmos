@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { pickupKindPresentation } from "../../../../src/core/proof/pickup-display";
 import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
+import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import { paragraphsFromHtml } from "./booth";
 import { PunchRecorder } from "./PunchRecorder";
 import { applyPunchRecording, previewPunchRecording, undoLatestChapterPunch } from "./punch";
@@ -251,6 +252,7 @@ export function ReviewScreen({
               Undo latest punch
             </button>
           ) : null}
+          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </header>
 

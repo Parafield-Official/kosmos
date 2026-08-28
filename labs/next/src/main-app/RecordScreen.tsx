@@ -48,6 +48,7 @@ import {
 } from "./store";
 import { readPromptTheme, readReadingFont } from "./reading-prefs";
 import { pickupIsSuppressed } from "./suppress";
+import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import {
   buildBoothScriptFromHtml,
   concatWav,
@@ -1005,6 +1006,7 @@ export function RecordScreen({
           >
             Reading
           </button>
+          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </header>
 
