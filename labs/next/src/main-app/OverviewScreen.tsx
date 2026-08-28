@@ -14,6 +14,7 @@ import {
   bookInitials,
   bookProgress,
   chapterStage,
+  removeChapter,
   type BookChapter,
   type BookProject,
   type ChapterStage,
@@ -79,6 +80,7 @@ export function OverviewScreen({
   const [bookTitle, setBookTitle] = useState(project.title);
   const [analyzeAsk, setAnalyzeAsk] = useState<"analyze" | "manuscript" | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<BookChapter | null>(null);
   const manuscriptRef = useRef<HTMLInputElement>(null);
 
   const progress = Math.round(bookProgress(project) * 100);
@@ -152,6 +154,23 @@ export function OverviewScreen({
     }
     if (kind === "analyze") {
       onAnalyze();
+    }
+  }
+
+  async function confirmRemoveChapter() {
+    const chapter = removeTarget;
+    if (!chapter) {
+      return;
+    }
+    setActionError(null);
+    setBusy(true);
+    try {
+      onChange(await removeChapter(project, chapter.id));
+      setRemoveTarget(null);
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "Could not remove that chapter.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -328,6 +347,19 @@ export function OverviewScreen({
         />
       ) : null}
 
+      {removeTarget ? (
+        <RemoveChapterConfirm
+          chapter={removeTarget}
+          busy={busy}
+          onConfirm={() => void confirmRemoveChapter()}
+          onCancel={() => {
+            if (!busy) {
+              setRemoveTarget(null);
+            }
+          }}
+        />
+      ) : null}
+
       {project.chapters.length > 0 ? (
         <GlossaryPanel
           title="Pronunciations"
@@ -386,6 +418,7 @@ export function OverviewScreen({
             chapter={chapter}
             onOpen={() => onOpenChapter(chapter.id)}
             onEdit={() => onEditChapter(chapter.id)}
+            onRemove={() => setRemoveTarget(chapter)}
           />
         ))}
 
@@ -491,16 +524,73 @@ function AnalyzeConfirm({
   );
 }
 
+function RemoveChapterConfirm({
+  chapter,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  chapter: BookChapter;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const hasTape = chapter.hasOriginalAudio || chapter.hasWorkingAudio;
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) {
+        onCancel();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+
+  return (
+    <div className="ma-scrim" role="presentation" onClick={onCancel}>
+      <div
+        className="ma-alert neu-panel"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="ma-remove-chapter-title"
+        aria-describedby="ma-remove-chapter-sub"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="ma-alert-copy">
+          <h2 className="ma-alert-title" id="ma-remove-chapter-title">
+            Remove this chapter?
+          </h2>
+          <p className="ma-alert-sub" id="ma-remove-chapter-sub">
+            {hasTape
+              ? `“${chapter.title}” and its recordings will be permanently deleted. This can’t be undone.`
+              : `“${chapter.title}” will be permanently deleted. This can’t be undone.`}
+          </p>
+        </div>
+        <div className="ma-alert-actions">
+          <button type="button" className="ma-alert-btn" onClick={onCancel} disabled={busy} autoFocus>
+            Cancel
+          </button>
+          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm} disabled={busy}>
+            {busy ? "Removing…" : "Remove"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChapterRow({
   index,
   chapter,
   onOpen,
   onEdit,
+  onRemove,
 }: {
   index: number;
   chapter: BookChapter;
   onOpen: () => void;
   onEdit: () => void;
+  onRemove: () => void;
 }) {
   const stage = chapterStage(chapter);
   const pct = Math.round(Math.min(1, Math.max(0, chapter.recordedPct)) * 100);
@@ -542,7 +632,33 @@ function ChapterRow({
       >
         <PencilIcon />
       </button>
+      <button
+        type="button"
+        className="ma-chapter-remove"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRemove();
+        }}
+        aria-label={`Remove ${chapter.title}`}
+        title="Remove chapter"
+      >
+        <TrashIcon />
+      </button>
     </div>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true">
+      <path
+        d="M4 7h16M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M7 7l.8 12.2A2 2 0 0 0 9.8 21h4.4a2 2 0 0 0 2-1.8L17 7"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

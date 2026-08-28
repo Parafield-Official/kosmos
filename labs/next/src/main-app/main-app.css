@@ -1019,6 +1019,26 @@
   color: #ffffff;
 }
 
+.ma-chapter-remove {
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+
+.ma-chapter-remove:hover {
+  background: rgba(255, 80, 80, 0.18);
+  color: #ffb4b4;
+}
+
 .ma-chapter-head-actions {
   display: flex;
   align-items: center;

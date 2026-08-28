@@ -519,6 +519,20 @@ export function appendChapter(project: BookProject, title: string): BookProject 
   return { ...project, chapters: [...project.chapters, chapter] };
 }
 
+/** Drop a chapter from the book and delete its text and audio files. */
+export async function removeChapter(project: BookProject, chapterId: string): Promise<BookProject> {
+  if (project.folder && window.kosmosNext?.deleteChapterFiles) {
+    await window.kosmosNext.deleteChapterFiles({ folder: project.folder, chapterId });
+  } else {
+    try {
+      window.localStorage.removeItem(chapterContentKey(project, chapterId));
+    } catch {
+      // Hosted fallback; the chapter row is still removed below.
+    }
+  }
+  return { ...project, chapters: project.chapters.filter((chapter) => chapter.id !== chapterId) };
+}
+
 // ── Backend-aware async API ───────────────────────────────────
 // Prefers the Electron filesystem bridge (folder-per-book inside the
 // workspace). Falls back to localStorage in the hosted browser preview.

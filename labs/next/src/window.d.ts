@@ -115,6 +115,7 @@ declare global {
       readManuscript?: (payload: { folder: string; name?: string }) => Promise<{ ok: boolean; name?: string; base64?: string }>;
       writeChapterContents?: (payload: { folder: string; chapters: { id: string; html: string }[] }) => Promise<{ ok: boolean }>;
       writeChapterContent?: (payload: { folder: string; chapterId: string; html: string }) => Promise<{ ok: boolean }>;
+      deleteChapterFiles?: (payload: { folder: string; chapterId: string }) => Promise<{ ok: boolean }>;
       readChapterContent?: (payload: { folder: string; chapterId: string }) => Promise<{ ok: boolean; html: string }>;
       writeChapterAudio?: (payload: {
         folder: string;

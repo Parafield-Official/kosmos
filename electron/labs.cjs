@@ -398,6 +398,33 @@ async function writeChapterContent(folder, chapterId, html) {
   return { ok: true };
 }
 
+async function deleteChapterFiles(folder, chapterId) {
+  if (typeof folder !== "string" || typeof chapterId !== "string") {
+    return { ok: false };
+  }
+  const id = path.basename(chapterId);
+  if (!id) {
+    return { ok: false };
+  }
+  await fs.rm(path.join(chaptersDir(folder), `${id}.html`), { force: true });
+  const audioRoot = path.join(folder, "audio");
+  const pickupRoot = path.join(audioRoot, "pickups");
+  for (const dir of [audioRoot, pickupRoot]) {
+    let names = [];
+    try {
+      names = await fs.readdir(dir);
+    } catch {
+      continue;
+    }
+    await Promise.all(
+      names
+        .filter((name) => name === `${id}.wav` || name.startsWith(`${id}-`))
+        .map((name) => fs.rm(path.join(dir, name), { force: true })),
+    );
+  }
+  return { ok: true };
+}
+
 async function readChapterContent(folder, chapterId) {
   if (typeof folder !== "string" || typeof chapterId !== "string") {
     return { ok: false, html: "" };
@@ -1248,6 +1275,9 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("labs:chapter-write", (_event, payload) =>
     writeChapterContent(payload?.folder, payload?.chapterId, payload?.html),
+  );
+  ipcMain.handle("labs:chapter-delete", (_event, payload) =>
+    deleteChapterFiles(payload?.folder, payload?.chapterId),
   );
   ipcMain.handle("labs:chapter-read", (_event, payload) =>
     readChapterContent(payload?.folder, payload?.chapterId),

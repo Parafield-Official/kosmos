@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   readManuscript: (payload) => ipcRenderer.invoke("labs:project-read-manuscript", payload),
   writeChapterContents: (payload) => ipcRenderer.invoke("labs:chapter-write-many", payload),
   writeChapterContent: (payload) => ipcRenderer.invoke("labs:chapter-write", payload),
+  deleteChapterFiles: (payload) => ipcRenderer.invoke("labs:chapter-delete", payload),
   readChapterContent: (payload) => ipcRenderer.invoke("labs:chapter-read", payload),
   writeChapterAudio: (payload) => ipcRenderer.invoke("labs:chapter-write-audio", payload),
   readChapterAudio: (payload) => ipcRenderer.invoke("labs:chapter-read-audio", payload),
