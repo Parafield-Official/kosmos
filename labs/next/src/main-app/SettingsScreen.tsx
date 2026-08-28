@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { GlassLookSwitch } from "../GlassLookSwitch";
 import { clearOnboarded } from "../flow";
+import type { AppUpdateStatus } from "../window";
 import { FONT_SCALE_OPTIONS, readFontScale, writeFontScale, type FontScale } from "./display";
 import { chooseWorkspace, getWorkspacePath } from "./store";
 
@@ -8,11 +9,50 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [fontScale, setFontScale] = useState<FontScale>(() => readFontScale());
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [update, setUpdate] = useState<AppUpdateStatus | null>(null);
+  const [checking, setChecking] = useState(false);
 
   function chooseFontScale(scale: FontScale) {
     setFontScale(scale);
     writeFontScale(scale);
   }
+
+  useEffect(() => {
+    let alive = true;
+    void window.kosmosNext?.getAppInfo?.().then((info) => {
+      if (alive) {
+        setAppVersion(info.version);
+        setUpdate(info.update);
+      }
+    });
+    const off = window.kosmosNext?.onAppUpdate?.((status) => setUpdate(status));
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, []);
+
+  async function checkForUpdates() {
+    if (checking || !window.kosmosNext?.checkForUpdates) {
+      return;
+    }
+    setChecking(true);
+    try {
+      const status = await window.kosmosNext.checkForUpdates();
+      if (status) {
+        setUpdate(status);
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  const updateMessage = update?.text
+    ? update.text
+    : update?.skipped
+      ? "This development copy does not check for updates."
+      : "Up to date.";
 
   useEffect(() => {
     let alive = true;
@@ -133,6 +173,30 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             </button>
           </div>
         </div>
+
+        <div className="ma-set-divider" />
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <InfoIcon />
+            <strong>About Kosmos Labs</strong>
+          </div>
+          <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
+          <p className="ma-set-sub">{updateMessage}</p>
+          <div className="ma-set-control ma-set-control-row">
+            <button
+              type="button"
+              className="btn"
+              disabled={checking || update?.skipped}
+              onClick={() => void checkForUpdates()}
+            >
+              {checking ? "Checking…" : "Check for updates"}
+            </button>
+            <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
+              View releases
+            </button>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -156,6 +220,15 @@ function ThemeIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 11v5M12 7.5h.01" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

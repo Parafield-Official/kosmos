@@ -137,6 +137,12 @@
   margin-top: 0.35rem;
 }
 
+.ma-set-control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .ma-set-control .glass-look {
   width: fit-content;
   max-width: 100%;

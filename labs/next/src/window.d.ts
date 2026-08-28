@@ -1,5 +1,19 @@
 export {};
 
+/** Update status broadcast from the main process (mirrors electron/app-update.cjs). */
+export interface AppUpdateStatus {
+  phase: "idle" | "checking" | "available" | "downloading" | "ready" | "up-to-date" | "error";
+  currentVersion?: string;
+  version?: string;
+  percent?: number;
+  message?: string;
+  skipped?: boolean;
+  text?: string;
+  showBanner?: boolean;
+  canInstall?: boolean;
+  releasePage?: string;
+}
+
 /** Shape of the project.json marker written into each book folder. */
 export interface StoredProjectFile {
   app?: string;
@@ -82,6 +96,10 @@ declare global {
         speechModel: { granted: boolean; bytes?: number; bundled?: boolean };
       }) => void) => (() => void) | void;
       openMicrophoneSettings?: () => Promise<{ ok: boolean }>;
+      getAppInfo?: () => Promise<{ version: string; update: AppUpdateStatus }>;
+      checkForUpdates?: () => Promise<AppUpdateStatus>;
+      openReleasePage?: () => Promise<unknown>;
+      onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
       getWorkspace?: () => Promise<{ workspace: string | null }>;
       listProjects?: () => Promise<{ workspace: string | null; projects: StoredProjectFile[] }>;

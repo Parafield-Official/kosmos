@@ -65,6 +65,18 @@ contextBridge.exposeInMainWorld("kosmosNext", {
     };
   },
   openMicrophoneSettings: () => ipcRenderer.invoke("labs:open-microphone-settings"),
+  getAppInfo: () => ipcRenderer.invoke("labs:app-info"),
+  checkForUpdates: () => ipcRenderer.invoke("labs:update-check"),
+  openReleasePage: () => ipcRenderer.invoke("labs:open-release"),
+  onAppUpdate: (callback) => {
+    const listener = (_event, status) => {
+      callback(status);
+    };
+    ipcRenderer.on("labs:app-update", listener);
+    return () => {
+      ipcRenderer.removeListener("labs:app-update", listener);
+    };
+  },
   openDiscord: (payload) => ipcRenderer.invoke("labs:open-discord", payload),
   getWorkspace: () => ipcRenderer.invoke("labs:workspace-get"),
   listProjects: () => ipcRenderer.invoke("labs:projects-list"),

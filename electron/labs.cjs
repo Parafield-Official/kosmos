@@ -17,8 +17,50 @@ const {
   transcodeToWav,
   isWavBuffer,
 } = require("./labs-audio.cjs");
+const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 
 const execFileAsync = promisify(execFile);
+
+/** Shared GitHub Releases updater; reuses the same feed as the original app. */
+let labsAppUpdater = null;
+
+function broadcastLabsUpdate(status) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send("labs:app-update", status);
+    }
+  }
+}
+
+function ensureLabsUpdater() {
+  if (labsAppUpdater) {
+    return labsAppUpdater;
+  }
+  try {
+    const { autoUpdater } = require("electron-updater");
+    labsAppUpdater = createAppUpdater({
+      autoUpdater,
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      send: broadcastLabsUpdate,
+    });
+  } catch {
+    labsAppUpdater = null;
+  }
+  return labsAppUpdater;
+}
+
+function idleUpdateStatus() {
+  return {
+    phase: "idle",
+    currentVersion: app.getVersion(),
+    skipped: true,
+    showBanner: false,
+    canInstall: false,
+    text: "",
+    releasePage: RELEASE_PAGE,
+  };
+}
 
 let liquidGlass = null;
 try {
@@ -1178,6 +1220,12 @@ app.whenReady().then(async () => {
   ipcMain.handle("labs:reset-access", () => resetAccessState());
   ipcMain.handle("labs:open-microphone-settings", () => openMicrophoneSettings());
   ipcMain.handle("labs:open-discord", (_event, payload) => openDiscordInvite(payload));
+  ipcMain.handle("labs:app-info", () => ({
+    version: app.getVersion(),
+    update: labsAppUpdater?.getStatus() ?? idleUpdateStatus(),
+  }));
+  ipcMain.handle("labs:update-check", () => (labsAppUpdater ? labsAppUpdater.check() : idleUpdateStatus()));
+  ipcMain.handle("labs:open-release", () => shell.openExternal(RELEASE_PAGE));
   ipcMain.handle("labs:workspace-get", () => getWorkspace());
   ipcMain.handle("labs:projects-list", () => listWorkspaceProjects());
   ipcMain.handle("labs:project-create", (_event, input) => createWorkspaceProject(input));
@@ -1234,6 +1282,8 @@ app.whenReady().then(async () => {
   if (gotSingleInstanceLock) {
     openLab();
   }
+
+  ensureLabsUpdater();
 });
 
 app.on("second-instance", () => {
