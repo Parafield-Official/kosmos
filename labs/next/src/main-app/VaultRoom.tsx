@@ -1,142 +1,105 @@
-import { useMemo, useState, type CSSProperties } from "react";
-import { GlassButton } from "../ui/liquid";
-import { frostSettings } from "../ui/liquid-settings";
-import { bookInitials, type BookProject } from "./store";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { bookInitials, readChapterAudioUrl, type BookProject } from "./store";
 import { completionPct } from "./book-stats";
 import { VaultPigment } from "./ThemeAtmosphere";
 import { VaultLighting } from "./VaultLighting";
-import { occupiedMask, peakSlotEnergy, slotLight, LAMP_ALL } from "./vault-light-layout";
+import { occupiedMask, peakSlotEnergy, slotLight } from "./vault-light-layout";
+import { readLamps } from "./vault-lamps";
 import "./vault.css";
 
-const VAULT_LIT_KEY = "kosmos-vault-lit";
-const VAULT_LAMPS_KEY = "kosmos-vault-lamps";
 const COLUMNS = 5;
 const VISIBLE_ROWS = 3;
 
-type VaultState = "lock" | "open";
-
-function readLamps(): number {
-  try {
-    const raw = window.sessionStorage.getItem(VAULT_LAMPS_KEY);
-    if (raw == null) return LAMP_ALL;
-    const value = Number(raw);
-    if (Number.isInteger(value) && value >= 0 && value <= LAMP_ALL) return value;
-  } catch {
-    // Session memory is optional.
-  }
-  return LAMP_ALL;
-}
-
-function writeLamps(value: number) {
-  try {
-    window.sessionStorage.setItem(VAULT_LAMPS_KEY, String(value));
-  } catch {
-    // Session memory is optional.
-  }
-}
-
-function readLit(): boolean {
-  try {
-    return window.sessionStorage.getItem(VAULT_LIT_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeLit() {
-  try {
-    window.sessionStorage.setItem(VAULT_LIT_KEY, "1");
-  } catch {
-    // Session memory is optional; the vault still opens.
-  }
-}
-
-function clearLit() {
-  try {
-    window.sessionStorage.removeItem(VAULT_LIT_KEY);
-  } catch {
-    // Session memory is optional; the vault still locks.
-  }
-}
-
-function folderLabel(path: string | null) {
-  if (!path) {
-    return "No folder yet";
-  }
-  const parts = path.split(/[/\\]/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
+type OriginBox = { x: number; y: number; w: number; h: number };
 
 export function VaultRoom({
   projects,
-  workspace,
   loading,
   notice,
+  pane = "home",
+  nav = "home",
+  overlay = null,
   onOpen,
+  onHome,
   onCreate,
   onImport,
   onDelete,
   onSettings,
+  onRead,
 }: {
   projects: BookProject[];
-  workspace: string | null;
   loading: boolean;
   notice: string | null;
+  pane?: "home" | "glass";
+  nav?: "home" | "settings" | "none";
+  overlay?: ReactNode;
   onOpen: (project: BookProject) => void;
+  onHome: () => void;
   onCreate: () => void;
   onImport: () => void;
   onDelete: (project: BookProject) => void;
   onSettings: () => void;
+  onRead: (project: BookProject) => void;
 }) {
-  const [state, setState] = useState<VaultState>(() => (readLit() ? "open" : "lock"));
-  const [lamps, setLamps] = useState(readLamps);
-  const [picked, setPicked] = useState<BookProject | null>(null);
+  const [lamps] = useState(readLamps);
+  const [compose, setCompose] = useState(false);
+  const [inspect, setInspect] = useState<{ project: BookProject; origin: OriginBox } | null>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const slots = Math.max(COLUMNS * VISIBLE_ROWS, Math.ceil(projects.length / COLUMNS) * COLUMNS);
-  const lit = state !== "lock";
-  const lampsAllOn = lamps === LAMP_ALL;
-
-  function setLampMask(next: number) {
-    const value = next & LAMP_ALL;
-    writeLamps(value);
-    setLamps(value);
-  }
-
-  function toggleLamp(index: number) {
-    setLampMask(lamps ^ (1 << index));
-  }
-
-  function toggleAllLamps() {
-    setLampMask(lampsAllOn ? 0 : LAMP_ALL);
-  }
+  const localSheet = compose || Boolean(inspect);
+  const glassOn = pane === "glass" || localSheet;
+  const interactive = pane === "home" && !localSheet;
   const occupied = useMemo(
     () => occupiedMask(Array.from({ length: COLUMNS * VISIBLE_ROWS }, (_, index) => Boolean(projects[index]))),
     [projects],
   );
   const peakLight = useMemo(() => peakSlotEnergy(), []);
 
-  function enter() {
-    writeLit();
-    setState("open");
+  function closeSheets() {
+    setCompose(false);
+    setInspect(null);
   }
 
-  function leave() {
-    clearLit();
-    setPicked(null);
-    setState("lock");
+  function pickCreate() {
+    closeSheets();
+    onCreate();
   }
+
+  function pickImport() {
+    closeSheets();
+    onImport();
+  }
+
+  useEffect(() => {
+    closeSheets();
+  }, [pane, nav]);
+
+  useEffect(() => {
+    if (!localSheet) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeSheets();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [localSheet]);
 
   return (
     <section
       className="vault"
-      data-lit={lit ? "true" : "false"}
-      data-state={state}
+      data-lit="true"
+      data-state="open"
+      data-pane={glassOn ? "glass" : "home"}
       data-lamps={lamps}
       data-overflow={projects.length > VISIBLE_ROWS * COLUMNS ? "true" : "false"}
-      aria-label={lit ? "Your workspace" : "Kosmos"}
+      aria-label="Your workspace"
     >
       <div className="vault-shell">
         <div className="vault-opening">
-          <VaultLighting lit={lit} occupied={occupied} lamps={lamps} />
+          <VaultLighting lit occupied={occupied} lamps={lamps} />
           <div className="vault-stage">
             <div className="vault-world">
               <div className="vault-ceiling" aria-hidden="true">
@@ -191,8 +154,15 @@ export function VaultRoom({
                             index={index}
                             peakLight={peakLight}
                             lamps={lamps}
-                            interactive={state === "open"}
-                            onSelect={() => project && setPicked(project)}
+                            interactive={interactive}
+                            lifted={inspect?.project.id === project?.id}
+                            onSelect={(origin) => {
+                              if (!project) {
+                                return;
+                              }
+                              setCompose(false);
+                              setInspect({ project, origin });
+                            }}
                             onDelete={() => project && onDelete(project)}
                           />
                         );
@@ -218,121 +188,93 @@ export function VaultRoom({
           <span className="vault-pane-edge" />
         </div>
 
-        {state === "lock" ? (
-          <div className="vault-glass" aria-hidden="true">
-            <span className="vault-glass-frost" />
-            <span className="vault-glass-specular" />
-            <span className="vault-glass-grain" />
+        <div className="vault-glass" aria-hidden="true">
+          <span className="vault-glass-frost" />
+          <span className="vault-glass-specular" />
+          <span className="vault-glass-grain" />
+        </div>
+
+        {overlay && !localSheet ? <div className="vault-overlay">{overlay}</div> : null}
+
+        {compose ? (
+          <div className="vault-sheet-layer" onClick={closeSheets}>
+            <ComposePanel onCreate={pickCreate} onImport={pickImport} />
           </div>
         ) : null}
 
-        <div className="vault-chrome">
-          {state === "lock" ? (
-            <div className="vault-lock">
-              <GlassButton variant="frost" settings={frostSettings} className="vault-enter" type="button" onClick={enter}>
-                Enter workspace
-              </GlassButton>
-            </div>
-          ) : null}
-        </div>
-
-        {state === "open" ? (
-          <>
-            <div className="vault-open-copy">
-              <h1 className="vault-title">Your workspace</h1>
-              <div className="vault-open-row">
-                <p className="vault-meta">
-                  <span>
-                    {loading
-                      ? "Loading"
-                      : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
-                  </span>
-                </p>
-                <button
-                  type="button"
-                  className="vault-place"
-                  title={workspace ?? undefined}
-                  aria-label={workspace ? `Workspace folder ${workspace}` : "No workspace folder yet"}
-                >
-                  <FolderGlyph />
-                  <span className="vault-place-name">{folderLabel(workspace)}</span>
-                  {workspace ? <span className="vault-place-path">{workspace}</span> : null}
-                </button>
-              </div>
-            </div>
-            <div className="vault-lamp-dock" role="toolbar" aria-label="Gallery lights">
-              <button
-                type="button"
-                className="vault-lamp-all"
-                aria-pressed={lampsAllOn}
-                onClick={toggleAllLamps}
-              >
-                All
-              </button>
-              <span className="vault-dock-rule" aria-hidden="true" />
-              {Array.from({ length: 5 }, (_, index) => {
-                const on = ((lamps >> index) & 1) === 1;
-                return (
-                  <button
-                    key={index}
-                    type="button"
-                    className="vault-lamp-pip"
-                    data-on={on ? "true" : "false"}
-                    aria-label={`Light ${index + 1}`}
-                    aria-pressed={on}
-                    onClick={() => toggleLamp(index)}
-                  />
-                );
-              })}
-            </div>
-            <div className="vault-dock" role="toolbar" aria-label="Workspace">
-              <button type="button" className="vault-dock-btn" aria-label="Lock workspace" onClick={leave}>
-                <LockGlyph />
-              </button>
-              <span className="vault-dock-rule" aria-hidden="true" />
-              <button type="button" className="vault-dock-btn" aria-label="Create project" onClick={onCreate}>
-                <PlusGlyph />
-              </button>
-              <span className="vault-dock-rule" aria-hidden="true" />
-              <button type="button" className="vault-dock-btn" aria-label="Import project" onClick={onImport}>
-                <FolderGlyph />
-              </button>
-              <span className="vault-dock-rule" aria-hidden="true" />
-              <button type="button" className="vault-dock-btn" aria-label="Settings" onClick={onSettings}>
-                <GearGlyph />
-              </button>
-            </div>
-          </>
+        {inspect ? (
+          <InspectPanel
+            project={inspect.project}
+            origin={inspect.origin}
+            onClose={closeSheets}
+            onEdit={() => {
+              const project = inspect.project;
+              closeSheets();
+              onOpen(project);
+            }}
+            onRead={() => {
+              const project = inspect.project;
+              closeSheets();
+              onRead(project);
+            }}
+          />
         ) : null}
+
+        <div className="vault-dock" ref={dockRef} role="toolbar" aria-label="Workspace">
+          <button
+            type="button"
+            className="vault-dock-btn"
+            aria-label="Home"
+            aria-current={nav === "home" ? "page" : undefined}
+            onClick={() => {
+              closeSheets();
+              onHome();
+            }}
+          >
+            <HomeGlyph />
+          </button>
+          <span className="vault-dock-compose">
+            <button
+              type="button"
+              className={compose ? "vault-dock-btn is-hot" : "vault-dock-btn"}
+              aria-label="Add or import project"
+              aria-haspopup="dialog"
+              aria-expanded={compose}
+              onClick={() => {
+                setInspect(null);
+                setCompose((open) => !open);
+              }}
+            >
+              <PlusGlyph />
+            </button>
+          </span>
+          <button
+            type="button"
+            className="vault-dock-btn vault-dock-btn-settings"
+            aria-label="Settings"
+            aria-current={nav === "settings" ? "page" : undefined}
+            onClick={() => {
+              closeSheets();
+              onSettings();
+            }}
+          >
+            <GearGlyph />
+          </button>
+        </div>
       </div>
 
       {notice ? <p className="vault-note">{notice}</p> : null}
-
-      {picked ? (
-        <BookDetail
-          project={picked}
-          onClose={() => setPicked(null)}
-          onOpen={() => {
-            const project = picked;
-            setPicked(null);
-            onOpen(project);
-          }}
-          onDelete={() => {
-            const project = picked;
-            setPicked(null);
-            onDelete(project);
-          }}
-        />
-      ) : null}
     </section>
   );
 }
+
 function VaultSlot({
   project,
   index,
   peakLight,
   lamps,
   interactive,
+  lifted,
   onSelect,
   onDelete,
 }: {
@@ -341,7 +283,8 @@ function VaultSlot({
   peakLight: number;
   lamps: number;
   interactive: boolean;
-  onSelect: () => void;
+  lifted: boolean;
+  onSelect: (origin: OriginBox) => void;
   onDelete: () => void;
 }) {
   const row = Math.floor(index / COLUMNS);
@@ -354,6 +297,7 @@ function VaultSlot({
       className={project ? "vault-slot" : "vault-slot is-empty"}
       data-row={row}
       data-col={col}
+      data-lifted={lifted ? "true" : "false"}
       style={
         {
           "--irr": Math.min(1.35, light.irr / Math.max(peakLight, 1e-6)),
@@ -376,21 +320,33 @@ function VaultSlot({
               type="button"
               className="vault-cover"
               disabled={!interactive}
-              onClick={onSelect}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                onSelect({ x: rect.x, y: rect.y, w: rect.width, h: rect.height });
+              }}
               aria-label={`${project.title}, ${progress}% complete`}
             >
               <VaultCoverArt project={project} />
               <span className="vault-cover-shade" />
               <span className="vault-cover-edge" />
             </button>
+            {interactive ? (
+              <button
+                type="button"
+                className="vault-remove"
+                aria-label={`Remove ${project.title}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <TrashGlyph />
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>
-      {interactive && project ? (
-        <button type="button" className="vault-remove" aria-label={`Remove ${project.title}`} onClick={onDelete}>
-          <RemoveGlyph />
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -407,67 +363,204 @@ function VaultCoverArt({ project }: { project: BookProject }) {
   );
 }
 
-function BookDetail({
+function ComposePanel({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
+  return (
+    <div
+      className="vault-chooser"
+      role="dialog"
+      aria-labelledby="vault-chooser-title"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <p className="vault-chooser-kicker" id="vault-chooser-title">
+        Add to your shelf
+      </p>
+      <button type="button" className="vault-chooser-row" onClick={onCreate}>
+        <span className="vault-chooser-icon" aria-hidden="true">
+          <PlusGlyph />
+        </span>
+        <span className="vault-chooser-copy">
+          <strong>New project</strong>
+          <span>Start a book from a title, author, and manuscript.</span>
+        </span>
+      </button>
+      <span className="vault-chooser-rule" aria-hidden="true" />
+      <button type="button" className="vault-chooser-row" onClick={onImport}>
+        <span className="vault-chooser-icon" aria-hidden="true">
+          <FolderGlyph />
+        </span>
+        <span className="vault-chooser-copy">
+          <strong>Import existing</strong>
+          <span>Open a Kosmos project that’s already on this computer.</span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function InspectPanel({
   project,
+  origin,
   onClose,
-  onOpen,
-  onDelete,
+  onEdit,
+  onRead,
 }: {
   project: BookProject;
+  origin: OriginBox;
   onClose: () => void;
-  onOpen: () => void;
-  onDelete: () => void;
+  onEdit: () => void;
+  onRead: () => void;
 }) {
+  const coverRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [fly, setFly] = useState({ ...origin, tx: 0, ty: 0, sx: 1, sy: 1, go: false });
+  const [landed, setLanded] = useState(false);
+  const [listening, setListening] = useState(false);
   const progress = completionPct(project);
+  const complete = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered);
+  const canRead = project.chapters.length > 0;
+  const reduceMotion = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (reduceMotion) {
+      setLanded(true);
+      return;
+    }
+    const target = coverRef.current?.getBoundingClientRect();
+    if (!target) {
+      setLanded(true);
+      return;
+    }
+    setFly({
+      x: origin.x,
+      y: origin.y,
+      w: origin.w,
+      h: origin.h,
+      tx: target.x - origin.x,
+      ty: target.y - origin.y,
+      sx: target.width / Math.max(origin.w, 1),
+      sy: target.height / Math.max(origin.h, 1),
+      go: false,
+    });
+    const frame = requestAnimationFrame(() => {
+      setFly((current) => ({ ...current, go: true }));
+    });
+    const fallback = window.setTimeout(() => setLanded(true), 620);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(fallback);
+    };
+  }, [origin, reduceMotion]);
 
   useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
+
+  async function listen() {
+    if (!complete || listening) {
+      return;
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    const files = project.chapters.map((chapter) => chapter.masteredFile).filter((file): file is string => Boolean(file));
+    if (!files.length) {
+      return;
+    }
+    setListening(true);
+    let index = 0;
+    const playNext = async () => {
+      const file = files[index];
+      if (!file) {
+        setListening(false);
+        return;
+      }
+      const url = await readChapterAudioUrl(project, file);
+      if (!url) {
+        index += 1;
+        await playNext();
+        return;
+      }
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.addEventListener("ended", () => {
+        URL.revokeObjectURL(url);
+        index += 1;
+        void playNext();
+      });
+      try {
+        await audio.play();
+      } catch {
+        URL.revokeObjectURL(url);
+        setListening(false);
+      }
+    };
+    await playNext();
+  }
 
   return (
-    <div className="vault-sheet-scrim" role="presentation" onClick={onClose}>
+    <div className="vault-sheet-layer" onClick={onClose}>
+      {!landed ? (
+        <div
+          className={fly.go ? "vault-inspect-fly is-go" : "vault-inspect-fly"}
+          style={
+            {
+              "--x": `${fly.x}px`,
+              "--y": `${fly.y}px`,
+              "--w": `${fly.w}px`,
+              "--h": `${fly.h}px`,
+              "--tx": `${fly.tx}px`,
+              "--ty": `${fly.ty}px`,
+              "--sx": fly.sx,
+              "--sy": fly.sy,
+            } as CSSProperties
+          }
+          onTransitionEnd={() => setLanded(true)}
+        >
+          <VaultCoverArt project={project} />
+        </div>
+      ) : null}
       <article
-        className="vault-sheet"
+        className={landed || reduceMotion ? "vault-inspect is-in" : "vault-inspect"}
         role="dialog"
-        aria-modal="true"
-        aria-labelledby="vault-sheet-title"
+        aria-labelledby="vault-inspect-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="vault-sheet-book" aria-hidden="true">
-          <span className="vault-sheet-spine" />
-          <span className="vault-sheet-page" />
-          <span className="vault-sheet-front">
-            <VaultCoverArt project={project} />
-          </span>
+        <div className="vault-inspect-cover" ref={coverRef} data-landed={landed ? "true" : "false"}>
+          <VaultCoverArt project={project} />
         </div>
-        <div className="vault-sheet-copy">
-          <h2 className="vault-sheet-title" id="vault-sheet-title">
+        <div className="vault-inspect-copy">
+          <h2 className="vault-inspect-title" id="vault-inspect-title">
             {project.title}
           </h2>
-          <p className="vault-sheet-author">{project.author.trim() || "Unknown author"}</p>
-          <dl className="vault-sheet-meta">
-            <div>
-              <dt>Completion</dt>
-              <dd>{progress}%</dd>
-            </div>
-            <div>
-              <dt>Chapters</dt>
-              <dd>{project.chapters.length}</dd>
-            </div>
-          </dl>
-          <div className="vault-sheet-actions">
-            <GlassButton variant="frost" type="button" onClick={onOpen}>
-              Open
-            </GlassButton>
-            <GlassButton variant="frost" type="button" onClick={onDelete}>
-              Remove
-            </GlassButton>
+          <p className="vault-inspect-author">{project.author.trim() || "Unknown author"}</p>
+          <div className="vault-inspect-meter" aria-label={`${progress}% complete`}>
+            <span className="vault-inspect-meter-track">
+              <i style={{ width: `${progress}%` }} />
+            </span>
+            <span className="vault-inspect-meter-label">{progress}% complete</span>
+          </div>
+          <div className="vault-inspect-actions">
+            <button type="button" className="vault-inspect-btn" onClick={onEdit}>
+              <EditGlyph />
+              <span>Edit</span>
+            </button>
+            <button
+              type="button"
+              className="vault-inspect-btn"
+              aria-disabled={!complete}
+              disabled={!complete}
+              onClick={() => void listen()}
+            >
+              <ListenGlyph />
+              <span>{listening ? "Playing" : "Listen"}</span>
+            </button>
+            <button type="button" className="vault-inspect-btn" disabled={!canRead} onClick={onRead}>
+              <ReadGlyph />
+              <span>Read</span>
+            </button>
           </div>
         </div>
       </article>
@@ -475,64 +568,115 @@ function BookDetail({
   );
 }
 
-function LockGlyph() {
+function HomeGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M8 11V8a4 4 0 0 1 8 0v3"
+        d="M4.4 11.2 12 4.7l7.6 6.5"
         stroke="currentColor"
-        strokeWidth="1.7"
+        strokeWidth="1.85"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <rect x="6" y="11" width="12" height="10" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
-      <path d="M12 14.2v3.2M10.4 15.8h3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M6.6 10.4V19h10.8v-8.6" stroke="currentColor" strokeWidth="1.85" strokeLinejoin="round" />
     </svg>
   );
 }
 
 function PlusGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-      <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function FolderGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-      <path
-        d="M4 8.2A1.7 1.7 0 0 1 5.7 6.5h4.1L12 8.6h6.3A1.7 1.7 0 0 1 20 10.3v6.5A1.7 1.7 0 0 1 18.3 18.5H5.7A1.7 1.7 0 0 1 4 16.8Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-      />
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" />
     </svg>
   );
 }
 
 function GearGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
-      <path
-        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-        stroke="currentColor"
-        strokeWidth="1.8"
-      />
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="1.85" />
       <path
         d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
         stroke="currentColor"
-        strokeWidth="1.8"
+        strokeWidth="1.85"
         strokeLinejoin="round"
       />
     </svg>
   );
 }
 
-function RemoveGlyph() {
+function FolderGlyph() {
   return (
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden="true">
-      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8.2A1.7 1.7 0 0 1 5.7 6.5h4.1L12 8.6h6.3A1.7 1.7 0 0 1 20 10.3v6.5A1.7 1.7 0 0 1 18.3 18.5H5.7A1.7 1.7 0 0 1 4 16.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function EditGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 20h4.2L19 9.2 14.8 5 4 15.8V20Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      <path d="M13.4 6.4 17.6 10.6" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  );
+}
+
+function ListenGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 12a8 8 0 0 1 16 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M7 12.2v3.1a1.6 1.6 0 0 0 1.6 1.6H10V12.2H7ZM17 12.2h-3v4.7h1.4A1.6 1.6 0 0 0 17 15.3v-3.1Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ReadGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 6.2A1.4 1.4 0 0 1 5.9 5h4.2c.7 0 1.4.6 1.4 1.4V19a2.2 2.2 0 0 0-2-1.4H5.9A1.4 1.4 0 0 1 4.5 16.2V6.2Z"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M19.5 6.2A1.4 1.4 0 0 0 18.1 5h-2.6c-.7 0-1.4.6-1.4 1.4V19a2.2 2.2 0 0 1 2-1.4h2A1.4 1.4 0 0 0 19.5 16.2V6.2Z"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+      <path d="M5 7h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path
+        d="M10 7V5.4A1.4 1.4 0 0 1 11.4 4h1.2A1.4 1.4 0 0 1 14 5.4V7"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8.2 7l.65 12.1A1.6 1.6 0 0 0 10.44 20.5h3.12a1.6 1.6 0 0 0 1.59-1.4L15.8 7"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M10.2 10.6v6M13.8 10.6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

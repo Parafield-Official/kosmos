@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   createBook,
   deleteBook,
@@ -19,10 +19,20 @@ export function LibraryScreen({
   onOpen,
   onCreated,
   onSettings,
+  onHome,
+  onRead,
+  pane = "home",
+  nav = "home",
+  overlay = null,
 }: {
   onOpen: (project: BookProject) => void;
   onCreated: (project: BookProject, file?: File) => void;
   onSettings: () => void;
+  onHome: () => void;
+  onRead: (project: BookProject) => void;
+  pane?: "home" | "glass";
+  nav?: "home" | "settings" | "none";
+  overlay?: ReactNode;
 }) {
   const [projects, setProjects] = useState<BookProject[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
@@ -128,10 +138,14 @@ export function LibraryScreen({
       />
       <VaultRoom
         projects={projects}
-        workspace={workspace}
         loading={loading}
         notice={notice}
+        pane={pane}
+        nav={nav}
+        overlay={overlay}
         onOpen={onOpen}
+        onHome={onHome}
+        onRead={onRead}
         onCreate={() => void startNewBook()}
         onImport={() => void openExisting()}
         onDelete={(project) => setDeleteTarget(project)}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   appendChapter,
   persistBook,
@@ -41,6 +41,13 @@ function withProject(screen: WorkScreen, project: BookProject): WorkScreen {
     return screen;
   }
   return { ...screen, project };
+}
+
+function vaultHosts(screen: MainScreen): boolean {
+  if (screen.name === "library" || screen.name === "book") {
+    return true;
+  }
+  return screen.name === "settings" && (screen.from.name === "library" || screen.from.name === "book");
 }
 
 export function MainApp() {
@@ -203,56 +210,80 @@ export function MainApp() {
     "--ma-accent-rgb": themePaint.rgb,
   } as CSSProperties;
 
+  const hosted = vaultHosts(screen);
+  const pane = screen.name === "library" ? "home" : "glass";
+  const nav = screen.name === "settings" ? "settings" : screen.name === "library" ? "home" : "none";
+  const showCornerGear = screen.name === "chapter" || screen.name === "editor" || screen.name === "reader";
+
+  let overlay: ReactNode = null;
+  if (screen.name === "settings" && hosted) {
+    overlay = <SettingsScreen onBack={() => setScreen(screen.from)} />;
+  } else if (screen.name === "book") {
+    overlay = (
+      <BookShell
+        project={screen.project}
+        tab={screen.tab}
+        onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
+        onBack={openLibrary}
+      >
+        {screen.tab === "dashboard" ? (
+          <DashboardScreen
+            project={screen.project}
+            onChange={(next) => void commit(next)}
+            onRead={() => {
+              const first = screen.project.chapters[0];
+              if (first) {
+                openReader(screen.project, first.id);
+              }
+            }}
+            onGoChapters={() => setScreen({ name: "book", project: screen.project, tab: "chapters" })}
+            onAnalyze={() => void analyzeAndApply(screen.project)}
+            onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
+            analyzeError={analyzeError}
+          />
+        ) : null}
+        {screen.tab === "chapters" ? (
+          <ChaptersScreen
+            project={screen.project}
+            onOpenChapter={(chapterId) => openChapter(screen.project, chapterId)}
+            onEditChapter={(chapterId) => openEditor(screen.project, chapterId)}
+            onRead={(chapterId) => openReader(screen.project, chapterId)}
+            onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
+            onChange={(next) => void commit(next)}
+          />
+        ) : null}
+        {screen.tab === "pronunciation" ? (
+          <PronunciationScreen project={screen.project} onChange={(next) => void commit(next)} />
+        ) : null}
+      </BookShell>
+    );
+  }
+
   return (
     <div className="main-app" data-screen={screen.name} data-theme-accent={themeAccent} style={themeStyle}>
       <ThemeAtmosphere />
-      {screen.name !== "settings" ? (
+      {showCornerGear ? (
         <button type="button" className="ma-gear" aria-label="Settings" onClick={openSettings}>
           <GearIcon />
         </button>
       ) : null}
 
-      {screen.name === "library" ? (
-        <LibraryScreen onOpen={openProject} onCreated={onCreatedBook} onSettings={openSettings} />
-      ) : null}
-
-      {screen.name === "book" ? (
-        <BookShell
-          project={screen.project}
-          tab={screen.tab}
-          onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
-          onBack={openLibrary}
-        >
-          {screen.tab === "dashboard" ? (
-            <DashboardScreen
-              project={screen.project}
-              onChange={(next) => void commit(next)}
-              onRead={() => {
-                const first = screen.project.chapters[0];
-                if (first) {
-                  openReader(screen.project, first.id);
-                }
-              }}
-              onGoChapters={() => setScreen({ name: "book", project: screen.project, tab: "chapters" })}
-              onAnalyze={() => void analyzeAndApply(screen.project)}
-              onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
-              analyzeError={analyzeError}
-            />
-          ) : null}
-          {screen.tab === "chapters" ? (
-            <ChaptersScreen
-              project={screen.project}
-              onOpenChapter={(chapterId) => openChapter(screen.project, chapterId)}
-              onEditChapter={(chapterId) => openEditor(screen.project, chapterId)}
-              onRead={(chapterId) => openReader(screen.project, chapterId)}
-              onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
-              onChange={(next) => void commit(next)}
-            />
-          ) : null}
-          {screen.tab === "pronunciation" ? (
-            <PronunciationScreen project={screen.project} onChange={(next) => void commit(next)} />
-          ) : null}
-        </BookShell>
+      {hosted ? (
+        <LibraryScreen
+          pane={pane}
+          nav={nav}
+          overlay={overlay}
+          onOpen={openProject}
+          onCreated={onCreatedBook}
+          onSettings={openSettings}
+          onHome={openLibrary}
+          onRead={(project) => {
+            const first = project.chapters[0];
+            if (first) {
+              openReader(project, first.id);
+            }
+          }}
+        />
       ) : null}
 
       {screen.name === "chapter" ? (
@@ -295,7 +326,7 @@ export function MainApp() {
         <ReaderScreen project={screen.project} chapterId={screen.chapterId} onBack={() => openProject(screen.project, "chapters")} />
       ) : null}
 
-      {screen.name === "settings" ? <SettingsScreen onBack={() => setScreen(screen.from)} /> : null}
+      {screen.name === "settings" && !hosted ? <SettingsScreen onBack={() => setScreen(screen.from)} /> : null}
 
       {analyzing ? <AnalyzingOverlay progress={analyzing.progress} label={analyzing.label} /> : null}
     </div>

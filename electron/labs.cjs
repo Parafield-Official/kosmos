@@ -1159,7 +1159,7 @@ function openDebugWindow() {
     title: "Kosmos Debug",
     frame: false,
     transparent: false,
-    backgroundColor: "#1c1a22",
+    backgroundColor: "#3a3840",
     roundedCorners: true,
     hasShadow: true,
     alwaysOnTop: true,
@@ -1177,13 +1177,19 @@ function openDebugWindow() {
   });
 
   debugWindow.setAlwaysOnTop(true, "floating");
-  debugWindow.once("ready-to-show", () => {
-    if (debugWindow && !debugWindow.isDestroyed()) {
-      placeDebugWindow();
-      debugWindow.show();
-      debugWindow.moveTop();
-      console.log("[labs] debug window ready", debugWindow.getBounds());
+  const revealDebug = () => {
+    if (!debugWindow || debugWindow.isDestroyed()) {
+      return;
     }
+    placeDebugWindow();
+    debugWindow.show();
+    debugWindow.moveTop();
+    console.log("[labs] debug window ready", debugWindow.getBounds());
+  };
+  debugWindow.once("ready-to-show", revealDebug);
+  debugWindow.webContents.once("did-finish-load", revealDebug);
+  debugWindow.webContents.on("did-fail-load", (_event, code, description, url) => {
+    console.error("[labs] debug window failed to load", code, description, url);
   });
   debugWindow.on("closed", () => {
     debugWindow = null;

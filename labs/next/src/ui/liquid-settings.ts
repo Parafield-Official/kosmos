@@ -43,26 +43,26 @@ export const clearLiquidSettings: LiquidSettings = {
   shadow: "rgba(40, 36, 30, 0.12)",
 };
 
-/** Dark frosted capsule: Image-3 docks. White glyphs, no chromatic fringe. */
+/** Apple HUD liquid glass: translucent fill, refraction from the SVG filter. */
 export const frostSettings: LiquidSettings = {
   ...liquidSettings,
-  blur: "14px",
-  saturate: "112%",
-  brightness: "1.02",
+  blur: "11px",
+  saturate: "140%",
+  brightness: "1.06",
   contrast: "1.04",
-  fillTop: "rgba(72, 70, 76, 0.64)",
-  fillMid: "rgba(48, 46, 52, 0.56)",
-  fillBottom: "rgba(40, 38, 44, 0.62)",
+  fillTop: "rgba(255, 255, 255, 0.2)",
+  fillMid: "rgba(36, 34, 42, 0.32)",
+  fillBottom: "rgba(28, 26, 34, 0.38)",
   meshA: "transparent",
   meshB: "transparent",
   well: "transparent",
-  rim: "rgba(255, 255, 255, 0.18)",
-  rimInner: "rgba(255, 255, 255, 0.28)",
-  rimShade: "rgba(255, 255, 255, 0.08)",
-  spec: "rgba(255, 255, 255, 0.2)",
+  rim: "rgba(255, 255, 255, 0.48)",
+  rimInner: "rgba(255, 255, 255, 0.62)",
+  rimShade: "rgba(255, 255, 255, 0.12)",
+  spec: "rgba(255, 255, 255, 0.42)",
   refract: "transparent",
   refractHot: "transparent",
-  shadow: "rgba(20, 18, 22, 0.22)",
+  shadow: "rgba(16, 14, 18, 0.2)",
   radiusPill: "999px",
 };
 

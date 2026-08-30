@@ -2026,8 +2026,8 @@ h1 {
 }
 
 .glass-look button.on {
-  background: #ffffff;
-  color: var(--press);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1a1613;
 }
 
 .glass-look button:active {
@@ -2050,13 +2050,19 @@ h1 {
   max-height: min(22rem, calc(100vh - 5rem));
   padding: 0.45rem;
   border-radius: 22px;
-  background: rgba(50, 48, 54, 0.58);
-  backdrop-filter: blur(14px) saturate(1.12);
-  -webkit-backdrop-filter: blur(14px) saturate(1.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.22) 0%,
+    rgba(255, 255, 255, 0.08) 46%,
+    rgba(236, 242, 255, 0.14) 100%
+  );
+  backdrop-filter: blur(16px) url(#kosmos-liquid-glass-chip) saturate(1.4) brightness(1.08);
+  -webkit-backdrop-filter: blur(16px) url(#kosmos-liquid-glass-chip) saturate(1.4) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 8px 18px rgba(20, 18, 22, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    0 8px 18px rgba(16, 14, 18, 0.16);
   overflow-y: auto;
 }
 
@@ -2070,7 +2076,7 @@ h1 {
   border: 0;
   border-radius: 999px;
   padding: 0.48rem 0.65rem;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
   font-family: var(--font-mono);
   font-size: 0.62rem;
@@ -2078,12 +2084,19 @@ h1 {
   text-transform: lowercase;
   text-align: left;
   cursor: pointer;
-  transition: background 280ms ease, color 280ms ease;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: background 280ms ease, box-shadow 280ms ease;
 }
 
-.debug-dev-action:hover {
+.debug-dev-action:hover,
+.debug-dev-action:focus-visible {
   background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .debug-list::before {

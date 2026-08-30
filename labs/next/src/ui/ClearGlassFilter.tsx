@@ -1,6 +1,9 @@
-/** SVG backdrop filter: Snell-style bend + chromatic dispersion.
-    Chromium/Electron only (backdrop-filter: url()). Onboarding liquid
-    chrome is unchanged — this is for clear buttons and the brand mark. */
+/** SVG filters for Labs chrome.
+
+    `kosmos-clear-glass` — small clear buttons: Snell bend + RGB split.
+    `kosmos-liquid-glass` — lock pane: low-frequency water refraction on
+    the vault opening (filter, not backdrop-filter). Sharp UI sits in chrome.
+    `kosmos-liquid-glass-chip` — HUD capsules. No chromatic fringe. */
 function DispersionFilter({
   id,
   scale,
@@ -57,28 +60,52 @@ function DispersionFilter({
   );
 }
 
+function LiquidGlassFilter({
+  id,
+  scale,
+  frequency,
+}: {
+  id: string;
+  scale: number;
+  frequency: string;
+}) {
+  return (
+    <filter
+      id={id}
+      x="-28%"
+      y="-28%"
+      width="156%"
+      height="156%"
+      colorInterpolationFilters="sRGB"
+    >
+      <feTurbulence
+        type="turbulence"
+        baseFrequency={frequency}
+        numOctaves="1"
+        seed="4"
+        stitchTiles="stitch"
+        result="waves"
+      />
+      <feGaussianBlur in="waves" stdDeviation="18" result="lens" />
+      <feDisplacementMap
+        in="SourceGraphic"
+        in2="lens"
+        scale={scale}
+        xChannelSelector="R"
+        yChannelSelector="G"
+        result="bent"
+      />
+      <feColorMatrix in="bent" type="saturate" values="1.28" />
+    </filter>
+  );
+}
+
 export function ClearGlassFilter() {
   return (
     <svg width="0" height="0" aria-hidden="true" focusable="false" className="clear-glass-defs">
       <DispersionFilter id="kosmos-clear-glass" scale={14} dx={1.1} blur={0.7} />
-      <filter
-        id="kosmos-clear-glass-pane"
-        x="-8%"
-        y="-8%"
-        width="116%"
-        height="116%"
-        colorInterpolationFilters="sRGB"
-      >
-        <feGaussianBlur in="SourceGraphic" stdDeviation="0.35" result="frost" />
-        <feTurbulence type="fractalNoise" baseFrequency="0.008 0.02" numOctaves="1" seed="5" result="height" />
-        <feDisplacementMap
-          in="frost"
-          in2="height"
-          scale="7"
-          xChannelSelector="R"
-          yChannelSelector="G"
-        />
-      </filter>
+      <LiquidGlassFilter id="kosmos-liquid-glass" scale={18} frequency="0.0028 0.0046" />
+      <LiquidGlassFilter id="kosmos-liquid-glass-chip" scale={16} frequency="0.007 0.012" />
     </svg>
   );
 }

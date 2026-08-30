@@ -70,10 +70,11 @@
   height: 1.2rem;
 }
 
-/* Settings page — full-width scroller, centered columns so the bar sits at the edge. */
+/* Settings page — magazine spread: kicker, grouped glass cards, air between rows. */
 .ma-settings {
   max-width: none;
   width: 100%;
+  gap: 0.85rem;
 }
 
 .ma-settings > .ma-overview-head,
@@ -81,6 +82,35 @@
 .ma-settings > .ma-set-columns {
   width: min(100%, 44rem);
   margin-inline: auto;
+}
+
+.ma-settings .ma-title {
+  margin: 0.2rem 0 1.7rem;
+  font-size: clamp(2.05rem, 4.4vw, 2.7rem);
+  font-weight: 560;
+  letter-spacing: -0.042em;
+  line-height: 1.02;
+}
+
+.ma-settings .ma-overview-head {
+  margin-bottom: 0.15rem;
+}
+
+.ma-settings .ma-back {
+  padding: 0.28rem 0.45rem 0.28rem 0.2rem;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  letter-spacing: -0.01em;
+}
+
+.ma-settings .ma-back:hover,
+.ma-settings .ma-back:focus-visible {
+  color: var(--ink);
+}
+
+.ma-settings .ma-back:active {
+  transform: scale(0.97);
 }
 
 .ma-set-list,
@@ -91,21 +121,37 @@
 
 .ma-set-col {
   min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0;
 }
 
 @media (min-width: 980px) {
   .ma-settings > .ma-overview-head,
   .ma-settings > .ma-title,
   .ma-settings > .ma-set-columns {
-    width: min(100%, 68rem);
+    width: min(100%, 64rem);
   }
 
   .ma-set-columns {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 3.75rem;
-    row-gap: 0.35rem;
+    column-gap: 2.15rem;
+    row-gap: 1.85rem;
     align-items: start;
   }
+}
+
+.ma-set-kicker {
+  margin: 1.85rem 0 0.8rem 0.2rem;
+  color: var(--mute);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ma-set-col > .ma-set-kicker:first-child {
+  margin-top: 0;
 }
 
 .ma-set-section {
@@ -125,6 +171,19 @@
   margin-top: 0.2rem;
   padding-top: 0;
   border-top: 0;
+}
+
+.ma-set-card {
+  display: grid;
+  overflow: hidden;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 40px rgba(var(--ma-accent-rgb), 0.08);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .ma-set-slider {
@@ -150,24 +209,29 @@
   font-size: 0.78rem;
   color: var(--ink);
   text-align: right;
+  letter-spacing: 0.02em;
 }
-
 
 .ma-set-themes {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.4rem;
   max-width: 22rem;
 }
 
 .ma-set-theme {
   flex: 1;
-  min-height: 2.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 10px;
+  min-height: 2.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 12px;
   font: inherit;
   font-size: 0.8rem;
   font-weight: 500;
+  letter-spacing: -0.01em;
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition:
+    transform 100ms ease-out,
+    box-shadow 180ms ease;
 }
 
 .ma-set-theme.is-cream {
@@ -186,38 +250,67 @@
 }
 
 .ma-set-theme.is-on {
-  box-shadow: 0 0 0 2px var(--ink);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.92),
+    0 0 0 3px rgba(21, 21, 23, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
+.ma-set-theme:hover {
+  transform: scale(1.02);
+}
 
+.ma-set-theme:active {
+  transform: scale(0.97);
+}
 
 .ma-set-item {
   display: grid;
-  gap: 0.5rem;
-  padding: 1.1rem 0;
+  gap: 0.62rem;
+  padding: 1.4rem 1.5rem 1.45rem;
+  border-top: 1px solid rgba(21, 21, 23, 0.08);
+}
+
+.ma-set-card > .ma-set-item:first-child {
+  border-top: 0;
 }
 
 .ma-set-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.62rem;
   color: var(--ink);
 }
 
 .ma-set-head strong {
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-size: 1.05rem;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .ma-set-head svg {
+  flex: 0 0 auto;
   color: var(--ink-soft);
+  filter:
+    drop-shadow(0 0 3px rgba(255, 255, 255, 0.2))
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.25));
+  transition: filter 180ms ease, color 180ms ease;
+}
+
+.ma-set-item:hover .ma-set-head svg {
+  color: var(--ink);
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.75))
+    drop-shadow(0 0 12px rgba(255, 236, 210, 0.35));
 }
 
 .ma-set-sub {
   margin: 0;
   max-width: 34rem;
-  font-size: 0.83rem;
+  font-size: 0.84rem;
+  font-weight: 400;
+  letter-spacing: -0.011em;
   line-height: 1.45;
   color: var(--ink-soft);
 }
@@ -234,7 +327,76 @@
 }
 
 .ma-set-control {
-  margin-top: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.ma-lamp-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.42rem 0.28rem 0.28rem;
+  border-radius: 14px;
+  background: rgba(120, 120, 130, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.ma-lamp-all {
+  min-width: 3.2rem;
+  height: 1.85rem;
+  padding: 0 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 100ms ease-out;
+}
+
+.ma-lamp-all.is-on {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--ink);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.ma-lamp-pip {
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 38%, #f3e6c4 0 34%, #c9b48a 62%, #6a5a40 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 5px 1px rgba(255, 236, 200, 0.28);
+  cursor: pointer;
+  transition: transform 100ms ease-out, filter 160ms ease;
+}
+
+.ma-lamp-pip[data-on="false"] {
+  background: radial-gradient(ellipse at 50% 40%, #8a8478 0 40%, #4a443c 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.ma-lamp-pip:hover,
+.ma-lamp-all:hover {
+  filter: brightness(1.08);
+}
+
+.ma-lamp-all:active,
+.ma-lamp-pip:active {
+  transform: scale(0.94);
 }
 
 .ma-set-control-row {
@@ -248,27 +410,58 @@
   max-width: 100%;
 }
 
+.ma-settings .glass-look {
+  padding: 0.22rem;
+  background: rgba(18, 14, 12, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.ma-settings .glass-look button {
+  color: rgba(21, 21, 23, 0.52);
+  font-weight: 500;
+}
+
+.ma-settings .glass-look button:hover {
+  color: #151517;
+}
+
+.ma-settings .glass-look button.on {
+  background: rgba(255, 255, 255, 0.78);
+  color: #1a1613;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 1px 2px rgba(20, 16, 12, 0.12);
+}
+
 .ma-seg {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  border-radius: 12px;
+  gap: 0.12rem;
+  padding: 0.22rem;
+  border-radius: 14px;
   background: rgba(120, 120, 130, 0.14);
 }
 
 .ma-seg-btn {
   min-width: 4.2rem;
-  padding: 0.35rem 0.7rem;
+  padding: 0.4rem 0.75rem;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 500;
+  letter-spacing: -0.01em;
   cursor: pointer;
-  transition: background 140ms var(--ease), color 140ms var(--ease);
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 100ms ease-out;
 }
 
 .ma-seg-btn.is-on {
@@ -276,6 +469,38 @@
   color: #1a1714;
   border-color: rgba(0, 0, 0, 0.08);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.ma-settings .ma-seg {
+  background: rgba(18, 14, 12, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.ma-settings .ma-seg-btn {
+  color: rgba(21, 21, 23, 0.5);
+}
+
+.ma-settings .ma-seg-btn:hover,
+.ma-settings .ma-seg-btn:focus-visible {
+  color: #151517;
+}
+
+.ma-settings .ma-seg-btn.is-on {
+  background: rgba(255, 255, 255, 0.72);
+  color: #1a1613;
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 1px 3px rgba(20, 16, 12, 0.1);
+}
+
+.ma-settings .ma-seg-btn:active {
+  transform: scale(0.97);
 }
 
 .ma-seg-fonts {
@@ -5086,4 +5311,246 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-shelf-index-author {
   font-size: 0.72rem;
   color: var(--mute);
+}
+
+/* Settings on the vault frost — same magazine glass as + / inspect. */
+.main-app .vault-overlay .ma-settings .ma-set-card {
+  background: rgba(22, 16, 14, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 18px 40px rgba(12, 8, 6, 0.18);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-item {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-head svg {
+  color: rgba(255, 248, 240, 0.72);
+  filter:
+    drop-shadow(0 0 3px rgba(255, 255, 255, 0.28))
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3));
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-item:hover .ma-set-head svg {
+  color: #fff;
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 12px rgba(255, 236, 210, 0.5));
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-value {
+  color: rgba(214, 196, 168, 0.78);
+}
+
+.main-app .vault-overlay .ma-settings .ma-back {
+  color: rgba(247, 242, 235, 0.7);
+}
+
+.main-app .vault-overlay .ma-settings .ma-back:hover,
+.main-app .vault-overlay .ma-settings .ma-back:focus-visible {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+}
+
+.main-app .vault-overlay .ma-settings .glass-look {
+  background: rgba(8, 6, 5, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.main-app .vault-overlay .ma-settings .glass-look button {
+  color: rgba(247, 242, 235, 0.55);
+}
+
+.main-app .vault-overlay .ma-settings .glass-look button:hover {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+}
+
+.main-app .vault-overlay .ma-settings .glass-look button.on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg,
+.main-app .vault-overlay .ma-settings .ma-lamp-row {
+  background: rgba(8, 6, 5, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg-btn,
+.main-app .vault-overlay .ma-settings .ma-lamp-all {
+  color: rgba(247, 242, 235, 0.52);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg-btn:hover,
+.main-app .vault-overlay .ma-settings .ma-seg-btn:focus-visible,
+.main-app .vault-overlay .ma-settings .ma-lamp-all:hover {
+  color: #fff;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg-btn.is-on,
+.main-app .vault-overlay .ma-settings .ma-lamp-all.is-on {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-on {
+  box-shadow:
+    0 0 0 1.5px rgba(255, 255, 255, 0.92),
+    0 0 0 3px rgba(22, 16, 14, 0.55),
+    0 0 14px rgba(255, 248, 230, 0.28);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-slider input[type="range"] {
+  appearance: none;
+  height: 0.32rem;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  accent-color: #fff;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #fff 0 28%, rgba(255, 248, 236, 0.95) 46%, rgba(214, 196, 168, 0.9) 100%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 0 10px rgba(255, 248, 230, 0.5),
+    inset 0 1px 0 #fff;
+  cursor: pointer;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-slider input[type="range"]::-moz-range-thumb {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 248, 230, 0.5);
+  cursor: pointer;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-slider-value {
+  color: rgba(214, 196, 168, 0.88);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-check {
+  padding: 0.72rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #f7f2eb;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-check:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-check input {
+  margin-top: 0.2rem;
+  accent-color: #fff;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-check em {
+  color: rgba(214, 196, 168, 0.7);
+}
+
+.main-app .vault-overlay .ma-settings .ma-pigment-tray {
+  background: rgba(8, 6, 5, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.main-app .vault-overlay .ma-settings .ma-pigment-dot.is-on,
+.main-app .vault-overlay .ma-settings .ma-pigment-mix.is-on {
+  box-shadow:
+    0 0 0 2px rgba(22, 16, 14, 0.7),
+    0 0 0 3.5px rgba(255, 255, 255, 0.92),
+    0 0 12px rgba(255, 248, 230, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.main-app .vault-overlay .ma-settings .ma-pigment-caption,
+.main-app .vault-overlay .ma-settings .ma-pigment-caption strong {
+  color: rgba(214, 196, 168, 0.82);
+}
+
+.main-app .vault-overlay .ma-settings .ma-pigment-mixer {
+  background: rgba(8, 6, 5, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.main-app .vault-overlay .ma-settings .ma-pigment-field span {
+  color: rgba(214, 196, 168, 0.72);
+}
+
+.main-app .vault-overlay .ma-settings .btn {
+  color: #f7f2eb;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.main-app .vault-overlay .ma-settings .btn:hover:not(:disabled),
+.main-app .vault-overlay .ma-settings .btn:focus-visible:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+}
+
+.main-app .vault-overlay .ma-settings .btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.main-app .vault-overlay .ma-settings .ma-danger-btn {
+  color: #ffc9c4;
+  background: rgba(180, 50, 50, 0.16);
+  border-color: rgba(255, 140, 130, 0.28);
+}
+
+.main-app .vault-overlay .ma-settings .ma-danger-btn:hover {
+  color: #fff;
+  background: rgba(200, 60, 55, 0.38);
+  text-shadow: 0 0 12px rgba(255, 180, 170, 0.4);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .main-app .vault-overlay .ma-settings .ma-set-card,
+  .main-app .vault-overlay .ma-settings .btn,
+  .main-app .vault-overlay .ma-settings .ma-seg,
+  .main-app .vault-overlay .ma-settings .glass-look {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(28, 22, 20, 0.88);
+  }
 }
