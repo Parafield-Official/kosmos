@@ -44,12 +44,12 @@ function clockParts(now: Date) {
   return { dateLine, time: `${hours}:${minutes}` };
 }
 
-function shortenPath(path: string) {
-  const parts = path.split(/[/\\]/).filter(Boolean);
-  if (parts.length <= 3) {
-    return path;
+function folderLabel(path: string | null) {
+  if (!path) {
+    return "No folder yet";
   }
-  return `…/${parts.slice(-3).join("/")}`;
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
 }
 
 export function VaultRoom({
@@ -81,12 +81,9 @@ export function VaultRoom({
   const lit = state !== "lock";
 
   useEffect(() => {
-    if (state !== "lock") {
-      return;
-    }
     const id = window.setInterval(() => setNow(new Date()), 10_000);
     return () => window.clearInterval(id);
-  }, [state]);
+  }, []);
 
   function enter() {
     writeLit();
@@ -105,7 +102,7 @@ export function VaultRoom({
       data-lit={lit ? "true" : "false"}
       data-state={state}
       data-overflow={projects.length > VISIBLE_ROWS * COLUMNS ? "true" : "false"}
-      aria-label={lit ? "Your projects" : "Kosmos"}
+      aria-label={lit ? "Your workspace" : "Kosmos"}
     >
       <div className="vault-shell">
         <div className="vault-opening">
@@ -116,8 +113,9 @@ export function VaultRoom({
                 <span className="vault-spots">
                   {Array.from({ length: 5 }, (_, index) => (
                     <span className="vault-spot-unit" key={index}>
-                      <i className="vault-spot-wash" />
-                      <i className="vault-spot" />
+                      <i className="vault-spot-trim" />
+                      <i className="vault-spot-bowl" />
+                      <i className="vault-spot-lens" />
                     </span>
                   ))}
                 </span>
@@ -138,6 +136,11 @@ export function VaultRoom({
               </div>
               <div className="vault-back">
                 <VaultPigment salt={0xbac} />
+                <span className="vault-light-fall" aria-hidden="true">
+                  {Array.from({ length: 5 }, (_, index) => (
+                    <i className="vault-beam" key={index} />
+                  ))}
+                </span>
                 <span className="vault-join vault-join-back" />
                 <div className="vault-grid-scroll">
                   {loading ? (
@@ -173,6 +176,11 @@ export function VaultRoom({
         </div>
         <div className="vault-jamb" aria-hidden="true" />
 
+        <div className="vault-pane" aria-hidden="true">
+          <span className="vault-pane-glass" />
+          <span className="vault-pane-edge" />
+        </div>
+
         {state === "lock" ? (
           <div className="vault-glass" aria-hidden="true">
             <span className="vault-glass-frost" />
@@ -190,37 +198,7 @@ export function VaultRoom({
                 Enter workspace
               </GlassButton>
             </div>
-          ) : (
-            <>
-              <div className="vault-open-copy">
-                <h1 className="vault-title">Your projects</h1>
-                {workspace ? (
-                  <p className="vault-path" title={workspace}>
-                    {shortenPath(workspace)}
-                  </p>
-                ) : (
-                  <p className="vault-path">No workspace folder yet</p>
-                )}
-              </div>
-              <div className="vault-dock" role="toolbar" aria-label="Workspace">
-                <button type="button" className="vault-dock-btn" aria-label="Lock workspace" onClick={leave}>
-                  <LockGlyph />
-                </button>
-                <span className="vault-dock-rule" aria-hidden="true" />
-                <button type="button" className="vault-dock-btn" aria-label="Create project" onClick={onCreate}>
-                  <PlusGlyph />
-                </button>
-                <span className="vault-dock-rule" aria-hidden="true" />
-                <button type="button" className="vault-dock-btn" aria-label="Import project" onClick={onImport}>
-                  <FolderGlyph />
-                </button>
-                <span className="vault-dock-rule" aria-hidden="true" />
-                <button type="button" className="vault-dock-btn" aria-label="Settings" onClick={onSettings}>
-                  <GearGlyph />
-                </button>
-              </div>
-            </>
-          )}
+          ) : null}
 
           <span className="vault-wave" aria-hidden="true">
             {WAVE.map((height, index) => (
@@ -228,6 +206,51 @@ export function VaultRoom({
             ))}
           </span>
         </div>
+
+        {state === "open" ? (
+          <>
+            <div className="vault-open-copy">
+              <h1 className="vault-title">Your workspace</h1>
+              <p className="vault-meta">
+                <span>{clock.dateLine}</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {loading
+                    ? "Loading"
+                    : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
+                </span>
+              </p>
+              <button
+                type="button"
+                className="vault-place"
+                title={workspace ?? undefined}
+                aria-label={workspace ? `Workspace folder ${workspace}` : "No workspace folder yet"}
+              >
+                <FolderGlyph />
+                <span className="vault-place-name">{folderLabel(workspace)}</span>
+                {workspace ? <span className="vault-place-path">{workspace}</span> : null}
+              </button>
+            </div>
+            <p className="vault-folio">{clock.time}</p>
+            <div className="vault-dock" role="toolbar" aria-label="Workspace">
+              <button type="button" className="vault-dock-btn" aria-label="Lock workspace" onClick={leave}>
+                <LockGlyph />
+              </button>
+              <span className="vault-dock-rule" aria-hidden="true" />
+              <button type="button" className="vault-dock-btn" aria-label="Create project" onClick={onCreate}>
+                <PlusGlyph />
+              </button>
+              <span className="vault-dock-rule" aria-hidden="true" />
+              <button type="button" className="vault-dock-btn" aria-label="Import project" onClick={onImport}>
+                <FolderGlyph />
+              </button>
+              <span className="vault-dock-rule" aria-hidden="true" />
+              <button type="button" className="vault-dock-btn" aria-label="Settings" onClick={onSettings}>
+                <GearGlyph />
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {notice ? <p className="vault-note">{notice}</p> : null}

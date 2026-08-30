@@ -589,8 +589,7 @@
 }
 
 .brand-mark[data-open="true"] .brand-mark-content,
-.brand-mark:focus-visible .brand-mark-content,
-.viewport[data-place="app"] .brand-mark-content {
+.brand-mark:focus-visible .brand-mark-content {
   padding: 0 1.42rem 0 1.18rem;
 }
 
@@ -634,12 +633,38 @@
 }
 
 .brand-mark[data-open="true"] .brand-mark-name,
-.brand-mark:focus-visible .brand-mark-name,
-.viewport[data-place="app"] .brand-mark-name {
+.brand-mark:focus-visible .brand-mark-name {
   max-width: 5.4rem;
   margin-left: 0.5rem;
   opacity: 1;
   clip-path: inset(0 0 0 0);
+}
+
+.viewport[data-place="app"] .brand-mark {
+  top: calc(var(--vault-bezel-t) / 2);
+  height: 2.45rem;
+  color: #2a241e;
+  transform: translate(-50%, -50%);
+}
+
+.viewport[data-place="app"] .brand-mark[data-open="true"],
+.viewport[data-place="app"] .brand-mark:focus-visible {
+  transform: translate(-50%, -50%);
+}
+
+.viewport[data-place="app"] .brand-mark:active {
+  transform: translate(-50%, -50%) scale(0.97);
+}
+
+.viewport[data-place="app"] .brand-mark-name {
+  color: #2a241e;
+  text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.7);
+}
+
+.viewport[data-place="app"] .brand-mark-logo {
+  filter:
+    drop-shadow(0 0.5px 0 rgba(255, 255, 255, 0.75))
+    brightness(0.2);
 }
 
 .settings-toggle svg {

@@ -84,16 +84,48 @@
   height: 100%;
   overflow: hidden;
   background: var(--stone);
+  border-radius: var(--vault-glass-radius);
 }
 
 .vault-shell::before {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
-  opacity: 0.07;
+  opacity: 0.2;
   mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='v'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.012 0.04' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23v)'/%3E%3C/svg%3E");
+  background-size: 180px 180px, 520px 340px;
+  background-position: 0 0, 12% 8%;
+}
+
+.vault-pane {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  border-radius: var(--vault-glass-radius);
+  overflow: hidden;
+}
+
+.vault-pane-edge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 2.5px rgba(150, 146, 140, 0.55);
+}
+
+.vault-pane-glass {
+  position: absolute;
+  inset: 2.5px;
+  border-radius: calc(var(--vault-glass-radius) - 2.5px);
+  background: linear-gradient(155deg, rgba(255, 255, 255, 0.12) 0 10%, transparent 34%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.94),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 .vault-opening,
@@ -171,27 +203,46 @@
 
 .vault-spot-unit {
   position: relative;
-  display: grid;
-  place-items: start center;
+  width: 32px;
+  height: 10px;
 }
 
-.vault-spot-wash {
-  display: none;
-}
-
-.vault-spot {
-  position: relative;
-  z-index: 1;
+.vault-spot-trim,
+.vault-spot-bowl,
+.vault-spot-lens {
+  position: absolute;
   display: block;
-  width: 12px;
-  height: 12px;
+  pointer-events: none;
+}
+
+.vault-spot-trim {
+  inset: 0;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 30%, #fffefb 0 36%, #e8e0d4 68%, #9a9084 100%);
+  background: linear-gradient(180deg, #3a322c 0%, #1a1612 100%);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.95),
-    inset 0 -1px 1px rgba(80, 70, 58, 0.32),
-    0 0 0 2px #d0c6ba,
-    0 10px 16px rgba(255, 248, 236, 0.4);
+    0 0.5px 0 rgba(255, 255, 255, 0.28),
+    inset 0 1px 1px rgba(10, 8, 6, 0.55);
+}
+
+.vault-spot-bowl {
+  inset: 1.5px 4px 1.5px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 48% 22%, #2a221c 0 22%, #0a0806 70%);
+}
+
+.vault-spot-lens {
+  left: 50%;
+  top: 38%;
+  width: 18px;
+  height: 5px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 252, 245, 0.28) 0 1px, transparent 1px 2px),
+    radial-gradient(ellipse at 50% 40%, #fffef6 0 38%, #f4e6c4 62%, #c9b48a 100%);
+  box-shadow:
+    0 0 8px 2px rgba(255, 246, 220, 0.8),
+    0 8px 16px rgba(255, 244, 220, 0.4);
 }
 
 .vault-floor {
@@ -203,6 +254,11 @@
   pointer-events: none;
   clip-path: polygon(var(--vault-depth-x) 0, calc(100% - var(--vault-depth-x)) 0, 100% 100%, 0 100%);
   background:
+    radial-gradient(ellipse 12% 80% at 12.9% 0%, rgba(255, 248, 230, 0.42), transparent 70%),
+    radial-gradient(ellipse 12% 80% at 31.5% 0%, rgba(255, 248, 230, 0.34), transparent 70%),
+    radial-gradient(ellipse 12% 80% at 50% 0%, rgba(255, 248, 230, 0.34), transparent 70%),
+    radial-gradient(ellipse 12% 80% at 68.5% 0%, rgba(255, 248, 230, 0.34), transparent 70%),
+    radial-gradient(ellipse 12% 80% at 87.1% 0%, rgba(255, 248, 230, 0.42), transparent 70%),
     linear-gradient(0deg, var(--plaster-hi) 0%, var(--plaster) 42%, var(--plaster-lo) 100%);
 }
 
@@ -312,9 +368,12 @@
 .vault-pigment-grain {
   position: absolute;
   inset: -16%;
-  opacity: 0.12;
+  opacity: 0.22;
   mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.45' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  background-image:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.45' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 360 360' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='v'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.018 0.05' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23v)' opacity='.35'/%3E%3C/svg%3E");
+  background-size: 180px 180px, 480px 320px;
   transform: rotate(3deg) scale(1.06);
 }
 
@@ -324,13 +383,36 @@
   pointer-events: auto;
   container-type: size;
   background:
-    radial-gradient(ellipse 11% 56% at 12.9% 0%, rgba(255, 250, 240, 0.82), transparent 74%),
-    radial-gradient(ellipse 11% 56% at 31.5% 0%, rgba(255, 250, 240, 0.7), transparent 74%),
-    radial-gradient(ellipse 11% 56% at 50% 0%, rgba(255, 250, 240, 0.7), transparent 74%),
-    radial-gradient(ellipse 11% 56% at 68.5% 0%, rgba(255, 250, 240, 0.7), transparent 74%),
-    radial-gradient(ellipse 11% 56% at 87.1% 0%, rgba(255, 250, 240, 0.82), transparent 74%),
+    radial-gradient(ellipse 14% 82% at 12.9% 0%, rgba(255, 250, 236, 0.92), transparent 76%),
+    radial-gradient(ellipse 14% 82% at 31.5% 0%, rgba(255, 250, 236, 0.78), transparent 76%),
+    radial-gradient(ellipse 14% 82% at 50% 0%, rgba(255, 250, 236, 0.78), transparent 76%),
+    radial-gradient(ellipse 14% 82% at 68.5% 0%, rgba(255, 250, 236, 0.78), transparent 76%),
+    radial-gradient(ellipse 14% 82% at 87.1% 0%, rgba(255, 250, 236, 0.92), transparent 76%),
     linear-gradient(180deg, #ece6dc 0%, var(--plaster) 48%, #e2dbd1 100%);
   display: grid;
+}
+
+.vault-light-fall {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(5, 11.95cqw);
+  column-gap: calc(11.95cqw * 70 / 127);
+  padding: 0 calc(11.95cqw * 74 / 127);
+  justify-content: center;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.vault-beam {
+  display: block;
+  height: 88%;
+  clip-path: polygon(22% 0, 78% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.48) 0%, rgba(255, 246, 224, 0.12) 42%, transparent 78%);
+  filter: blur(5px);
+  transform: scaleX(1.4);
+  transform-origin: top;
 }
 
 .vault-grid-scroll {
@@ -402,6 +484,9 @@
 .vault-slot[data-row="0"] { --look-y: 0.42; }
 .vault-slot[data-row="1"] { --look-y: 0.12; }
 .vault-slot[data-row="2"] { --look-y: -0.28; }
+.vault-slot[data-row="0"] .vault-niche-ceil {
+  filter: brightness(1.12);
+}
 
 .vault-niche {
   position: relative;
@@ -436,9 +521,12 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.08;
+  opacity: 0.22;
   mix-blend-mode: multiply;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-image:
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.5' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='v'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.03 0.08' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23v)' opacity='.4'/%3E%3C/svg%3E");
+  background-size: 120px 120px, 280px 180px;
 }
 
 .vault-niche-ceil,
@@ -580,6 +668,15 @@
   top: 0;
   height: 5px;
   background: linear-gradient(180deg, rgba(255, 252, 246, 0.55), transparent);
+}
+
+.vault-cover-shade::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 90 90' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 .vault-cover-edge {
@@ -745,7 +842,7 @@
 }
 
 .vault-chrome {
-  z-index: 7;
+  z-index: 11;
   pointer-events: none;
 }
 
@@ -794,9 +891,11 @@
 
 .vault-open-copy {
   position: absolute;
-  top: calc(var(--vault-depth-t) + 6px);
-  left: calc(var(--vault-depth-x) + 10px);
-  max-width: 42%;
+  top: 10px;
+  left: 18px;
+  z-index: 12;
+  transform: none;
+  max-width: 28%;
   padding: 0;
   background: none;
   border: 0;
@@ -805,27 +904,98 @@
   -webkit-backdrop-filter: none;
 }
 
+.vault-kicker,
+.vault-folio {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(42, 36, 30, 0.55);
+}
+
 .vault-title {
   margin: 0;
   font-family: var(--font);
-  font-size: 0.98rem;
-  font-weight: 400;
-  letter-spacing: -0.018em;
-  color: rgba(255, 252, 248, 0.92);
-  text-shadow: 0 1px 2px rgba(48, 40, 34, 0.28);
+  font-size: 1.08rem;
+  font-weight: 560;
+  letter-spacing: -0.028em;
+  color: #2a241e;
 }
 
-.vault-path {
-  margin: 0.22rem 0 0;
+.vault-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.12rem 0 0;
   font-family: var(--font);
   font-size: 0.72rem;
   font-weight: 400;
+  letter-spacing: 0.01em;
+  color: rgba(42, 36, 30, 0.58);
+}
+
+.vault-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  max-width: 100%;
+  margin: 0.18rem 0 0;
+  padding: 0.12rem 0.45rem 0.12rem 0.32rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 252, 248, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(42, 36, 30, 0.1);
+  color: #2a241e;
+  cursor: default;
+  text-align: left;
+}
+
+.vault-place svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  opacity: 0.7;
+}
+
+.vault-place-name,
+.vault-place-path {
+  font-family: var(--font);
+  font-size: 0.78rem;
   letter-spacing: -0.01em;
-  color: rgba(255, 252, 248, 0.72);
-  text-shadow: 0 1px 2px rgba(48, 40, 34, 0.22);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.vault-place-path {
+  display: none;
+  max-width: 22rem;
+}
+
+.vault-place:hover .vault-place-name,
+.vault-place:focus-visible .vault-place-name {
+  display: none;
+}
+
+.vault-place:hover .vault-place-path,
+.vault-place:focus-visible .vault-place-path {
+  display: inline;
+}
+
+.vault-folio {
+  position: absolute;
+  top: calc(var(--vault-bezel-t) / 2);
+  right: 18px;
+  z-index: 12;
+  transform: translateY(-50%);
+  letter-spacing: 0.08em;
+}
+
+.vault-path {
+  display: none;
 }
 
 .vault[data-state="open"] .vault-chrome {
@@ -836,19 +1006,21 @@
   position: absolute;
   left: 50%;
   right: auto;
-  bottom: 10px;
-  transform: translateX(-50%);
+  bottom: calc(var(--vault-bezel-b) / 2);
+  z-index: 12;
+  transform: translate(-50%, 50%);
   display: flex;
   align-items: stretch;
   gap: 0;
   min-width: 19.5rem;
-  height: 3.15rem;
+  height: 2.65rem;
   padding: 0 0.4rem;
   border-radius: 999px;
-  background: rgba(58, 50, 42, 0.22);
+  pointer-events: auto;
+  background: rgba(58, 50, 42, 0.28);
   backdrop-filter: url(#kosmos-clear-glass) blur(10px) saturate(1.12);
   -webkit-backdrop-filter: url(#kosmos-clear-glass) blur(10px) saturate(1.12);
-  border: 1px solid rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.42);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
     inset 0 -1px 0 rgba(40, 34, 28, 0.12),

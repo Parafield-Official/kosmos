@@ -259,6 +259,11 @@ button {
     height 520ms var(--ease);
 }
 
+.viewport[data-place="app"] {
+  overflow: hidden;
+  border-radius: 36px;
+}
+
 .viewport[data-place="app"] .glass-backdrop,
 .viewport[data-place="theme"] .glass-backdrop {
   backdrop-filter: none;
