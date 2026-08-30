@@ -107,7 +107,7 @@ export function DashboardScreen({
   return (
     <section className="ma-screen ma-dashboard" aria-label="Dashboard">
       <div className="ma-dash-board neu-card">
-        <span className="ma-hero-cover neu-inset">
+        <span className={`ma-hero-cover neu-inset${project.coverDataUrl ? "" : " is-generated"}`}>
           {project.coverDataUrl ? (
             <img src={project.coverDataUrl} alt="" className="ma-book-art" />
           ) : (

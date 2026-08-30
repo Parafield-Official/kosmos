@@ -119,12 +119,14 @@
     "electron-updater": "6.6.2",
     "fflate": "0.8.2",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.27",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^5.2.0",
     "concurrently": "^10.0.4",
     "electron": "^40.10.2",

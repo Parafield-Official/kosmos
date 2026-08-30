@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import {
   appendChapter,
   persistBook,
@@ -21,6 +21,8 @@ import { ChapterWorkspace } from "./ChapterWorkspace";
 import { ChapterEditor } from "./ChapterEditor";
 import { ReaderScreen } from "./ReaderScreen";
 import { SettingsScreen } from "./SettingsScreen";
+import { ThemeAtmosphere } from "./ThemeAtmosphere";
+import { THEME_ACCENT_EVENT, accentOption, readThemeAccent, type ThemeAccent, type ThemeAccentOption } from "./theme";
 import "./main-app.css";
 
 type WorkScreen =
@@ -43,8 +45,20 @@ function withProject(screen: WorkScreen, project: BookProject): WorkScreen {
 
 export function MainApp() {
   const [screen, setScreen] = useState<MainScreen>({ name: "library" });
+  const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readThemeAccent());
+  const [themePaint, setThemePaint] = useState<ThemeAccentOption>(() => accentOption(readThemeAccent()));
   const [analyzing, setAnalyzing] = useState<Analyzing>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onThemeAccent = (event: Event) => {
+      const option = (event as CustomEvent<ThemeAccentOption>).detail;
+      setThemeAccent(option.value);
+      setThemePaint(option);
+    };
+    window.addEventListener(THEME_ACCENT_EVENT, onThemeAccent);
+    return () => window.removeEventListener(THEME_ACCENT_EVENT, onThemeAccent);
+  }, []);
 
   const openProject = useCallback((project: BookProject, tab: BookTab = "dashboard") => {
     setScreen({ name: "book", project, tab });
@@ -184,8 +198,14 @@ export function MainApp() {
     [analyzeAndApply],
   );
 
+  const themeStyle = {
+    "--ma-accent": themePaint.hex,
+    "--ma-accent-rgb": themePaint.rgb,
+  } as CSSProperties;
+
   return (
-    <div className="main-app" data-screen={screen.name}>
+    <div className="main-app" data-screen={screen.name} data-theme-accent={themeAccent} style={themeStyle}>
+      <ThemeAtmosphere />
       {screen.name !== "settings" ? (
         <button type="button" className="ma-gear" aria-label="Settings" onClick={openSettings}>
           <GearIcon />
@@ -193,7 +213,7 @@ export function MainApp() {
       ) : null}
 
       {screen.name === "library" ? (
-        <LibraryScreen onOpen={openProject} onCreated={onCreatedBook} />
+        <LibraryScreen onOpen={openProject} onCreated={onCreatedBook} onSettings={openSettings} />
       ) : null}
 
       {screen.name === "book" ? (

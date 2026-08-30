@@ -1,4 +1,4 @@
-export type Place = "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app";
+export type Place = "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "theme" | "app";
 
 export interface FrameSize {
   width: number;
@@ -32,16 +32,21 @@ export const BRAND_SIZE: FrameSize = MARK_SIZE;
 export const WELCOME_SIZE: FrameSize = { width: 600, height: 410 };
 export const APP_SIZE: FrameSize = { width: 1180, height: 760 };
 
-export const PLACES: Place[] = ["mark", "intro", "brand", "welcome", "community", "access", "app"];
+export const PLACES: Place[] = ["mark", "intro", "brand", "welcome", "community", "access", "theme", "app"];
+
+export function isRoomPlace(place: Place): boolean {
+  return place === "app";
+}
 
 export function placeLabel(place: Place): string {
   if (place === "app") return "main app";
   if (place === "welcome") return "video";
+  if (place === "theme") return "pigment";
   return place;
 }
 
 export function sizeFor(place: Place): FrameSize {
-  if (place === "app") {
+  if (isRoomPlace(place)) {
     return APP_SIZE;
   }
   if (place === "welcome") {
@@ -71,6 +76,8 @@ export const ACCESS_FOLDER_DENIED = "No workspace chosen.";
 export const ACCESS_BRIDGE_MISSING = "Restart the Electron app to enable system permission dialogs.";
 export const DEBUG_RESET_ACCESS = "reset access";
 export const COMMUNITY_HEADING = "Join our community";
+export const THEME_HEADING = "Choose a colour for the room.";
+export const THEME_LEAD = "The canvas stays white. Pigment tints atmosphere, light, and selected controls.";
 export const COMMUNITY_POINT_1_TITLE = "Connect with creators";
 export const COMMUNITY_POINT_1_BODY = "A place for authors, narrators, and audiobook lovers to connect and engage in conversations.";
 export const COMMUNITY_POINT_2_TITLE = "Make Kosmos better";
@@ -109,7 +116,16 @@ export function readStoredPlace(): Place {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
     const value = window.sessionStorage.getItem(STORAGE_KEY);
-    if (value === "mark" || value === "intro" || value === "brand" || value === "welcome" || value === "access" || value === "community" || value === "app") {
+    if (
+      value === "mark" ||
+      value === "intro" ||
+      value === "brand" ||
+      value === "welcome" ||
+      value === "access" ||
+      value === "community" ||
+      value === "theme" ||
+      value === "app"
+    ) {
       return value;
     }
     // Returning, already-onboarded users land in the main app (Xcode-style).

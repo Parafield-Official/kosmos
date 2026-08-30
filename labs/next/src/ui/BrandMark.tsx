@@ -17,6 +17,8 @@ export function BrandMark() {
     >
       <span className="brand-mark-glass" aria-hidden="true">
         <span className="brand-mark-fill" />
+        <span className="liquid-refract" />
+        <span className="liquid-spec" />
         <span className="brand-mark-rim" />
       </span>
       <span className="brand-mark-content">

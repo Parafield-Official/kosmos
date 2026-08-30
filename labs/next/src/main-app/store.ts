@@ -598,14 +598,10 @@ export async function chooseWorkspace(): Promise<string | null> {
 
 export async function loadProjects(): Promise<BookProject[]> {
   if (hasProjectBridge()) {
-    try {
-      const result = await window.kosmosNext!.listProjects!();
-      return (result.projects ?? [])
-        .map((item) => normalizeProject(item as Partial<BookProject> & Record<string, unknown>))
-        .sort(byUpdatedDesc);
-    } catch {
-      return [];
-    }
+    const result = await window.kosmosNext!.listProjects!();
+    return (result.projects ?? [])
+      .map((item) => normalizeProject(item as Partial<BookProject> & Record<string, unknown>))
+      .sort(byUpdatedDesc);
   }
   return listProjects();
 }

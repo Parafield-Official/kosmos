@@ -45,13 +45,15 @@ export interface ChapterPunchDto {
   duration_delta?: number;
 }
 
+type LabsPlace = "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "theme" | "app";
+
 declare global {
   interface Window {
     kosmosNext?: {
       platform?: NodeJS.Platform;
-      ready: (payload: { width: number; height: number; place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app" }) => void;
+      ready: (payload: { width: number; height: number; place: LabsPlace }) => void;
       resize: (size: { width: number; height: number }) => Promise<void>;
-      setPlace?: (place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app") => Promise<void>;
+      setPlace?: (place: LabsPlace) => Promise<void>;
       setMaterial?: (material: {
         vibrancy?: string;
         visualEffectState?: string;
@@ -61,10 +63,10 @@ declare global {
       }) => Promise<void>;
       pushTuning?: (values: Record<string, string>) => void;
       onTuningApply?: (callback: (values: Record<string, string>) => void) => (() => void) | void;
-      jump?: (place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app") => Promise<{ ok: boolean }>;
-      reportPlace?: (place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app") => void;
-      onJump?: (callback: (place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app") => void) => (() => void) | void;
-      onPlace?: (callback: (place: "mark" | "intro" | "brand" | "welcome" | "access" | "community" | "app") => void) => (() => void) | void;
+      jump?: (place: LabsPlace) => Promise<{ ok: boolean }>;
+      reportPlace?: (place: LabsPlace) => void;
+      onJump?: (callback: (place: LabsPlace) => void) => (() => void) | void;
+      onPlace?: (callback: (place: LabsPlace) => void) => (() => void) | void;
       getWindowChrome?: () => Promise<{
         platform: NodeJS.Platform;
         fullscreen: boolean;

@@ -762,11 +762,14 @@ function jumpLab(place) {
 }
 
 const START_SIZE = { width: 520, height: 360 };
+const APP_FRAME = { width: 1180, height: 760 };
+const APP_ASPECT = APP_FRAME.width / APP_FRAME.height;
 const DEBUG_SIZE = { width: 176, height: 400 };
 const TRAFFIC_LIGHTS = { x: 22, y: 20 };
 const OFFSCREEN_LIGHTS = { x: -100, y: -100 };
 const WINDOW_EDGE_SLOP = 4;
-const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "app"]);
+const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "theme", "app"]);
+const ROOM_PLACES = new Set(["app"]);
 const GLASS_BLUR_MAX = 48;
 /** @type {import("electron").BrowserWindow | null} */
 let labWindow = null;
@@ -908,7 +911,7 @@ function windowChromeState() {
   const fullscreen = labWindow.isFullScreen();
   const maximized = labWindow.isMaximized();
   const expanded = isWindowExpanded(labWindow);
-  const onApp = labPlace === "app";
+  const onApp = ROOM_PLACES.has(labPlace);
   const showTrafficChrome = platform === "darwin" && onApp && !expanded;
   return { platform, fullscreen, maximized, expanded, showTrafficChrome };
 }
@@ -965,7 +968,7 @@ function ensureLiquidGlass(win) {
   }
   try {
     labGlassId = liquidGlass.addView(win.getNativeWindowHandle(), {
-      cornerRadius: 15,
+      cornerRadius: 36,
       tintColor: "#0a081228",
       opaque: false,
     });
@@ -1051,22 +1054,65 @@ function scheduleNativeGlass(win, material) {
   }, 32);
 }
 
+function fitAppFrame(win, size) {
+  const current = win.getBounds();
+  const work = screen.getDisplayMatching(current).workArea;
+  const maxWidth = Math.max(APP_FRAME.width, work.width - 24);
+  const maxHeight = Math.max(APP_FRAME.height, work.height - 24);
+  let width = Math.max(APP_FRAME.width, Math.round(size?.width ?? current.width));
+  let height = Math.round(width / APP_ASPECT);
+  if (height < APP_FRAME.height) {
+    height = APP_FRAME.height;
+    width = Math.round(height * APP_ASPECT);
+  }
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = Math.round(width / APP_ASPECT);
+  }
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = Math.round(height * APP_ASPECT);
+  }
+  return {
+    width: Math.max(APP_FRAME.width, width),
+    height: Math.max(APP_FRAME.height, height),
+  };
+}
+
 function applySize(win, size, animate) {
   if (!win || win.isDestroyed()) {
     return;
   }
-  const width = Math.max(320, Math.round(size?.width ?? START_SIZE.width));
-  const height = Math.max(300, Math.round(size?.height ?? START_SIZE.height));
   const current = win.getBounds();
+  const work = screen.getDisplayMatching(current).workArea;
+  let width;
+  let height;
+  if (labPlace === "app") {
+    win.setResizable(true);
+    win.setFullScreenable(true);
+    win.setMinimumSize(APP_FRAME.width, APP_FRAME.height);
+    if (typeof win.setMaximizable === "function") {
+      win.setMaximizable(true);
+    }
+    if (typeof win.setAspectRatio === "function") {
+      win.setAspectRatio(APP_ASPECT);
+    }
+    ({ width, height } = fitAppFrame(win, size));
+  } else {
+    win.setMinimumSize(320, 300);
+    if (typeof win.setAspectRatio === "function") {
+      win.setAspectRatio(0);
+    }
+    width = Math.max(320, Math.round(size?.width ?? START_SIZE.width));
+    height = Math.max(300, Math.round(size?.height ?? START_SIZE.height));
+  }
   if (current.width === width && current.height === height) {
     return;
   }
-  const work = screen.getDisplayMatching(current).workArea;
   let x = Math.round(current.x + (current.width - width) / 2);
   let y = Math.round(current.y + (current.height - height) / 2);
   x = Math.min(Math.max(work.x + 12, x), Math.max(work.x + 12, work.x + work.width - width - 12));
   y = Math.min(Math.max(work.y + 12, y), Math.max(work.y + 12, work.y + work.height - height - 12));
-  win.setMinimumSize(320, 300);
   win.setBounds({ x, y, width, height }, Boolean(animate));
 }
 
@@ -1185,6 +1231,9 @@ function openLab() {
     }
     const size = payload?.width && payload?.height ? payload : START_SIZE;
     const place = typeof payload?.place === "string" ? payload.place : "mark";
+    if (JUMP_PLACES.has(place)) {
+      labPlace = place;
+    }
     applySize(labWindow, size, false);
     syncWindowChrome(place);
     reveal();
@@ -1240,8 +1289,39 @@ function openLab() {
   };
   labWindow.on("enter-full-screen", onWindowChromeChange);
   labWindow.on("leave-full-screen", onWindowChromeChange);
-  labWindow.on("maximize", onWindowChromeChange);
+  labWindow.on("maximize", () => {
+    if (labPlace !== "app" || !labWindow || labWindow.isDestroyed()) {
+      onWindowChromeChange();
+      return;
+    }
+    labWindow.unmaximize();
+    const fitted = fitAppFrame(labWindow, screen.getDisplayMatching(labWindow.getBounds()).workArea);
+    applySize(labWindow, fitted, true);
+    onWindowChromeChange();
+  });
   labWindow.on("unmaximize", onWindowChromeChange);
+  let aspectLock = false;
+  labWindow.on("will-resize", (event, newBounds) => {
+    if (aspectLock || labPlace !== "app" || !labWindow || labWindow.isDestroyed() || labWindow.isFullScreen()) {
+      return;
+    }
+    if (newBounds.width < APP_FRAME.width - 1 || newBounds.height < APP_FRAME.height - 1) {
+      event.preventDefault();
+      return;
+    }
+    const fitted = fitAppFrame(labWindow, newBounds);
+    if (Math.abs(fitted.width - newBounds.width) > 2 || Math.abs(fitted.height - newBounds.height) > 2) {
+      event.preventDefault();
+      aspectLock = true;
+      labWindow.setBounds({
+        x: newBounds.x,
+        y: newBounds.y,
+        width: fitted.width,
+        height: fitted.height,
+      });
+      aspectLock = false;
+    }
+  });
   labWindow.on("move", () => {
     syncWindowChrome(labPlace);
     placeDebugWindow();

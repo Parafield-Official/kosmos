@@ -6,13 +6,14 @@ import type {
   HTMLAttributes,
   ReactNode,
 } from "react";
-import { liquidVars } from "./liquid-settings";
+import { liquidVars, type LiquidSettings } from "./liquid-settings";
 
 type LiquidBase = {
   shape?: "circle" | "pill";
   children?: ReactNode;
   className?: string;
   style?: CSSProperties;
+  settings?: LiquidSettings;
 };
 
 type LiquidProps =
@@ -28,6 +29,7 @@ export function Liquid(props: LiquidProps) {
     className,
     children,
     style,
+    settings,
     ...rest
   } = props;
 
@@ -35,7 +37,7 @@ export function Liquid(props: LiquidProps) {
 
   return createElement(
     Tag,
-    { className: classes, style: { ...liquidVars(), ...style }, ...rest },
+    { className: classes, style: { ...liquidVars(settings), ...style }, ...rest },
     <>
       <span className="liquid-lens" aria-hidden="true">
         <span className="liquid-fill" />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { chapterCompletionPct } from "./book-stats";
-import { bookInitials, removeChapter, type BookChapter, type BookProject } from "./store";
+import { bookInitials, readChapterContent, removeChapter, type BookChapter, type BookProject } from "./store";
 
 export function ChaptersScreen({
   project,
@@ -78,8 +78,7 @@ export function ChaptersScreen({
             key={chapter.id}
             index={index + 1}
             chapter={chapter}
-            coverDataUrl={project.coverDataUrl}
-            initials={bookInitials(project)}
+            project={project}
             onOpen={() => onOpenChapter(chapter.id)}
             onRead={() => onRead(chapter.id)}
             onEdit={() => onEditChapter(chapter.id)}
@@ -124,8 +123,7 @@ export function ChaptersScreen({
 function ChapterOrb({
   index,
   chapter,
-  coverDataUrl,
-  initials,
+  project,
   onOpen,
   onRead,
   onEdit,
@@ -133,8 +131,7 @@ function ChapterOrb({
 }: {
   index: number;
   chapter: BookChapter;
-  coverDataUrl?: string;
-  initials: string;
+  project: BookProject;
   onOpen: () => void;
   onRead: () => void;
   onEdit: () => void;
@@ -147,13 +144,18 @@ function ChapterOrb({
   return (
     <article className="ma-orb">
       <button type="button" className="ma-orb-hit" onClick={onOpen} aria-label={`Open ${chapter.title}`}>
-        <span className="ma-orb-disc neu-card">
-          {coverDataUrl ? (
-            <img src={coverDataUrl} alt="" className="ma-orb-cover" />
-          ) : (
-            <span className="ma-orb-initials">{initials}</span>
-          )}
-          <span className="ma-orb-ring" style={{ ["--orb-pct" as string]: `${pct}%` }} aria-hidden="true" />
+        <span className="ma-orb-object">
+          <span className="ma-orb-page neu-card" aria-hidden="true">
+            <ChapterPagePreview project={project} chapter={chapter} />
+          </span>
+          <span className="ma-orb-disc neu-card">
+            {project.coverDataUrl ? (
+              <img src={project.coverDataUrl} alt="" className="ma-orb-cover" />
+            ) : (
+              <span className="ma-orb-initials">{bookInitials(project)}</span>
+            )}
+            <span className="ma-orb-ring" style={{ ["--orb-pct" as string]: `${pct}%` }} aria-hidden="true" />
+          </span>
         </span>
         <span className="ma-orb-index">{String(index).padStart(2, "0")}</span>
         <span className="ma-orb-title">{chapter.title}</span>
@@ -174,6 +176,39 @@ function ChapterOrb({
         </button>
       </div>
     </article>
+  );
+}
+
+function ChapterPagePreview({ project, chapter }: { project: BookProject; chapter: BookChapter }) {
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void readChapterContent(project, chapter.id).then((content) => {
+      if (alive) {
+        setHtml(content);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [project, chapter.id]);
+
+  const hasText = Boolean(html?.trim());
+
+  return (
+    <span className="ma-orb-folio">
+      {html === null ? (
+        <span className="ma-orb-folio-empty">Loading…</span>
+      ) : hasText ? (
+        <span className="ma-orb-folio-body" dangerouslySetInnerHTML={{ __html: html }} />
+      ) : (
+        <span className="ma-orb-folio-empty">
+          <strong>{chapter.title}</strong>
+          <em>No text yet</em>
+        </span>
+      )}
+    </span>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   INTRO_TAGLINE,
   MARK_MS,
   STATEMENT_MS,
+  isRoomPlace,
   markOnboarded,
   prefersReducedMotion,
   readStoredPlace,
@@ -21,12 +22,13 @@ import { startMeshFlow } from "./mesh-flow";
 import { StartSlider } from "./StartSlider";
 import { DebugDock } from "./DebugDock";
 import { BrandMark } from "./ui/BrandMark";
-import { Liquid } from "./ui/liquid";
+import { ClearGlassFilter } from "./ui/ClearGlassFilter";
 import { WelcomeVideo } from "./WelcomeVideo";
 import { applyClearedAccess, syncAccessState, type AccessSnapshot } from "./access";
 import { AccessScreen } from "./AccessScreen";
 import { CommunityScreen } from "./CommunityScreen";
 import { MainApp } from "./main-app/MainApp";
+import { ThemeOnboardingScreen } from "./main-app/ThemeOnboardingScreen";
 
 type WindowChrome = {
   platform: NodeJS.Platform;
@@ -88,7 +90,6 @@ export function App() {
     if (place === "app") {
       markOnboarded();
     }
-    void window.kosmosNext?.setPlace?.(place);
     window.kosmosNext?.reportPlace?.(place);
     if (!booted.current) {
       booted.current = true;
@@ -96,10 +97,13 @@ export function App() {
       window.kosmosNext?.ready({ ...size, place });
       return;
     }
-    if (!sameSize(lastSize.current, size)) {
-      lastSize.current = size;
-      void window.kosmosNext?.resize(size);
-    }
+    void (async () => {
+      await window.kosmosNext?.setPlace?.(place);
+      if (!sameSize(lastSize.current, size)) {
+        lastSize.current = size;
+        await window.kosmosNext?.resize(size);
+      }
+    })();
   }, [place]);
 
   function go(next: Place) {
@@ -170,7 +174,6 @@ export function App() {
   const electron = Boolean(window.kosmosNext);
   const hosted = !electron;
   const windowChrome = useWindowChrome(hosted);
-  const showTrafficGlass = place === "app" && (hosted || windowChrome.showTrafficChrome);
 
   let body: ReactNode;
   if (place === "mark") {
@@ -188,9 +191,11 @@ export function App() {
       <AccessScreen
         key={`access-${flowSeed}`}
         initialSnapshot={accessSnapshot}
-        onComplete={() => go("app")}
+        onComplete={() => go("theme")}
       />
     );
+  } else if (place === "theme") {
+    body = <ThemeOnboardingScreen key={`theme-${flowSeed}`} onComplete={() => go("app")} />;
   } else {
     body = <MainApp />;
   }
@@ -204,30 +209,16 @@ export function App() {
       data-window-expanded={windowChrome.expanded ? "true" : "false"}
       style={electron ? undefined : { width: size.width, height: size.height }}
     >
-      <GlassMaterial animate={place !== "app"} />
+      <GlassMaterial animate={!isRoomPlace(place)} />
       <div className="drag-strip drag-strip-start" aria-hidden="true" />
       <div className="drag-strip drag-strip-end" aria-hidden="true" />
-      {showTrafficGlass ? <TrafficGlass hosted={hosted} /> : null}
       {place === "app" ? <BrandMark /> : null}
+      <ClearGlassFilter />
       <div className="frame">{body}</div>
       <p className="shell-footer">{INTRO_COPYRIGHT}</p>
     </div>
     {import.meta.env.DEV && !electron ? <DebugDock place={place} onJump={jump} /> : null}
     </>
-  );
-}
-
-function TrafficGlass({ hosted }: { hosted: boolean }) {
-  return (
-    <Liquid as="div" shape="pill" className="traffic-glass" aria-hidden="true">
-      {hosted ? (
-        <span className="traffic-glass-dots">
-          <i className="dot close" />
-          <i className="dot min" />
-          <i className="dot max" />
-        </span>
-      ) : null}
-    </Liquid>
   );
 }
 

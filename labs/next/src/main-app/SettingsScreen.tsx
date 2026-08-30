@@ -26,6 +26,8 @@ import {
 } from "./reading-prefs";
 import { chooseWorkspace, getWorkspacePath } from "./store";
 import type { PromptTheme, ReadingFont } from "./store";
+import { ThemeColourPicker } from "./ThemeColourPicker";
+import { readThemeAccent, type ThemeAccent } from "./theme";
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [engine, setEngine] = useState<EnginePrefs>(() => readEnginePrefs());
   const [readingFont, setReadingFont] = useState<ReadingFont>(() => readReadingFont());
   const [promptTheme, setPromptTheme] = useState<PromptTheme>(() => readPromptTheme());
+  const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readThemeAccent());
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [update, setUpdate] = useState<AppUpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
@@ -139,7 +142,8 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
       <h1 className="ma-title">Settings</h1>
 
-      <div className="ma-set-list">
+      <div className="ma-set-columns">
+        <div className="ma-set-col">
         <h2 className="ma-set-section">Display</h2>
 
         <div className="ma-set-item">
@@ -150,6 +154,20 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           <p className="ma-set-sub">Glass appearance across Kosmos.</p>
           <div className="ma-set-control">
             <GlassLookSwitch compact />
+          </div>
+        </div>
+
+        <div className="ma-set-item">
+          <div className="ma-set-head">
+            <AccentIcon />
+            <strong>Theme colour</strong>
+          </div>
+          <p className="ma-set-sub">
+            The dark material used for atmosphere, depth, and selected controls. Mix a custom pigment if none of the
+            named ones fit. The canvas stays white.
+          </p>
+          <div className="ma-set-control">
+            <ThemeColourPicker accent={themeAccent} onAccent={setThemeAccent} />
           </div>
         </div>
 
@@ -230,7 +248,9 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </div>
+        </div>
 
+        <div className="ma-set-col">
         <h2 className="ma-set-section">Proofreading</h2>
 
         <div className="ma-set-item">
@@ -352,7 +372,9 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             Per book, not app-wide. On a proof flag, tap Never flag this word. The list lives under Pronunciation.
           </p>
         </div>
+        </div>
 
+        <div className="ma-set-col">
         <h2 className="ma-set-section">Sound &amp; mastering</h2>
 
         <div className="ma-set-item">
@@ -414,7 +436,9 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           <p className="ma-set-value">Mono (ACX default)</p>
           <p className="ma-set-sub">Used for chapter exports.</p>
         </div>
+        </div>
 
+        <div className="ma-set-col">
         <h2 className="ma-set-section">App</h2>
 
         <div className="ma-set-item">
@@ -479,6 +503,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             </button>
           </div>
         </div>
+        </div>
       </div>
     </section>
   );
@@ -502,6 +527,15 @@ function ThemeIcon() {
         strokeWidth="1.7"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function AccentIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
+      <path d="M4 15.5c2.5-7 6.2-10.5 11-10.5 3.3 0 5 1.8 5 4.3 0 4.8-5 9.7-11.2 9.7C5.8 19 3.2 18 4 15.5Z" stroke="currentColor" strokeWidth="1.7" />
+      <circle cx="15.8" cy="9.1" r="2.1" fill="currentColor" />
     </svg>
   );
 }

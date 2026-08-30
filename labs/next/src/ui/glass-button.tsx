@@ -1,9 +1,10 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { Liquid } from "./liquid-control";
+import { clearLiquidSettings } from "./liquid-settings";
 
 type GlassButtonBase = {
   shape?: "circle" | "pill";
-  variant?: "default" | "discord" | "success";
+  variant?: "default" | "discord" | "success" | "clear";
   children?: ReactNode;
   className?: string;
 };
@@ -27,7 +28,13 @@ export function GlassButton(props: GlassButtonProps) {
   if (props.as === "a") {
     const { as: _as, shape: _shape, variant: _variant, className: _className, children: _children, ...rest } = props;
     return (
-      <Liquid as="a" shape={shape} className={classes} {...rest}>
+      <Liquid
+        as="a"
+        shape={shape}
+        className={classes}
+        settings={variant === "clear" ? clearLiquidSettings : undefined}
+        {...rest}
+      >
         {children}
       </Liquid>
     );
@@ -35,7 +42,13 @@ export function GlassButton(props: GlassButtonProps) {
 
   const { as: _as, shape: _shape, variant: _variant, className: _className, children: _children, ...rest } = props;
   return (
-    <Liquid as="button" shape={shape} className={classes} {...rest}>
+    <Liquid
+      as="button"
+      shape={shape}
+      className={classes}
+      settings={variant === "clear" ? clearLiquidSettings : undefined}
+      {...rest}
+    >
       {children}
     </Liquid>
   );

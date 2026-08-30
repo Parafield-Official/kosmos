@@ -1,0 +1,452 @@
+import { useEffect, useState, type CSSProperties } from "react";
+import { GlassButton } from "../ui/liquid";
+import { bookInitials, type BookProject } from "./store";
+import { completionPct } from "./book-stats";
+import { VaultPigment } from "./ThemeAtmosphere";
+import "./vault.css";
+
+const VAULT_LIT_KEY = "kosmos-vault-lit";
+const COLUMNS = 5;
+const VISIBLE_ROWS = 3;
+
+type VaultState = "lock" | "open";
+
+function readLit(): boolean {
+  try {
+    return window.sessionStorage.getItem(VAULT_LIT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLit() {
+  try {
+    window.sessionStorage.setItem(VAULT_LIT_KEY, "1");
+  } catch {
+    // Session memory is optional; the vault still opens.
+  }
+}
+
+function clearLit() {
+  try {
+    window.sessionStorage.removeItem(VAULT_LIT_KEY);
+  } catch {
+    // Session memory is optional; the vault still locks.
+  }
+}
+
+function clockParts(now: Date) {
+  const dateLine = now
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+    .replace(",", "");
+  const hours = now.getHours() % 12 || 12;
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  return { dateLine, time: `${hours}:${minutes}` };
+}
+
+function shortenPath(path: string) {
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  if (parts.length <= 3) {
+    return path;
+  }
+  return `…/${parts.slice(-3).join("/")}`;
+}
+
+export function VaultRoom({
+  projects,
+  workspace,
+  loading,
+  notice,
+  onOpen,
+  onCreate,
+  onImport,
+  onDelete,
+  onSettings,
+}: {
+  projects: BookProject[];
+  workspace: string | null;
+  loading: boolean;
+  notice: string | null;
+  onOpen: (project: BookProject) => void;
+  onCreate: () => void;
+  onImport: () => void;
+  onDelete: (project: BookProject) => void;
+  onSettings: () => void;
+}) {
+  const [state, setState] = useState<VaultState>(() => (readLit() ? "open" : "lock"));
+  const [now, setNow] = useState(() => new Date());
+  const [picked, setPicked] = useState<BookProject | null>(null);
+  const clock = clockParts(now);
+  const slots = Math.max(COLUMNS * VISIBLE_ROWS, Math.ceil(projects.length / COLUMNS) * COLUMNS);
+  const lit = state !== "lock";
+
+  useEffect(() => {
+    if (state !== "lock") {
+      return;
+    }
+    const id = window.setInterval(() => setNow(new Date()), 10_000);
+    return () => window.clearInterval(id);
+  }, [state]);
+
+  function enter() {
+    writeLit();
+    setState("open");
+  }
+
+  function leave() {
+    clearLit();
+    setPicked(null);
+    setState("lock");
+  }
+
+  return (
+    <section
+      className="vault"
+      data-lit={lit ? "true" : "false"}
+      data-state={state}
+      data-overflow={projects.length > VISIBLE_ROWS * COLUMNS ? "true" : "false"}
+      aria-label={lit ? "Your projects" : "Kosmos"}
+    >
+      <div className="vault-shell">
+        <div className="vault-opening">
+          <div className="vault-stage">
+            <div className="vault-world">
+              <div className="vault-ceiling" aria-hidden="true">
+                <VaultPigment salt={0xce11} />
+                <span className="vault-spots">
+                  {Array.from({ length: 5 }, (_, index) => (
+                    <span className="vault-spot-unit" key={index}>
+                      <i className="vault-spot-wash" />
+                      <i className="vault-spot" />
+                    </span>
+                  ))}
+                </span>
+                <span className="vault-join vault-join-ceiling" />
+              </div>
+              <div className="vault-floor" aria-hidden="true">
+                <VaultPigment salt={0xf100} />
+                <span className="vault-floor-sheen" />
+                <span className="vault-join vault-join-floor" />
+              </div>
+              <div className="vault-wall vault-wall-l" aria-hidden="true">
+                <VaultPigment salt={0x5a1e} />
+                <span className="vault-join vault-join-wall" />
+              </div>
+              <div className="vault-wall vault-wall-r" aria-hidden="true">
+                <VaultPigment salt={0x5a1f} />
+                <span className="vault-join vault-join-wall" />
+              </div>
+              <div className="vault-back">
+                <VaultPigment salt={0xbac} />
+                <span className="vault-join vault-join-back" />
+                <div className="vault-grid-scroll">
+                  {loading ? (
+                    <p className="vault-loading">Loading your workspace…</p>
+                  ) : (
+                    <div className="vault-grid">
+                      {Array.from({ length: slots }, (_, index) => {
+                        const project = projects[index];
+                        return (
+                          <VaultSlot
+                            key={project?.id ?? `empty-${index}`}
+                            project={project}
+                            index={index}
+                            interactive={state === "open"}
+                            onSelect={() => project && setPicked(project)}
+                            onDelete={() => project && onDelete(project)}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="vault-reveal" aria-hidden="true">
+          <span className="vault-reveal-t" />
+          <span className="vault-reveal-b" />
+          <span className="vault-reveal-l" />
+          <span className="vault-reveal-r" />
+        </div>
+        <div className="vault-jamb" aria-hidden="true" />
+
+        {state === "lock" ? (
+          <div className="vault-glass" aria-hidden="true">
+            <span className="vault-glass-frost" />
+            <span className="vault-glass-specular" />
+            <span className="vault-glass-grain" />
+          </div>
+        ) : null}
+
+        <div className="vault-chrome">
+          {state === "lock" ? (
+            <div className="vault-lock">
+              <p className="vault-date">{clock.dateLine}</p>
+              <p className="vault-time">{clock.time}</p>
+              <GlassButton variant="clear" className="vault-enter" type="button" onClick={enter}>
+                Enter workspace
+              </GlassButton>
+            </div>
+          ) : (
+            <>
+              <div className="vault-open-copy">
+                <h1 className="vault-title">Your projects</h1>
+                {workspace ? (
+                  <p className="vault-path" title={workspace}>
+                    {shortenPath(workspace)}
+                  </p>
+                ) : (
+                  <p className="vault-path">No workspace folder yet</p>
+                )}
+              </div>
+              <div className="vault-dock" role="toolbar" aria-label="Workspace">
+                <button type="button" className="vault-dock-btn" aria-label="Lock workspace" onClick={leave}>
+                  <LockGlyph />
+                </button>
+                <span className="vault-dock-rule" aria-hidden="true" />
+                <button type="button" className="vault-dock-btn" aria-label="Create project" onClick={onCreate}>
+                  <PlusGlyph />
+                </button>
+                <span className="vault-dock-rule" aria-hidden="true" />
+                <button type="button" className="vault-dock-btn" aria-label="Import project" onClick={onImport}>
+                  <FolderGlyph />
+                </button>
+                <span className="vault-dock-rule" aria-hidden="true" />
+                <button type="button" className="vault-dock-btn" aria-label="Settings" onClick={onSettings}>
+                  <GearGlyph />
+                </button>
+              </div>
+            </>
+          )}
+
+          <span className="vault-wave" aria-hidden="true">
+            {WAVE.map((height, index) => (
+              <i key={index} style={{ "--h": height } as CSSProperties} />
+            ))}
+          </span>
+        </div>
+      </div>
+
+      {notice ? <p className="vault-note">{notice}</p> : null}
+
+      {picked ? (
+        <BookDetail
+          project={picked}
+          onClose={() => setPicked(null)}
+          onOpen={() => {
+            const project = picked;
+            setPicked(null);
+            onOpen(project);
+          }}
+          onDelete={() => {
+            const project = picked;
+            setPicked(null);
+            onDelete(project);
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+const WAVE = [0.18, 0.28, 0.46, 0.34, 0.62, 0.88, 0.54, 0.4, 0.22, 0.3, 0.16];
+
+function VaultSlot({
+  project,
+  index,
+  interactive,
+  onSelect,
+  onDelete,
+}: {
+  project?: BookProject;
+  index: number;
+  interactive: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const row = Math.floor(index / COLUMNS);
+  const progress = project ? completionPct(project) : 0;
+
+  return (
+    <div
+      className={project ? "vault-slot" : "vault-slot is-empty"}
+      data-row={row}
+      data-col={index % COLUMNS}
+    >
+      <div className="vault-niche">
+        <span className="vault-niche-well" aria-hidden="true">
+          <i className="vault-niche-ceil" />
+          <i className="vault-niche-l" />
+          <i className="vault-niche-r" />
+          <i className="vault-niche-floor" />
+        </span>
+        {project ? (
+          <div className="vault-book">
+            <span className="vault-book-spine" aria-hidden="true" />
+            <button
+              type="button"
+              className="vault-cover"
+              disabled={!interactive}
+              onClick={onSelect}
+              aria-label={`${project.title}, ${progress}% complete`}
+            >
+              <VaultCoverArt project={project} />
+              <span className="vault-cover-shade" />
+              <span className="vault-cover-edge" />
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {interactive && project ? (
+        <button type="button" className="vault-remove" aria-label={`Remove ${project.title}`} onClick={onDelete}>
+          <RemoveGlyph />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function VaultCoverArt({ project }: { project: BookProject }) {
+  if (project.coverDataUrl) {
+    return <img src={project.coverDataUrl} alt="" className="vault-cover-img" />;
+  }
+  return (
+    <span className="vault-cover-gen">
+      <span className="vault-cover-initials">{bookInitials(project)}</span>
+      <span className="vault-cover-gen-title">{project.title}</span>
+    </span>
+  );
+}
+
+function BookDetail({
+  project,
+  onClose,
+  onOpen,
+  onDelete,
+}: {
+  project: BookProject;
+  onClose: () => void;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const progress = completionPct(project);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="vault-sheet-scrim" role="presentation" onClick={onClose}>
+      <article
+        className="vault-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="vault-sheet-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="vault-sheet-book" aria-hidden="true">
+          <span className="vault-sheet-spine" />
+          <span className="vault-sheet-page" />
+          <span className="vault-sheet-front">
+            <VaultCoverArt project={project} />
+          </span>
+        </div>
+        <div className="vault-sheet-copy">
+          <h2 className="vault-sheet-title" id="vault-sheet-title">
+            {project.title}
+          </h2>
+          <p className="vault-sheet-author">{project.author.trim() || "Unknown author"}</p>
+          <dl className="vault-sheet-meta">
+            <div>
+              <dt>Completion</dt>
+              <dd>{progress}%</dd>
+            </div>
+            <div>
+              <dt>Chapters</dt>
+              <dd>{project.chapters.length}</dd>
+            </div>
+          </dl>
+          <div className="vault-sheet-actions">
+            <GlassButton type="button" onClick={onOpen}>
+              Open
+            </GlassButton>
+            <GlassButton type="button" onClick={onDelete}>
+              Remove
+            </GlassButton>
+          </div>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+function LockGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+      <path
+        d="M8 11V8a4 4 0 0 1 8 0v3"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <rect x="6" y="11" width="12" height="10" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 14.2v3.2M10.4 15.8h3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PlusGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+      <path d="M12 6v12M6 12h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FolderGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+      <path
+        d="M4 8.2A1.7 1.7 0 0 1 5.7 6.5h4.1L12 8.6h6.3A1.7 1.7 0 0 1 20 10.3v6.5A1.7 1.7 0 0 1 18.3 18.5H5.7A1.7 1.7 0 0 1 4 16.8Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function GearGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+      <path
+        d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+      <path
+        d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function RemoveGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden="true">
+      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}

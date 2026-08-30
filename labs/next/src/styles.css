@@ -6,7 +6,7 @@
   --fill: rgba(255, 255, 255, var(--fill-a));
   --fill-hover: #ffffff;
   --ease: cubic-bezier(0.22, 1, 0.32, 1);
-  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
   /* Purple x orange mesh gradient theme — liquid glass. */
   --base-deep: 10, 8, 18;
@@ -37,7 +37,7 @@
   --glass-chip-shadow: rgba(0, 0, 0, 0.22);
   --glass-depth: 0.28;
   --glass-dispersion: 0;
-  --glass-radius: 15px;
+  --glass-radius: 36px;
   --tl-size: 12px;
   --tl-gap: 8px;
   --tl-cluster: 62px;
@@ -119,6 +119,9 @@ button,
 .community-point,
 .community-actions,
 .community-foot,
+.theme-stack,
+.ma-theme-onboard-card,
+.ma-pigment,
 a,
 input,
 textarea,
@@ -143,11 +146,11 @@ select {
   right: calc(50% + 5.5rem);
 }
 
-.viewport:not([data-place="app"]) .drag-strip-start {
+.viewport:not([data-place="app"]):not([data-place="theme"]) .drag-strip-start {
   left: 12px;
 }
 
-.viewport:not([data-place="app"]) .liquid.traffic-glass {
+.viewport:not([data-place="app"]):not([data-place="theme"]) .liquid.traffic-glass {
   display: none;
 }
 
@@ -159,7 +162,9 @@ select {
 }
 
 .viewport[data-traffic-chrome="false"][data-place="app"] .drag-strip-start,
-.viewport[data-window-expanded="true"][data-place="app"] .drag-strip-start {
+.viewport[data-traffic-chrome="false"][data-place="theme"] .drag-strip-start,
+.viewport[data-window-expanded="true"][data-place="app"] .drag-strip-start,
+.viewport[data-window-expanded="true"][data-place="theme"] .drag-strip-start {
   left: 12px;
 }
 
@@ -173,11 +178,13 @@ select {
   both strips to zero width on a smaller window, so nothing was draggable.
   The logo and settings gear sit above this band and stay no-drag.
 */
-.viewport[data-place="app"] .drag-strip-start {
+.viewport[data-place="app"] .drag-strip-start,
+.viewport[data-place="theme"] .drag-strip-start {
   right: 64px;
 }
 
-.viewport[data-place="app"] .drag-strip-end {
+.viewport[data-place="app"] .drag-strip-end,
+.viewport[data-place="theme"] .drag-strip-end {
   display: none;
 }
 
@@ -246,13 +253,14 @@ button {
 .viewport.hosted {
   height: auto;
   margin: var(--hosted-margin) auto;
-  border-radius: 20px;
+  border-radius: 36px;
   transition:
     width 520ms var(--ease),
     height 520ms var(--ease);
 }
 
-.viewport[data-place="app"] .glass-backdrop {
+.viewport[data-place="app"] .glass-backdrop,
+.viewport[data-place="theme"] .glass-backdrop {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -1276,6 +1284,69 @@ html[data-glass-clear="true"] .viewport.hosted .glass-backdrop {
 .access-screen .continue.btn:disabled {
   opacity: 0.38;
   cursor: not-allowed;
+}
+
+/* ── Theme colour (pigment) — same flow pattern as access/community ── */
+
+.theme-screen {
+  position: relative;
+  isolation: isolate;
+  text-align: left;
+}
+
+.theme-stack {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1.25rem;
+  width: 100%;
+  max-width: 26rem;
+  justify-self: center;
+  justify-items: stretch;
+  min-height: 16.5rem;
+  animation: flow-screen-enter 360ms var(--ease) both;
+}
+
+.theme-heading {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.35rem, 4vw, 1.7rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.18;
+  text-align: center;
+}
+
+.theme-lead {
+  margin: -0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.theme-screen .ma-pigment {
+  width: 100%;
+  max-width: 100%;
+  justify-items: center;
+}
+
+.theme-screen .ma-pigment-tray {
+  justify-content: center;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.theme-screen .ma-pigment-caption {
+  justify-content: center;
+}
+
+.theme-screen .community-foot {
+  margin-top: 0.2rem;
 }
 
 /* ── Community screen ─────────────────────────────────── */

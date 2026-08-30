@@ -21,6 +21,28 @@ export const liquidSettings = {
   radiusPill: "999px",
 } as const;
 
+/** Colourless pane: bend + fringe come from the SVG filter, not a tint. */
+export const clearLiquidSettings: LiquidSettings = {
+  ...liquidSettings,
+  blur: "1.2px",
+  saturate: "128%",
+  brightness: "1.04",
+  contrast: "1.08",
+  fillTop: "rgba(255, 255, 255, 0.16)",
+  fillMid: "rgba(255, 255, 255, 0.03)",
+  fillBottom: "rgba(255, 255, 255, 0.07)",
+  meshA: "transparent",
+  meshB: "transparent",
+  well: "transparent",
+  rim: "rgba(255, 255, 255, 0.78)",
+  rimInner: "rgba(255, 255, 255, 0.94)",
+  rimShade: "rgba(255, 255, 255, 0.22)",
+  spec: "rgba(255, 255, 255, 0.88)",
+  refract: "rgba(170, 205, 255, 0.62)",
+  refractHot: "rgba(255, 255, 255, 0.96)",
+  shadow: "rgba(40, 36, 30, 0.12)",
+};
+
 export type LiquidSettings = typeof liquidSettings;
 
 export function liquidVars(settings: LiquidSettings = liquidSettings): Record<string, string> {
