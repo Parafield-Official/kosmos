@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import {
   appendChapter,
+  deleteBook,
   persistBook,
   readManuscriptBytes,
   writeChapterContents,
@@ -12,7 +13,7 @@ import { paragraphsFromHtml } from "./booth";
 import { scanGlossaryFromManuscript } from "./glossary";
 import { manuscriptMetaFromBytes } from "./manuscript-meta";
 import { defaultChapterStep, type BookTab, type ChapterStep } from "./chapter-flow";
-import { LibraryScreen } from "./LibraryScreen";
+import { LibraryScreen, ConfirmDelete } from "./LibraryScreen";
 import { BookShell } from "./BookShell";
 import { DashboardScreen } from "./DashboardScreen";
 import { ChaptersScreen } from "./ChaptersScreen";
@@ -23,6 +24,7 @@ import { ReaderScreen } from "./ReaderScreen";
 import { SettingsScreen } from "./SettingsScreen";
 import { ThemeAtmosphere } from "./ThemeAtmosphere";
 import { THEME_ACCENT_EVENT, accentOption, readThemeAccent, type ThemeAccent, type ThemeAccentOption } from "./theme";
+import { exportBookPack } from "./punch";
 import "./main-app.css";
 
 type WorkScreen =
@@ -56,6 +58,9 @@ export function MainApp() {
   const [themePaint, setThemePaint] = useState<ThemeAccentOption>(() => accentOption(readThemeAccent()));
   const [analyzing, setAnalyzing] = useState<Analyzing>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BookProject | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     const onThemeAccent = (event: Event) => {
@@ -225,17 +230,25 @@ export function MainApp() {
         tab={screen.tab}
         onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
         onBack={openLibrary}
+        onDelete={() => setDeleteTarget(screen.project)}
+        canExport={
+          screen.project.chapters.length > 0 && screen.project.chapters.every((chapter) => chapter.mastered)
+        }
+        exportBusy={exportBusy}
+        onExport={() => {
+          if (exportBusy) {
+            return;
+          }
+          setExportBusy(true);
+          void exportBookPack(screen.project)
+            .then((next) => commit(next))
+            .finally(() => setExportBusy(false));
+        }}
       >
         {screen.tab === "dashboard" ? (
           <DashboardScreen
             project={screen.project}
             onChange={(next) => void commit(next)}
-            onRead={() => {
-              const first = screen.project.chapters[0];
-              if (first) {
-                openReader(screen.project, first.id);
-              }
-            }}
             onGoChapters={() => setScreen({ name: "book", project: screen.project, tab: "chapters" })}
             onAnalyze={() => void analyzeAndApply(screen.project)}
             onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
@@ -277,12 +290,6 @@ export function MainApp() {
           onCreated={onCreatedBook}
           onSettings={openSettings}
           onHome={openLibrary}
-          onRead={(project) => {
-            const first = project.chapters[0];
-            if (first) {
-              openReader(project, first.id);
-            }
-          }}
         />
       ) : null}
 
@@ -292,6 +299,7 @@ export function MainApp() {
           tab="chapters"
           onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
           onBack={openLibrary}
+          onDelete={() => setDeleteTarget(screen.project)}
         >
           <ChapterWorkspace
             project={screen.project}
@@ -327,6 +335,31 @@ export function MainApp() {
       ) : null}
 
       {screen.name === "settings" && !hosted ? <SettingsScreen onBack={() => setScreen(screen.from)} /> : null}
+
+      {deleteTarget ? (
+        <ConfirmDelete
+          project={deleteTarget}
+          busy={deleting}
+          onCancel={() => {
+            if (!deleting) {
+              setDeleteTarget(null);
+            }
+          }}
+          onConfirm={() => {
+            void (async () => {
+              setDeleting(true);
+              try {
+                await deleteBook(deleteTarget);
+                setDeleteTarget(null);
+                openLibrary();
+                window.dispatchEvent(new Event("kosmos-workspace-changed"));
+              } finally {
+                setDeleting(false);
+              }
+            })();
+          }}
+        />
+      ) : null}
 
       {analyzing ? <AnalyzingOverlay progress={analyzing.progress} label={analyzing.label} /> : null}
     </div>

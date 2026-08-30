@@ -302,7 +302,7 @@
   color: var(--ink);
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.75))
-    drop-shadow(0 0 12px rgba(255, 236, 210, 0.35));
+    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.35));
 }
 
 .ma-set-sub {
@@ -3103,7 +3103,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-book-nav-back:hover,
-.ma-book-nav-item:hover {
+.ma-book-nav-item:hover:not(.ma-book-nav-export):not(.ma-book-nav-delete) {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
@@ -3111,6 +3111,27 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-book-nav-item.is-on {
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
+}
+
+.ma-book-nav-rule {
+  display: block;
+  height: 1px;
+  margin: 0.75rem 0.45rem 0.4rem;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ma-book-nav-delete {
+  color: #e8a4a0;
+}
+
+.ma-book-nav-delete:hover,
+.ma-book-nav-delete:focus-visible {
+  color: #ffd5d1;
+  background: rgba(180, 52, 48, 0.18);
+}
+
+.ma-book-nav-delete:active {
+  transform: scale(0.97);
 }
 
 .ma-book-nav-title {
@@ -4410,6 +4431,20 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
+.ma-book-nav-rule {
+  background: rgba(var(--ma-accent-rgb), 0.12);
+}
+
+.ma-book-nav-item.ma-book-nav-delete {
+  color: #8f2525;
+}
+
+.ma-book-nav-item.ma-book-nav-delete:hover,
+.ma-book-nav-item.ma-book-nav-delete:focus-visible {
+  color: #6d1818;
+  background: rgba(143, 37, 37, 0.1);
+}
+
 .ma-book-main > .ma-dashboard,
 .ma-book-main > .ma-pronounce,
 .ma-book-main > .ma-chapters {
@@ -5058,7 +5093,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   }
 
   .ma-book-nav-back:hover,
-  .ma-book-nav-item:hover:not(.is-on),
+  .ma-book-nav-item:hover:not(.is-on):not(.ma-book-nav-export):not(.ma-book-nav-delete),
   .ma-back:hover,
   .ma-tool:hover,
   .ma-reader-toc-toggle:hover,
@@ -5315,8 +5350,9 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 /* Settings on the vault frost — same magazine glass as + / inspect. */
 .main-app .vault-overlay .ma-settings .ma-set-card {
-  background: rgba(22, 16, 14, 0.24);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 246, 232, 0.14) 40%, rgba(36, 26, 22, 0.2) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 18px 40px rgba(12, 8, 6, 0.18);
@@ -5339,7 +5375,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #fff;
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 12px rgba(255, 236, 210, 0.5));
+    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.5));
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-value {
@@ -5544,6 +5580,344 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   text-shadow: 0 0 12px rgba(255, 180, 170, 0.4);
 }
 
+.main-app .vault-overlay .ma-book-nav {
+  padding-top: 0.85rem;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.main-app .vault-overlay .ma-book-nav-back,
+.main-app .vault-overlay .ma-book-nav-item {
+  color: rgba(247, 242, 235, 0.72);
+  background: transparent;
+  box-shadow: none;
+}
+
+.main-app .vault-overlay .ma-book-nav-back svg,
+.main-app .vault-overlay .ma-book-nav-item svg {
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.28))
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22));
+  transition: filter 180ms ease;
+}
+
+.main-app .vault-overlay .ma-book-nav-back:hover,
+.main-app .vault-overlay .ma-book-nav-back:focus-visible,
+.main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete),
+.main-app .vault-overlay .ma-book-nav-item:focus-visible:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.main-app .vault-overlay .ma-book-nav-back:hover svg,
+.main-app .vault-overlay .ma-book-nav-back:focus-visible svg,
+.main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) svg,
+.main-app .vault-overlay .ma-book-nav-item:focus-visible:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) svg,
+.main-app .vault-overlay .ma-book-nav-item.is-on svg {
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.5));
+}
+
+.main-app .vault-overlay .ma-book-nav-item.is-on {
+  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+}
+
+.main-app .vault-overlay .ma-book-nav-item:active:not(:disabled),
+.main-app .vault-overlay .ma-book-nav-back:active {
+  transform: scale(0.97);
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export {
+  color: var(--ma-accent);
+  background: rgba(var(--ma-accent-rgb), 0.12);
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:hover:not(:disabled),
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:focus-visible:not(:disabled) {
+  color: var(--ma-accent);
+  background: rgba(var(--ma-accent-rgb), 0.22);
+  text-shadow: 0 0 12px rgba(var(--ma-accent-rgb), 0.55);
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:hover:not(:disabled) svg,
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:focus-visible:not(:disabled) svg {
+  filter:
+    drop-shadow(0 0 5px rgba(var(--ma-accent-rgb), 0.95))
+    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.55));
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete {
+  color: #ffc4be;
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete:hover:not(:disabled),
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete:focus-visible:not(:disabled) {
+  color: #ff8a82;
+  background: rgba(180, 52, 48, 0.24);
+  text-shadow: 0 0 12px rgba(255, 140, 130, 0.45);
+}
+
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete:hover:not(:disabled) svg,
+.main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete:focus-visible:not(:disabled) svg {
+  filter:
+    drop-shadow(0 0 5px rgba(255, 140, 130, 0.95))
+    drop-shadow(0 0 12px rgba(200, 60, 50, 0.55));
+}
+
+.main-app .vault-overlay .ma-book-main > .ma-dashboard {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.95rem;
+  padding: 1.1rem 1.35rem 1.4rem;
+  overflow: auto;
+}
+
+.main-app .vault-overlay .ma-book-main > .ma-dashboard.is-media {
+  justify-content: stretch;
+  padding: 0.2rem 0.35rem 0.55rem;
+  overflow: hidden;
+}
+
+.main-app .vault-overlay .ma-dash-hero {
+  display: grid;
+  grid-template-columns: 8.8rem minmax(0, 1fr);
+  gap: 1.4rem;
+  width: min(40rem, 100%);
+  margin: 0 auto;
+  padding: 1.3rem 1.4rem 1.2rem;
+  border-radius: 26px;
+  color: #f7f2eb;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 246, 232, 0.16) 38%, rgba(36, 26, 22, 0.22) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.48),
+    0 22px 48px rgba(12, 8, 6, 0.26);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+
+.main-app .vault-overlay .ma-dash-cover {
+  overflow: hidden;
+  aspect-ratio: 2 / 3;
+  border-radius: 3px 8px 8px 3px;
+  background: #cfc8bf;
+  box-shadow: 0 14px 28px rgba(10, 8, 6, 0.28);
+}
+
+.main-app .vault-overlay .ma-dash-cover img,
+.main-app .vault-overlay .ma-dash-cover .vault-cover-gen {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.main-app .vault-overlay .ma-dash-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0;
+}
+
+.main-app .vault-overlay .ma-dashboard .ma-title,
+.main-app .vault-overlay .ma-dashboard .ma-title-input,
+.main-app .vault-overlay .ma-dashboard .ma-author-input,
+.main-app .vault-overlay .ma-dashboard .ma-hero-author {
+  color: #fff;
+}
+
+.main-app .vault-overlay .ma-dashboard .ma-title {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 560;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+.main-app .vault-overlay .ma-dashboard .ma-hero-author {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+}
+
+.main-app .vault-overlay .ma-dashboard .ma-author-input {
+  color: rgba(214, 196, 168, 0.9);
+}
+
+.main-app .vault-overlay .ma-dashboard .ma-title-input:hover,
+.main-app .vault-overlay .ma-dashboard .ma-title-input:focus {
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.main-app .vault-overlay .ma-dash-meter {
+  display: grid;
+  gap: 0.38rem;
+  margin-top: 1.05rem;
+}
+
+.main-app .vault-overlay .ma-dash-meter-track {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.main-app .vault-overlay .ma-dash-meter-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.main-app .vault-overlay .ma-dash-meter-label {
+  color: rgba(214, 196, 168, 0.72);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.main-app .vault-overlay .ma-dash-acts {
+  display: flex;
+  align-items: stretch;
+  margin-top: auto;
+  padding-top: 1.2rem;
+}
+
+.main-app .vault-overlay .ma-dash-act + .ma-dash-act {
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.1);
+}
+
+.main-app .vault-overlay .ma-dash-act {
+  display: grid;
+  flex: 1 1 0;
+  justify-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+  padding: 0.55rem 0.2rem 0.3rem;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.main-app .vault-overlay .ma-dash-act svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.45))
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.28));
+  transition: filter 180ms ease;
+}
+
+.main-app .vault-overlay .ma-dash-act:hover:not(:disabled),
+.main-app .vault-overlay .ma-dash-act:focus-visible:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.main-app .vault-overlay .ma-dash-act:hover:not(:disabled) svg,
+.main-app .vault-overlay .ma-dash-act:focus-visible:not(:disabled) svg {
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.55));
+}
+
+.main-app .vault-overlay .ma-dash-act:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.main-app .vault-overlay .ma-dash-act:disabled {
+  color: rgba(255, 255, 255, 0.32);
+  cursor: default;
+}
+
+.main-app .vault-overlay .ma-dash-act:disabled svg {
+  filter: none;
+  opacity: 0.4;
+}
+
+.main-app .vault-overlay .ma-dash-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+  width: min(40rem, 100%);
+  margin: 0 auto;
+}
+
+.main-app .vault-overlay .ma-dash-stats > div {
+  padding: 0.85rem 1rem 0.95rem;
+  border-radius: 18px;
+  color: #f7f2eb;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 246, 232, 0.12) 40%, rgba(36, 26, 22, 0.18) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.main-app .vault-overlay .ma-dash-stats dt {
+  margin: 0;
+  color: rgba(214, 196, 168, 0.72);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.main-app .vault-overlay .ma-dash-stats dd {
+  margin: 0.35rem 0 0;
+  color: #fff;
+  font-size: 1.55rem;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.main-app .vault-overlay .ma-dash-empty {
+  width: min(40rem, 100%);
+  margin: 0 auto;
+  color: rgba(214, 196, 168, 0.78);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .main-app .vault-overlay .ma-dash-hero {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .main-app .vault-overlay .ma-dash-cover {
+    width: 7.2rem;
+  }
+
+  .main-app .vault-overlay .ma-dash-acts {
+    flex-wrap: wrap;
+  }
+
+  .main-app .vault-overlay .ma-dash-act {
+    flex: 1 1 40%;
+  }
+
+  .main-app .vault-overlay .ma-dash-act + .ma-dash-act {
+    box-shadow: none;
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .main-app .vault-overlay .ma-settings .ma-set-card,
   .main-app .vault-overlay .ma-settings .btn,
@@ -5552,5 +5926,12 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(28, 22, 20, 0.88);
+  }
+
+  .main-app .vault-overlay .ma-dash-hero,
+  .main-app .vault-overlay .ma-dash-stats > div {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(36, 28, 24, 0.92);
   }
 }

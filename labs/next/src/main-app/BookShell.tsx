@@ -7,12 +7,20 @@ export function BookShell({
   tab,
   onTab,
   onBack,
+  onDelete,
+  onExport,
+  canExport = false,
+  exportBusy = false,
   children,
 }: {
   project: BookProject;
   tab: BookTab;
   onTab: (tab: BookTab) => void;
   onBack: () => void;
+  onDelete?: () => void;
+  onExport?: () => void;
+  canExport?: boolean;
+  exportBusy?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -46,6 +54,31 @@ export function BookShell({
           <BookNavIcon tab="pronunciation" />
           Pronunciation
         </button>
+        {onExport ? (
+          <button
+            type="button"
+            className="ma-book-nav-item ma-book-nav-export"
+            onClick={onExport}
+            disabled={!canExport || exportBusy}
+          >
+            <ExportGlyph />
+            {exportBusy ? "Exporting…" : "Export ACX"}
+          </button>
+        ) : null}
+        {onDelete ? (
+          <>
+            <span className="ma-book-nav-rule" aria-hidden="true" />
+            <button
+              type="button"
+              className="ma-book-nav-item ma-book-nav-delete"
+              onClick={onDelete}
+              aria-label={`Delete ${project.title}`}
+            >
+              <DeleteGlyph />
+              Delete
+            </button>
+          </>
+        ) : null}
       </nav>
       <div className="ma-book-main">{children}</div>
     </div>
@@ -80,6 +113,36 @@ function ChevronLeft() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
       <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ExportGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M10 3.4v8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M6.8 6.4 10 3.2l3.2 3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.2 11.6v3.2A1.5 1.5 0 0 0 5.7 16.3h8.6a1.5 1.5 0 0 0 1.5-1.5v-3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DeleteGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4.2 5.6h11.6" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+      <path
+        d="M8.05 3.35h3.9c.5 0 .9.35.9.85v1.4H7.15V4.2c0-.5.4-.85.9-.85Z"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6.4 5.6h7.2l-.48 9.05a1.45 1.45 0 0 1-1.45 1.35H8.33a1.45 1.45 0 0 1-1.45-1.35L6.4 5.6Z"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

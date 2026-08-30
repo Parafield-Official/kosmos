@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   createBook,
-  deleteBook,
   getWorkspacePath,
   linkExternal,
   loadProjects,
@@ -20,7 +19,6 @@ export function LibraryScreen({
   onCreated,
   onSettings,
   onHome,
-  onRead,
   pane = "home",
   nav = "home",
   overlay = null,
@@ -29,7 +27,6 @@ export function LibraryScreen({
   onCreated: (project: BookProject, file?: File) => void;
   onSettings: () => void;
   onHome: () => void;
-  onRead: (project: BookProject) => void;
   pane?: "home" | "glass";
   nav?: "home" | "settings" | "none";
   overlay?: ReactNode;
@@ -40,8 +37,6 @@ export function LibraryScreen({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [externalPrompt, setExternalPrompt] = useState<BookProject | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<BookProject | null>(null);
-  const [deleting, setDeleting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   const hasBridge = Boolean(window.kosmosNext?.listProjects);
 
@@ -145,10 +140,8 @@ export function LibraryScreen({
         overlay={overlay}
         onOpen={onOpen}
         onHome={onHome}
-        onRead={onRead}
         onCreate={() => void startNewBook()}
         onImport={() => void openExisting()}
-        onDelete={(project) => setDeleteTarget(project)}
         onSettings={onSettings}
       />
 
@@ -194,35 +187,11 @@ export function LibraryScreen({
           }}
         />
       ) : null}
-
-      {deleteTarget ? (
-        <ConfirmDelete
-          project={deleteTarget}
-          busy={deleting}
-          onCancel={() => {
-            if (!deleting) {
-              setDeleteTarget(null);
-            }
-          }}
-          onConfirm={async () => {
-            setDeleting(true);
-            try {
-              await deleteBook(deleteTarget);
-              await refresh();
-              setDeleteTarget(null);
-            } catch (error) {
-              setNotice(error instanceof Error ? error.message : "Could not delete the book.");
-            } finally {
-              setDeleting(false);
-            }
-          }}
-        />
-      ) : null}
     </section>
   );
 }
 
-function ConfirmDelete({
+export function ConfirmDelete({
   project,
   busy,
   onConfirm,

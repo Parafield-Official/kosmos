@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { bookInitials, readChapterAudioUrl, type BookProject } from "./store";
+import { bookInitials, type BookProject } from "./store";
 import { completionPct } from "./book-stats";
 import { VaultPigment } from "./ThemeAtmosphere";
 import { VaultLighting } from "./VaultLighting";
 import { occupiedMask, peakSlotEnergy, slotLight } from "./vault-light-layout";
-import { readLamps } from "./vault-lamps";
+import { readLamps, VAULT_LAMPS_EVENT } from "./vault-lamps";
+import { VaultListenSheet, VaultReadSheet } from "./vault-media";
 import "./vault.css";
 
 const COLUMNS = 5;
@@ -23,9 +24,7 @@ export function VaultRoom({
   onHome,
   onCreate,
   onImport,
-  onDelete,
   onSettings,
-  onRead,
 }: {
   projects: BookProject[];
   loading: boolean;
@@ -37,13 +36,12 @@ export function VaultRoom({
   onHome: () => void;
   onCreate: () => void;
   onImport: () => void;
-  onDelete: (project: BookProject) => void;
   onSettings: () => void;
-  onRead: (project: BookProject) => void;
 }) {
-  const [lamps] = useState(readLamps);
+  const [lamps, setLamps] = useState(readLamps);
   const [compose, setCompose] = useState(false);
   const [inspect, setInspect] = useState<{ project: BookProject; origin: OriginBox } | null>(null);
+  const [inspectView, setInspectView] = useState<"card" | "read" | "listen">("card");
   const dockRef = useRef<HTMLDivElement>(null);
   const slots = Math.max(COLUMNS * VISIBLE_ROWS, Math.ceil(projects.length / COLUMNS) * COLUMNS);
   const localSheet = compose || Boolean(inspect);
@@ -58,6 +56,7 @@ export function VaultRoom({
   function closeSheets() {
     setCompose(false);
     setInspect(null);
+    setInspectView("card");
   }
 
   function pickCreate() {
@@ -75,17 +74,30 @@ export function VaultRoom({
   }, [pane, nav]);
 
   useEffect(() => {
+    function onLamps() {
+      setLamps(readLamps());
+    }
+    window.addEventListener(VAULT_LAMPS_EVENT, onLamps);
+    return () => window.removeEventListener(VAULT_LAMPS_EVENT, onLamps);
+  }, []);
+
+  useEffect(() => {
     if (!localSheet) {
       return;
     }
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        closeSheets();
+      if (event.key !== "Escape") {
+        return;
       }
+      if (inspect && inspectView !== "card") {
+        setInspectView("card");
+        return;
+      }
+      closeSheets();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [localSheet]);
+  }, [localSheet, inspect, inspectView]);
 
   return (
     <section
@@ -120,6 +132,7 @@ export function VaultRoom({
                   <i
                     className="vault-shaft"
                     key={index}
+                    data-on={((lamps >> index) & 1) === 1 ? "true" : "false"}
                     style={{ "--splay": `${(index - 2) * 4}deg` } as CSSProperties}
                   />
                 ))}
@@ -161,9 +174,9 @@ export function VaultRoom({
                                 return;
                               }
                               setCompose(false);
+                              setInspectView("card");
                               setInspect({ project, origin });
                             }}
-                            onDelete={() => project && onDelete(project)}
                           />
                         );
                       })}
@@ -203,21 +216,37 @@ export function VaultRoom({
         ) : null}
 
         {inspect ? (
-          <InspectPanel
-            project={inspect.project}
-            origin={inspect.origin}
-            onClose={closeSheets}
-            onEdit={() => {
-              const project = inspect.project;
-              closeSheets();
-              onOpen(project);
-            }}
-            onRead={() => {
-              const project = inspect.project;
-              closeSheets();
-              onRead(project);
-            }}
-          />
+          <>
+            <div className={inspectView === "card" ? undefined : "vault-sheet-park"}>
+              <InspectPanel
+                key={inspect.project.id}
+                project={inspect.project}
+                origin={inspect.origin}
+                onClose={closeSheets}
+                onEdit={() => {
+                  const project = inspect.project;
+                  closeSheets();
+                  onOpen(project);
+                }}
+                onRead={() => setInspectView("read")}
+                onListen={() => setInspectView("listen")}
+              />
+            </div>
+            {inspectView === "read" ? (
+              <VaultReadSheet
+                project={inspect.project}
+                onBack={() => setInspectView("card")}
+              />
+            ) : null}
+            {inspectView === "listen" ? (
+              <VaultListenSheet
+                seed={inspect.project}
+                library={projects}
+                renderCover={(project) => <VaultCoverArt project={project} />}
+                onBack={() => setInspectView("card")}
+              />
+            ) : null}
+          </>
         ) : null}
 
         <div className="vault-dock" ref={dockRef} role="toolbar" aria-label="Workspace">
@@ -242,6 +271,7 @@ export function VaultRoom({
               aria-expanded={compose}
               onClick={() => {
                 setInspect(null);
+                setInspectView("card");
                 setCompose((open) => !open);
               }}
             >
@@ -276,7 +306,6 @@ function VaultSlot({
   interactive,
   lifted,
   onSelect,
-  onDelete,
 }: {
   project?: BookProject;
   index: number;
@@ -285,7 +314,6 @@ function VaultSlot({
   interactive: boolean;
   lifted: boolean;
   onSelect: (origin: OriginBox) => void;
-  onDelete: () => void;
 }) {
   const row = Math.floor(index / COLUMNS);
   const col = index % COLUMNS;
@@ -330,20 +358,6 @@ function VaultSlot({
               <span className="vault-cover-shade" />
               <span className="vault-cover-edge" />
             </button>
-            {interactive ? (
-              <button
-                type="button"
-                className="vault-remove"
-                aria-label={`Remove ${project.title}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onDelete();
-                }}
-              >
-                <TrashGlyph />
-              </button>
-            ) : null}
           </div>
         ) : null}
       </div>
@@ -403,20 +417,21 @@ function InspectPanel({
   onClose,
   onEdit,
   onRead,
+  onListen,
 }: {
   project: BookProject;
   origin: OriginBox;
   onClose: () => void;
   onEdit: () => void;
   onRead: () => void;
+  onListen: () => void;
 }) {
   const coverRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [fly, setFly] = useState({ ...origin, tx: 0, ty: 0, sx: 1, sy: 1, go: false });
   const [landed, setLanded] = useState(false);
-  const [listening, setListening] = useState(false);
   const progress = completionPct(project);
-  const complete = project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered);
+  const canListen =
+    project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered && Boolean(chapter.masteredFile));
   const canRead = project.chapters.length > 0;
   const reduceMotion = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -428,8 +443,9 @@ function InspectPanel({
       setLanded(true);
       return;
     }
+    setLanded(false);
     const target = coverRef.current?.getBoundingClientRect();
-    if (!target) {
+    if (!target || target.width < 2 || target.height < 2) {
       setLanded(true);
       return;
     }
@@ -444,61 +460,19 @@ function InspectPanel({
       sy: target.height / Math.max(origin.h, 1),
       go: false,
     });
-    const frame = requestAnimationFrame(() => {
-      setFly((current) => ({ ...current, go: true }));
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        setFly((current) => ({ ...current, go: true }));
+      });
     });
-    const fallback = window.setTimeout(() => setLanded(true), 620);
+    const fallback = window.setTimeout(() => setLanded(true), 680);
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
       window.clearTimeout(fallback);
     };
   }, [origin, reduceMotion]);
-
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, []);
-
-  async function listen() {
-    if (!complete || listening) {
-      return;
-    }
-    const files = project.chapters.map((chapter) => chapter.masteredFile).filter((file): file is string => Boolean(file));
-    if (!files.length) {
-      return;
-    }
-    setListening(true);
-    let index = 0;
-    const playNext = async () => {
-      const file = files[index];
-      if (!file) {
-        setListening(false);
-        return;
-      }
-      const url = await readChapterAudioUrl(project, file);
-      if (!url) {
-        index += 1;
-        await playNext();
-        return;
-      }
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.addEventListener("ended", () => {
-        URL.revokeObjectURL(url);
-        index += 1;
-        void playNext();
-      });
-      try {
-        await audio.play();
-      } catch {
-        URL.revokeObjectURL(url);
-        setListening(false);
-      }
-    };
-    await playNext();
-  }
 
   return (
     <div className="vault-sheet-layer" onClick={onClose}>
@@ -517,13 +491,17 @@ function InspectPanel({
               "--sy": fly.sy,
             } as CSSProperties
           }
-          onTransitionEnd={() => setLanded(true)}
+          onTransitionEnd={(event) => {
+            if (event.propertyName === "transform") {
+              setLanded(true);
+            }
+          }}
         >
           <VaultCoverArt project={project} />
         </div>
       ) : null}
       <article
-        className={landed || reduceMotion ? "vault-inspect is-in" : "vault-inspect"}
+        className={fly.go || landed || reduceMotion ? "vault-inspect is-in" : "vault-inspect"}
         role="dialog"
         aria-labelledby="vault-inspect-title"
         onClick={(event) => event.stopPropagation()}
@@ -547,15 +525,9 @@ function InspectPanel({
               <EditGlyph />
               <span>Edit</span>
             </button>
-            <button
-              type="button"
-              className="vault-inspect-btn"
-              aria-disabled={!complete}
-              disabled={!complete}
-              onClick={() => void listen()}
-            >
+            <button type="button" className="vault-inspect-btn" disabled={!canListen} onClick={onListen}>
               <ListenGlyph />
-              <span>{listening ? "Playing" : "Listen"}</span>
+              <span>Listen</span>
             </button>
             <button type="button" className="vault-inspect-btn" disabled={!canRead} onClick={onRead}>
               <ReadGlyph />
@@ -656,27 +628,6 @@ function ReadGlyph() {
         strokeWidth="1.65"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-function TrashGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
-      <path d="M5 7h14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-      <path
-        d="M10 7V5.4A1.4 1.4 0 0 1 11.4 4h1.2A1.4 1.4 0 0 1 14 5.4V7"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8.2 7l.65 12.1A1.6 1.6 0 0 0 10.44 20.5h3.12a1.6 1.6 0 0 0 1.59-1.4L15.8 7"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path d="M10.2 10.6v6M13.8 10.6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     </svg>
   );
 }

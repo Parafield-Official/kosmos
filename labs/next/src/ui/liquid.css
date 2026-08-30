@@ -751,9 +751,14 @@
 
 .viewport[data-place="app"] .brand-mark {
   top: calc(var(--vault-bezel-t) / 2);
-  height: 2.55rem;
+  height: 3.05rem;
   color: #fff;
   transform: translate(-50%, -50%);
+}
+
+.viewport[data-place="app"] .brand-mark-logo {
+  width: 2.42rem;
+  height: 1.76rem;
 }
 
 .viewport[data-place="app"] .brand-mark-name {
