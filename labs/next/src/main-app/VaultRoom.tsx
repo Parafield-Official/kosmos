@@ -1,15 +1,39 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { GlassButton } from "../ui/liquid";
+import { frostSettings } from "../ui/liquid-settings";
 import { bookInitials, type BookProject } from "./store";
 import { completionPct } from "./book-stats";
 import { VaultPigment } from "./ThemeAtmosphere";
+import { VaultLighting } from "./VaultLighting";
+import { occupiedMask, peakSlotEnergy, slotLight, LAMP_ALL } from "./vault-light-layout";
 import "./vault.css";
 
 const VAULT_LIT_KEY = "kosmos-vault-lit";
+const VAULT_LAMPS_KEY = "kosmos-vault-lamps";
 const COLUMNS = 5;
 const VISIBLE_ROWS = 3;
 
 type VaultState = "lock" | "open";
+
+function readLamps(): number {
+  try {
+    const raw = window.sessionStorage.getItem(VAULT_LAMPS_KEY);
+    if (raw == null) return LAMP_ALL;
+    const value = Number(raw);
+    if (Number.isInteger(value) && value >= 0 && value <= LAMP_ALL) return value;
+  } catch {
+    // Session memory is optional.
+  }
+  return LAMP_ALL;
+}
+
+function writeLamps(value: number) {
+  try {
+    window.sessionStorage.setItem(VAULT_LAMPS_KEY, String(value));
+  } catch {
+    // Session memory is optional.
+  }
+}
 
 function readLit(): boolean {
   try {
@@ -33,15 +57,6 @@ function clearLit() {
   } catch {
     // Session memory is optional; the vault still locks.
   }
-}
-
-function clockParts(now: Date) {
-  const dateLine = now
-    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-    .replace(",", "");
-  const hours = now.getHours() % 12 || 12;
-  const minutes = String(now.getMinutes()).padStart(2, "0");
-  return { dateLine, time: `${hours}:${minutes}` };
 }
 
 function folderLabel(path: string | null) {
@@ -74,16 +89,30 @@ export function VaultRoom({
   onSettings: () => void;
 }) {
   const [state, setState] = useState<VaultState>(() => (readLit() ? "open" : "lock"));
-  const [now, setNow] = useState(() => new Date());
+  const [lamps, setLamps] = useState(readLamps);
   const [picked, setPicked] = useState<BookProject | null>(null);
-  const clock = clockParts(now);
   const slots = Math.max(COLUMNS * VISIBLE_ROWS, Math.ceil(projects.length / COLUMNS) * COLUMNS);
   const lit = state !== "lock";
+  const lampsAllOn = lamps === LAMP_ALL;
 
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 10_000);
-    return () => window.clearInterval(id);
-  }, []);
+  function setLampMask(next: number) {
+    const value = next & LAMP_ALL;
+    writeLamps(value);
+    setLamps(value);
+  }
+
+  function toggleLamp(index: number) {
+    setLampMask(lamps ^ (1 << index));
+  }
+
+  function toggleAllLamps() {
+    setLampMask(lampsAllOn ? 0 : LAMP_ALL);
+  }
+  const occupied = useMemo(
+    () => occupiedMask(Array.from({ length: COLUMNS * VISIBLE_ROWS }, (_, index) => Boolean(projects[index]))),
+    [projects],
+  );
+  const peakLight = useMemo(() => peakSlotEnergy(), []);
 
   function enter() {
     writeLit();
@@ -101,18 +130,20 @@ export function VaultRoom({
       className="vault"
       data-lit={lit ? "true" : "false"}
       data-state={state}
+      data-lamps={lamps}
       data-overflow={projects.length > VISIBLE_ROWS * COLUMNS ? "true" : "false"}
       aria-label={lit ? "Your workspace" : "Kosmos"}
     >
       <div className="vault-shell">
         <div className="vault-opening">
+          <VaultLighting lit={lit} occupied={occupied} lamps={lamps} />
           <div className="vault-stage">
             <div className="vault-world">
               <div className="vault-ceiling" aria-hidden="true">
                 <VaultPigment salt={0xce11} />
                 <span className="vault-spots">
                   {Array.from({ length: 5 }, (_, index) => (
-                    <span className="vault-spot-unit" key={index}>
+                    <span className="vault-spot-unit" key={index} data-on={((lamps >> index) & 1) === 1 ? "true" : "false"}>
                       <i className="vault-spot-trim" />
                       <i className="vault-spot-bowl" />
                       <i className="vault-spot-lens" />
@@ -121,6 +152,15 @@ export function VaultRoom({
                 </span>
                 <span className="vault-join vault-join-ceiling" />
               </div>
+              <span className="vault-volume" aria-hidden="true">
+                {Array.from({ length: 5 }, (_, index) => (
+                  <i
+                    className="vault-shaft"
+                    key={index}
+                    style={{ "--splay": `${(index - 2) * 4}deg` } as CSSProperties}
+                  />
+                ))}
+              </span>
               <div className="vault-floor" aria-hidden="true">
                 <VaultPigment salt={0xf100} />
                 <span className="vault-floor-sheen" />
@@ -136,11 +176,6 @@ export function VaultRoom({
               </div>
               <div className="vault-back">
                 <VaultPigment salt={0xbac} />
-                <span className="vault-light-fall" aria-hidden="true">
-                  {Array.from({ length: 5 }, (_, index) => (
-                    <i className="vault-beam" key={index} />
-                  ))}
-                </span>
                 <span className="vault-join vault-join-back" />
                 <div className="vault-grid-scroll">
                   {loading ? (
@@ -154,6 +189,8 @@ export function VaultRoom({
                             key={project?.id ?? `empty-${index}`}
                             project={project}
                             index={index}
+                            peakLight={peakLight}
+                            lamps={lamps}
                             interactive={state === "open"}
                             onSelect={() => project && setPicked(project)}
                             onDelete={() => project && onDelete(project)}
@@ -192,46 +229,62 @@ export function VaultRoom({
         <div className="vault-chrome">
           {state === "lock" ? (
             <div className="vault-lock">
-              <p className="vault-date">{clock.dateLine}</p>
-              <p className="vault-time">{clock.time}</p>
-              <GlassButton variant="clear" className="vault-enter" type="button" onClick={enter}>
+              <GlassButton variant="frost" settings={frostSettings} className="vault-enter" type="button" onClick={enter}>
                 Enter workspace
               </GlassButton>
             </div>
           ) : null}
-
-          <span className="vault-wave" aria-hidden="true">
-            {WAVE.map((height, index) => (
-              <i key={index} style={{ "--h": height } as CSSProperties} />
-            ))}
-          </span>
         </div>
 
         {state === "open" ? (
           <>
             <div className="vault-open-copy">
               <h1 className="vault-title">Your workspace</h1>
-              <p className="vault-meta">
-                <span>{clock.dateLine}</span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  {loading
-                    ? "Loading"
-                    : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
-                </span>
-              </p>
+              <div className="vault-open-row">
+                <p className="vault-meta">
+                  <span>
+                    {loading
+                      ? "Loading"
+                      : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
+                  </span>
+                </p>
+                <button
+                  type="button"
+                  className="vault-place"
+                  title={workspace ?? undefined}
+                  aria-label={workspace ? `Workspace folder ${workspace}` : "No workspace folder yet"}
+                >
+                  <FolderGlyph />
+                  <span className="vault-place-name">{folderLabel(workspace)}</span>
+                  {workspace ? <span className="vault-place-path">{workspace}</span> : null}
+                </button>
+              </div>
+            </div>
+            <div className="vault-lamp-dock" role="toolbar" aria-label="Gallery lights">
               <button
                 type="button"
-                className="vault-place"
-                title={workspace ?? undefined}
-                aria-label={workspace ? `Workspace folder ${workspace}` : "No workspace folder yet"}
+                className="vault-lamp-all"
+                aria-pressed={lampsAllOn}
+                onClick={toggleAllLamps}
               >
-                <FolderGlyph />
-                <span className="vault-place-name">{folderLabel(workspace)}</span>
-                {workspace ? <span className="vault-place-path">{workspace}</span> : null}
+                All
               </button>
+              <span className="vault-dock-rule" aria-hidden="true" />
+              {Array.from({ length: 5 }, (_, index) => {
+                const on = ((lamps >> index) & 1) === 1;
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    className="vault-lamp-pip"
+                    data-on={on ? "true" : "false"}
+                    aria-label={`Light ${index + 1}`}
+                    aria-pressed={on}
+                    onClick={() => toggleLamp(index)}
+                  />
+                );
+              })}
             </div>
-            <p className="vault-folio">{clock.time}</p>
             <div className="vault-dock" role="toolbar" aria-label="Workspace">
               <button type="button" className="vault-dock-btn" aria-label="Lock workspace" onClick={leave}>
                 <LockGlyph />
@@ -274,30 +327,40 @@ export function VaultRoom({
     </section>
   );
 }
-
-const WAVE = [0.18, 0.28, 0.46, 0.34, 0.62, 0.88, 0.54, 0.4, 0.22, 0.3, 0.16];
-
 function VaultSlot({
   project,
   index,
+  peakLight,
+  lamps,
   interactive,
   onSelect,
   onDelete,
 }: {
   project?: BookProject;
   index: number;
+  peakLight: number;
+  lamps: number;
   interactive: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }) {
   const row = Math.floor(index / COLUMNS);
+  const col = index % COLUMNS;
+  const light = slotLight(row, col, 0.5808, lamps);
   const progress = project ? completionPct(project) : 0;
 
   return (
     <div
       className={project ? "vault-slot" : "vault-slot is-empty"}
       data-row={row}
-      data-col={index % COLUMNS}
+      data-col={col}
+      style={
+        {
+          "--irr": Math.min(1.35, light.irr / Math.max(peakLight, 1e-6)),
+          "--cover-irr": Math.min(1.4, light.cover / Math.max(peakLight, 1e-6)),
+          "--key-x": light.keyX,
+        } as CSSProperties
+      }
     >
       <div className="vault-niche">
         <span className="vault-niche-well" aria-hidden="true">
@@ -399,10 +462,10 @@ function BookDetail({
             </div>
           </dl>
           <div className="vault-sheet-actions">
-            <GlassButton type="button" onClick={onOpen}>
+            <GlassButton variant="frost" type="button" onClick={onOpen}>
               Open
             </GlassButton>
-            <GlassButton type="button" onClick={onDelete}>
+            <GlassButton variant="frost" type="button" onClick={onDelete}>
               Remove
             </GlassButton>
           </div>

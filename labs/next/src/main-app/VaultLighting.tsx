@@ -1,22 +1,32 @@
 import { useEffect, useRef } from "react";
 import { startVaultLight } from "./vault-light";
+import type { VaultLightState } from "./vault-light-layout";
 
-export function VaultLighting({ lit, occupied }: { lit: boolean; occupied: number }) {
+export function VaultLighting({
+  lit,
+  occupied,
+  lamps,
+}: {
+  lit: boolean;
+  occupied: number;
+  lamps: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef({ lit, occupied });
-  stateRef.current = { lit, occupied };
+  const stateRef = useRef<VaultLightState>({ lit, occupied, lamps });
+  stateRef.current = { lit, occupied, lamps };
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    return startVaultLight(canvas, () => stateRef.current);
+    const root = canvas.closest(".vault");
+    const stop = startVaultLight(canvas, () => stateRef.current, (kind) => {
+      root?.setAttribute("data-gpu-light", kind);
+    });
+    return () => {
+      stop();
+      root?.removeAttribute("data-gpu-light");
+    };
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="vault-light"
-      aria-hidden="true"
-    />
-  );
+  return <canvas ref={canvasRef} className="vault-light" aria-hidden="true" />;
 }

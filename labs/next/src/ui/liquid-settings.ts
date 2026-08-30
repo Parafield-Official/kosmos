@@ -43,7 +43,30 @@ export const clearLiquidSettings: LiquidSettings = {
   shadow: "rgba(40, 36, 30, 0.12)",
 };
 
-export type LiquidSettings = typeof liquidSettings;
+/** Dark frosted capsule: Image-3 docks. White glyphs, no chromatic fringe. */
+export const frostSettings: LiquidSettings = {
+  ...liquidSettings,
+  blur: "14px",
+  saturate: "112%",
+  brightness: "1.02",
+  contrast: "1.04",
+  fillTop: "rgba(72, 70, 76, 0.64)",
+  fillMid: "rgba(48, 46, 52, 0.56)",
+  fillBottom: "rgba(40, 38, 44, 0.62)",
+  meshA: "transparent",
+  meshB: "transparent",
+  well: "transparent",
+  rim: "rgba(255, 255, 255, 0.18)",
+  rimInner: "rgba(255, 255, 255, 0.28)",
+  rimShade: "rgba(255, 255, 255, 0.08)",
+  spec: "rgba(255, 255, 255, 0.2)",
+  refract: "transparent",
+  refractHot: "transparent",
+  shadow: "rgba(20, 18, 22, 0.22)",
+  radiusPill: "999px",
+};
+
+export type LiquidSettings = { [K in keyof typeof liquidSettings]: string };
 
 export function liquidVars(settings: LiquidSettings = liquidSettings): Record<string, string> {
   return {

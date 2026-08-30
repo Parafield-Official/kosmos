@@ -45,7 +45,7 @@
   cursor: pointer;
   -webkit-app-region: no-drag;
   app-region: no-drag;
-  transition: transform 100ms ease-out;
+  transition: transform 280ms ease-out, background 280ms ease, box-shadow 280ms ease;
 }
 
 .liquid-circle {
@@ -420,6 +420,75 @@
     0 6px 18px var(--liquid-shadow);
 }
 
+.glass-btn-frost {
+  --liquid-mesh-a: transparent;
+  --liquid-mesh-b: transparent;
+  --liquid-well: transparent;
+  --liquid-fill-top: rgba(72, 70, 76, 0.64);
+  --liquid-fill-mid: rgba(48, 46, 52, 0.56);
+  --liquid-fill-bottom: rgba(40, 38, 44, 0.62);
+  --liquid-blur: 14px;
+  --liquid-saturate: 112%;
+  --liquid-brightness: 1.02;
+  --liquid-contrast: 1.04;
+  --liquid-rim: rgba(255, 255, 255, 0.18);
+  --liquid-rim-inner: rgba(255, 255, 255, 0.28);
+  --liquid-rim-shade: rgba(255, 255, 255, 0.08);
+  --liquid-spec: rgba(255, 255, 255, 0.2);
+  --liquid-refract: transparent;
+  --liquid-refract-hot: transparent;
+  --liquid-shadow: rgba(20, 18, 22, 0.22);
+  --liquid-radius: 999px;
+  color: #ffffff;
+}
+
+.glass-btn-frost .liquid-fill {
+  background: linear-gradient(
+    165deg,
+    var(--liquid-fill-top) 0%,
+    var(--liquid-fill-mid) 48%,
+    var(--liquid-fill-bottom) 100%
+  );
+  backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-saturate));
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-saturate));
+  transition: background 280ms ease;
+}
+
+.glass-btn-frost:hover .liquid-fill,
+.glass-btn-frost.open .liquid-fill,
+.glass-btn-frost:focus-visible .liquid-fill {
+  background: linear-gradient(
+    165deg,
+    rgba(88, 86, 94, 0.72) 0%,
+    rgba(58, 56, 64, 0.62) 48%,
+    rgba(48, 46, 54, 0.68) 100%
+  );
+}
+
+.glass-btn-frost .liquid-refract {
+  opacity: 0;
+}
+
+.glass-btn-frost .liquid-spec {
+  opacity: 0.28;
+}
+
+.glass-btn-frost .liquid-content {
+  color: #ffffff;
+  text-shadow: none;
+}
+
+.glass-btn-frost .liquid-content > svg {
+  filter: none;
+}
+
+.glass-btn-frost:focus-visible .liquid-rim {
+  box-shadow:
+    inset 0 1px 0 var(--liquid-rim-inner),
+    0 0 0 2px rgba(255, 255, 255, 0.22),
+    0 6px 18px var(--liquid-shadow);
+}
+
 .glass-btn-compact.glass-btn-pill .liquid-content {
   min-height: auto;
   padding: 0.42rem 0.7rem;
@@ -434,7 +503,7 @@
   width: 100%;
   min-height: auto;
   padding: 0.42rem 0.6rem;
-  border-radius: 12px;
+  border-radius: 999px;
   font-family: var(--font-mono);
   font-size: 0.66rem;
   letter-spacing: 0.08em;
@@ -479,24 +548,24 @@
   app-region: no-drag;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.004);
-  transition: transform 100ms ease-out;
+  transition: transform 280ms ease-out;
   --liquid-mesh-a: transparent;
   --liquid-mesh-b: transparent;
   --liquid-well: transparent;
-  --liquid-fill-top: rgba(255, 255, 255, 0.16);
-  --liquid-fill-mid: rgba(255, 255, 255, 0.03);
-  --liquid-fill-bottom: rgba(255, 255, 255, 0.07);
-  --liquid-blur: 1.2px;
-  --liquid-saturate: 128%;
-  --liquid-brightness: 1.04;
-  --liquid-contrast: 1.08;
-  --liquid-rim: rgba(255, 255, 255, 0.78);
-  --liquid-rim-inner: rgba(255, 255, 255, 0.94);
-  --liquid-rim-shade: rgba(255, 255, 255, 0.22);
-  --liquid-spec: rgba(255, 255, 255, 0.88);
-  --liquid-refract: rgba(170, 205, 255, 0.62);
-  --liquid-refract-hot: rgba(255, 255, 255, 0.96);
-  --liquid-shadow: rgba(40, 36, 30, 0.12);
+  --liquid-fill-top: rgba(72, 70, 76, 0.64);
+  --liquid-fill-mid: rgba(48, 46, 52, 0.56);
+  --liquid-fill-bottom: rgba(40, 38, 44, 0.62);
+  --liquid-blur: 14px;
+  --liquid-saturate: 112%;
+  --liquid-brightness: 1.02;
+  --liquid-contrast: 1.04;
+  --liquid-rim: rgba(255, 255, 255, 0.18);
+  --liquid-rim-inner: rgba(255, 255, 255, 0.28);
+  --liquid-rim-shade: rgba(255, 255, 255, 0.08);
+  --liquid-spec: rgba(255, 255, 255, 0.2);
+  --liquid-refract: transparent;
+  --liquid-refract-hot: transparent;
+  --liquid-shadow: rgba(20, 18, 22, 0.22);
 }
 
 .brand-mark * {
@@ -522,18 +591,12 @@
     var(--liquid-fill-mid) 48%,
     var(--liquid-fill-bottom) 100%
   );
-  backdrop-filter:
-    url(#kosmos-clear-glass)
-    blur(var(--liquid-blur))
-    saturate(var(--liquid-saturate))
-    brightness(var(--liquid-brightness))
-    contrast(var(--liquid-contrast));
-  -webkit-backdrop-filter:
-    url(#kosmos-clear-glass)
-    blur(var(--liquid-blur))
-    saturate(var(--liquid-saturate))
-    brightness(var(--liquid-brightness))
-    contrast(var(--liquid-contrast));
+  backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-saturate));
+  -webkit-backdrop-filter: blur(var(--liquid-blur)) saturate(var(--liquid-saturate));
+}
+
+.brand-mark .liquid-refract {
+  opacity: 0;
 }
 
 .brand-mark-rim {
@@ -566,9 +629,9 @@
 .brand-mark[data-open="true"] .brand-mark-fill {
   background: linear-gradient(
     165deg,
-    rgba(255, 255, 255, 0.22) 0%,
-    rgba(255, 255, 255, 0.05) 48%,
-    rgba(255, 255, 255, 0.1) 100%
+    rgba(88, 86, 94, 0.72) 0%,
+    rgba(58, 56, 64, 0.62) 48%,
+    rgba(48, 46, 54, 0.68) 100%
   );
 }
 
@@ -643,7 +706,7 @@
 .viewport[data-place="app"] .brand-mark {
   top: calc(var(--vault-bezel-t) / 2);
   height: 2.45rem;
-  color: #2a241e;
+  color: #fff;
   transform: translate(-50%, -50%);
 }
 
@@ -654,17 +717,6 @@
 
 .viewport[data-place="app"] .brand-mark:active {
   transform: translate(-50%, -50%) scale(0.97);
-}
-
-.viewport[data-place="app"] .brand-mark-name {
-  color: #2a241e;
-  text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.7);
-}
-
-.viewport[data-place="app"] .brand-mark-logo {
-  filter:
-    drop-shadow(0 0.5px 0 rgba(255, 255, 255, 0.75))
-    brightness(0.2);
 }
 
 .settings-toggle svg {

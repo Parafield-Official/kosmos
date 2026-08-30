@@ -128,6 +128,7 @@ export function DebugDock({
       <p className="debug-dock-handle">debug</p>
       <GlassButton
         type="button"
+        variant="frost"
         className="debug-toggle glass-btn-compact"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
@@ -141,6 +142,7 @@ export function DebugDock({
             <GlassButton
               key={item}
               type="button"
+              variant="frost"
               className={item === place ? "glass-btn-debug-item open" : "glass-btn-debug-item"}
               onClick={() => onJump(item)}
             >

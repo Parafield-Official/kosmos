@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PLACES, placeLabel, type Place } from "./flow";
+import { ClearGlassFilter } from "./ui/ClearGlassFilter";
 import "./debug.css";
 
 function jump(place: Place) {
@@ -56,6 +57,7 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
+    <ClearGlassFilter />
     <DebugPalette />
   </StrictMode>,
 );
