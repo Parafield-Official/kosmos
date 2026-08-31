@@ -110,6 +110,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   restartLiveFollow: (payload) => ipcRenderer.invoke("labs:live-restart", payload),
   sendLivePcm: (payload) => ipcRenderer.send("labs:live-pcm", payload),
   transcribeHop: (payload) => ipcRenderer.invoke("labs:live-transcribe-hop", payload),
+  suggestGlossaryRespells: (payload) => ipcRenderer.invoke("labs:glossary-suggest", payload),
   onLiveWords: (callback) => {
     const listener = (_event, words) => {
       callback(words);

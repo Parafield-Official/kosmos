@@ -10,8 +10,10 @@ import {
   deleteGlossaryEntry,
   extractGlossaryCandidates,
   mergeGlossaryCandidates,
+  parsePronouncingDictionary,
   renameGlossaryEntry,
 } from "../../../../src/core/glossary/candidates";
+import { fillGlossaryRespells } from "../../../../src/core/glossary/guide";
 import { paragraphsFromHtml } from "./booth";
 import { readChapterContent, type BookProject } from "./store";
 
@@ -161,6 +163,54 @@ export function setGlossaryClip(project: BookProject, id: string, clipPath: stri
     ...project,
     glossary: (project.glossary ?? []).map((entry) => (entry.id === id ? { ...entry, clip_path: clipPath } : entry)),
   };
+}
+
+/** Move a subset of glossary rows (flagged or saved) without shuffling the other set. */
+export function reorderGlossarySubset(project: BookProject, orderedIds: string[]): BookProject {
+  const ids = new Set(orderedIds);
+  const byId = new Map((project.glossary ?? []).map((entry) => [entry.id, entry]));
+  const moved = orderedIds.map((id) => byId.get(id)).filter((entry): entry is GlossaryEntry => Boolean(entry));
+  if (moved.length === 0) {
+    return project;
+  }
+  let index = 0;
+  return {
+    ...project,
+    glossary: (project.glossary ?? []).map((entry) => (ids.has(entry.id) ? moved[index++] ?? entry : entry)),
+  };
+}
+
+export async function fillGlossaryFromDictionary(
+  glossary: GlossaryEntry[],
+): Promise<{ glossary: GlossaryEntry[]; filled: number; unknown: string[]; reason?: string }> {
+  if (window.kosmosNext?.suggestGlossaryRespells) {
+    try {
+      const result = await window.kosmosNext.suggestGlossaryRespells({ glossary });
+      if (result?.ok !== false) {
+        return {
+          glossary: result?.glossary ?? glossary,
+          filled: result?.filled ?? 0,
+          unknown: result?.unknown ?? [],
+        };
+      }
+      if (result.reason && !result.reason.includes("not bundled")) {
+        return { glossary, filled: 0, unknown: [], reason: result.reason };
+      }
+    } catch {
+      // Hosted dictionary below.
+    }
+  }
+  try {
+    const response = await fetch("/cmudict.dict");
+    if (!response.ok) {
+      return { glossary, filled: 0, unknown: [], reason: "The dictionary is not available here." };
+    }
+    const lexicon = parsePronouncingDictionary(await response.text());
+    const result = fillGlossaryRespells(glossary, lexicon);
+    return { glossary: result.glossary, filled: result.filled, unknown: result.unknown };
+  } catch {
+    return { glossary, filled: 0, unknown: [], reason: "The dictionary is not available here." };
+  }
 }
 
 /** Remove this word from the list and never flag it again in later chapters. */

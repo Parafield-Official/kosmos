@@ -56,3 +56,11 @@ export function removeSuppressedWord(project: BookProject, word: string): BookPr
   );
   return { ...project, suppressedWords };
 }
+
+export function reorderSuppressedWords(project: BookProject, ordered: string[]): BookProject {
+  const current = project.suppressedWords ?? [];
+  if (ordered.length !== current.length) {
+    return project;
+  }
+  return { ...project, suppressedWords: ordered };
+}

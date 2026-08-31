@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { GlossaryEntry } from "../../../../src/core/project/types";
+import { ReplaceClipAsk, useClipRecorder } from "./clip-record";
+import { isResolved } from "./glossary";
 import { readChapterAudioUrl, type BookProject } from "./store";
-
-function fieldChars(value: string, min: number, max = 56): number {
-  return Math.min(max, Math.max(min, [...value].length + 3));
-}
 
 export function GlossaryPanel({
   title,
@@ -18,6 +16,7 @@ export function GlossaryPanel({
   onDismiss,
   onAdd,
   onClip,
+  onReorder,
 }: {
   title: string;
   summary: string;
@@ -30,9 +29,13 @@ export function GlossaryPanel({
   onDismiss: (id: string) => void;
   onAdd?: (spelling: string, respell: string) => void;
   onClip?: (id: string, blob: Blob) => void;
+  onReorder?: (ids: string[]) => void;
 }) {
   const [draftSpelling, setDraftSpelling] = useState("");
   const [draftRespell, setDraftRespell] = useState("");
+  const open = entries.filter((entry) => !isResolved(entry));
+  const saved = entries.filter(isResolved);
+  const mixed = open.length > 0 && saved.length > 0;
 
   function submitAdd() {
     const spelling = draftSpelling.trim();
@@ -55,28 +58,24 @@ export function GlossaryPanel({
       <div className="ma-glossary-pane">
         {entries.length === 0 ? (
           <p className="ma-glossary-empty">{emptyCopy}</p>
+        ) : mixed ? (
+          <>
+            <p className="ma-glossary-group">Needs a guide</p>
+            <GlossaryList entries={open} project={project} onRespell={onRespell} onDismiss={onDismiss} onClip={onClip} onReorder={onReorder} />
+            <p className="ma-glossary-group">Resolved</p>
+            <GlossaryList entries={saved} project={project} onRespell={onRespell} onDismiss={onDismiss} onClip={onClip} />
+          </>
         ) : (
-          <ul className="ma-glossary-list">
-            {entries.map((entry) => (
-              <GlossaryRow
-                key={entry.id}
-                entry={entry}
-                project={project}
-                onRespell={onRespell}
-                onDismiss={onDismiss}
-                onClip={onClip}
-              />
-            ))}
-          </ul>
+          <GlossaryList entries={entries} project={project} onRespell={onRespell} onDismiss={onDismiss} onClip={onClip} onReorder={onReorder} />
         )}
       </div>
 
       {allowAdd && onAdd ? (
         <div className="ma-glossary-add">
           <input
-            className="neu-input"
+            className="neu-input ma-word-input"
             value={draftSpelling}
-            placeholder="Add a word or phrase"
+            placeholder="Word or phrase"
             aria-label="Word or phrase to pronounce"
             onChange={(event) => setDraftSpelling(event.target.value)}
             onKeyDown={(event) => {
@@ -86,7 +85,7 @@ export function GlossaryPanel({
             }}
           />
           <input
-            className="neu-input"
+            className="neu-input ma-guide-input"
             value={draftRespell}
             placeholder="Guide"
             aria-label="Pronunciation guide"
@@ -106,73 +105,326 @@ export function GlossaryPanel({
   );
 }
 
-function GlossaryRow({
-  entry,
+function useReorder<T>(items: T[], onReorder?: (next: T[]) => void) {
+  const [drag, setDrag] = useState<{
+    from: number;
+    over: number;
+    y: number;
+    height: number;
+    originY: number;
+    armed: boolean;
+  } | null>(null);
+  const dragRef = useRef(drag);
+  dragRef.current = drag;
+  const showGrip = Boolean(onReorder);
+  const canDrag = showGrip && items.length > 1;
+
+  function shiftFor(index: number): number {
+    if (!drag?.armed) {
+      return 0;
+    }
+    if (index === drag.from) {
+      return drag.y;
+    }
+    if (drag.from < drag.over && index > drag.from && index <= drag.over) {
+      return -drag.height;
+    }
+    if (drag.from > drag.over && index < drag.from && index >= drag.over) {
+      return drag.height;
+    }
+    return 0;
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLButtonElement>, index: number) {
+    if (!canDrag || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const row = event.currentTarget.closest("li");
+    const height = row?.getBoundingClientRect().height ?? 48;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDrag({ from: index, over: index, y: 0, height, originY: event.clientY, armed: false });
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const current = dragRef.current;
+    if (!current) {
+      return;
+    }
+    const raw = event.clientY - current.originY;
+    if (!current.armed && Math.abs(raw) < 10) {
+      return;
+    }
+    const max = (items.length - 1 - current.from) * current.height;
+    const min = -current.from * current.height;
+    const y = rubberband(raw, min, max);
+    const over = Math.max(0, Math.min(items.length - 1, current.from + Math.round(y / current.height)));
+    setDrag({ ...current, armed: true, y, over });
+  }
+
+  function endDrag() {
+    const current = dragRef.current;
+    dragRef.current = null;
+    setDrag(null);
+    if (!current?.armed || !onReorder || current.over === current.from) {
+      return;
+    }
+    onReorder(arrayMove(items, current.from, current.over));
+  }
+
+  return { drag, shiftFor, startDrag, moveDrag, endDrag, showGrip };
+}
+
+export function GlossaryList({
+  entries,
   project,
+  highlightId,
+  onRespell,
+  onDismiss,
+  onClip,
+  onReorder,
+}: {
+  entries: GlossaryEntry[];
+  project?: BookProject;
+  highlightId?: string | null;
+  onRespell: (id: string, respell: string) => void;
+  onDismiss: (id: string) => void;
+  onClip?: (id: string, blob: Blob) => void;
+  onReorder?: (ids: string[]) => void;
+}) {
+  const reorder = useReorder(entries, onReorder ? (next) => onReorder(next.map((entry) => entry.id)) : undefined);
+
+  return (
+    <ul className={`ma-glossary-list${reorder.drag ? " is-dragging" : ""}`}>
+      {entries.map((entry, index) => (
+        <GlossaryRow
+          key={entry.id}
+          entry={entry}
+          project={project}
+          highlight={entry.id === highlightId}
+          dragging={reorder.drag?.from === index && Boolean(reorder.drag.armed)}
+          shift={reorder.shiftFor(index)}
+          onRespell={onRespell}
+          onDismiss={onDismiss}
+          onClip={onClip}
+          onGripPointerDown={reorder.showGrip ? (event) => reorder.startDrag(event, index) : undefined}
+          onGripPointerMove={reorder.showGrip ? reorder.moveDrag : undefined}
+          onGripPointerUp={reorder.showGrip ? reorder.endDrag : undefined}
+        />
+      ))}
+    </ul>
+  );
+}
+
+export function SkipWordList({
+  words,
+  onRemove,
+  onReorder,
+}: {
+  words: string[];
+  onRemove: (word: string) => void;
+  onReorder?: (words: string[]) => void;
+}) {
+  const reorder = useReorder(words, onReorder);
+
+  return (
+    <ul className={`ma-suppress-list ma-skip-list${reorder.drag ? " is-dragging" : ""}`}>
+      {words.map((word, index) => {
+        const shift = reorder.shiftFor(index);
+        const dragging = Boolean(reorder.drag?.from === index && reorder.drag.armed);
+        return (
+          <li
+            key={`${word}:${index}`}
+            className={dragging ? "is-dragging" : undefined}
+            style={shift ? { transform: `translateY(${shift}px)` } : undefined}
+          >
+            {reorder.showGrip ? (
+              <button
+                type="button"
+                className="ma-block-grip"
+                aria-label={`Reorder ${word}`}
+                onPointerDown={(event) => reorder.startDrag(event, index)}
+                onPointerMove={reorder.moveDrag}
+                onPointerUp={reorder.endDrag}
+                onPointerCancel={reorder.endDrag}
+                onLostPointerCapture={reorder.endDrag}
+              >
+                <GripGlyph />
+              </button>
+            ) : null}
+            <span className="ma-scroll-x">{word}</span>
+            <button
+              type="button"
+              className="ma-word-act is-danger"
+              aria-label={`Flag ${word} again`}
+              onClick={() => onRemove(word)}
+            >
+              <UndoGlyph />
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function arrayMove<T>(list: T[], from: number, to: number): T[] {
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+function rubberband(value: number, min: number, max: number): number {
+  if (value < min) {
+    const extra = min - value;
+    return min - (extra * 48) / (48 + extra);
+  }
+  if (value > max) {
+    const extra = value - max;
+    return max + (extra * 48) / (48 + extra);
+  }
+  return value;
+}
+
+export function GlossaryDeck({
+  entries,
+  project,
+  highlightId,
   onRespell,
   onDismiss,
   onClip,
 }: {
-  entry: GlossaryEntry;
+  entries: GlossaryEntry[];
   project?: BookProject;
+  highlightId?: string | null;
   onRespell: (id: string, respell: string) => void;
   onDismiss: (id: string) => void;
   onClip?: (id: string, blob: Blob) => void;
 }) {
+  const [index, setIndex] = useState(0);
+  const count = entries.length;
+  const ids = entries.map((item) => item.id).join("|");
+  const safeIndex = count === 0 ? 0 : ((index % count) + count) % count;
+  const entry = entries[safeIndex];
+
+  useEffect(() => {
+    setIndex(0);
+  }, [ids]);
+
+  useEffect(() => {
+    if (!highlightId) {
+      return;
+    }
+    const next = entries.findIndex((item) => item.id === highlightId);
+    if (next >= 0) {
+      setIndex(next);
+    }
+  }, [highlightId, ids]);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (count < 2) {
+        return;
+      }
+      if (event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable]")) {
+        return;
+      }
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+        event.preventDefault();
+        setIndex((value) => value + 1);
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setIndex((value) => value - 1);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [count]);
+
+  if (!entry) {
+    return <p className="ma-glossary-empty">Nothing resolved yet.</p>;
+  }
+
+  return (
+    <div className="ma-pronounce-deck">
+      <p className="ma-pronounce-deck-count">
+        {safeIndex + 1} of {count}
+      </p>
+      <div className="ma-pronounce-deck-stage">
+        <button
+          type="button"
+          className="ma-pronounce-deck-arrow"
+          aria-label="Previous card"
+          disabled={count < 2}
+          onClick={() => setIndex((value) => value - 1)}
+        >
+          <PrevGlyph />
+        </button>
+        <GlossaryRow
+          key={entry.id}
+          variant="card"
+          entry={entry}
+          project={project}
+          highlight={entry.id === highlightId}
+          onRespell={onRespell}
+          onDismiss={onDismiss}
+          onClip={onClip}
+        />
+        <button
+          type="button"
+          className="ma-pronounce-deck-arrow"
+          aria-label="Next card"
+          disabled={count < 2}
+          onClick={() => setIndex((value) => value + 1)}
+        >
+          <NextGlyph />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GlossaryRow({
+  entry,
+  project,
+  highlight,
+  variant = "row",
+  dragging,
+  shift = 0,
+  onRespell,
+  onDismiss,
+  onClip,
+  onGripPointerDown,
+  onGripPointerMove,
+  onGripPointerUp,
+}: {
+  entry: GlossaryEntry;
+  project?: BookProject;
+  highlight?: boolean;
+  variant?: "row" | "card";
+  dragging?: boolean;
+  shift?: number;
+  onRespell: (id: string, respell: string) => void;
+  onDismiss: (id: string) => void;
+  onClip?: (id: string, blob: Blob) => void;
+  onGripPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onGripPointerMove?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onGripPointerUp?: () => void;
+}) {
   const [respell, setRespell] = useState(entry.respell ?? "");
-  const [recording, setRecording] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const respellRef = useRef(respell);
+  const rowRef = useRef<HTMLElement | null>(null);
   const saved = (entry.respell ?? "").trim();
-  const dirty = respell.trim() !== saved;
   const canRecord = Boolean(onClip);
   const hasClip = Boolean(entry.clip_path || pendingUrl);
-
-  useEffect(() => {
-    setRespell(entry.respell ?? "");
-  }, [entry.respell]);
-
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      audioRef.current?.pause();
-      if (pendingUrl) {
-        URL.revokeObjectURL(pendingUrl);
-      }
-    };
-  }, []);
-
-  async function toggleRecord() {
-    if (!onClip) {
-      return;
-    }
-    if (recording) {
-      recorderRef.current?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find(
-        (type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(type),
-      );
-      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        stream.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-        recorderRef.current = null;
-        setRecording(false);
-        if (chunks.length > 0) {
-          const blob = new Blob(chunks, { type: recorder.mimeType || mime || "audio/webm" });
+  respellRef.current = respell;
+  const recorder = useClipRecorder(
+    onClip
+      ? (blob) => {
           const url = URL.createObjectURL(blob);
           setPendingUrl((prev) => {
             if (prev) {
@@ -180,15 +432,36 @@ function GlossaryRow({
             }
             return url;
           });
+          const nextGuide = respellRef.current.trim();
+          if (nextGuide !== (entry.respell ?? "").trim()) {
+            onRespell(entry.id, nextGuide);
+          }
           onClip(entry.id, blob);
         }
-      };
-      recorderRef.current = recorder;
-      recorder.start(80);
-      setRecording(true);
-    } catch {
-      setRecording(false);
+      : undefined,
+  );
+
+  useEffect(() => {
+    setRespell(entry.respell ?? "");
+  }, [entry.respell]);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (pendingUrl) {
+        URL.revokeObjectURL(pendingUrl);
+      }
+    };
+  }, []);
+
+  function commitGuide(nextTarget?: EventTarget | null) {
+    if (nextTarget instanceof Node && rowRef.current?.contains(nextTarget)) {
+      return;
     }
+    if (respell.trim() === saved) {
+      return;
+    }
+    onRespell(entry.id, respell);
   }
 
   async function togglePlay() {
@@ -217,67 +490,108 @@ function GlossaryRow({
     setPlaying(true);
   }
 
+  const Tag = variant === "card" ? "article" : "li";
+  const set = saved || hasClip;
+  const className =
+    variant === "card"
+      ? `ma-pronounce-card${set ? " is-set" : ""}${hasClip ? " has-clip" : ""}${highlight || recorder.fresh ? " is-arrive" : ""}`
+      : `ma-glossary-row${set ? " is-set" : ""}${hasClip ? " has-clip" : ""}${highlight || recorder.fresh ? " is-arrive" : ""}${dragging ? " is-dragging" : ""}`;
+  const acts = (
+    <div className="ma-word-acts">
+      {canRecord ? (
+        <button
+          type="button"
+          className={`ma-word-act${recorder.recording ? " is-live" : ""}`}
+          aria-label={recorder.recording ? `Stop recording ${entry.spelling}` : `Record ${entry.spelling}`}
+          title={recorder.recording ? "Stop" : "Record"}
+          onClick={() => recorder.request(hasClip)}
+        >
+          {recorder.recording ? <WaveGlyph /> : <MicGlyph />}
+        </button>
+      ) : null}
+      {hasClip ? (
+        <button
+          type="button"
+          className={`ma-clip-file${playing ? " is-live" : ""}${recorder.fresh ? " is-fresh" : ""}`}
+          aria-label={playing ? `Pause ${entry.spelling}` : `Play ${entry.spelling}`}
+          title={playing ? "Pause" : "Play clip"}
+          onClick={() => void togglePlay()}
+        >
+          {playing ? <PauseGlyph /> : <PlayGlyph />}
+          <span>Clip</span>
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className="ma-word-act is-danger"
+        aria-label={`Remove ${entry.spelling}`}
+        title="Remove"
+        onClick={() => onDismiss(entry.id)}
+      >
+        <TrashGlyph />
+      </button>
+    </div>
+  );
+  const guideField = (
+    <input
+      className="neu-input ma-guide-input"
+      value={respell}
+      placeholder="Guide"
+      aria-label={`Pronunciation guide for ${entry.spelling}`}
+      onChange={(event) => setRespell(event.target.value)}
+      onBlur={(event) => commitGuide(event.relatedTarget)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commitGuide();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+
   return (
-    <li className={`${saved || hasClip ? "is-set" : ""}${hasClip ? " has-clip" : ""}`.trim() || undefined}>
-      <strong>{entry.spelling}</strong>
-      <input
-        className="neu-input ma-guide-input"
-        value={respell}
-        size={fieldChars(respell.trim() || entry.spelling, 16)}
-        placeholder="Guide"
-        aria-label={`Pronunciation guide for ${entry.spelling}`}
-        onChange={(event) => setRespell(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && respell.trim()) {
-            onRespell(entry.id, respell);
-          }
-        }}
-      />
-      <div className="ma-word-acts">
-        {canRecord ? (
-          <button
-            type="button"
-            className={`ma-word-act${recording ? " is-live" : ""}`}
-            aria-label={recording ? `Stop recording ${entry.spelling}` : `Record ${entry.spelling}`}
-            title={recording ? "Stop" : "Record"}
-            onClick={() => void toggleRecord()}
-          >
-            {recording ? <WaveGlyph /> : <MicGlyph />}
-          </button>
-        ) : null}
-        {hasClip ? (
-          <button
-            type="button"
-            className={`ma-clip-file${playing ? " is-live" : ""}`}
-            aria-label={playing ? `Pause ${entry.spelling}` : `Play ${entry.spelling}`}
-            title={playing ? "Pause" : "Play clip"}
-            onClick={() => void togglePlay()}
-          >
-            {playing ? <PauseGlyph /> : <PlayGlyph />}
-            <span>Clip</span>
-          </button>
-        ) : null}
+    <Tag
+      className={className}
+      style={variant === "row" && (dragging || shift) ? { transform: `translateY(${shift}px)` } : undefined}
+      ref={(node: HTMLElement | null) => {
+        rowRef.current = node;
+      }}
+    >
+      {variant === "row" && onGripPointerDown ? (
         <button
           type="button"
-          className="ma-word-act"
-          disabled={!respell.trim() || !dirty}
-          aria-label={saved ? `Save ${entry.spelling}` : `Set ${entry.spelling}`}
-          title={saved ? "Save" : "Set"}
-          onClick={() => onRespell(entry.id, respell)}
+          className="ma-block-grip"
+          aria-label={`Reorder ${entry.spelling}`}
+          onPointerDown={onGripPointerDown}
+          onPointerMove={onGripPointerMove}
+          onPointerUp={onGripPointerUp}
+          onPointerCancel={onGripPointerUp}
+          onLostPointerCapture={onGripPointerUp}
         >
-          <CheckGlyph />
+          <GripGlyph />
         </button>
-        <button
-          type="button"
-          className="ma-word-act is-danger"
-          aria-label={`Remove ${entry.spelling}`}
-          title="Remove"
-          onClick={() => onDismiss(entry.id)}
-        >
-          <TrashGlyph />
-        </button>
-      </div>
-    </li>
+      ) : null}
+      <strong className="ma-scroll-x">{entry.spelling}</strong>
+      {guideField}
+      {acts}
+      {recorder.ask ? (
+        <ReplaceClipAsk word={entry.spelling} onCancel={recorder.cancelAsk} onConfirm={recorder.confirmReplace} />
+      ) : null}
+    </Tag>
+  );
+}
+
+function GripGlyph() {
+  return (
+    <svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+      <circle cx="4" cy="3" r="1.15" />
+      <circle cx="8" cy="3" r="1.15" />
+      <circle cx="4" cy="8" r="1.15" />
+      <circle cx="8" cy="8" r="1.15" />
+      <circle cx="4" cy="13" r="1.15" />
+      <circle cx="8" cy="13" r="1.15" />
+    </svg>
   );
 }
 
@@ -317,18 +631,35 @@ function PauseGlyph() {
   );
 }
 
-function CheckGlyph() {
-  return (
-    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M3.6 8.2 6.6 11.2 12.4 4.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function TrashGlyph() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3.2 4.4h9.6M6.2 4.4V3.2h3.6v1.2M5.1 4.4l.5 8.2h4.8l.5-8.2" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UndoGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4.2 7.2H12a3 3 0 0 1 0 6H9.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M6.4 4.8 4 7.2l2.4 2.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function PrevGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M10.2 3.4 5.4 8l4.8 4.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function NextGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5.8 3.4 10.6 8 5.8 12.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

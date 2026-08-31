@@ -1,5 +1,6 @@
 const path = require("node:path");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const os = require("node:os");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
@@ -40,6 +41,52 @@ function bindChapterDelete() {
     deleteChapterFiles(payload?.folder, payload?.chapterId),
   );
 }
+
+let pronunciationLexicon;
+
+function loadGlossaryCore() {
+  const candidates = [
+    path.join(app.getAppPath(), "dist-core", "glossary.cjs"),
+    path.join(__dirname, "..", "dist-core", "glossary.cjs"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return require(candidate);
+    } catch {
+      // Try the next build location.
+    }
+  }
+  throw new Error("The glossary core is not bundled. Run npm run build:core first.");
+}
+
+function loadPronunciationLexicon() {
+  if (pronunciationLexicon) {
+    return pronunciationLexicon;
+  }
+  const roots = [
+    path.join(process.resourcesPath, "cmudict", "cmudict.dict"),
+    path.join(app.getAppPath(), "vendor", "cmudict", "cmudict.dict"),
+    path.join(__dirname, "..", "vendor", "cmudict", "cmudict.dict"),
+  ];
+  const source = roots.find((candidate) => fsSync.existsSync(candidate));
+  if (!source) {
+    return undefined;
+  }
+  pronunciationLexicon = loadGlossaryCore().parsePronouncingDictionary(fsSync.readFileSync(source, "utf8"));
+  return pronunciationLexicon;
+}
+
+function suggestGlossaryRespells(glossary) {
+  const list = Array.isArray(glossary) ? glossary : [];
+  const lexicon = loadPronunciationLexicon();
+  if (!lexicon) {
+    return { ok: false, reason: "The pronouncing dictionary is not bundled with this build.", glossary: list, filled: 0, unknown: [] };
+  }
+  const result = loadGlossaryCore().fillGlossaryRespells(list, lexicon);
+  return { ok: true, glossary: result.glossary, filled: result.filled, unknown: result.unknown };
+}
+
+bindHandle("labs:glossary-suggest", (_event, payload) => suggestGlossaryRespells(payload?.glossary));
 
 function broadcastLabsUpdate(status) {
   for (const win of BrowserWindow.getAllWindows()) {

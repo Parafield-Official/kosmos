@@ -1564,30 +1564,74 @@
   color: var(--mute);
 }
 
+.ma-glossary-group {
+  margin: 0.85rem 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.ma-glossary-group:first-child {
+  margin-top: 0;
+}
+
 .ma-glossary-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
 .ma-glossary-list li {
   display: grid;
-  grid-template-columns: minmax(6rem, 0.8fr) minmax(5.5rem, 0.7fr) auto;
-  gap: 0.45rem;
+  grid-template-columns: minmax(5.5rem, 10rem) var(--ma-guide-field, 6.25rem) auto;
+  gap: 0.55rem 0.7rem;
   align-items: center;
-  padding: 0.42rem 0.1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ma-glossary-list li.is-set {
+  border-color: rgba(232, 196, 122, 0.3);
+  background: rgba(232, 196, 122, 0.08);
 }
 
 .ma-glossary-list li strong {
   font-size: 1rem;
   font-weight: 650;
   color: #fff;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.ma-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.ma-word-input,
+.ma-guide-input,
+.neu-input.ma-word-input,
+.neu-input.ma-guide-input {
+  field-sizing: fixed;
+  flex: none;
+  width: var(--ma-word-field, 13rem);
+  min-width: 0;
+  max-width: var(--ma-word-field, 13rem);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.ma-guide-input,
+.neu-input.ma-guide-input {
+  width: var(--ma-guide-field, 6.25rem);
+  max-width: var(--ma-guide-field, 6.25rem);
 }
 
 .ma-glossary-list li.is-set strong {
@@ -1595,8 +1639,8 @@
 }
 
 .ma-glossary-add {
-  display: grid;
-  grid-template-columns: minmax(6rem, 0.9fr) minmax(7rem, 1.3fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
 }
@@ -1721,13 +1765,15 @@
 }
 
 @media (max-width: 720px) {
-  .ma-glossary-list li,
-  .ma-glossary-add {
-    grid-template-columns: 1fr 1fr;
+  .ma-glossary-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .ma-glossary-list li strong {
+  .ma-glossary-list li strong,
+  .ma-glossary-list li .ma-guide-input {
     grid-column: 1 / -1;
+    max-width: 100%;
+    width: 100%;
   }
 }
 
@@ -1828,6 +1874,11 @@
   -webkit-app-region: no-drag;
   app-region: no-drag;
   animation: ma-fade 200ms var(--ease) both;
+}
+
+.ma-scrim.is-global {
+  position: fixed;
+  z-index: 80;
 }
 
 .ma-dialog {
@@ -2980,7 +3031,10 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   .ma-chapter-row,
   .ma-tp-line,
   .ma-rec-btn,
-  .ma-level-fill {
+  .ma-level-fill,
+  .ma-pronounce-card.is-arrive,
+  .ma-glossary-list li.is-arrive,
+  .ma-clip-file.is-fresh {
     animation: none;
     transition: none;
   }
@@ -3438,12 +3492,17 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-book-main > .ma-pronounce {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  align-content: start;
+  align-content: stretch;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  gap: 1.45rem;
-  padding: 1.85rem 2.55rem 2.2rem 2.4rem;
+  gap: 1.1rem;
+  padding: 1.5rem 2.3rem 1.6rem 2.2rem;
+}
+
+.ma-pronounce {
+  --ma-word-field: 13rem;
+  --ma-guide-field: 6.25rem;
 }
 
 .ma-pronounce-head {
@@ -3460,12 +3519,105 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-pronounce-add {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(8.5rem, 0.9fr) minmax(11rem, 1.35fr) auto;
+  gap: 0.7rem;
+  padding: 1rem 1.25rem 1.15rem;
+  border-radius: 22px;
+  overflow: hidden;
+  isolation: isolate;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -18px 32px rgba(0, 0, 0, 0.16);
+}
+
+.ma-pronounce-add::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: min(56%, 24rem);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), rgba(255, 220, 170, 0.4), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ma-pronounce-add::after {
+  content: "";
+  position: absolute;
+  top: -46%;
+  left: 6%;
+  width: 46%;
+  height: 110%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.2), transparent 68%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ma-pronounce-add-lead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem 1.1rem;
+  min-width: 0;
+}
+
+.ma-pronounce-add-kicker {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(247, 242, 235, 0.58);
+}
+
+.ma-pronounce-fill {
+  flex: 0 1 auto;
+  margin: 0;
+  padding: 0.28rem 0.72rem;
+  border: 1px solid rgba(232, 196, 122, 0.38);
+  border-radius: 999px;
+  background: rgba(232, 196, 122, 0.12);
+  color: rgba(243, 217, 160, 0.96);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  text-align: center;
+}
+
+.ma-pronounce-fill:hover:not(:disabled),
+.ma-pronounce-fill:focus-visible:not(:disabled) {
+  color: #f6e0b0;
+  background: rgba(232, 196, 122, 0.2);
+}
+
+.ma-pronounce-fill:disabled {
+  color: rgba(247, 242, 235, 0.38);
+  cursor: default;
+}
+
+.ma-pronounce-fill-note {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: rgba(247, 242, 235, 0.58);
+}
+
+.ma-pronounce-add-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.8rem 0.95rem;
-  padding: 1.15rem 1.3rem;
-  border-radius: 20px;
+  gap: 0.55rem 0.65rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .ma-pronounce-add-icon {
@@ -3475,6 +3627,9 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   width: 1.7rem;
   height: 1.7rem;
   color: inherit;
+  filter:
+    drop-shadow(0 0 4px rgba(255, 255, 255, 0.5))
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.28));
 }
 
 .ma-pronounce-add-icon svg {
@@ -3486,22 +3641,38 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.45rem;
 }
 
-.ma-pronounce-add .ma-word-input,
-.ma-pronounce-add .ma-guide-input {
-  width: 100%;
+.ma-pronounce .ma-word-input,
+.ma-pronounce .ma-guide-input,
+.ma-pronounce .neu-input.ma-word-input,
+.ma-pronounce .neu-input.ma-guide-input {
+  width: auto;
+  max-width: none;
   min-width: 0;
-  field-sizing: content;
+  font-size: 1rem;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.ma-pronounce-add .ma-word-input {
+  flex: 1.25 1 0;
+  min-width: 6.5rem;
+}
+
+.ma-pronounce-add .ma-guide-input {
+  flex: 1.1 1 0;
+  min-width: 6.5rem;
 }
 
 .ma-pronounce-board {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
   align-items: stretch;
-  gap: 2.05rem;
+  gap: 1.6rem;
   min-height: 0;
+  min-width: 0;
   height: 100%;
 }
 
@@ -3510,9 +3681,50 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   grid-template-rows: auto minmax(0, 1fr);
   align-self: stretch;
   min-height: 0;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
-  padding: 1.85rem 2rem 1.8rem;
+  padding: 1.25rem 1.4rem 1.2rem;
+}
+
+.ma-pronounce-board > .ma-glossary.ma-pronounce-saved {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.ma-pronounce-saved-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.ma-pronounce-view {
+  width: auto;
+  flex: none;
+  max-width: 11.5rem;
+}
+
+.ma-pronounce-skip {
+  margin-top: 0.15rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  min-width: 0;
+}
+
+.ma-pronounce-skip h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(247, 242, 235, 0.52);
+}
+
+.ma-pronounce-skip p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(247, 242, 235, 0.5);
 }
 
 .ma-glossary-pane {
@@ -3520,52 +3732,277 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   overflow: auto;
 }
 
-.ma-pronounce-board > .ma-glossary .ma-glossary-pane,
-.ma-pronounce-board > .ma-suppress .ma-glossary-pane {
+.ma-pronounce-board > .ma-glossary .ma-glossary-pane {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
-.ma-pronounce-board > .ma-glossary.is-empty .ma-glossary-pane,
-.ma-pronounce-board > .ma-suppress.is-empty .ma-glossary-pane {
+.ma-pronounce-board > .ma-glossary.is-empty .ma-glossary-pane {
   flex: 1;
-  align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 0.35rem;
 }
 
 .ma-pronounce .ma-glossary-empty {
   margin: 0;
-  text-align: center;
+  text-align: left;
   font-size: 0.92rem;
+}
+
+.ma-block-grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: rgba(247, 242, 235, 0.28);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.ma-block-grip svg {
+  width: 0.7rem;
+  height: 0.95rem;
+  pointer-events: none;
+}
+
+.ma-glossary-list li:hover .ma-block-grip,
+.ma-skip-list li:hover .ma-block-grip,
+.ma-block-grip:hover,
+.ma-block-grip:focus-visible {
+  color: rgba(247, 242, 235, 0.72);
+}
+
+.ma-block-grip:active,
+.ma-glossary-list.is-dragging .ma-block-grip,
+.ma-skip-list.is-dragging .ma-block-grip {
+  cursor: grabbing;
+  color: rgba(247, 242, 235, 0.85);
+}
+
+.ma-pronounce .ma-glossary-list.is-dragging,
+.ma-pronounce-skip .ma-skip-list.is-dragging {
+  user-select: none;
 }
 
 .ma-pronounce .ma-glossary-list {
   width: 100%;
-  gap: 0;
+  min-width: 0;
+  gap: 0.55rem;
+}
+
+.ma-pronounce .ma-glossary-list.is-dragging li,
+.ma-skip-list.is-dragging li {
+  transition: transform 80ms ease-out;
+}
+
+.ma-pronounce .ma-glossary-list li.is-dragging,
+.ma-skip-list li.is-dragging {
+  z-index: 2;
+  transition: none;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .ma-pronounce .ma-glossary-list li {
   display: grid;
-  grid-template-columns: max-content minmax(10.5rem, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.9rem 1.05rem;
-  padding: 0.92rem 0.25rem 0.92rem 0.15rem;
+  gap: 0.45rem 0.55rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.62rem 0.7rem;
+  background: rgba(8, 6, 5, 0.32);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.ma-pronounce .ma-glossary-list li:has(.ma-block-grip) {
+  grid-template-columns: 1.35rem auto minmax(0, 1fr) auto;
 }
 
 .ma-pronounce .ma-glossary-list li strong {
   flex: none;
   width: auto;
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: 10rem;
+  min-width: 0;
+  justify-self: start;
+}
+
+.ma-pronounce .ma-glossary-list li .ma-word-acts,
+.ma-pronounce .ma-glossary-list li .ma-block-grip {
+  min-width: auto;
 }
 
 .ma-pronounce .ma-glossary-list .ma-guide-input {
   width: 100%;
+  max-width: none;
   min-width: 0;
   flex: none;
-  field-sizing: content;
+}
+
+.ma-pronounce-skip .ma-skip-list {
+  display: grid;
+  gap: 0.4rem;
+  flex-wrap: unset;
+}
+
+.ma-pronounce-skip .ma-skip-list li {
+  display: grid;
+  grid-template-columns: 1.35rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem 0.45rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.42rem 0.5rem 0.42rem 0.35rem;
+  border-radius: 14px;
+}
+
+.ma-pronounce-skip .ma-skip-list li span {
+  min-width: 0;
+}
+
+.ma-pronounce-deck {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  padding: 0.35rem 0 0.5rem;
+}
+
+.ma-pronounce-deck-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: min(100%, 22rem);
+}
+
+.ma-pronounce-deck-count {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(247, 242, 235, 0.5);
+}
+
+.ma-pronounce-deck-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.ma-pronounce-deck-stage {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+  align-items: center;
+  gap: 0.55rem 0.7rem;
+  width: min(100%, 26rem);
+  min-width: 0;
+}
+
+.ma-pronounce-deck-arrow {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.ma-pronounce-deck-arrow svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.ma-pronounce-deck-arrow:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+.ma-pronounce-deck-arrow:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ma-pronounce-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 14.75rem;
+  padding: 1.7rem 1.45rem 1.15rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 14px 32px rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+
+.ma-pronounce-card strong {
+  margin: 0 0 1rem;
+  font-size: clamp(1.85rem, 3.6vw, 2.55rem);
+  font-weight: 560;
+  letter-spacing: -0.038em;
+  line-height: 1.05;
+  max-width: 100%;
+  color: #fff;
+}
+
+.ma-pronounce-card .ma-guide-input {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  min-height: 2.55rem;
+  font-size: 1.08rem;
+  text-align: center;
+}
+
+.ma-pronounce-card .ma-word-acts {
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ma-pronounce-card .ma-clip-file {
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0;
+}
+
+.ma-pronounce-card .ma-clip-file span {
+  display: none;
+}
+
+.ma-pronounce-card.is-arrive,
+.ma-glossary-list li.is-arrive,
+.ma-clip-file.is-fresh {
+  animation: ma-clip-fresh 640ms cubic-bezier(0.22, 0.82, 0.2, 1);
 }
 
 .ma-word-acts {
@@ -3599,9 +4036,20 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   cursor: default;
 }
 
-.ma-word-act.is-live,
-.ma-word-act.is-danger {
+.ma-word-act.is-live {
   color: inherit;
+}
+
+.ma-word-act.is-danger {
+  color: #ffc4c0;
+  opacity: 1;
+  border-color: rgba(255, 140, 130, 0.32);
+  background: rgba(80, 18, 16, 0.28);
+}
+
+.ma-word-act.is-danger svg {
+  width: 0.86rem;
+  height: 0.86rem;
 }
 
 .ma-record-btn,
@@ -3637,7 +4085,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-word-act:active:not(:disabled),
 .ma-record-btn:active,
-.ma-clip-file:active {
+.ma-clip-file:active,
+.ma-pronounce-fill:active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -3678,6 +4127,18 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     height: 100%;
   }
 }
+
+@keyframes ma-clip-fresh {
+  0% {
+    opacity: 0.35;
+    filter: brightness(1.2);
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
 
 .ma-book-main > .ma-chapters {
   display: flex;
@@ -4139,21 +4600,49 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   }
 
   .ma-pronounce-add {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: none;
   }
 
-  .ma-pronounce-add .ma-guide-input,
-  .ma-pronounce-add-tools {
-    grid-column: 1 / -1;
+  .ma-pronounce-add-row {
+    flex-wrap: wrap;
+  }
+
+  .ma-pronounce-add .ma-word-input,
+  .ma-pronounce-add .ma-guide-input {
+    flex: 1 1 calc(50% - 2rem);
   }
 
   .ma-pronounce .ma-glossary-list li {
-    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .ma-pronounce .ma-glossary-list li:has(.ma-block-grip) {
+    grid-template-columns: 1.35rem auto auto;
+  }
+
+  .ma-pronounce .ma-glossary-list li strong {
+    grid-column: auto;
+    max-width: none;
+    width: auto;
+  }
+
+  .ma-pronounce .ma-glossary-list li .ma-guide-input {
+    grid-column: 1 / -1;
+    max-width: none;
+    width: 100%;
+  }
+
+  .ma-pronounce .ma-glossary-list li:has(.ma-block-grip) .ma-guide-input {
+    grid-column: 2 / -1;
   }
 
   .ma-pronounce .ma-glossary-list li .ma-word-acts {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
+    grid-column: auto;
+    justify-content: flex-end;
+  }
+
+  .ma-pronounce-deck-stage {
+    width: 100%;
   }
 
   .ma-review-embed {
@@ -6393,8 +6882,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce {
-  gap: 1.5rem;
-  padding: 1.9rem 2.65rem 2.25rem 2.5rem;
+  gap: 1.1rem;
+  padding: 1.5rem 2.4rem 1.7rem 2.3rem;
   color: #f7f2eb;
 }
 
@@ -6404,13 +6893,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .main-app .vault-overlay .ma-pronounce .ma-set-sub,
 .main-app .vault-overlay .ma-pronounce .ma-glossary-head p,
-.main-app .vault-overlay .ma-pronounce .ma-glossary-empty {
+.main-app .vault-overlay .ma-pronounce .ma-glossary-empty,
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-skip p {
   color: rgba(247, 242, 235, 0.62);
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-glossary,
-.main-app .vault-overlay .ma-pronounce .ma-suppress,
-.main-app .vault-overlay .ma-pronounce-add {
+.main-app .vault-overlay .ma-pronounce .ma-suppress {
   background: var(--info-glass);
   border: var(--info-glass-border);
   box-shadow: var(--info-glass-shadow);
@@ -6418,9 +6907,22 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   -webkit-backdrop-filter: var(--info-glass-blur);
 }
 
-.main-app .vault-overlay .ma-pronounce-board > .ma-glossary,
-.main-app .vault-overlay .ma-pronounce-board > .ma-suppress {
-  padding: 1.9rem 2.05rem 1.85rem;
+.main-app .vault-overlay .ma-pronounce-add {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.07) 34%, rgba(8, 6, 5, 0.22) 100%),
+    var(--info-glass);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    var(--info-glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -18px 28px rgba(0, 0, 0, 0.22),
+    0 0 32px rgba(255, 214, 160, 0.22);
+  backdrop-filter: var(--info-glass-blur);
+  -webkit-backdrop-filter: var(--info-glass-blur);
+}
+
+.main-app .vault-overlay .ma-pronounce-board > .ma-glossary {
+  padding: 1.2rem 1.35rem 1.15rem;
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-record-btn,
@@ -6437,7 +6939,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-glossary-list li {
-  border-bottom-color: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary-list li.is-set {
+  border-color: rgba(232, 196, 122, 0.34);
+  background: rgba(232, 196, 122, 0.1);
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-glossary-list li strong {
@@ -6509,6 +7017,52 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #f7f2eb;
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.18);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-fill {
+  color: rgba(243, 217, 160, 0.96);
+  background: rgba(232, 196, 122, 0.14);
+  border-color: rgba(232, 196, 122, 0.4);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-fill:hover:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-fill:focus-visible:not(:disabled) {
+  color: #f6e0b0;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-deck-arrow {
+  color: #f7f2eb;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-block-grip {
+  color: rgba(247, 242, 235, 0.32);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-view {
+  background: rgba(8, 6, 5, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-view .ma-seg-btn {
+  color: rgba(247, 242, 235, 0.55);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-pronounce-view .ma-seg-btn.is-on {
+  color: #1a1613;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: inset 0 1px 0 #fff;
 }
 
 @media (max-width: 760px) {

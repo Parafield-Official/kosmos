@@ -229,6 +229,13 @@ declare global {
         ok: boolean;
         words?: Array<{ text: string; start: number; end: number; confidence?: number }>;
       }>;
+      suggestGlossaryRespells?: (payload: { glossary: unknown[] }) => Promise<{
+        ok?: boolean;
+        reason?: string;
+        glossary?: import("../../../src/core/project/types").GlossaryEntry[];
+        filled?: number;
+        unknown?: string[];
+      }>;
       onLiveWords?: (
         callback: (words: Array<{ text: string; start: number; end: number; confidence?: number }>) => void,
       ) => (() => void) | void;

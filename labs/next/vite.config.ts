@@ -1,13 +1,31 @@
 import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { wgslVitePlugin } from "@vgpu/wgsl/loader-vite";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const root = dirname(fileURLToPath(import.meta.url));
+const cmudict = resolve(root, "../../vendor/cmudict/cmudict.dict");
+
+function cmudictPlugin(): Plugin {
+  return {
+    name: "cmudict",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.split("?")[0] !== "/cmudict.dict") {
+          next();
+          return;
+        }
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.end(readFileSync(cmudict));
+      });
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react(), wgslVitePlugin()],
+  plugins: [react(), wgslVitePlugin(), cmudictPlugin()],
   root,
   appType: "mpa",
   server: {
