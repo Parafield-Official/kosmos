@@ -2354,6 +2354,8 @@
 .quest-act.is-primary {
   background: rgba(255, 255, 255, 0.14);
   border-color: rgba(255, 255, 255, 0.38);
+  min-width: 0;
+  width: 100%;
 }
 
 .quest-act.is-danger {
@@ -2362,8 +2364,24 @@
   border-color: rgba(255, 140, 130, 0.28);
 }
 
+.quest-acts {
+  display: grid;
+  grid-template-columns: repeat(3, 2.05rem);
+  justify-content: start;
+  align-items: center;
+  gap: 0.32rem;
+  width: max-content;
+  max-width: 100%;
+  margin-top: 0.7rem;
+}
+
+.quest-acts .quest-act.is-primary {
+  grid-column: 1 / -1;
+}
+
 .quest-acts .quest-act:not(.is-primary) {
-  width: 2.1rem;
+  width: 2.05rem;
+  min-width: 2.05rem;
   padding: 0.38rem 0;
 }
 
@@ -2504,7 +2522,7 @@
   grid-template-columns: 5.2rem minmax(0, 1fr);
   align-items: center;
   gap: 0.85rem;
-  width: min(18.75rem, 28%);
+  width: min(20.5rem, 32%);
   padding: 0.85rem 0.95rem 0.9rem;
   transform: translateY(-50%);
   border-radius: 22px;
@@ -2525,7 +2543,7 @@
 }
 
 .quest-map.is-even .quest-node {
-  width: min(18.75rem, 28%);
+  width: min(20.5rem, 32%);
 }
 
 .quest-node.is-current {
@@ -2675,13 +2693,6 @@
   background: #fff6e8;
 }
 
-.quest-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.7rem;
-}
-
 .quest-add-card {
   position: absolute;
   left: 50%;
@@ -2695,6 +2706,11 @@
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.22) 0%, rgba(36, 26, 22, 0.18) 100%);
   border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.quest-add-card .quest-act.is-primary {
+  width: auto;
+  flex: 0 0 auto;
 }
 
 .quest-add-input {

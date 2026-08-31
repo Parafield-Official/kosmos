@@ -26,7 +26,8 @@ export function ChaptersScreen({
 
   const count = project.chapters.length;
   const even = count > 0 && count % 2 === 0;
-  const currentIndex = project.chapters.findIndex((chapter) => chapterCompletionPct(chapter) < 100);
+  const completeAt = project.chapters.map((chapter) => chapterStopDone(chapter));
+  const currentIndex = completeAt.findIndex((done) => !done);
   const allDone = count > 0 && currentIndex < 0;
   const mapRef = useRef<HTMLDivElement>(null);
   const [boardW, setBoardW] = useState(720);
@@ -129,23 +130,26 @@ export function ChaptersScreen({
             </defs>
             <g mask="url(#quest-trail-cut)" style={{ filter: "none" }}>
               <path className="quest-vine-road" d={layout.path} />
-              {layout.segments.map((segment, index) => (
-                <path
-                  className={allDone || index < Math.max(currentIndex, 0) ? "quest-vine-lit" : "quest-vine-wait"}
-                  d={segment}
-                  key={`lit-${index}`}
-                />
-              ))}
+              {layout.segments.map((segment, index) => {
+                const walked = allDone || completeAt[index] || completeAt[index + 1];
+                return (
+                  <path
+                    className={walked ? "quest-vine-lit" : "quest-vine-wait"}
+                    d={segment}
+                    key={`lit-${index}`}
+                  />
+                );
+              })}
             </g>
           </svg>
 
           {layout.dots.map((dot, index) => {
+            const finished = Boolean(completeAt[index]);
             const now = !allDone && index === currentIndex;
-            const lit = allDone || index <= currentIndex;
             return (
               <span
                 key={`bead-${index}`}
-                className={`quest-bead${now ? " is-now" : lit ? " is-lit" : ""}`}
+                className={`quest-bead${now ? " is-now" : finished ? " is-lit" : ""}`}
                 style={{ left: dot.x, top: dot.y }}
                 aria-hidden="true"
               />
@@ -213,29 +217,22 @@ function n(value: number): string {
   return value.toFixed(1);
 }
 
-function snakeSegment(
-  prev: { x: number; y: number },
-  curr: { x: number; y: number },
-  midX: number,
-  bulge: number,
-): string {
+function chapterStopDone(chapter: BookChapter): boolean {
+  return chapter.recordedPct >= 1 || chapter.mastered || chapterCompletionPct(chapter) >= 100;
+}
+
+function snakeSegment(prev: { x: number; y: number }, curr: { x: number; y: number }): string {
+  const dx = curr.x - prev.x;
   const dy = curr.y - prev.y;
-  const dirPrev = Math.sign(prev.x - midX) || 1;
-  const dirCurr = Math.sign(curr.x - midX) || -1;
-  return [
-    `M ${n(prev.x)} ${n(prev.y)}`,
-    `C ${n(prev.x + dirPrev * bulge)} ${n(prev.y + dy * 0.22)}, ${n(midX + dirPrev * bulge * 0.28)} ${n(prev.y + dy * 0.48)}, ${n(midX)} ${n((prev.y + curr.y) / 2)}`,
-    `C ${n(midX + dirCurr * bulge * 0.28)} ${n(curr.y - dy * 0.48)}, ${n(curr.x + dirCurr * bulge)} ${n(curr.y - dy * 0.22)}, ${n(curr.x)} ${n(curr.y)}`,
-  ].join(" ");
+  return `M ${n(prev.x)} ${n(prev.y)} C ${n(prev.x + dx * 0.08)} ${n(prev.y + dy * 0.36)}, ${n(curr.x - dx * 0.08)} ${n(curr.y - dy * 0.36)}, ${n(curr.x)} ${n(curr.y)}`;
 }
 
 function questLayout(count: number, even: boolean, width: number) {
   const viewW = Math.max(width, 480);
   const midX = viewW / 2;
-  const amp = viewW * 0.152;
-  const bulge = viewW * 0.18;
-  const startY = 108;
-  const step = 244;
+  const amp = viewW * 0.138;
+  const startY = 104;
+  const step = 236;
   const nodes = Array.from({ length: count }, (_, index) => {
     const onRight = even ? index % 2 === 0 : index % 2 === 1;
     return {
@@ -251,20 +248,18 @@ function questLayout(count: number, even: boolean, width: number) {
     if (!prev || !curr) {
       continue;
     }
-    segments.push(snakeSegment(prev, curr, midX, bulge));
+    segments.push(snakeSegment(prev, curr));
   }
   const first = nodes[0];
   const last = nodes[nodes.length - 1];
-  const dirFirst = first ? Math.sign(first.x - midX) || 1 : 1;
-  const dirLast = last ? Math.sign(last.x - midX) || 1 : 1;
   const lead = first
-    ? `M ${n(midX)} 28 C ${n(midX)} 64, ${n(first.x - dirFirst * 36)} ${n(first.y - 46)}, ${n(first.x)} ${n(first.y)}`
+    ? `M ${n(midX)} 24 C ${n(midX)} ${n(first.y * 0.42)}, ${n(first.x)} ${n(first.y - 36)}, ${n(first.x)} ${n(first.y)}`
     : "";
   const tail = last
-    ? `M ${n(last.x)} ${n(last.y)} C ${n(last.x - dirLast * 36)} ${n(last.y + 46)}, ${n(midX)} ${n(last.y + 84)}, ${n(midX)} ${n(last.y + 112)}`
+    ? `M ${n(last.x)} ${n(last.y)} C ${n(last.x)} ${n(last.y + 36)}, ${n(midX)} ${n(last.y + 68)}, ${n(midX)} ${n(last.y + 96)}`
     : "";
-  const viewH = startY + Math.max(count - 1, 0) * step + 132;
-  const cut = 30;
+  const viewH = startY + Math.max(count - 1, 0) * step + 120;
+  const cut = 20;
   return {
     nodes,
     dots: nodes.map((node) => ({ x: node.x, y: node.y, cut })),
@@ -273,7 +268,7 @@ function questLayout(count: number, even: boolean, width: number) {
     viewBox: `0 0 ${n(viewW)} ${n(viewH)}`,
     viewH,
     viewW,
-    addTop: last ? last.y + 118 : 24,
+    addTop: last ? last.y + 112 : 24,
   };
 }
 
@@ -305,6 +300,7 @@ function QuestNode({
   const overLength = estimateDurationMinutes(words) > MAX_CHAPTER_MINUTES;
   const stage = chapterStage(chapter);
   const done = pct >= 100;
+  const finished = chapterStopDone(chapter);
 
   return (
     <article
@@ -331,7 +327,7 @@ function QuestNode({
         <div className="quest-acts">
           <button type="button" className="quest-act is-primary" onClick={onOpen}>
             <MicGlyph />
-            {done ? "Open" : current ? "Continue" : "Record"}
+            {finished ? "Open" : "Record"}
           </button>
           <button type="button" className="quest-act" onClick={onRead} aria-label="Read" title="Read">
             <ReadGlyph />
