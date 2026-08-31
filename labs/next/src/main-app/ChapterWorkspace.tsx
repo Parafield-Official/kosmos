@@ -2,20 +2,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AcxReport } from "../../../../src/core/acx/measure";
 import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
-import { recordingGate, stepLocked, type ChapterStep } from "./chapter-flow";
+import { BoothSheet } from "./BoothSheet";
+import { stepLocked, type ChapterStep } from "./chapter-flow";
 import { readEnginePrefs } from "./engine-prefs";
-import {
-  addGlossaryWord,
-  dismissGlossaryWord,
-  setGlossaryRespell,
-  unresolvedInText,
-  entriesInText,
-} from "./glossary";
-import { GlossaryPanel } from "./GlossaryPanel";
+import { resolvedInText } from "./glossary";
 import { masterChapterWorking } from "./punch";
+import { PronunciationCheatSheet } from "./PronunciationCheatSheet";
 import { RecordScreen } from "./RecordScreen";
 import { ReviewScreen } from "./ReviewScreen";
-import { RoomCheck } from "./RoomCheck";
+import { RoomCheck, roomChipLabel } from "./RoomCheck";
 import { paragraphsFromHtml } from "./booth";
 import {
   clearOriginalTape,
@@ -57,6 +52,9 @@ export function ChapterWorkspace({
   const [proofError, setProofError] = useState<string | null>(null);
   const [masteringOut, setMasteringOut] = useState(false);
   const [startOverAsk, setStartOverAsk] = useState(false);
+  const [roomOpen, setRoomOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [soundAboutOpen, setSoundAboutOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -82,13 +80,7 @@ export function ChapterWorkspace({
   }
 
   const current = chapter;
-  const glossary = project.glossary ?? [];
-  const chapterUnresolved = unresolvedInText(glossary, chapterText);
-  const chapterEntries = entriesInText(glossary, chapterText);
-  const gate = recordingGate({
-    unresolvedPronunciations: chapterUnresolved.length,
-    roomCheck: project.roomCheck,
-  });
+  const guides = resolvedInText(project.glossary ?? [], chapterText);
   const complete = current.recordedPct >= 1 || (current.hasOriginalAudio && current.recordedPct >= 0.98);
 
   async function goProof() {
@@ -128,7 +120,7 @@ export function ChapterWorkspace({
     onStep("recording");
   }
 
-  const booth = (step === "recording" && gate.ok) || step === "proofreading";
+  const booth = step === "recording" || step === "proofreading";
   const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId) + 1;
 
   return (
@@ -183,13 +175,12 @@ export function ChapterWorkspace({
           <RecordingStep
             project={project}
             chapterId={chapterId}
-            gateOk={gate.ok}
-            gateReason={gate.reason}
-            unresolved={chapterUnresolved}
-            entriesCount={chapterEntries.length}
-            glossaryTotal={glossary.length}
             complete={complete}
             proofing={proofing}
+            guideCount={guides.length}
+            roomStatus={project.roomCheck?.status}
+            onOpenRoom={() => setRoomOpen(true)}
+            onOpenGuide={guides.length > 0 ? () => setGuideOpen(true) : undefined}
             onChange={onChange}
             onProof={() => void goProof()}
           />
@@ -214,9 +205,31 @@ export function ChapterWorkspace({
             chapterId={chapterId}
             onChange={onChange}
             onNextChapter={onNextChapter}
+            onAbout={() => setSoundAboutOpen(true)}
           />
         ) : null}
       </div>
+
+      {step === "recording" && roomOpen ? (
+        <BoothSheet title="Room check" onClose={() => setRoomOpen(false)}>
+          <RoomCheck report={project.roomCheck} onReport={(roomCheck) => onChange({ ...project, roomCheck })} />
+        </BoothSheet>
+      ) : null}
+
+      {step === "recording" && guideOpen ? (
+        <BoothSheet title="Pronunciation guide" onClose={() => setGuideOpen(false)}>
+          <PronunciationCheatSheet entries={guides} project={project} />
+        </BoothSheet>
+      ) : null}
+
+      {step === "mastering" && soundAboutOpen ? (
+        <BoothSheet title="These files" onClose={() => setSoundAboutOpen(false)}>
+          <p className="booth-sheet-copy">
+            Original is the booth tape. Unmastered is the punch copy after proofreading. Mastered is the latest pipeline
+            output, ready to check against Audible.
+          </p>
+        </BoothSheet>
+      ) : null}
 
       {startOverAsk ? (
         <div className="ma-scrim" role="presentation" onClick={() => setStartOverAsk(false)}>
@@ -246,61 +259,26 @@ export function ChapterWorkspace({
 function RecordingStep({
   project,
   chapterId,
-  gateOk,
-  gateReason,
-  unresolved,
-  entriesCount,
-  glossaryTotal,
   complete,
   proofing,
+  guideCount,
+  roomStatus,
+  onOpenRoom,
+  onOpenGuide,
   onChange,
   onProof,
 }: {
   project: BookProject;
   chapterId: string;
-  gateOk: boolean;
-  gateReason: string | null;
-  unresolved: ReturnType<typeof unresolvedInText>;
-  entriesCount: number;
-  glossaryTotal: number;
   complete: boolean;
   proofing: boolean;
+  guideCount: number;
+  roomStatus?: "pass" | "warn" | "fail";
+  onOpenRoom: () => void;
+  onOpenGuide?: () => void;
   onChange: (next: BookProject) => void;
   onProof: () => void;
 }) {
-  if (!gateOk) {
-    return (
-      <div className="quest-gate">
-        <RoomCheck report={project.roomCheck} onReport={(roomCheck) => onChange({ ...project, roomCheck })} />
-        <GlossaryPanel
-          title="Pronunciations in this chapter"
-          summary={
-            entriesCount === 0
-              ? "No flagged names in this chapter."
-              : unresolved.length === 0
-                ? entriesCount === 1
-                  ? "This name has a pronunciation."
-                  : `All ${entriesCount} names in this chapter have a pronunciation.`
-                : unresolved.length === 1
-                  ? "1 name in this chapter still needs a pronunciation."
-                  : `${unresolved.length} of ${entriesCount} in this chapter still need a pronunciation.`
-          }
-          entries={unresolved}
-          bookTotal={glossaryTotal}
-          allowAdd
-          emptyCopy="Nothing left to set here. Finish the room check, then you can record."
-          onRespell={(id, respell) => onChange(setGlossaryRespell(project, id, respell))}
-          onDismiss={(id) => onChange(dismissGlossaryWord(project, id))}
-          onAdd={(spelling, respell) => onChange(addGlossaryWord(project, spelling, respell))}
-        />
-        <div className="ma-record-entry">
-          <ChapterAudioImport project={project} chapterId={chapterId} onChange={onChange} />
-          {gateReason ? <p className="ma-note">{gateReason}</p> : null}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <RecordScreen
       project={project}
@@ -311,6 +289,22 @@ function RecordingStep({
       onContinueProof={complete ? onProof : undefined}
       importSlot={<ChapterAudioImport project={project} chapterId={chapterId} onChange={onChange} />}
       proofing={proofing}
+      boothTools={
+        <>
+          <button
+            type="button"
+            className={`booth-tool${roomStatus ? ` is-${roomStatus}` : ""}`}
+            onClick={onOpenRoom}
+          >
+            {roomChipLabel(project.roomCheck)}
+          </button>
+          {onOpenGuide ? (
+            <button type="button" className="booth-tool" onClick={onOpenGuide}>
+              Guide{guideCount > 1 ? ` ${guideCount}` : ""}
+            </button>
+          ) : null}
+        </>
+      }
     />
   );
 }
@@ -377,11 +371,13 @@ function MasteringStep({
   chapterId,
   onChange,
   onNextChapter,
+  onAbout,
 }: {
   project: BookProject;
   chapterId: string;
   onChange: (next: BookProject) => void;
   onNextChapter?: () => void;
+  onAbout: () => void;
 }) {
   const chapter = project.chapters.find((item) => item.id === chapterId);
   const [mastering, setMastering] = useState(false);
@@ -517,13 +513,10 @@ function MasteringStep({
   return (
     <div className="quest-master">
       <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
-        {Array.from({ length: 28 }, (_, index) => (
+        {Array.from({ length: 22 }, (_, index) => (
           <i key={index} style={{ animationDelay: `${index * 42}ms`, animationDuration: `${0.7 + (index % 5) * 0.18}s` }} />
         ))}
       </div>
-      <p className="quest-master-lead">
-        Original is the booth tape. Without mastering is the punch copy. With mastering is the latest pipeline output.
-      </p>
       <div className="quest-master-slots">
         <button
           type="button"
@@ -565,6 +558,9 @@ function MasteringStep({
             Next chapter
           </button>
         ) : null}
+        <button type="button" className="quest-act" onClick={onAbout}>
+          About
+        </button>
       </div>
       {chapter.acxTrafficLight && !acxReport ? (
         <p className="quest-master-note">

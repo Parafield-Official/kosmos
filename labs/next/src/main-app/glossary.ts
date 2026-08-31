@@ -1,7 +1,7 @@
 /**
  * Per-book pronunciation list for Labs. Detection and CRUD come from the
- * original glossary engine; resolve-once lives here. Recording waits until
- * flagged words in the chapter have a pronunciation and the room check passes.
+ * original glossary engine; resolve-once lives here. The booth can open a
+ * cheatsheet of words that already have a guide or clip; recording does not wait.
  */
 
 import type { GlossaryEntry } from "../../../../src/core/project/types";
@@ -63,6 +63,10 @@ export function entriesInText(entries: GlossaryEntry[], text: string): GlossaryE
 
 export function unresolvedInText(entries: GlossaryEntry[], text: string): GlossaryEntry[] {
   return entriesInText(entries, text).filter((entry) => !isResolved(entry));
+}
+
+export function resolvedInText(entries: GlossaryEntry[], text: string): GlossaryEntry[] {
+  return entriesInText(entries, text).filter(isResolved);
 }
 
 export function scanGlossaryFromManuscript(

@@ -3,6 +3,7 @@ import { pickupKindPresentation } from "../../../../src/core/proof/pickup-displa
 import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
 import { BoothReadingPanel } from "./BoothReadingPanel";
+import { BoothSheet } from "./BoothSheet";
 import { paragraphsFromHtml } from "./booth";
 import { flagKindLabel, flagWrongCopy } from "./flag-kind";
 import { PunchRecorder } from "./PunchRecorder";
@@ -66,6 +67,8 @@ export function ReviewScreen({
   const [theme, setTheme] = useState(readPromptTheme);
   const [fontPx, setFontPx] = useState(readBoothFontPx);
   const [lineSpacing, setLineSpacing] = useState(1.55);
+  const [readingOpen, setReadingOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const originalUrl = useRef<string | null>(null);
   const workingUrl = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -238,6 +241,14 @@ export function ReviewScreen({
           </button>
         )}
         <div className="ma-chapter-head-actions">
+          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
+            Reading
+          </button>
+          {resolved.length > 0 || punches.length > 0 ? (
+            <button type="button" className="booth-tool" onClick={() => setHistoryOpen(true)}>
+              History
+            </button>
+          ) : null}
           {onStartOver ? (
             <button type="button" className="btn btn-sm" onClick={onStartOver}>
               Start over
@@ -251,11 +262,14 @@ export function ReviewScreen({
         </div>
       </header>
 
-      <div className="ma-proof-alerts">
-        {error && !punching ? <p className="ma-error">{error}</p> : null}
-        {notice ? <p className="ma-review-note">{notice}</p> : null}
-      </div>
+      {error || notice ? (
+        <div className="ma-proof-alerts">
+          {error && !punching ? <p className="ma-error">{error}</p> : null}
+          {notice ? <p className="ma-review-note">{notice}</p> : null}
+        </div>
+      ) : null}
 
+      <div className="ma-proof-stage">
       <div className="ma-proof-prompt">
         {manuscript ? (
           <ReviewScript
@@ -308,10 +322,30 @@ export function ReviewScreen({
             ))}
           </ul>
         )}
+      </aside>
+      </div>
 
-        {resolved.length > 0 || punches.length > 0 ? (
-          <div className="ma-pickup-resolved">
-            <h2 className="ma-section-title">History</h2>
+      {readingOpen ? (
+        <BoothSheet title="Reading" wide onClose={() => setReadingOpen(false)}>
+          <BoothReadingPanel
+            highlight={highlight}
+            lineSpacing={lineSpacing}
+            onHighlight={setHighlight}
+            onSpacing={setLineSpacing}
+            theme={theme}
+            onTheme={(value) => {
+              setTheme(value);
+              writePromptTheme(value);
+            }}
+            fontPx={fontPx}
+            onFontPx={(value) => setFontPx(writeBoothFontPx(value))}
+          />
+        </BoothSheet>
+      ) : null}
+
+      {historyOpen ? (
+        <BoothSheet title="History" onClose={() => setHistoryOpen(false)}>
+          <div className="ma-pickup-resolved is-sheet">
             <ul className="ma-pickup-list ma-pickup-list-quiet">
               {resolved.map((pickup) => (
                 <li key={pickup.id} className="ma-pickup-row neu-inset">
@@ -341,6 +375,7 @@ export function ReviewScreen({
                         patchPickup(pickup, "open");
                         setSessionIds(null);
                         setPunching({ ...pickup, status: "open" });
+                        setHistoryOpen(false);
                       }}
                     >
                       Re-record
@@ -358,6 +393,7 @@ export function ReviewScreen({
                       className="btn btn-sm"
                       onClick={() => {
                         const related = (current.pickups ?? []).find((item) => item.id === punch.pickup_id);
+                        setHistoryOpen(false);
                         if (related) {
                           setPunching({ ...related, status: "open" });
                           return;
@@ -388,25 +424,8 @@ export function ReviewScreen({
               ))}
             </ul>
           </div>
-        ) : null}
-      </aside>
-
-      <section className="ma-flow-block ma-proof-settings" aria-label="Teleprompter setting">
-        <h2 className="ma-flow-block-title">Teleprompter setting</h2>
-        <BoothReadingPanel
-          highlight={highlight}
-          lineSpacing={lineSpacing}
-          onHighlight={setHighlight}
-          onSpacing={setLineSpacing}
-          theme={theme}
-          onTheme={(value) => {
-            setTheme(value);
-            writePromptTheme(value);
-          }}
-          fontPx={fontPx}
-          onFontPx={(value) => setFontPx(writeBoothFontPx(value))}
-        />
-      </section>
+        </BoothSheet>
+      ) : null}
 
       {punching ? (
         <PunchRecorder

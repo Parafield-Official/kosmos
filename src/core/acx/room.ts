@@ -50,7 +50,7 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
     };
   }
   const mono = mixToMono(input.samples, input.channels);
-  const noiseFloor = rmsDbfs(mono);
+  const noiseFloor = silenceFloorDbfs(mono, input.sampleRate);
   const speechRms = Number.isFinite(input.speechRmsDbfs) ? input.speechRmsDbfs as number : target;
   const neededBoost = Math.max(0, target - speechRms);
   const predictedFloor = Number.isFinite(noiseFloor) ? noiseFloor + neededBoost : -Infinity;
@@ -104,6 +104,36 @@ export function analyzeRoomTest(input: RoomTestInput): RoomTestReport {
       ? "A bit noisy — close to Audible's limit. You can record, but listen to a take before you do the whole book."
       : "Quiet enough for Audible. Background noise stays below the limit after the voice is brought up to level.",
   };
+}
+
+/**
+ * 20th-percentile of 50 ms RMS frames after subtracting each frame's mean.
+ * A click, a DC mic bias, or the first buffer of the take does not become
+ * the room's noise floor.
+ */
+function silenceFloorDbfs(samples: number[], sampleRate: number): number {
+  const frameSize = Math.max(1, Math.round(Math.max(1, sampleRate) * 0.05));
+  const levels: number[] = [];
+  for (let offset = 0; offset + frameSize <= samples.length; offset += frameSize) {
+    let sum = 0;
+    for (let index = 0; index < frameSize; index += 1) {
+      sum += samples[offset + index];
+    }
+    const mean = sum / frameSize;
+    let sumSquares = 0;
+    for (let index = 0; index < frameSize; index += 1) {
+      const centered = samples[offset + index] - mean;
+      sumSquares += centered * centered;
+    }
+    levels.push(Math.sqrt(sumSquares / frameSize));
+  }
+  const audible = levels.filter((rms) => rms > 1e-9);
+  if (audible.length === 0) {
+    return rmsDbfs(samples);
+  }
+  audible.sort((a, b) => a - b);
+  const pick = Math.min(audible.length - 1, Math.floor((audible.length - 1) * 0.2));
+  return dbfs(audible[pick] ?? 0);
 }
 
 function mixToMono(samples: Float32Array | number[], channels: number): number[] {

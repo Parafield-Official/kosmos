@@ -33,6 +33,7 @@ import {
 import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow";
 import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
+import { BoothSheet } from "./BoothSheet";
 import {
   applyChapterPickup,
   applyOriginalTape,
@@ -152,6 +153,7 @@ export function RecordScreen({
   onContinueProof,
   importSlot,
   proofing,
+  boothTools,
 }: {
   project: BookProject;
   chapterId: string;
@@ -161,6 +163,7 @@ export function RecordScreen({
   onContinueProof?: () => void;
   importSlot?: ReactNode;
   proofing?: boolean;
+  boothTools?: ReactNode;
 }) {
   const chapter = useMemo(
     () => project.chapters.find((item) => item.id === chapterId) ?? null,
@@ -200,6 +203,7 @@ export function RecordScreen({
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
+  const [readingOpen, setReadingOpen] = useState(false);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -346,10 +350,9 @@ export function RecordScreen({
 
   useEffect(() => {
     updateBand(cursor);
-    if (recording || paused) {
-      scrollToCursor(cursor);
-    }
-  }, [cursor, highlight, recording, paused, scrollToCursor, updateBand]);
+    const frame = window.requestAnimationFrame(() => scrollToCursor(cursor));
+    return () => window.cancelAnimationFrame(frame);
+  }, [cursor, highlight, chapterHtml, recording, paused, scrollToCursor, updateBand]);
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
@@ -983,7 +986,6 @@ export function RecordScreen({
       ) : null}
 
       <section className="ma-flow-block ma-booth-mic" aria-label="Mic and control">
-        <h2 className="ma-flow-block-title">Mic and control</h2>
         {boothNotice ? <p className="ma-booth-notice" role="status">{boothNotice}</p> : null}
         {punchStatus !== "idle" ? (
           <div className="ma-booth-halt" role="status">
@@ -1012,6 +1014,13 @@ export function RecordScreen({
             </div>
           </div>
         ) : null}
+        <div className="booth-tool-row">
+          {boothTools}
+          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
+            Reading
+          </button>
+          {importSlot}
+        </div>
         <div className="ma-booth-mic-row">
           <label className="ma-booth-input">
             <span>Microphone</span>
@@ -1031,7 +1040,6 @@ export function RecordScreen({
               ))}
             </select>
           </label>
-          {importSlot}
         </div>
         <div className="ma-recorder">
         <div className="ma-level" aria-hidden="true">
@@ -1099,7 +1107,6 @@ export function RecordScreen({
       </section>
 
       <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
-        <h2 className="ma-flow-block-title">Teleprompter</h2>
       <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
         <div className="ma-teleprompter-scroll" ref={promptRef}>
           <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
@@ -1170,25 +1177,26 @@ export function RecordScreen({
       </div>
       </section>
 
-      <section className="ma-flow-block" aria-label="Teleprompter setting">
-        <h2 className="ma-flow-block-title">Teleprompter setting</h2>
-        <BoothReadingPanel
-          highlight={highlight}
-          lineSpacing={lineSpacing}
-          onHighlight={setHighlightMode}
-          onSpacing={(value) => {
-            setLineSpacing(value);
-            persistChoice(SPACING_KEY, String(value));
-          }}
-          theme={theme}
-          onTheme={(value) => {
-            setTheme(value);
-            writePromptTheme(value);
-          }}
-          fontPx={boothFontPx}
-          onFontPx={(value) => setBoothFontPx(writeBoothFontPx(value))}
-        />
-      </section>
+      {readingOpen ? (
+        <BoothSheet title="Reading" wide onClose={() => setReadingOpen(false)}>
+          <BoothReadingPanel
+            highlight={highlight}
+            lineSpacing={lineSpacing}
+            onHighlight={setHighlightMode}
+            onSpacing={(value) => {
+              setLineSpacing(value);
+              persistChoice(SPACING_KEY, String(value));
+            }}
+            theme={theme}
+            onTheme={(value) => {
+              setTheme(value);
+              writePromptTheme(value);
+            }}
+            fontPx={boothFontPx}
+            onFontPx={(value) => setBoothFontPx(writeBoothFontPx(value))}
+          />
+        </BoothSheet>
+      ) : null}
     </section>
   );
 }

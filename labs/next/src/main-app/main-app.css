@@ -1698,6 +1698,28 @@
   line-height: 1.5;
 }
 
+.ma-room-result .ma-room-when {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.ma-room.is-sheet {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  gap: 0.65rem;
+}
+
+.ma-room-lead {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 @media (max-width: 720px) {
   .ma-glossary-list li,
   .ma-glossary-add {
@@ -2428,6 +2450,10 @@
   font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.88);
+}
+
+.ma-record-embed .ma-teleprompter-inner {
+  padding: 6.5rem 0 9rem;
 }
 
 .ma-tp-line {
@@ -3850,27 +3876,33 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-record-embed {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 0.55rem;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.45rem;
   min-height: 0;
   flex: 1;
   height: 100%;
 }
 
 .ma-review-embed {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(17rem, 0.85fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
   min-height: 0;
   flex: 1;
   height: 100%;
 }
 
 .ma-review-embed > .ma-overview-head,
-.ma-review-embed > .ma-proof-alerts,
-.ma-review-embed > .ma-proof-settings {
-  grid-column: 1 / -1;
+.ma-review-embed > .ma-proof-alerts {
+  flex: none;
+}
+
+.ma-proof-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(15rem, 0.72fr);
+  gap: 0.7rem;
+  min-height: 0;
+  flex: 1;
 }
 
 .ma-proof-prompt,
@@ -4119,7 +4151,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
   .ma-review-embed {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(12rem, 1fr) minmax(10rem, 0.7fr) auto;
+  }
+
+  .ma-proof-stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(12rem, 1fr) minmax(10rem, 0.7fr);
   }
 }
 

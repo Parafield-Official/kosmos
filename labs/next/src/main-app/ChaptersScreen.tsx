@@ -39,7 +39,7 @@ export function ChaptersScreen({
       return;
     }
     function sync() {
-      const width = node.clientWidth;
+      const width = mapRef.current?.clientWidth ?? 0;
       if (width > 1) {
         setBoardW((prev) => (Math.abs(prev - width) < 1 ? prev : width));
       }
@@ -112,36 +112,38 @@ export function ChaptersScreen({
           className={`quest-map is-${even ? "even" : "odd"}${allDone ? " is-complete" : ""}`}
           style={{ minHeight: layout.viewH }}
         >
-          <svg
-            className="quest-vine"
-            viewBox={layout.viewBox}
-            width="100%"
-            height={layout.viewH}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            <defs>
-              <mask id="quest-trail-cut" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
-                <rect x="-80" y="-80" width={layout.viewW + 160} height={layout.viewH + 160} fill="white" />
-                {layout.dots.map((dot, index) => (
-                  <circle key={index} cx={dot.x} cy={dot.y} r={dot.cut} fill="black" />
-                ))}
-              </mask>
-            </defs>
-            <g mask="url(#quest-trail-cut)" style={{ filter: "none" }}>
-              <path className="quest-vine-road" d={layout.path} />
-              {layout.segments.map((segment, index) => {
-                const walked = allDone || completeAt[index] || completeAt[index + 1];
-                return (
-                  <path
-                    className={walked ? "quest-vine-lit" : "quest-vine-wait"}
-                    d={segment}
-                    key={`lit-${index}`}
-                  />
-                );
-              })}
-            </g>
-          </svg>
+          {layout.path ? (
+            <svg
+              className="quest-vine"
+              viewBox={layout.viewBox}
+              width="100%"
+              height={layout.viewH}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <defs>
+                <mask id="quest-trail-cut" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
+                  <rect x="-80" y="-80" width={layout.viewW + 160} height={layout.viewH + 160} fill="white" />
+                  {layout.dots.map((dot, index) => (
+                    <circle key={index} cx={dot.x} cy={dot.y} r={dot.cut} fill="black" />
+                  ))}
+                </mask>
+              </defs>
+              <g mask="url(#quest-trail-cut)" style={{ filter: "none" }}>
+                <path className="quest-vine-road" d={layout.path} />
+                {layout.segments.map((segment, index) => {
+                  const walked = allDone || completeAt[index] || completeAt[index + 1];
+                  return (
+                    <path
+                      className={walked ? "quest-vine-lit" : "quest-vine-wait"}
+                      d={segment}
+                      key={`lit-${index}`}
+                    />
+                  );
+                })}
+              </g>
+            </svg>
+          ) : null}
 
           {layout.dots.map((dot, index) => {
             const finished = Boolean(completeAt[index]);
@@ -227,12 +229,18 @@ function snakeSegment(prev: { x: number; y: number }, curr: { x: number; y: numb
   return `M ${n(prev.x)} ${n(prev.y)} C ${n(prev.x + dx * 0.08)} ${n(prev.y + dy * 0.36)}, ${n(curr.x - dx * 0.08)} ${n(curr.y - dy * 0.36)}, ${n(curr.x)} ${n(curr.y)}`;
 }
 
+/** One hop only: a straight run from stop to stop. */
+function hopSegment(prev: { x: number; y: number }, curr: { x: number; y: number }): string {
+  return `M ${n(prev.x)} ${n(prev.y)} L ${n(curr.x)} ${n(curr.y)}`;
+}
+
 function questLayout(count: number, even: boolean, width: number) {
   const viewW = Math.max(width, 480);
   const midX = viewW / 2;
   const amp = viewW * 0.138;
   const startY = 104;
   const step = 236;
+  const snake = count >= 3;
   const nodes = Array.from({ length: count }, (_, index) => {
     const onRight = even ? index % 2 === 0 : index % 2 === 1;
     return {
@@ -248,17 +256,17 @@ function questLayout(count: number, even: boolean, width: number) {
     if (!prev || !curr) {
       continue;
     }
-    segments.push(snakeSegment(prev, curr));
+    segments.push(snake ? snakeSegment(prev, curr) : hopSegment(prev, curr));
   }
   const first = nodes[0];
   const last = nodes[nodes.length - 1];
-  const lead = first
+  const lead = snake && first
     ? `M ${n(midX)} 24 C ${n(midX)} ${n(first.y * 0.42)}, ${n(first.x)} ${n(first.y - 36)}, ${n(first.x)} ${n(first.y)}`
     : "";
-  const tail = last
+  const tail = snake && last
     ? `M ${n(last.x)} ${n(last.y)} C ${n(last.x)} ${n(last.y + 36)}, ${n(midX)} ${n(last.y + 68)}, ${n(midX)} ${n(last.y + 96)}`
     : "";
-  const viewH = startY + Math.max(count - 1, 0) * step + 120;
+  const viewH = startY + Math.max(count - 1, 0) * step + (snake ? 120 : 72);
   const cut = 20;
   return {
     nodes,
@@ -268,7 +276,7 @@ function questLayout(count: number, even: boolean, width: number) {
     viewBox: `0 0 ${n(viewW)} ${n(viewH)}`,
     viewH,
     viewW,
-    addTop: last ? last.y + 112 : 24,
+    addTop: last ? last.y + (snake ? 112 : 88) : 24,
   };
 }
 
