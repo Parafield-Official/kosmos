@@ -99,7 +99,6 @@ export function MainApp() {
   }, []);
 
   const commit = useCallback(async (next: BookProject) => {
-    const saved = await persistBook(next);
     setScreen((current) => {
       if (current.name === "library") {
         return current;
@@ -108,11 +107,28 @@ export function MainApp() {
         if (current.from.name === "library") {
           return current;
         }
-        return { ...current, from: withProject(current.from, saved) };
+        return { ...current, from: withProject(current.from, next) };
       }
-      return withProject(current, saved);
+      return withProject(current, next);
     });
-    return saved;
+    try {
+      const saved = await persistBook(next);
+      setScreen((current) => {
+        if (current.name === "library") {
+          return current;
+        }
+        if (current.name === "settings") {
+          if (current.from.name === "library") {
+            return current;
+          }
+          return { ...current, from: withProject(current.from, saved) };
+        }
+        return withProject(current, saved);
+      });
+      return saved;
+    } catch {
+      return next;
+    }
   }, []);
 
   const analyzeAndApply = useCallback(async (project: BookProject, file?: File) => {

@@ -218,9 +218,6 @@ export function PronunciationScreen({
           submitAdd();
         }}
       >
-        <div className="ma-pronounce-add-lead">
-          <p className="ma-pronounce-add-kicker">Add a word</p>
-        </div>
         <div className="ma-pronounce-add-row">
           <span className="ma-pronounce-add-icon" aria-hidden="true">
             <PlusGlyph />

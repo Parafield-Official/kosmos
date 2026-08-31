@@ -10,8 +10,8 @@ const THEME_KEY = "kosmos-booth-theme";
 const BOOTH_SIZE_KEY = "kosmos-booth-font-px";
 
 export const READING_FONT_VALUES = [
-  "serif",
   "sans",
+  "serif",
   "palatino",
   "courier",
   "clear",
@@ -29,8 +29,8 @@ export const READING_FONT_STACKS: Record<ReadingFont, string> = {
 };
 
 export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: string }> = [
-  { value: "serif", label: "Georgia" },
   { value: "sans", label: "Helvetica" },
+  { value: "serif", label: "Georgia" },
   { value: "palatino", label: "Palatino" },
   { value: "courier", label: "Courier" },
   { value: "clear", label: "Verdana" },
@@ -99,7 +99,7 @@ function writeStored(key: string, value: string): void {
 }
 
 export function readReadingFont(): ReadingFont {
-  return readStored(FONT_KEY, READING_FONT_VALUES, "serif");
+  return readStored(FONT_KEY, READING_FONT_VALUES, "sans");
 }
 
 export function applyReadingFont(font: ReadingFont): void {
@@ -112,7 +112,7 @@ export function writeReadingFont(font: ReadingFont): void {
 }
 
 export function readPromptTheme(): PromptTheme {
-  const stored = readStored(THEME_KEY, [...PROMPT_THEME_VALUES, "dark"] as const, "black");
+  const stored = readStored(THEME_KEY, [...PROMPT_THEME_VALUES, "dark"] as const, "white");
   return stored === "dark" ? "black" : stored;
 }
 

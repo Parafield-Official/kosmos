@@ -156,6 +156,12 @@
 .vault-read-page.is-newsprint::before,
 .vault-read-page.is-laid::before,
 .vault-read-page.is-kraft::before,
+.ma-paper.is-cream::before,
+.ma-paper.is-ivory::before,
+.ma-paper.is-sepia::before,
+.ma-paper.is-newsprint::before,
+.ma-paper.is-laid::before,
+.ma-paper.is-kraft::before,
 .ma-teleprompter.is-cream::before,
 .ma-teleprompter.is-ivory::before,
 .ma-teleprompter.is-sepia::before,
@@ -204,6 +210,7 @@
 }
 
 .vault-read-page > *,
+.ma-paper > *,
 .ma-teleprompter-inner,
 .ma-review-prose > * {
   position: relative;

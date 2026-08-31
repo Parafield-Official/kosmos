@@ -39,7 +39,7 @@
   --vault-reveal-x: 1.51%;
   --vault-bezel-t: max(56px, calc(var(--vault-pad-t) + var(--vault-reveal-t)));
   --vault-bezel-b: calc(var(--vault-pad-b) + var(--vault-reveal-b));
-  --vault-bezel-x: max(20px, calc(var(--vault-pad-x) + var(--vault-reveal-x)));
+  --vault-bezel-x: calc(var(--vault-pad-x) + var(--vault-reveal-x));
   --vault-pad-y: var(--vault-pad-t);
   --vault-pad: var(--vault-pad-t);
   --vault-reveal-y: var(--vault-reveal-t);
@@ -64,7 +64,7 @@
   --vault-reveal-x: 1.51%;
   --vault-bezel-t: max(56px, calc(var(--vault-pad-t) + var(--vault-reveal-t)));
   --vault-bezel-b: calc(var(--vault-pad-b) + var(--vault-reveal-b));
-  --vault-bezel-x: max(20px, calc(var(--vault-pad-x) + var(--vault-reveal-x)));
+  --vault-bezel-x: calc(var(--vault-pad-x) + var(--vault-reveal-x));
   --vault-pad-y: var(--vault-pad-t);
   --vault-pad: var(--vault-pad-t);
   --vault-reveal-y: var(--vault-reveal-t);
@@ -1012,6 +1012,11 @@
   animation: vault-overlay-in 480ms cubic-bezier(0.22, 1, 0.32, 1) both;
 }
 
+.vault-overlay > .ma-scrim {
+  z-index: 40;
+  background: rgba(4, 3, 10, 0.58);
+}
+
 @keyframes vault-overlay-in {
   from {
     opacity: 0;
@@ -1042,6 +1047,10 @@
 
 .vault-overlay > .ma-screen.quest-sheet {
   padding: 0;
+}
+
+.vault-overlay > .ma-screen.ma-editor {
+  max-width: none;
 }
 
 .vault-overlay .ma-book-nav {
@@ -1208,18 +1217,21 @@
 
 .vault-dock {
   position: absolute;
-  left: 50%;
-  right: auto;
+  left: 0;
+  right: 0;
   bottom: calc(var(--vault-pad-b) * 0.22);
   z-index: 13;
-  transform: translateX(-50%);
+  transform: none;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.15rem;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  min-width: 13.5rem;
   height: auto;
   min-height: 3.15rem;
-  min-width: 13.5rem;
+  margin-inline: auto;
   padding: 0.22rem 0.38rem;
   border: 1px solid rgba(255, 255, 255, 0.38);
   border-radius: 999px;
@@ -3440,6 +3452,7 @@
 
 .vault-overlay .quest-sheet .ma-editor-bar {
   margin-bottom: 0.55rem;
+  color: #f7f2eb;
 }
 
 .quest-sheet-head .ma-editor-status {
@@ -3459,23 +3472,34 @@
   justify-content: flex-end;
 }
 
-.vault-overlay .quest-sheet .ma-editor-title {
-  margin: 0 0 0.5rem;
+.vault-overlay .quest-sheet .ma-tool,
+.vault-overlay .quest-sheet .ma-editor-count,
+.vault-overlay .quest-sheet .ma-editor-status {
+  color: rgba(247, 242, 235, 0.78);
+}
+
+.vault-overlay .quest-sheet .ma-tool:hover {
+  color: #fff;
 }
 
 .vault-overlay .quest-sheet .ma-title-input {
   color: #fff;
-  font-size: 1.15rem;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.vault-overlay .quest-sheet .ma-editor-page {
+  flex: 1;
+  min-height: 0;
 }
 
 .vault-overlay .quest-sheet .ma-prose-edit {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1.1rem 1.25rem;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 1.35rem 1.55rem 2.2rem;
+  background: transparent;
+  border: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {

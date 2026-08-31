@@ -174,9 +174,10 @@ export function reorderGlossarySubset(project: BookProject, orderedIds: string[]
     return project;
   }
   let index = 0;
+  const glossary = (project.glossary ?? []).map((entry) => (ids.has(entry.id) ? moved[index++] ?? entry : entry));
   return {
     ...project,
-    glossary: (project.glossary ?? []).map((entry) => (ids.has(entry.id) ? moved[index++] ?? entry : entry)),
+    glossary,
   };
 }
 

@@ -5,6 +5,7 @@ import {
   saveChapterContent,
   type BookProject,
 } from "./store";
+import { READING_FONT_STACKS, readPromptTheme, readReadingFont } from "./reading-prefs";
 
 /**
  * Document-style chapter editor. Not a plain textbox: a contentEditable surface
@@ -32,6 +33,8 @@ export function ChapterEditor({
   const [words, setWords] = useState(chapter?.wordCount ?? 0);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [chapterTitle, setChapterTitle] = useState(chapter?.title ?? "");
+  const [theme] = useState(readPromptTheme);
+  const [readingFont] = useState(readReadingFont);
 
   useEffect(() => {
     let alive = true;
@@ -41,7 +44,7 @@ export function ChapterEditor({
         return;
       }
       if (editorRef.current) {
-        editorRef.current.innerHTML = html || "<p><br></p>";
+        editorRef.current.innerHTML = dropMatchingLeadHeading(html, chapter?.title) || "<p><br></p>";
       }
       setWords(countHtmlWords(html));
       setLoaded(true);
@@ -121,7 +124,34 @@ export function ChapterEditor({
           <ChevronLeft />
           <span>Back</span>
         </button>
-        <h2 className="vault-read-chapter-name">{chapter.title}</h2>
+        <h2 className="vault-read-chapter-name">
+          <input
+            className="ma-title-input"
+            value={chapterTitle}
+            aria-label="Chapter title"
+            onChange={(event) => {
+              const value = event.target.value;
+              setChapterTitle(value);
+              const next = value.trim();
+              if (chapter && next && next !== chapter.title) {
+                onChange({
+                  ...project,
+                  chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, title: next } : item)),
+                });
+              }
+            }}
+            onBlur={(event) => saveChapterTitle(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.currentTarget.blur();
+              }
+              if (event.key === "Escape") {
+                setChapterTitle(chapter.title);
+                event.currentTarget.blur();
+              }
+            }}
+          />
+        </h2>
         <span className="ma-editor-status">
           {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
         </span>
@@ -153,46 +183,33 @@ export function ChapterEditor({
         <span className="ma-editor-count">{words.toLocaleString()} words</span>
       </div>
 
-      <h1 className="ma-editor-title">
-        <input
-          className="ma-title-input"
-          value={chapterTitle}
-          aria-label="Chapter title"
-          onChange={(event) => {
-            const value = event.target.value;
-            setChapterTitle(value);
-            const next = value.trim();
-            if (chapter && next && next !== chapter.title) {
-              onChange({
-                ...project,
-                chapters: project.chapters.map((item) => (item.id === chapterId ? { ...item, title: next } : item)),
-              });
-            }
-          }}
-          onBlur={(event) => saveChapterTitle(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.currentTarget.blur();
-            }
-            if (event.key === "Escape") {
-              setChapterTitle(chapter.title);
-              event.currentTarget.blur();
-            }
-          }}
+      <div className={`ma-editor-page ma-paper is-${theme}`} style={{ fontFamily: READING_FONT_STACKS[readingFont] }}>
+        <div
+          ref={editorRef}
+          className="ma-prose ma-prose-edit"
+          contentEditable={loaded}
+          suppressContentEditableWarning
+          spellCheck
+          onInput={scheduleSave}
+          onBlur={() => void flush()}
         />
-      </h1>
-
-      <div
-        ref={editorRef}
-        className="ma-prose ma-prose-edit"
-        contentEditable={loaded}
-        suppressContentEditableWarning
-        spellCheck
-        onInput={scheduleSave}
-        onBlur={() => void flush()}
-      />
+      </div>
     </section>
   );
+}
+
+function dropMatchingLeadHeading(html: string, title?: string): string {
+  const name = title?.trim();
+  if (!html || !name) {
+    return html;
+  }
+  const wrap = document.createElement("div");
+  wrap.innerHTML = html;
+  const first = wrap.querySelector("h1, h2, h3");
+  if (first && first.textContent?.trim() === name) {
+    first.remove();
+  }
+  return wrap.innerHTML.trim() || html;
 }
 
 function ChevronLeft() {

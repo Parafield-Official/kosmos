@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { bookStats, completionPct } from "./book-stats";
 import { bookInitials, type BookProject } from "./store";
 import { VaultListenSheet, VaultReadSheet } from "./vault-media";
@@ -325,7 +326,11 @@ function AnalyzeConfirm({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  return (
+  const host =
+    document.querySelector(".vault-overlay") ??
+    document.querySelector(".main-app");
+
+  const dialog = (
     <div className="ma-scrim" role="presentation" onClick={onCancel}>
       <div
         className="ma-alert neu-panel"
@@ -356,4 +361,6 @@ function AnalyzeConfirm({
       </div>
     </div>
   );
+
+  return host ? createPortal(dialog, host) : dialog;
 }

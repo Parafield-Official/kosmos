@@ -141,7 +141,9 @@ function useReorder<T>(items: T[], onReorder?: (next: T[]) => void) {
     }
     event.preventDefault();
     const row = event.currentTarget.closest("li");
-    const height = row?.getBoundingClientRect().height ?? 48;
+    const list = row?.parentElement;
+    const gap = list ? Number.parseFloat(getComputedStyle(list).rowGap || "0") : 0;
+    const height = (row?.getBoundingClientRect().height ?? 48) + (Number.isFinite(gap) ? gap : 0);
     event.currentTarget.setPointerCapture(event.pointerId);
     setDrag({ from: index, over: index, y: 0, height, originY: event.clientY, armed: false });
   }
@@ -164,12 +166,11 @@ function useReorder<T>(items: T[], onReorder?: (next: T[]) => void) {
 
   function endDrag() {
     const current = dragRef.current;
+    if (current?.armed && onReorder && current.over !== current.from) {
+      onReorder(arrayMove(items, current.from, current.over));
+    }
     dragRef.current = null;
     setDrag(null);
-    if (!current?.armed || !onReorder || current.over === current.from) {
-      return;
-    }
-    onReorder(arrayMove(items, current.from, current.over));
   }
 
   return { drag, shiftFor, startDrag, moveDrag, endDrag, showGrip };
