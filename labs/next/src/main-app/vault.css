@@ -1014,7 +1014,10 @@
 
 .vault-overlay > .ma-scrim {
   z-index: 40;
-  background: rgba(4, 3, 10, 0.58);
+  isolation: isolate;
+  background: rgba(6, 4, 8, 0.64);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 @keyframes vault-overlay-in {
@@ -1046,7 +1049,8 @@
 }
 
 .vault-overlay > .ma-screen.quest-sheet {
-  padding: 0;
+  padding: 1.1rem 0 1.25rem;
+  align-items: center;
 }
 
 .vault-overlay > .ma-screen.ma-editor {
@@ -1177,6 +1181,16 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: #f6f1ea;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.vault-overlay .ma-alert.neu-panel {
+  background: rgba(16, 12, 12, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 22px 48px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
 }
 
 .vault-slot[data-lifted="true"] .vault-book {
@@ -1789,10 +1803,17 @@
   max-height: 100%;
 }
 
+.vault-media-embed:has(.vault-read.is-fill) {
+  place-items: center;
+}
+
 .vault-read.is-fill {
-  width: 100%;
+  width: min(64rem, calc(100% - 16.9rem));
   max-width: none;
-  height: 100%;
+  height: calc(100% - 1.2rem);
+  max-height: 100%;
+  justify-self: center;
+  align-self: center;
 }
 
 .vault-media-back {
@@ -3406,6 +3427,11 @@
   cursor: not-allowed;
 }
 
+.quest-workspace.is-booth .quest-step:disabled {
+  opacity: 0.72;
+  color: rgba(247, 242, 235, 0.74);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .quest-workspace.is-booth .quest-step:hover:not(:disabled):not(.is-on) {
     color: #fff;
@@ -3556,8 +3582,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 15.4rem;
   grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;
   gap: 1.75rem;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
   padding: 0.15rem 1.15rem 0.2rem;
   justify-content: center;
 }
@@ -3566,11 +3595,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: safe center;
+  align-self: stretch;
   gap: 0.55rem;
   min-height: 0;
+  max-height: 100%;
+  height: 100%;
   overflow: auto;
-  padding: 0.1rem 0.2rem 1.15rem;
+  padding: 0.15rem 0.2rem 2.1rem;
   border: 0;
   background: transparent;
   border-radius: 0;
@@ -3673,16 +3705,30 @@
   text-align: center;
 }
 
+.vault-overlay .quest-sheet-head,
+.vault-overlay .quest-sheet .ma-editor-bar,
+.vault-overlay .quest-sheet .ma-editor-page {
+  width: min(40rem, calc(100% - 7rem));
+}
+
+.vault-overlay .quest-sheet .ma-editor-bar {
+  margin-bottom: 0.7rem;
+}
+
 .vault-overlay .quest-sheet .ma-editor-page {
   flex: 1;
   min-height: 0;
+  border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 10px 24px rgba(10, 8, 6, 0.12);
 }
 
 .vault-overlay .quest-sheet .ma-prose-edit {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 1.35rem 1.55rem 2.2rem;
+  padding: 1.2rem 1.7rem 1.8rem;
   background: transparent;
   border: 0;
 }
@@ -4020,9 +4066,11 @@
 .vault-overlay .quest-workspace .ma-booth-rail {
   display: flex;
   flex-direction: column;
-  gap: 1.35rem;
+  flex: none;
+  gap: 0.72rem;
   width: min(100%, 14.6rem);
   min-height: 0;
+  margin-block: auto;
   margin-inline: auto;
 }
 
@@ -4030,8 +4078,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 0.55rem;
-  padding: 0.9rem 0.95rem 0.98rem;
+  gap: 0.48rem;
+  padding: 0.72rem 0.82rem 0.78rem;
   border-radius: 18px;
   background: rgba(8, 6, 5, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -4107,6 +4155,8 @@
   justify-content: center;
   align-items: stretch;
   min-height: 0;
+  max-height: 100%;
+  height: 100%;
   padding: 0.15rem 1.05rem 2.1rem 0.45rem;
   box-sizing: border-box;
 }
@@ -4133,13 +4183,45 @@
 
 .vault-overlay .quest-workspace .ma-record-embed .ma-recorder-controls {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 0.35rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
 }
 
-.vault-overlay .quest-workspace .ma-record-embed .ma-rec-btn {
-  flex: 1 1 100%;
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-btn,
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-btn.is-pause {
+  flex: none;
+  width: 100%;
+  min-height: 2.55rem;
+  justify-content: center;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-btn svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-btn.is-pause {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 6px 12px rgba(0, 0, 0, 0.16);
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-row:has(:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-rec-row .booth-tool {
+  width: 100%;
+  min-height: 2.35rem;
   justify-content: center;
 }
 
@@ -4168,26 +4250,130 @@
 
 .vault-overlay .quest-workspace .ma-record-embed .ma-booth-place-copy {
   margin: 0;
-  color: rgba(247, 242, 235, 0.55);
+  color: rgba(247, 242, 235, 0.78);
   font-size: 0.78rem;
   letter-spacing: 0.01em;
 }
 
 .vault-overlay .quest-workspace .ma-record-embed .ma-debug-finish {
-  align-self: flex-start;
-  opacity: 0.28;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
-.vault-overlay .quest-workspace .ma-record-embed .ma-take-latest {
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 0.35rem;
+  gap: 0.55rem;
 }
 
-.vault-overlay .quest-workspace .ma-record-embed .ma-audio {
-  width: 100%;
-  height: 2rem;
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape .ma-booth-kicker,
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-name {
+  margin: 0;
+  color: #f7f2eb;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-player {
+  display: grid;
+  gap: 0.38rem;
+  padding: 0.58rem 0.62rem 0.6rem;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(18, 14, 12, 0.32));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -8px 14px rgba(0, 0, 0, 0.24),
+    0 8px 16px rgba(0, 0, 0, 0.16);
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-row {
+  display: grid;
+  grid-template-columns: 2.15rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-play {
+  display: grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: #fff;
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.18), rgba(18, 14, 12, 0.35));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 6px 12px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  transition: transform 100ms ease, background 160ms ease;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-play svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-play:hover {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.26), rgba(18, 14, 12, 0.28));
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-play:active {
+  transform: scale(0.96);
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-seek {
+  position: relative;
+  height: 0.72rem;
+  border-radius: 999px;
+  background: rgba(8, 6, 5, 0.55);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-seek i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fff6ea, #ffe7b0);
+  box-shadow: 0 0 8px rgba(255, 220, 160, 0.35);
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-seek::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--tape-pct, 0%);
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 50%;
+  background: linear-gradient(165deg, #fff, #e8dcc8);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 2px 4px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed .ma-tape-time {
+  color: rgba(255, 248, 236, 0.72);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .vault-overlay .quest-workspace .ma-chapter-head-actions {

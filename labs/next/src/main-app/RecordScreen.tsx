@@ -34,6 +34,7 @@ import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow
 import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
+import { TapePlayer } from "./TapePlayer";
 import {
   applyChapterPickup,
   applyOriginalTape,
@@ -202,6 +203,7 @@ export function RecordScreen({
   const [error, setError] = useState<string | null>(null);
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
+  const [workingUrl, setWorkingUrl] = useState<string | null>(null);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
 
@@ -291,6 +293,24 @@ export function RecordScreen({
       }
     };
   }, [project, chapter?.originalFile]);
+
+  useEffect(() => {
+    const file = chapter?.workingFile;
+    if (!file) {
+      setWorkingUrl(null);
+      return;
+    }
+    let revoked: string | null = null;
+    void readChapterAudioUrl(project, file).then((url) => {
+      revoked = url;
+      setWorkingUrl(url);
+    });
+    return () => {
+      if (revoked) {
+        URL.revokeObjectURL(revoked);
+      }
+    };
+  }, [project, chapter?.workingFile]);
 
   useEffect(() => {
     return () => {
@@ -1107,31 +1127,34 @@ export function RecordScreen({
                 <span className="ma-rec-time">Saving…</span>
               )}
               {recording && !paused ? (
-                <button type="button" className="booth-tool" onClick={pauseRecording} title="Pause">
+                <button type="button" className="ma-rec-btn is-pause" onClick={pauseRecording}>
                   <PauseGlyph />
-                  <span>Pause</span>
+                  Pause
                 </button>
               ) : null}
-              {workflow.canStartOver ? (
-                <button type="button" className="booth-tool" onClick={() => void startOver()} title="Start over">
-                  <RestartGlyph />
-                  <span>Start over</span>
-                </button>
-              ) : null}
-              {chapter.originalFile && !recording ? (
-                <button
-                  type="button"
-                  className="booth-tool is-danger"
-                  title="Delete audio"
-                  onClick={() => {
-                    if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
-                      onChange(clearOriginalTape(projectRef.current, chapterId));
-                    }
-                  }}
-                >
-                  <TrashGlyph />
-                  <span>Delete</span>
-                </button>
+              {!recording && (workflow.canStartOver || chapter.originalFile) ? (
+                <div className="ma-rec-row">
+                  {workflow.canStartOver ? (
+                    <button type="button" className="booth-tool" onClick={() => void startOver()}>
+                      <RestartGlyph />
+                      Start over
+                    </button>
+                  ) : null}
+                  {chapter.originalFile ? (
+                    <button
+                      type="button"
+                      className="booth-tool is-danger"
+                      onClick={() => {
+                        if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
+                          onChange(clearOriginalTape(projectRef.current, chapterId));
+                        }
+                      }}
+                    >
+                      <TrashGlyph />
+                      Delete
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               {embedded && onContinueProof && shownPct >= 100 ? (
                 <button type="button" className="booth-tool is-primary" onClick={onContinueProof} disabled={proofing}>
@@ -1140,13 +1163,15 @@ export function RecordScreen({
                 </button>
               ) : null}
             </div>
-            {originalUrl && !recording ? (
-              <div className="ma-take-latest">
-                <span className="ma-take-label">Original</span>
-                <audio className="ma-audio" src={originalUrl} controls />
-              </div>
-            ) : null}
           </div>
+
+          {(originalUrl || workingUrl) && !recording ? (
+            <div className="ma-booth-panel ma-tape">
+              <p className="ma-booth-kicker">Tape</p>
+              {originalUrl ? <TapePlayer src={originalUrl} label="Original" /> : null}
+              {workingUrl ? <TapePlayer src={workingUrl} label="Working" /> : null}
+            </div>
+          ) : null}
 
           <div className="ma-booth-panel ma-booth-place">
             <p className="ma-booth-kicker">Place</p>

@@ -1865,12 +1865,13 @@
   position: absolute;
   inset: 0;
   z-index: 30;
+  isolation: isolate;
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background: rgba(4, 3, 10, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(6, 4, 8, 0.62);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
   -webkit-app-region: no-drag;
   app-region: no-drag;
   animation: ma-fade 200ms var(--ease) both;
@@ -2071,7 +2072,7 @@
 }
 
 .ma-alert-btn-danger {
-  color: #ff6b6b;
+  color: #ffc4be;
   font-weight: 600;
 }
 
@@ -2089,6 +2090,11 @@
 
 .vault-overlay .ma-alert-btn-danger,
 .main-app > .ma-scrim .ma-alert-btn-danger {
+  color: #ffc4be;
+}
+
+.vault-overlay .ma-alert-btn-danger:hover:not(:disabled),
+.main-app > .ma-scrim .ma-alert-btn-danger:hover:not(:disabled) {
   color: #ff8a82;
 }
 
@@ -3001,6 +3007,26 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #fff;
 }
 
+.ma-rec-btn.is-pause {
+  width: 100%;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.ma-rec-btn svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+.ma-rec-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  width: 100%;
+}
+
 .ma-rec-dot {
   width: 0.72rem;
   height: 0.72rem;
@@ -3038,12 +3064,15 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-take-label,
-.ma-takes-title {
+.ma-takes-title,
+.ma-tape-kicker,
+.ma-tape-name {
   margin: 0;
   font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  font-weight: 650;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--mute);
+  color: rgba(255, 248, 236, 0.78);
 }
 
 .ma-take-row {
@@ -3547,8 +3576,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   min-height: 0;
   overflow-x: visible;
   overflow-y: hidden;
-  gap: 1.1rem;
-  padding: 1.5rem 1.9rem 1.6rem 2rem;
+  gap: 1.25rem;
+  padding: 1.75rem 2.9rem 2.15rem 2.9rem;
 }
 
 .ma-pronounce {
@@ -3683,7 +3712,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
   align-items: stretch;
-  gap: 1.6rem;
+  gap: 1.85rem;
   min-height: 0;
   min-width: 0;
   height: 100%;
@@ -5008,9 +5037,14 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   transform: scale(0.97);
 }
 
-.main-app :where(button, input, textarea, [tabindex]):focus-visible {
+.main-app :where(button, [tabindex]):focus-visible {
   outline: 2px solid var(--ma-accent);
   outline-offset: 3px;
+}
+
+.main-app :where(input, textarea, select):focus,
+.main-app :where(input, textarea, select):focus-visible {
+  outline: none;
 }
 
 .ma-progress {
@@ -5804,11 +5838,18 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     12px 18px 38px rgba(var(--ma-accent-rgb), 0.09);
 }
 
-.ma-scrim,
 .ma-analyze-scrim {
   background: rgba(var(--ma-accent-rgb), 0.22);
   backdrop-filter: blur(13px) saturate(80%);
   -webkit-backdrop-filter: blur(13px) saturate(80%);
+}
+
+.viewport[data-place="app"] .ma-scrim,
+.main-app .ma-scrim,
+.vault-overlay > .ma-scrim {
+  background: rgba(6, 4, 8, 0.64);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
 }
 
 .ma-alert-btn,
@@ -6973,6 +7014,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .main-app .vault-overlay .ma-alert-title,
 .main-app .vault-overlay .ma-alert-btn {
   color: #fff;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.main-app .vault-overlay .ma-alert-actions,
+.main-app .vault-overlay .ma-alert-btn + .ma-alert-btn {
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .main-app .vault-overlay .ma-alert-sub {
@@ -6980,6 +7028,10 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-alert-btn-danger {
+  color: #ffc4be;
+}
+
+.main-app .vault-overlay .ma-alert-btn-danger:hover:not(:disabled) {
   color: #ff8a82;
 }
 
@@ -6989,8 +7041,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce {
-  gap: 0.75rem;
-  padding: 1.15rem 1.85rem 1.15rem 2rem;
+  gap: 1.25rem;
+  padding: 1.75rem 2.9rem 2.15rem 2.9rem;
   overflow: hidden;
   color: #f7f2eb;
 }
@@ -7069,11 +7121,40 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: rgba(247, 242, 235, 0.72);
 }
 
+.main-app .vault-overlay input,
+.main-app .vault-overlay textarea,
+.main-app .vault-overlay select,
+.main-app .vault-overlay .neu-input,
+.vault-overlay input,
+.vault-overlay textarea,
+.vault-overlay select {
+  outline: none;
+  box-shadow: none;
+}
+
+.main-app .vault-overlay input:focus,
+.main-app .vault-overlay input:focus-visible,
+.main-app .vault-overlay textarea:focus,
+.main-app .vault-overlay textarea:focus-visible,
+.main-app .vault-overlay select:focus,
+.main-app .vault-overlay select:focus-visible,
+.main-app .vault-overlay .neu-input:focus,
+.main-app .vault-overlay .neu-input:focus-visible,
+.vault-overlay input:focus,
+.vault-overlay input:focus-visible,
+.vault-overlay textarea:focus,
+.vault-overlay textarea:focus-visible,
+.vault-overlay select:focus,
+.vault-overlay select:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .main-app .vault-overlay .ma-pronounce .neu-input {
   color: #f7f2eb;
   background: rgba(10, 8, 8, 0.28);
   border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .main-app .vault-overlay .ma-pronounce .neu-input::placeholder {
@@ -7081,9 +7162,9 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce .neu-input:focus {
-  border-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.28);
   background: rgba(10, 8, 8, 0.38);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .main-app .vault-overlay .ma-pronounce .btn,
