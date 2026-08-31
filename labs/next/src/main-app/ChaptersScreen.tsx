@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { chapterCompletionPct } from "./book-stats";
-import { bookInitials, readChapterContent, removeChapter, type BookChapter, type BookProject } from "./store";
+import { chapterStage, readChapterContent, removeChapter, type BookChapter, type BookProject, type ChapterStage } from "./store";
+
+const ROW = 13.6;
 
 export function ChaptersScreen({
   project,
@@ -23,6 +25,12 @@ export function ChaptersScreen({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<BookChapter | null>(null);
+
+  const count = project.chapters.length;
+  const even = count > 0 && count % 2 === 0;
+  const currentIndex = project.chapters.findIndex((chapter) => chapterCompletionPct(chapter) < 100);
+  const allDone = count > 0 && currentIndex < 0;
+  const layout = useMemo(() => questLayout(count), [count]);
 
   function commitAdd() {
     const title = newTitle.trim() || `Chapter ${project.chapters.length + 1}`;
@@ -50,12 +58,16 @@ export function ChaptersScreen({
 
   return (
     <section className="ma-screen ma-chapters" aria-label="Chapters">
-      <div className="ma-section-head">
-        <h1 className="ma-title">Chapters</h1>
-        <button type="button" className="btn" onClick={() => setAdding(true)}>
+      <header className="quest-head">
+        <div className="quest-head-copy">
+          <p className="quest-kicker">{even ? "Even trail" : "Odd trail"}</p>
+          <h1 className="ma-title">Chapters</h1>
+        </div>
+        <button type="button" className="quest-add-btn" onClick={() => setAdding(true)}>
+          <PlusGlyph />
           Add chapter
         </button>
-      </div>
+      </header>
 
       {actionError ? <p className="ma-error">{actionError}</p> : null}
 
@@ -72,58 +84,143 @@ export function ChaptersScreen({
         />
       ) : null}
 
-      <div className="ma-chapter-orbs">
-        {project.chapters.map((chapter, index) => (
-          <ChapterOrb
-            key={chapter.id}
-            index={index + 1}
-            chapter={chapter}
-            project={project}
-            onOpen={() => onOpenChapter(chapter.id)}
-            onRead={() => onRead(chapter.id)}
-            onEdit={() => onEditChapter(chapter.id)}
-            onRemove={() => setRemoveTarget(chapter)}
-          />
-        ))}
-
-        {adding ? (
-          <div className="ma-chapter-add neu-inset">
-            <input
-              className="neu-input"
-              autoFocus
-              value={newTitle}
-              placeholder={`Chapter ${project.chapters.length + 1}`}
-              onChange={(event) => setNewTitle(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitAdd();
-                }
-                if (event.key === "Escape") {
-                  setAdding(false);
-                  setNewTitle("");
-                }
-              }}
-            />
-            <button type="button" className="btn btn-clear" onClick={commitAdd}>
-              Add
-            </button>
-          </div>
-        ) : null}
-      </div>
-
-      {project.chapters.length === 0 && !adding ? (
-        <div className="ma-chapter-empty">
-          <p>No chapters yet. Add one, or analyze a manuscript from the dashboard.</p>
+      {count === 0 && !adding ? (
+        <div className="quest-empty">
+          <p>No chapters yet. Add one, or analyze a manuscript from Home.</p>
         </div>
-      ) : null}
+      ) : (
+        <div
+          className={`quest-map is-${even ? "even" : "odd"}${allDone ? " is-complete" : ""}`}
+          style={{ minHeight: `${Math.max(layout.height, 18)}rem` }}
+        >
+          <svg className="quest-vine" viewBox={layout.viewBox} preserveAspectRatio="none" aria-hidden="true">
+            {even ? <path className="quest-vine-trunk" d={layout.trunk} /> : null}
+            <path className="quest-vine-glow" d={layout.path} />
+            <path className="quest-vine-line" d={layout.path} />
+            {layout.dots.map((dot, index) => (
+              <circle
+                key={index}
+                className={
+                  allDone || (currentIndex >= 0 && index <= currentIndex)
+                    ? "quest-vine-dot is-lit"
+                    : "quest-vine-dot"
+                }
+                cx={dot.x}
+                cy={dot.y}
+                r={even ? 1.15 : 1.35}
+              />
+            ))}
+          </svg>
+
+          {project.chapters.map((chapter, index) => {
+            const point = layout.nodes[index];
+            if (!point) {
+              return null;
+            }
+            return (
+              <QuestNode
+                key={chapter.id}
+                index={index + 1}
+                chapter={chapter}
+                project={project}
+                side={point.side}
+                top={point.top}
+                current={index === currentIndex}
+                onOpen={() => onOpenChapter(chapter.id)}
+                onRead={() => onRead(chapter.id)}
+                onEdit={() => onEditChapter(chapter.id)}
+                onRemove={() => setRemoveTarget(chapter)}
+              />
+            );
+          })}
+
+          {adding ? (
+            <div className="quest-add-card" style={{ top: `${layout.addTop}rem` }}>
+              <input
+                className="quest-add-input"
+                autoFocus
+                value={newTitle}
+                placeholder={`Chapter ${project.chapters.length + 1}`}
+                onChange={(event) => setNewTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    commitAdd();
+                  }
+                  if (event.key === "Escape") {
+                    setAdding(false);
+                    setNewTitle("");
+                  }
+                }}
+              />
+              <button type="button" className="quest-act is-primary" onClick={commitAdd}>
+                Add
+              </button>
+            </div>
+          ) : null}
+
+          {allDone ? (
+            <p className="quest-complete" role="status">
+              Trail complete. Every chapter is mastered.
+            </p>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }
 
-function ChapterOrb({
+function questLayout(count: number) {
+  const even = count > 0 && count % 2 === 0;
+  const left = even ? 22 : 28;
+  const right = even ? 78 : 72;
+  const startY = 10;
+  const step = 24;
+  const nodes = Array.from({ length: count }, (_, index) => {
+    const startRight = even;
+    const onRight = startRight ? index % 2 === 0 : index % 2 === 1;
+    return {
+      x: onRight ? right : left,
+      y: startY + index * step,
+      side: onRight ? ("right" as const) : ("left" as const),
+      top: 0.4 + index * ROW,
+    };
+  });
+  const dots = nodes.map((node) => ({ x: node.x, y: node.y }));
+  let path = "";
+  if (nodes[0]) {
+    path = `M ${nodes[0].x} ${nodes[0].y}`;
+    for (let index = 1; index < nodes.length; index += 1) {
+      const prev = nodes[index - 1];
+      const curr = nodes[index];
+      if (!prev || !curr) {
+        continue;
+      }
+      const midY = (prev.y + curr.y) / 2;
+      const swing = even ? (prev.x + curr.x) / 2 : 50;
+      path += ` C ${prev.x} ${midY - 2}, ${swing} ${midY}, ${curr.x} ${curr.y}`;
+    }
+  }
+  const lastY = nodes.length ? startY + (nodes.length - 1) * step : startY;
+  const height = Math.max(18, 2.4 + count * ROW + (count ? 4 : 0));
+  const viewH = Math.max(36, startY + Math.max(count - 1, 0) * step + 18);
+  return {
+    nodes,
+    dots,
+    path: path || `M 50 ${startY}`,
+    trunk: `M 50 ${startY - 6} L 50 ${lastY + 8}`,
+    viewBox: `0 0 100 ${viewH}`,
+    height,
+    addTop: 0.4 + count * ROW,
+  };
+}
+
+function QuestNode({
   index,
   chapter,
   project,
+  side,
+  top,
+  current,
   onOpen,
   onRead,
   onEdit,
@@ -132,6 +229,9 @@ function ChapterOrb({
   index: number;
   chapter: BookChapter;
   project: BookProject;
+  side: "left" | "right";
+  top: number;
+  current: boolean;
   onOpen: () => void;
   onRead: () => void;
   onEdit: () => void;
@@ -140,43 +240,65 @@ function ChapterOrb({
   const pct = chapterCompletionPct(chapter);
   const words = Math.max(0, chapter.wordCount || 0);
   const overLength = estimateDurationMinutes(words) > MAX_CHAPTER_MINUTES;
+  const stage = chapterStage(chapter);
+  const done = pct >= 100;
 
   return (
-    <article className="ma-orb">
-      <button type="button" className="ma-orb-hit" onClick={onOpen} aria-label={`Open ${chapter.title}`}>
-        <span className="ma-orb-object">
-          <span className="ma-orb-page neu-card" aria-hidden="true">
-            <ChapterPagePreview project={project} chapter={chapter} />
-          </span>
-          <span className="ma-orb-disc neu-card">
-            {project.coverDataUrl ? (
-              <img src={project.coverDataUrl} alt="" className="ma-orb-cover" />
-            ) : (
-              <span className="ma-orb-initials">{bookInitials(project)}</span>
-            )}
-            <span className="ma-orb-ring" style={{ ["--orb-pct" as string]: `${pct}%` }} aria-hidden="true" />
-          </span>
+    <article
+      className={`quest-node is-${side}${current ? " is-current" : ""}${done ? " is-done" : ""}`}
+      style={{ top: `${top}rem` }}
+    >
+      <button type="button" className="quest-cover" onClick={onOpen} aria-label={`Record ${chapter.title}`}>
+        <span className="quest-folio" aria-hidden="true">
+          <ChapterPagePreview project={project} chapter={chapter} />
         </span>
-        <span className="ma-orb-index">{String(index).padStart(2, "0")}</span>
-        <span className="ma-orb-title">{chapter.title}</span>
-        <span className="ma-orb-meta">
-          {pct}% complete
-          {overLength ? ` · Over ${MAX_CHAPTER_MINUTES} min` : ""}
-        </span>
+        <span className="quest-ring" style={{ ["--quest-pct" as string]: `${pct}%` }} />
+        {done ? <span className="quest-seal">Done</span> : null}
       </button>
-      <div className="ma-orb-actions">
-        <button type="button" className="btn btn-sm" onClick={onRead}>
-          Read
-        </button>
-        <button type="button" className="btn btn-sm" onClick={onEdit}>
-          Edit
-        </button>
-        <button type="button" className="btn btn-sm" onClick={onRemove}>
-          Remove
-        </button>
+      <div className="quest-meta">
+        <p className="quest-index">{String(index).padStart(2, "0")}</p>
+        <h2 className="quest-title">{chapter.title}</h2>
+        <p className="quest-status">
+          {stageLabel(stage)} · {pct}%
+          {overLength ? ` · Over ${MAX_CHAPTER_MINUTES} min` : ""}
+        </p>
+        <div className="quest-meter" aria-hidden="true">
+          <i style={{ width: `${pct}%` }} />
+        </div>
+        <div className="quest-acts">
+          <button type="button" className="quest-act is-primary" onClick={onOpen}>
+            <MicGlyph />
+            {done ? "Open" : current ? "Continue" : "Record"}
+          </button>
+          <button type="button" className="quest-act" onClick={onRead} aria-label="Read" title="Read">
+            <ReadGlyph />
+          </button>
+          <button type="button" className="quest-act" onClick={onEdit} aria-label="Edit" title="Edit">
+            <EditGlyph />
+          </button>
+          <button type="button" className="quest-act is-danger" onClick={onRemove} aria-label="Remove" title="Remove">
+            <TrashGlyph />
+          </button>
+        </div>
       </div>
     </article>
   );
+}
+
+function stageLabel(stage: ChapterStage): string {
+  if (stage === "done") {
+    return "Mastered";
+  }
+  if (stage === "mastering") {
+    return "Sound mastering";
+  }
+  if (stage === "proofing") {
+    return "Proofread";
+  }
+  if (stage === "recording") {
+    return "Recording";
+  }
+  return "Not started";
 }
 
 function ChapterPagePreview({ project, chapter }: { project: BookProject; chapter: BookChapter }) {
@@ -197,13 +319,13 @@ function ChapterPagePreview({ project, chapter }: { project: BookProject; chapte
   const hasText = Boolean(html?.trim());
 
   return (
-    <span className="ma-orb-folio">
+    <span className="quest-folio-inner">
       {html === null ? (
-        <span className="ma-orb-folio-empty">Loading…</span>
+        <span className="quest-folio-empty">Loading…</span>
       ) : hasText ? (
-        <span className="ma-orb-folio-body" dangerouslySetInnerHTML={{ __html: html }} />
+        <span className="quest-folio-body" dangerouslySetInnerHTML={{ __html: html }} />
       ) : (
-        <span className="ma-orb-folio-empty">
+        <span className="quest-folio-empty">
           <strong>{chapter.title}</strong>
           <em>No text yet</em>
         </span>
@@ -260,5 +382,48 @@ function RemoveChapterConfirm({
         </div>
       </div>
     </div>
+  );
+}
+
+function PlusGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+      <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MicGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.2" y="2.2" width="5.6" height="8" rx="2.8" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.6 8.2a4.4 4.4 0 0 0 8.8 0M8 12.6V14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ReadGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.4 3.4h5.1c.9 0 1.6.7 1.6 1.6V13a2.2 2.2 0 0 0-2-1.4H2.4V3.4Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+      <path d="M13.6 3.4H8.5c-.9 0-1.6.7-1.6 1.6V13a2.2 2.2 0 0 1 2-1.4h4.7V3.4Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function EditGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M9.2 3.4 12.6 6.8 6 13.4H2.6v-3.4L9.2 3.4Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+      <path d="M8.1 4.5 11.5 7.9" stroke="currentColor" strokeWidth="1.35" />
+    </svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.2 4.4h9.6M6.2 4.4V3.2h3.6v1.2M5.1 4.4l.5 8.2h4.8l.5-8.2" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
   );
 }

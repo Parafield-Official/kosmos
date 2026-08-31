@@ -20,8 +20,8 @@ import { ChaptersScreen } from "./ChaptersScreen";
 import { PronunciationScreen } from "./PronunciationScreen";
 import { ChapterWorkspace } from "./ChapterWorkspace";
 import { ChapterEditor } from "./ChapterEditor";
-import { ReaderScreen } from "./ReaderScreen";
 import { SettingsScreen } from "./SettingsScreen";
+import { VaultReadSheet } from "./vault-media";
 import { ThemeAtmosphere } from "./ThemeAtmosphere";
 import { THEME_ACCENT_EVENT, accentOption, readThemeAccent, type ThemeAccent, type ThemeAccentOption } from "./theme";
 import { exportBookPack } from "./punch";
@@ -45,11 +45,8 @@ function withProject(screen: WorkScreen, project: BookProject): WorkScreen {
   return { ...screen, project };
 }
 
-function vaultHosts(screen: MainScreen): boolean {
-  if (screen.name === "library" || screen.name === "book") {
-    return true;
-  }
-  return screen.name === "settings" && (screen.from.name === "library" || screen.from.name === "book");
+function vaultHosts(): boolean {
+  return true;
 }
 
 export function MainApp() {
@@ -215,14 +212,51 @@ export function MainApp() {
     "--ma-accent-rgb": themePaint.rgb,
   } as CSSProperties;
 
-  const hosted = vaultHosts(screen);
+  const hosted = vaultHosts();
   const pane = screen.name === "library" ? "home" : "glass";
   const nav = screen.name === "settings" ? "settings" : screen.name === "library" ? "home" : "none";
-  const showCornerGear = screen.name === "chapter" || screen.name === "editor" || screen.name === "reader";
 
   let overlay: ReactNode = null;
-  if (screen.name === "settings" && hosted) {
+  if (screen.name === "settings") {
     overlay = <SettingsScreen onBack={() => setScreen(screen.from)} />;
+  } else if (screen.name === "chapter") {
+    overlay = (
+      <ChapterWorkspace
+        project={screen.project}
+        chapterId={screen.chapterId}
+        step={screen.step}
+        onStep={(step) => setScreen({ ...screen, step })}
+        onBack={() => openProject(screen.project, "chapters")}
+        onChange={(next) => void commit(next)}
+        onNextChapter={() => {
+          const index = screen.project.chapters.findIndex((item) => item.id === screen.chapterId);
+          const next = screen.project.chapters[index + 1];
+          if (next) {
+            openChapter(screen.project, next.id);
+          } else {
+            openProject(screen.project, "chapters");
+          }
+        }}
+      />
+    );
+  } else if (screen.name === "editor") {
+    overlay = (
+      <ChapterEditor
+        project={screen.project}
+        chapterId={screen.chapterId}
+        onBack={() => openProject(screen.project, "chapters")}
+        onChange={(next) => void commit(next)}
+      />
+    );
+  } else if (screen.name === "reader") {
+    overlay = (
+      <VaultReadSheet
+        project={screen.project}
+        chapterId={screen.chapterId}
+        fill
+        onBack={() => openProject(screen.project, "chapters")}
+      />
+    );
   } else if (screen.name === "book") {
     overlay = (
       <BookShell
@@ -275,11 +309,6 @@ export function MainApp() {
   return (
     <div className="main-app" data-screen={screen.name} data-theme-accent={themeAccent} style={themeStyle}>
       <ThemeAtmosphere />
-      {showCornerGear ? (
-        <button type="button" className="ma-gear" aria-label="Settings" onClick={openSettings}>
-          <GearIcon />
-        </button>
-      ) : null}
 
       {hosted ? (
         <LibraryScreen
@@ -292,49 +321,6 @@ export function MainApp() {
           onHome={openLibrary}
         />
       ) : null}
-
-      {screen.name === "chapter" ? (
-        <BookShell
-          project={screen.project}
-          tab="chapters"
-          onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
-          onBack={openLibrary}
-          onDelete={() => setDeleteTarget(screen.project)}
-        >
-          <ChapterWorkspace
-            project={screen.project}
-            chapterId={screen.chapterId}
-            step={screen.step}
-            onStep={(step) => setScreen({ ...screen, step })}
-            onBack={() => openProject(screen.project, "chapters")}
-            onChange={(next) => void commit(next)}
-            onNextChapter={() => {
-              const index = screen.project.chapters.findIndex((item) => item.id === screen.chapterId);
-              const next = screen.project.chapters[index + 1];
-              if (next) {
-                openChapter(screen.project, next.id);
-              } else {
-                openProject(screen.project, "chapters");
-              }
-            }}
-          />
-        </BookShell>
-      ) : null}
-
-      {screen.name === "editor" ? (
-        <ChapterEditor
-          project={screen.project}
-          chapterId={screen.chapterId}
-          onBack={() => openProject(screen.project, "chapters")}
-          onChange={(next) => void commit(next)}
-        />
-      ) : null}
-
-      {screen.name === "reader" ? (
-        <ReaderScreen project={screen.project} chapterId={screen.chapterId} onBack={() => openProject(screen.project, "chapters")} />
-      ) : null}
-
-      {screen.name === "settings" && !hosted ? <SettingsScreen onBack={() => setScreen(screen.from)} /> : null}
 
       {deleteTarget ? (
         <ConfirmDelete
@@ -379,22 +365,5 @@ function AnalyzingOverlay({ progress, label }: { progress: number; label: string
         <p className="ma-analyze-pct">{pct}%</p>
       </div>
     </div>
-  );
-}
-
-function GearIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.15"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
   );
 }

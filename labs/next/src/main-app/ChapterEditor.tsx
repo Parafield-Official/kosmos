@@ -115,12 +115,13 @@ export function ChapterEditor({
   }
 
   return (
-    <section className="ma-screen ma-editor" aria-label={`Editing ${chapter.title}`}>
-      <header className="ma-editor-head">
-        <button type="button" className="ma-back" onClick={onBack} aria-label="Back to overview">
+    <section className="ma-screen ma-editor quest-sheet" aria-label={`Editing ${chapter.title}`}>
+      <header className="quest-sheet-head">
+        <button type="button" className="vault-media-back" onClick={onBack} aria-label="Back to chapters">
           <ChevronLeft />
-          <span>{project.title}</span>
+          <span>Back</span>
         </button>
+        <h2 className="vault-read-chapter-name">{chapter.title}</h2>
         <span className="ma-editor-status">
           {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
         </span>

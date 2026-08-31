@@ -53,12 +53,18 @@ export function VaultReadSheet({
   project,
   onBack,
   embedded,
+  fill,
+  chapterId,
 }: {
   project: BookProject;
   onBack: () => void;
   embedded?: boolean;
+  fill?: boolean;
+  chapterId?: string;
 }) {
-  const [index, setIndex] = useState(0);
+  const lockedIndex = chapterId ? Math.max(0, project.chapters.findIndex((chapter) => chapter.id === chapterId)) : -1;
+  const [index, setIndex] = useState(() => (lockedIndex >= 0 ? lockedIndex : 0));
+  const chapterOnly = lockedIndex >= 0;
   const [html, setHtml] = useState("");
   const [loading, setLoading] = useState(true);
   const [paper] = useState(() => readPromptTheme());
@@ -66,6 +72,12 @@ export function VaultReadSheet({
   const chapter = project.chapters[index] ?? null;
   const chapterKey = chapter?.id;
   const last = Math.max(0, project.chapters.length - 1);
+
+  useEffect(() => {
+    if (lockedIndex >= 0) {
+      setIndex(lockedIndex);
+    }
+  }, [lockedIndex]);
 
   useEffect(() => {
     if (!chapterKey) {
@@ -89,13 +101,16 @@ export function VaultReadSheet({
   }, [project, chapterKey]);
 
   function go(delta: number) {
+    if (chapterOnly) {
+      return;
+    }
     setIndex((current) => Math.min(last, Math.max(0, current + delta)));
   }
 
   return (
-    <MediaFrame embedded={embedded} onBack={onBack}>
+    <MediaFrame embedded={embedded || fill} onBack={onBack}>
       <article
-        className="vault-read"
+        className={fill ? "vault-read is-fill" : "vault-read"}
         role="dialog"
         aria-labelledby="vault-read-title"
         onClick={(event) => event.stopPropagation()}
@@ -118,17 +133,19 @@ export function VaultReadSheet({
             <p className="vault-read-empty">This chapter has no text yet.</p>
           )}
         </div>
-        <footer className="vault-read-nav">
-          <button type="button" className="vault-media-text-btn" disabled={index === 0} onClick={() => go(-1)}>
-            Previous
-          </button>
-          <span className="vault-read-index">
-            {index + 1} / {project.chapters.length}
-          </span>
-          <button type="button" className="vault-media-text-btn" disabled={index >= last} onClick={() => go(1)}>
-            Next
-          </button>
-        </footer>
+        {chapterOnly ? null : (
+          <footer className="vault-read-nav">
+            <button type="button" className="vault-media-text-btn" disabled={index === 0} onClick={() => go(-1)}>
+              Previous
+            </button>
+            <span className="vault-read-index">
+              {index + 1} / {project.chapters.length}
+            </span>
+            <button type="button" className="vault-media-text-btn" disabled={index >= last} onClick={() => go(1)}>
+              Next
+            </button>
+          </footer>
+        )}
       </article>
     </MediaFrame>
   );

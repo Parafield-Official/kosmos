@@ -25,10 +25,10 @@ import {
   type BookProject,
 } from "./store";
 
-const STEPS: Array<{ id: ChapterStep; label: string }> = [
-  { id: "recording", label: "Recording" },
-  { id: "proofreading", label: "Proofreading" },
-  { id: "mastering", label: "Sound mastering" },
+const STEPS: Array<{ id: ChapterStep; label: string; hint: string }> = [
+  { id: "recording", label: "Record", hint: "Booth" },
+  { id: "proofreading", label: "Proofread", hint: "Flags" },
+  { id: "mastering", label: "Sound", hint: "Master" },
 ];
 
 export function ChapterWorkspace({
@@ -129,35 +129,56 @@ export function ChapterWorkspace({
   }
 
   const booth = (step === "recording" && gate.ok) || step === "proofreading";
+  const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId) + 1;
 
   return (
-    <section className={booth ? "ma-chapter-workspace is-booth" : "ma-chapter-workspace"} aria-label={chapter.title}>
-      <header className="ma-chapter-workspace-head">
-        <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapters">
+    <section className={booth ? "quest-workspace is-booth" : "quest-workspace"} aria-label={chapter.title}>
+      <header className="quest-work-head">
+        <button type="button" className="vault-media-back" onClick={onBack} aria-label="Back to chapters">
           <ChevronLeft />
-          <span>Chapters</span>
+          <span>Back</span>
         </button>
-        <nav className="ma-step-nav" aria-label="Chapter steps">
-          {STEPS.map((item) => {
-            const locked = stepLocked(item.id, chapter);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={step === item.id ? "ma-step-nav-item is-on" : "ma-step-nav-item"}
-                disabled={locked}
-                onClick={() => onStep(item.id)}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
+        <div className="quest-work-title">
+          <p className="quest-work-kicker">Chapter {String(Math.max(1, chapterIndex)).padStart(2, "0")}</p>
+          <h1>{chapter.title}</h1>
+        </div>
+        <span className="quest-work-spacer" aria-hidden="true" />
       </header>
+
+      <nav className="quest-steps" aria-label="Chapter steps">
+        {STEPS.map((item) => {
+          const locked = stepLocked(item.id, chapter);
+          const done =
+            item.id === "recording"
+              ? chapter.recordedPct >= 1
+              : item.id === "proofreading"
+                ? chapter.proofed
+                : chapter.mastered;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={`quest-step is-${item.id}${step === item.id ? " is-on" : ""}${done ? " is-done" : ""}`}
+              disabled={locked}
+              onClick={() => onStep(item.id)}
+            >
+              <span className="quest-step-icon" aria-hidden="true">
+                {item.id === "recording" ? <MicStepIcon /> : null}
+                {item.id === "proofreading" ? <ProofStepIcon /> : null}
+                {item.id === "mastering" ? <WaveStepIcon /> : null}
+              </span>
+              <span className="quest-step-copy">
+                <strong>{item.label}</strong>
+                <em>{done ? "Done" : locked ? "Locked" : item.hint}</em>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {proofError ? <p className="ma-error ma-chapter-workspace-error">{proofError}</p> : null}
 
-      <div className="ma-chapter-workspace-body">
+      <div className="quest-work-body">
         {step === "recording" ? (
           <RecordingStep
             project={project}
@@ -249,7 +270,7 @@ function RecordingStep({
 }) {
   if (!gateOk) {
     return (
-      <div className="ma-record-gate">
+      <div className="quest-gate">
         <RoomCheck report={project.roomCheck} onReport={(roomCheck) => onChange({ ...project, roomCheck })} />
         <GlossaryPanel
           title="Pronunciations in this chapter"
@@ -494,51 +515,59 @@ function MasteringStep({
   }
 
   return (
-    <div className="ma-master-pane">
-      <p className="ma-set-sub">
+    <div className="quest-master">
+      <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
+        {Array.from({ length: 28 }, (_, index) => (
+          <i key={index} style={{ animationDelay: `${index * 42}ms`, animationDuration: `${0.7 + (index % 5) * 0.18}s` }} />
+        ))}
+      </div>
+      <p className="quest-master-lead">
         Original is the booth tape. Without mastering is the punch copy. With mastering is the latest pipeline output.
       </p>
-      <div className="ma-step-actions">
+      <div className="quest-master-slots">
         <button
           type="button"
-          className="btn btn-sm"
+          className={`quest-slot${playing === "original" ? " is-on" : ""}`}
           disabled={!chapter.originalFile}
           onClick={() => void playSlot(chapter.originalFile, "original")}
         >
-          {playing === "original" ? "Playing original" : "Original"}
+          <strong>Original</strong>
+          <span>{playing === "original" ? "Playing" : "Booth tape"}</span>
         </button>
         <button
           type="button"
-          className="btn btn-sm"
+          className={`quest-slot${playing === "working" ? " is-on" : ""}`}
           disabled={!chapter.workingFile}
           onClick={() => void playSlot(chapter.workingFile, "working")}
         >
-          {playing === "working" ? "Playing unmastered" : "Without mastering"}
+          <strong>Unmastered</strong>
+          <span>{playing === "working" ? "Playing" : "Punch copy"}</span>
         </button>
         <button
           type="button"
-          className="btn btn-sm"
+          className={`quest-slot${playing === "mastered" ? " is-on" : ""}`}
           disabled={!chapter.masteredFile}
           onClick={() => void playSlot(chapter.masteredFile, "mastered")}
         >
-          {playing === "mastered" ? "Playing mastered" : "With mastering"}
+          <strong>Mastered</strong>
+          <span>{playing === "mastered" ? "Playing" : "Pipeline"}</span>
         </button>
       </div>
-      <div className="ma-step-actions">
-        <button type="button" className="btn btn-clear" onClick={() => void runMaster()} disabled={mastering}>
+      <div className="quest-master-acts">
+        <button type="button" className="quest-act is-primary" onClick={() => void runMaster()} disabled={mastering}>
           {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master chapter"}
         </button>
-        <button type="button" className="btn" onClick={() => void checkFile()} disabled={checking}>
+        <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
           {checking ? "Measuring…" : "Check this audio"}
         </button>
         {onNextChapter ? (
-          <button type="button" className="btn" onClick={onNextChapter}>
+          <button type="button" className="quest-act" onClick={onNextChapter}>
             Next chapter
           </button>
         ) : null}
       </div>
       {chapter.acxTrafficLight && !acxReport ? (
-        <p className="ma-step-note">
+        <p className="quest-master-note">
           Last check:{" "}
           {chapter.acxTrafficLight === "green" ? "ready" : chapter.acxTrafficLight === "yellow" ? "close" : "needs a fix"}.
         </p>
@@ -556,6 +585,32 @@ function ChevronLeft() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
       <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MicStepIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="7" y="3" width="6" height="9" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4.8 10.2a5.2 5.2 0 0 0 10.4 0M10 15.4V17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProofStepIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M5 3.4h7.2L15.6 7v9.6H5V3.4Z" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
+      <path d="M12.1 3.6V7h3.3M7.2 10.2h5.6M7.2 13h4.1" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function WaveStepIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M3.2 10h1.4M6 6.4v7.2M8.8 4.6v10.8M11.6 7.2v5.6M14.4 5.4v9.2M17.2 9.2v1.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

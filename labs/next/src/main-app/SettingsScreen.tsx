@@ -134,14 +134,14 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <section className="ma-screen ma-settings" aria-label="Settings">
-      <header className="ma-overview-head">
-        <button type="button" className="ma-back" onClick={onBack} aria-label="Back">
+      <header className="ma-set-masthead">
+        <button type="button" className="vault-media-back" onClick={onBack} aria-label="Back">
           <ChevronLeft />
           <span>Back</span>
         </button>
+        <h1 className="ma-title">Settings</h1>
+        <span className="ma-set-masthead-space" aria-hidden="true" />
       </header>
-
-      <h1 className="ma-title">Settings</h1>
 
       <div className="ma-set-columns">
         <div className="ma-set-col">
