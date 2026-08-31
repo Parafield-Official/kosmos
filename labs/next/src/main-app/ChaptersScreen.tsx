@@ -255,7 +255,10 @@ function questLayout(count: number, even: boolean, width: number) {
   const startY = 104;
   const step = 268;
   const nodes = Array.from({ length: count }, (_, index) => questStop(index, even, midX, amp, startY, step));
-  const finish = count > 0 ? questStop(count, even, midX, amp, startY, step) : null;
+  const last = nodes[nodes.length - 1] ?? null;
+  const finish = last
+    ? { x: last.x, y: last.y + 188, side: last.side }
+    : null;
   const stops = finish ? [...nodes, finish] : nodes;
   const segments: string[] = [];
   for (let index = 1; index < stops.length; index += 1) {
@@ -266,8 +269,7 @@ function questLayout(count: number, even: boolean, width: number) {
     }
     segments.push(snakeSegment(prev, curr));
   }
-  const last = finish ?? nodes[nodes.length - 1];
-  const viewH = startY + Math.max(count, 0) * step + 128;
+  const viewH = (finish?.y ?? last?.y ?? startY) + 156;
   const cut = 20;
   return {
     nodes,
@@ -278,7 +280,7 @@ function questLayout(count: number, even: boolean, width: number) {
     viewBox: `0 0 ${n(viewW)} ${n(viewH)}`,
     viewH,
     viewW,
-    addTop: last ? last.y + 148 : 24,
+    addTop: finish ? finish.y + 148 : last ? last.y + 148 : 24,
   };
 }
 
@@ -384,12 +386,16 @@ function QuestFinish({
       style={{ top }}
       onClick={onOpen}
     >
-      <span className="quest-end-mark" aria-hidden="true">
+      <span className="quest-end-sheen" aria-hidden="true" />
+      <span className="quest-end-folio" aria-hidden="true">
         <ExportGlyph />
       </span>
-      <span className="quest-end-copy">
-        <strong>Export ACX</strong>
-        <em>{ready ? "Pack the book" : "Open the pack desk"}</em>
+      <span className="quest-end-meta">
+        <span className="quest-end-copy">
+          <p className="quest-end-index">ACX</p>
+          <strong className="quest-end-title">Export</strong>
+          <em className="quest-end-status">{ready ? "Pack the book" : "Open the pack desk"}</em>
+        </span>
       </span>
     </button>
   );

@@ -654,35 +654,6 @@
   transition: padding 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1));
 }
 
-.brand-mark[data-open="true"],
-.brand-mark:focus-visible {
-  transform: translateX(-50%);
-}
-
-.brand-mark[data-open="true"] .brand-mark-fill,
-.brand-mark:hover .brand-mark-fill {
-  background: linear-gradient(
-    165deg,
-    rgba(255, 255, 255, 0.34) 0%,
-    rgba(52, 50, 60, 0.26) 48%,
-    rgba(40, 38, 48, 0.32) 100%
-  );
-}
-
-.brand-mark[data-open="true"] .brand-mark-rim,
-.brand-mark:hover .brand-mark-rim,
-.brand-mark:focus-visible .brand-mark-rim {
-  border-color: rgba(255, 255, 255, 0.78);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.16),
-    0 6px 18px var(--liquid-shadow);
-}
-
-.brand-mark:active {
-  transform: translateX(-50%) scale(0.97);
-}
-
 .brand-mark:focus,
 .brand-mark:focus-visible {
   outline: none;
@@ -693,11 +664,6 @@
     inset 0 1px 0 var(--liquid-rim-inner),
     0 0 0 2px rgba(255, 255, 255, 0.28),
     0 6px 18px var(--liquid-shadow);
-}
-
-.brand-mark[data-open="true"] .brand-mark-content,
-.brand-mark:focus-visible .brand-mark-content {
-  padding: 0 1.42rem 0 1.18rem;
 }
 
 .brand-mark-logo {
@@ -733,12 +699,24 @@
     clip-path 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1));
 }
 
-.brand-mark[data-open="true"] .brand-mark-name,
 .brand-mark:focus-visible .brand-mark-name {
   max-width: 5.4rem;
   margin-left: 0.5rem;
   opacity: 1;
   clip-path: inset(0 0 0 0);
+}
+
+.brand-mark:focus-visible .brand-mark-content {
+  padding: 0 1.42rem 0 1.18rem;
+}
+
+.brand-mark:focus-visible .brand-mark-fill {
+  background: linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(52, 50, 60, 0.26) 48%,
+    rgba(40, 38, 48, 0.32) 100%
+  );
 }
 
 .viewport[data-place="app"] .brand-mark {
@@ -757,18 +735,42 @@
   font-size: 1.18rem;
 }
 
-.viewport[data-place="app"] .brand-mark[data-open="true"] .brand-mark-name,
 .viewport[data-place="app"] .brand-mark:focus-visible .brand-mark-name {
   max-width: 6.8rem;
 }
 
-.viewport[data-place="app"] .brand-mark[data-open="true"],
-.viewport[data-place="app"] .brand-mark:focus-visible {
-  transform: translate(-50%, -50%);
-}
+@media (hover: hover) and (pointer: fine) {
+  .brand-mark:hover .brand-mark-fill {
+    background: linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.34) 0%,
+      rgba(52, 50, 60, 0.26) 48%,
+      rgba(40, 38, 48, 0.32) 100%
+    );
+  }
 
-.viewport[data-place="app"] .brand-mark:active {
-  transform: translate(-50%, -50%) scale(0.97);
+  .brand-mark:hover .brand-mark-rim {
+    border-color: rgba(255, 255, 255, 0.78);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.86),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.16),
+      0 6px 18px var(--liquid-shadow);
+  }
+
+  .brand-mark:hover .brand-mark-content {
+    padding: 0 1.42rem 0 1.18rem;
+  }
+
+  .brand-mark:hover .brand-mark-name {
+    max-width: 5.4rem;
+    margin-left: 0.5rem;
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+
+  .viewport[data-place="app"] .brand-mark:hover .brand-mark-name {
+    max-width: 6.8rem;
+  }
 }
 
 .settings-toggle svg {
@@ -783,7 +785,7 @@
     transition: none;
   }
 
-  .brand-mark[data-open="true"] .brand-mark-name,
+  .brand-mark:hover .brand-mark-name,
   .brand-mark:focus-visible .brand-mark-name {
     max-width: 5.4rem;
     margin-left: 0.5rem;
