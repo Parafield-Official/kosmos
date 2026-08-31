@@ -80,9 +80,7 @@
 }
 
 .ma-settings > .ma-set-masthead,
-.ma-settings > .ma-set-columns,
-.ma-settings > .ma-set-kicker-wide,
-.ma-settings > .ma-set-card-wide {
+.ma-settings > .ma-set-columns {
   width: min(100%, 44rem);
   margin-inline: auto;
   flex: none;
@@ -141,9 +139,7 @@
 
 @media (min-width: 980px) {
   .ma-settings > .ma-set-masthead,
-  .ma-settings > .ma-set-columns,
-  .ma-settings > .ma-set-kicker-wide,
-  .ma-settings > .ma-set-card-wide {
+  .ma-settings > .ma-set-columns {
     width: min(100%, 64rem);
   }
 
@@ -152,19 +148,6 @@
     column-gap: 2.6rem;
     row-gap: 2.15rem;
     align-items: start;
-  }
-
-  .ma-set-card-wide {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .ma-set-card-wide > .ma-set-item {
-    border-top: 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .ma-set-card-wide > .ma-set-item:first-child {
-    border-left: 0;
   }
 }
 
@@ -175,15 +158,6 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-
-.ma-set-kicker-wide {
-  margin-top: 1.85rem;
-}
-
-.ma-set-card-wide {
-  display: grid;
-  min-height: min-content;
 }
 
 .ma-set-col > .ma-set-kicker:first-child {
@@ -321,7 +295,8 @@
 
 .ma-set-item {
   display: grid;
-  gap: 0.9rem;
+  align-content: start;
+  gap: 0.85rem;
   padding: 1.28rem 1.35rem 1.35rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -333,6 +308,17 @@
 .ma-set-copy {
   display: grid;
   gap: 0.28rem;
+  min-width: 0;
+}
+
+.ma-set-control {
+  display: grid;
+  justify-items: start;
+  align-items: start;
+  align-content: start;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0;
 }
 
 .ma-set-head {
@@ -390,11 +376,19 @@
   max-width: 100%;
 }
 
-.ma-set-control {
-  display: grid;
-  gap: 0.55rem;
-  width: 100%;
-  margin: 0;
+.ma-set-control > .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  min-height: 2.15rem;
+  max-height: 2.15rem;
+  padding: 0.42rem 0.9rem;
+  align-self: start;
+  font-size: 0.82rem;
+  line-height: 1.2;
 }
 
 .ma-lamp-plate {
@@ -471,14 +465,22 @@
   transform: scale(0.97);
 }
 
-.ma-set-control > .btn {
-  width: fit-content;
-}
-
 .ma-set-control-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.ma-set-control-row .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 2.15rem;
+  max-height: 2.15rem;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.2;
 }
 
 .ma-settings .ma-seg-btn.ma-set-theme.is-on {
@@ -6022,6 +6024,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #ffc9c4;
   background: rgba(180, 50, 50, 0.16);
   border-color: rgba(255, 140, 130, 0.28);
+  min-width: 0;
 }
 
 .main-app .vault-overlay .ma-settings .ma-danger-btn:hover {

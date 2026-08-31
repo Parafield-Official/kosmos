@@ -375,54 +375,53 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               <p className="ma-set-value">Mono (ACX default)</p>
             </SetItem>
           </div>
-        </div>
-      </div>
 
-      <p className="ma-set-kicker ma-set-kicker-wide">App</p>
-      <div className="ma-set-card ma-set-card-wide">
-        <SetItem icon={<FolderIcon />} title="Workspace" sub="An empty folder. New books are saved inside it.">
-          <p className="ma-set-value" title={workspace ?? undefined}>
-            {workspace ?? "No workspace chosen yet."}
-          </p>
-          <button type="button" className="btn" disabled={picking} onClick={() => void pickWorkspace()}>
-            {picking ? "Opening picker…" : workspace ? "Change workspace" : "Choose workspace"}
-          </button>
-        </SetItem>
-        <SetItem
-          icon={<RestartIcon />}
-          title="Restart onboarding"
-          sub="Welcome flow again. Microphone and speech-model access stay as they are."
-        >
-          <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
-            <RestartIcon />
-            Reset
-          </button>
-        </SetItem>
-        <SetItem icon={<InfoIcon />} title="About Kosmos Labs" sub={updateMessage}>
-          <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
-          <div className="ma-set-control-row">
-            <button
-              type="button"
-              className="btn"
-              disabled={checking || update?.skipped}
-              onClick={() => void checkForUpdates()}
-            >
-              {checking ? "Checking…" : "Check for updates"}
-            </button>
-            {update?.canInstall ? (
-              <button
-                type="button"
-                className="btn btn-clear"
-                onClick={() => void window.kosmosNext?.installAppUpdate?.()}
-              >
-                Get update
+          <p className="ma-set-kicker">App</p>
+          <div className="ma-set-card">
+            <SetItem icon={<FolderIcon />} title="Workspace" sub="An empty folder. New books are saved inside it.">
+              <p className="ma-set-value" title={workspace ?? undefined}>
+                {workspace ?? "No workspace chosen yet."}
+              </p>
+              <button type="button" className="btn" disabled={picking} onClick={() => void pickWorkspace()}>
+                {picking ? "Opening picker…" : workspace ? "Change workspace" : "Choose workspace"}
               </button>
-            ) : null}
-            <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
-              View releases
-            </button>
+            </SetItem>
+            <SetItem
+              icon={<RestartIcon />}
+              title="Restart onboarding"
+              sub="Welcome flow again. Microphone and speech-model access stay as they are."
+            >
+              <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
+                Reset
+              </button>
+            </SetItem>
+            <SetItem icon={<InfoIcon />} title="About Kosmos Labs" sub={updateMessage}>
+              <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
+              <div className="ma-set-control-row">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={checking || update?.skipped}
+                  onClick={() => void checkForUpdates()}
+                >
+                  {checking ? "Checking…" : "Check for updates"}
+                </button>
+                {update?.canInstall ? (
+                  <button
+                    type="button"
+                    className="btn btn-clear"
+                    onClick={() => void window.kosmosNext?.installAppUpdate?.()}
+                  >
+                    Get update
+                  </button>
+                ) : null}
+                <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
+                  View releases
+                </button>
+              </div>
+            </SetItem>
           </div>
-        </SetItem>
+        </div>
       </div>
     </section>
   );

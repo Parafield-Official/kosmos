@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { chapterCompletionPct } from "./book-stats";
 import { chapterStage, readChapterContent, removeChapter, type BookChapter, type BookProject, type ChapterStage } from "./store";
@@ -28,7 +28,26 @@ export function ChaptersScreen({
   const even = count > 0 && count % 2 === 0;
   const currentIndex = project.chapters.findIndex((chapter) => chapterCompletionPct(chapter) < 100);
   const allDone = count > 0 && currentIndex < 0;
-  const layout = useMemo(() => questLayout(count), [count]);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [boardW, setBoardW] = useState(720);
+  const layout = useMemo(() => questLayout(count, even, boardW), [count, even, boardW]);
+
+  useLayoutEffect(() => {
+    const node = mapRef.current;
+    if (!node) {
+      return;
+    }
+    function sync() {
+      const width = node.clientWidth;
+      if (width > 1) {
+        setBoardW((prev) => (Math.abs(prev - width) < 1 ? prev : width));
+      }
+    }
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [adding, count]);
 
   function commitAdd() {
     const title = newTitle.trim() || `Chapter ${project.chapters.length + 1}`;
@@ -88,34 +107,50 @@ export function ChaptersScreen({
         </div>
       ) : (
         <div
+          ref={mapRef}
           className={`quest-map is-${even ? "even" : "odd"}${allDone ? " is-complete" : ""}`}
-          style={{ minHeight: `${Math.max(layout.height, 18)}rem` }}
+          style={{ minHeight: layout.viewH }}
         >
-          <svg className="quest-vine" viewBox={layout.viewBox} preserveAspectRatio="none" aria-hidden="true">
-            {layout.segments.map((segment, index) => (
-              <path className="quest-vine-dim" d={segment} key={`dim-${index}`} />
-            ))}
-            {layout.segments.map((segment, index) => (
-              <path
-                className={allDone || index < Math.max(currentIndex, 0) ? "quest-vine-lit" : "quest-vine-wait"}
-                d={segment}
-                key={`lit-${index}`}
-              />
-            ))}
-            {layout.dots.map((dot, index) => (
-              <circle
-                key={index}
-                className={
-                  allDone || index < currentIndex || index === currentIndex
-                    ? "quest-vine-dot is-lit"
-                    : "quest-vine-dot"
-                }
-                cx={dot.x}
-                cy={dot.y}
-                r="1.2"
-              />
-            ))}
+          <svg
+            className="quest-vine"
+            viewBox={layout.viewBox}
+            width="100%"
+            height={layout.viewH}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <mask id="quest-trail-cut" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse">
+                <rect x="-80" y="-80" width={layout.viewW + 160} height={layout.viewH + 160} fill="white" />
+                {layout.dots.map((dot, index) => (
+                  <circle key={index} cx={dot.x} cy={dot.y} r={dot.cut} fill="black" />
+                ))}
+              </mask>
+            </defs>
+            <g mask="url(#quest-trail-cut)" style={{ filter: "none" }}>
+              <path className="quest-vine-road" d={layout.path} />
+              {layout.segments.map((segment, index) => (
+                <path
+                  className={allDone || index < Math.max(currentIndex, 0) ? "quest-vine-lit" : "quest-vine-wait"}
+                  d={segment}
+                  key={`lit-${index}`}
+                />
+              ))}
+            </g>
           </svg>
+
+          {layout.dots.map((dot, index) => {
+            const now = !allDone && index === currentIndex;
+            const lit = allDone || index <= currentIndex;
+            return (
+              <span
+                key={`bead-${index}`}
+                className={`quest-bead${now ? " is-now" : lit ? " is-lit" : ""}`}
+                style={{ left: dot.x, top: dot.y }}
+                aria-hidden="true"
+              />
+            );
+          })}
 
           {project.chapters.map((chapter, index) => {
             const point = layout.nodes[index];
@@ -129,7 +164,7 @@ export function ChaptersScreen({
                 chapter={chapter}
                 project={project}
                 side={point.side}
-                top={point.top}
+                top={point.y}
                 current={index === currentIndex}
                 onOpen={() => onOpenChapter(chapter.id)}
                 onRead={() => onRead(chapter.id)}
@@ -140,7 +175,7 @@ export function ChaptersScreen({
           })}
 
           {adding ? (
-            <div className="quest-add-card" style={{ top: `${layout.addTop}%` }}>
+            <div className="quest-add-card" style={{ top: layout.addTop }}>
               <input
                 className="quest-add-input"
                 autoFocus
@@ -174,23 +209,41 @@ export function ChaptersScreen({
   );
 }
 
-function questLayout(count: number) {
-  const even = count > 0 && count % 2 === 0;
-  const left = 46;
-  const right = 54;
-  const startY = 16;
-  const step = 36;
+function n(value: number): string {
+  return value.toFixed(1);
+}
+
+function snakeSegment(
+  prev: { x: number; y: number },
+  curr: { x: number; y: number },
+  midX: number,
+  bulge: number,
+): string {
+  const dy = curr.y - prev.y;
+  const dirPrev = Math.sign(prev.x - midX) || 1;
+  const dirCurr = Math.sign(curr.x - midX) || -1;
+  return [
+    `M ${n(prev.x)} ${n(prev.y)}`,
+    `C ${n(prev.x + dirPrev * bulge)} ${n(prev.y + dy * 0.22)}, ${n(midX + dirPrev * bulge * 0.28)} ${n(prev.y + dy * 0.48)}, ${n(midX)} ${n((prev.y + curr.y) / 2)}`,
+    `C ${n(midX + dirCurr * bulge * 0.28)} ${n(curr.y - dy * 0.48)}, ${n(curr.x + dirCurr * bulge)} ${n(curr.y - dy * 0.22)}, ${n(curr.x)} ${n(curr.y)}`,
+  ].join(" ");
+}
+
+function questLayout(count: number, even: boolean, width: number) {
+  const viewW = Math.max(width, 480);
+  const midX = viewW / 2;
+  const amp = viewW * 0.152;
+  const bulge = viewW * 0.18;
+  const startY = 108;
+  const step = 244;
   const nodes = Array.from({ length: count }, (_, index) => {
-    const startRight = even;
-    const onRight = startRight ? index % 2 === 0 : index % 2 === 1;
+    const onRight = even ? index % 2 === 0 : index % 2 === 1;
     return {
-      x: onRight ? right : left,
+      x: midX + (onRight ? amp : -amp),
       y: startY + index * step,
       side: onRight ? ("right" as const) : ("left" as const),
-      top: (startY + index * step) / Math.max(36, startY + Math.max(count - 1, 0) * step + 20),
     };
   });
-  const dots = nodes.map((node) => ({ x: node.x, y: node.y }));
   const segments: string[] = [];
   for (let index = 1; index < nodes.length; index += 1) {
     const prev = nodes[index - 1];
@@ -198,19 +251,29 @@ function questLayout(count: number) {
     if (!prev || !curr) {
       continue;
     }
-    const dy = curr.y - prev.y;
-    segments.push(
-      `M ${prev.x} ${prev.y} C ${prev.x} ${prev.y + dy * 0.55}, ${curr.x} ${curr.y - dy * 0.55}, ${curr.x} ${curr.y}`,
-    );
+    segments.push(snakeSegment(prev, curr, midX, bulge));
   }
-  const viewH = Math.max(36, startY + Math.max(count - 1, 0) * step + 20);
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  const dirFirst = first ? Math.sign(first.x - midX) || 1 : 1;
+  const dirLast = last ? Math.sign(last.x - midX) || 1 : 1;
+  const lead = first
+    ? `M ${n(midX)} 28 C ${n(midX)} 64, ${n(first.x - dirFirst * 36)} ${n(first.y - 46)}, ${n(first.x)} ${n(first.y)}`
+    : "";
+  const tail = last
+    ? `M ${n(last.x)} ${n(last.y)} C ${n(last.x - dirLast * 36)} ${n(last.y + 46)}, ${n(midX)} ${n(last.y + 84)}, ${n(midX)} ${n(last.y + 112)}`
+    : "";
+  const viewH = startY + Math.max(count - 1, 0) * step + 132;
+  const cut = 30;
   return {
-    nodes: nodes.map((node) => ({ ...node, top: (node.y / viewH) * 100 })),
-    dots,
+    nodes,
+    dots: nodes.map((node) => ({ x: node.x, y: node.y, cut })),
     segments,
-    viewBox: `0 0 100 ${viewH}`,
-    height: Math.max(20, 3.2 + count * 16.5),
-    addTop: count ? (startY + count * step) / viewH * 100 : 8,
+    path: [lead, ...segments, tail].filter(Boolean).join(" "),
+    viewBox: `0 0 ${n(viewW)} ${n(viewH)}`,
+    viewH,
+    viewW,
+    addTop: last ? last.y + 118 : 24,
   };
 }
 
@@ -246,7 +309,7 @@ function QuestNode({
   return (
     <article
       className={`quest-node is-${side}${current ? " is-current" : ""}${done ? " is-done" : ""}`}
-      style={{ top: `${top}%` }}
+      style={{ top }}
     >
       <button type="button" className="quest-cover" onClick={onOpen} aria-label={`Record ${chapter.title}`}>
         <span className="quest-folio" aria-hidden="true">

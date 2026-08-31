@@ -1030,7 +1030,7 @@
 }
 
 .vault-overlay > .ma-screen.ma-settings {
-  padding: 1.35rem 1.85rem 2.6rem;
+  padding: 1.35rem 1.85rem 6.2rem;
   gap: 0.55rem;
 }
 
@@ -2407,47 +2407,94 @@
   flex: 1;
   min-height: 20rem;
   overflow: auto;
-  padding: 0.6rem 0.2rem 3.6rem;
+  overflow-x: hidden;
+  padding: 0.4rem 0.15rem 3.2rem;
 }
 
 .quest-vine {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  display: block;
   pointer-events: none;
   overflow: visible;
 }
 
-.quest-vine-dim {
+.quest-vine-road {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.16);
-  stroke-width: 0.7;
+  stroke: rgba(255, 248, 236, 0.18);
+  stroke-width: 10;
   stroke-linecap: round;
   stroke-linejoin: round;
+  filter: none;
 }
 
 .quest-vine-wait {
   fill: none;
-  stroke: transparent;
+  stroke: rgba(255, 248, 236, 0.34);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: none;
 }
 
 .quest-vine-lit {
   fill: none;
-  stroke: #fff4e4;
-  stroke-width: 1.15;
+  stroke: #fff6ea;
+  stroke-width: 3.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-  filter: drop-shadow(0 0 2.4px rgba(255, 214, 160, 0.85));
+  filter: none;
 }
 
-.quest-vine-dot {
-  fill: rgba(255, 255, 255, 0.28);
+.quest-bead {
+  position: absolute;
+  z-index: 2;
+  width: 1.72rem;
+  height: 1.72rem;
+  box-sizing: border-box;
+  border-radius: 50%;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  background: rgba(14, 11, 9, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 4px 14px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
 }
 
-.quest-vine-dot.is-lit {
-  fill: #fff6e8;
-  filter: drop-shadow(0 0 2px rgba(255, 220, 170, 0.8));
+.quest-bead::after {
+  content: "";
+  position: absolute;
+  inset: 30%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.quest-bead.is-lit {
+  border-color: rgba(255, 248, 236, 0.62);
+}
+
+.quest-bead.is-lit::after {
+  background: rgba(255, 244, 228, 0.82);
+}
+
+.quest-bead.is-now {
+  width: 2.05rem;
+  height: 2.05rem;
+  border-color: rgba(255, 248, 236, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 0 0 7px rgba(255, 244, 228, 0.14),
+    0 0 22px rgba(255, 220, 176, 0.48);
+}
+
+.quest-bead.is-now::after {
+  background: #fff8ee;
+  box-shadow: 0 0 8px rgba(255, 230, 190, 0.95);
 }
 
 .quest-node {
@@ -2456,10 +2503,10 @@
   display: grid;
   grid-template-columns: 5.2rem minmax(0, 1fr);
   align-items: center;
-  gap: 0.9rem;
-  width: min(22.5rem, 38%);
+  gap: 0.85rem;
+  width: min(18.75rem, 28%);
   padding: 0.85rem 0.95rem 0.9rem;
-  transform: translateY(-42%);
+  transform: translateY(-50%);
   border-radius: 22px;
   background: var(--info-glass);
   border: var(--info-glass-border);
@@ -2469,16 +2516,16 @@
 }
 
 .quest-node.is-left {
-  left: 2.5%;
+  left: 1.5%;
 }
 
 .quest-node.is-right {
-  right: 2.5%;
+  right: 1.5%;
   left: auto;
 }
 
 .quest-map.is-even .quest-node {
-  width: min(22.5rem, 38%);
+  width: min(18.75rem, 28%);
 }
 
 .quest-node.is-current {
