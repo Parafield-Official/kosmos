@@ -120,8 +120,6 @@ export function ChapterWorkspace({
     onStep("recording");
   }
 
-  const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId) + 1;
-
   return (
     <section className="quest-workspace is-booth" aria-label={chapter.title}>
       <header className="quest-work-head">
@@ -130,10 +128,7 @@ export function ChapterWorkspace({
           <span>Back</span>
         </button>
         <div className="quest-work-title">
-          <h1>
-            <span className="quest-work-num">{String(Math.max(1, chapterIndex)).padStart(2, "0")}</span>
-            {chapter.title}
-          </h1>
+          <h1>{chapter.title}</h1>
         </div>
         <nav className="quest-steps" aria-label="Chapter steps">
           {STEPS.map((item) => {

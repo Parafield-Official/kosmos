@@ -10,9 +10,7 @@ export function ChaptersScreen({
   onRead,
   onAddChapter,
   onChange,
-  onExport,
-  canExport = false,
-  exportBusy = false,
+  onOpenExport,
 }: {
   project: BookProject;
   onOpenChapter: (chapterId: string) => void;
@@ -20,9 +18,7 @@ export function ChaptersScreen({
   onRead: (chapterId: string) => void;
   onAddChapter: (title: string) => void;
   onChange: (next: BookProject) => void;
-  onExport?: () => void;
-  canExport?: boolean;
-  exportBusy?: boolean;
+  onOpenExport?: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -190,13 +186,12 @@ export function ChaptersScreen({
             );
           })}
 
-          {layout.finish && onExport ? (
+          {layout.finish && onOpenExport ? (
             <QuestFinish
               side={layout.finish.side}
               top={layout.finish.y}
-              ready={canExport}
-              busy={exportBusy}
-              onExport={onExport}
+              ready={project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered)}
+              onOpen={onOpenExport}
             />
           ) : null}
 
@@ -375,36 +370,28 @@ function QuestFinish({
   side,
   top,
   ready,
-  busy,
-  onExport,
+  onOpen,
 }: {
   side: "left" | "right";
   top: number;
   ready: boolean;
-  busy: boolean;
-  onExport: () => void;
+  onOpen: () => void;
 }) {
   return (
-    <article className={`quest-node is-${side} is-finish${ready ? " is-ready" : ""}`} style={{ top }}>
-      <span className="quest-finish-mark" aria-hidden="true">
+    <button
+      type="button"
+      className={`quest-end is-${side}${ready ? " is-ready" : ""}`}
+      style={{ top }}
+      onClick={onOpen}
+    >
+      <span className="quest-end-mark" aria-hidden="true">
         <ExportGlyph />
       </span>
-      <div className="quest-meta">
-        <div className="quest-copy">
-          <p className="quest-index">End</p>
-          <h2 className="quest-title">Export ACX</h2>
-          <p className="quest-status">
-            {busy ? "Packing the book…" : ready ? "Ready to pack" : "Master every chapter first"}
-          </p>
-        </div>
-        <div className="quest-acts">
-          <button type="button" className="quest-act is-primary" onClick={onExport} disabled={!ready || busy}>
-            <ExportGlyph />
-            {busy ? "Exporting…" : "Export"}
-          </button>
-        </div>
-      </div>
-    </article>
+      <span className="quest-end-copy">
+        <strong>Export ACX</strong>
+        <em>{ready ? "Pack the book" : "Open the pack desk"}</em>
+      </span>
+    </button>
   );
 }
 

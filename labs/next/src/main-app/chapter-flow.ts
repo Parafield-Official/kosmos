@@ -1,6 +1,6 @@
 import { chapterStage, type BookChapter } from "./store";
 
-export type BookTab = "dashboard" | "chapters" | "pronunciation";
+export type BookTab = "dashboard" | "chapters" | "pronunciation" | "export";
 export type ChapterStep = "recording" | "proofreading" | "mastering";
 
 export function defaultChapterStep(chapter: BookChapter): ChapterStep {

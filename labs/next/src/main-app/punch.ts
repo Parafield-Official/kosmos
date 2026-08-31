@@ -158,16 +158,23 @@ export async function masterChapterWorking(project: BookProject, chapterId: stri
   return applyMasteredTape(project, chapterId, masteredFile);
 }
 
-export async function exportBookPack(project: BookProject): Promise<BookProject> {
+export type ExportPackMode = "acx" | "handoff";
+
+export async function exportBookPack(
+  project: BookProject,
+  mode: ExportPackMode = "acx",
+): Promise<BookProject> {
   if (!project.folder || !window.kosmosNext?.exportDelivery) {
     throw new Error("Export needs the desktop app.");
   }
   const result = await window.kosmosNext.exportDelivery({
     folder: project.folder,
     presetId: readEnginePrefs().spec_preset_id,
+    mode,
     chapters: project.chapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
+      originalFile: chapter.originalFile,
       workingFile: chapter.workingFile,
       masteredFile: chapter.masteredFile,
       mastered: chapter.mastered,
@@ -176,6 +183,9 @@ export async function exportBookPack(project: BookProject): Promise<BookProject>
   });
   if (!result.ok) {
     throw new Error(result.reason || "Export failed.");
+  }
+  if (mode === "handoff") {
+    return project;
   }
   return { ...project, completedAt: new Date().toISOString() };
 }

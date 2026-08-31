@@ -1086,17 +1086,9 @@ export function RecordScreen({
           </div>
         ) : null}
 
-        <div className="ma-booth-dock">
-          <div className="booth-tool-row">
-            {boothTools}
-            <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Reading">
-              <TypeGlyph />
-              <span>Reading</span>
-            </button>
-            {importSlot}
-          </div>
-
-          <div className="ma-recorder">
+        <div className="ma-booth-rail">
+          <div className="ma-booth-panel ma-booth-session">
+            <p className="ma-booth-kicker">Take</p>
             <div className="ma-level" aria-hidden="true">
               <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
             </div>
@@ -1148,46 +1140,68 @@ export function RecordScreen({
                 </button>
               ) : null}
             </div>
-            <div className="ma-rec-meta">
-              <label className="ma-booth-input">
-                <MicInputGlyph />
-                <span className="ma-visually-hidden">Microphone</span>
-                <select
-                  value={inputId}
-                  disabled={recording}
-                  onChange={(event) => {
-                    setInputId(event.target.value);
-                    persistChoice(MIC_KEY, event.target.value);
-                  }}
-                >
-                  <option value="">System default</option>
-                  {audioInputs.map((device, index) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {device.label || `Microphone ${index + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
-              <span className="ma-rec-mark">
-                {shownPct}% · Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
-              </span>
-            </div>
             {originalUrl && !recording ? (
               <div className="ma-take-latest">
                 <span className="ma-take-label">Original</span>
                 <audio className="ma-audio" src={originalUrl} controls />
               </div>
             ) : null}
-            {error ? <p className="ma-error">{error}</p> : null}
-            <p className="ma-visually-hidden">{followHint}</p>
-            <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
           </div>
+
+          <div className="ma-booth-panel ma-booth-place">
+            <p className="ma-booth-kicker">Place</p>
+            <div className="ma-booth-place-meter" aria-label={`${shownPct} percent of the page`}>
+              <span className="ma-dash-meter-track">
+                <i style={{ width: `${shownPct}%` }} />
+              </span>
+            </div>
+            <p className="ma-booth-place-label">{shownPct}% of the page</p>
+            <p className="ma-booth-place-copy">
+              Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
+            </p>
+            <p className="ma-booth-place-copy">
+              {recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}
+            </p>
+          </div>
+
+          <div className="ma-booth-panel ma-booth-setup">
+            <p className="ma-booth-kicker">Booth</p>
+            <label className="ma-booth-input">
+              <MicInputGlyph />
+              <span className="ma-visually-hidden">Microphone</span>
+              <select
+                value={inputId}
+                disabled={recording}
+                onChange={(event) => {
+                  setInputId(event.target.value);
+                  persistChoice(MIC_KEY, event.target.value);
+                }}
+              >
+                <option value="">System default</option>
+                {audioInputs.map((device, index) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label || `Microphone ${index + 1}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="booth-tool-row">
+              {boothTools}
+              <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
+                <TypeGlyph />
+                <span>Page</span>
+              </button>
+              {importSlot}
+            </div>
+          </div>
+          {error ? <p className="ma-error">{error}</p> : null}
+          <p className="ma-visually-hidden">{followHint}</p>
+          <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </section>
 
       {readingOpen ? (
-        <BoothSheet title="Reading" wide onClose={() => setReadingOpen(false)}>
+        <BoothSheet title="Teleprompter" wide onClose={() => setReadingOpen(false)}>
           <BoothReadingPanel
             highlight={highlight}
             lineSpacing={lineSpacing}
@@ -1349,6 +1363,6 @@ function tokenMarkStyle(token: { style?: Array<"bold" | "italic" | "underline" |
     fontWeight: token.style.includes("bold") ? 700 : undefined,
     fontStyle: token.style.includes("italic") ? "italic" : undefined,
     textDecoration: token.style.includes("underline") ? "underline" : undefined,
-    background: token.style.includes("highlight") ? "rgba(236, 190, 88, 0.28)" : undefined,
+    background: token.style.includes("highlight") ? "rgba(255, 255, 255, 0.16)" : undefined,
   };
 }

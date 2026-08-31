@@ -597,21 +597,45 @@ async function encodeDeliveryAudio(inputPath, outputPath, profile, durationSecon
   await runFfmpeg(args);
 }
 
+function chapterPackSource(chapter, handoff) {
+  if (chapter?.masteredFile) {
+    return chapter.masteredFile;
+  }
+  if (chapter?.workingFile) {
+    return chapter.workingFile;
+  }
+  if (handoff && chapter?.originalFile) {
+    return chapter.originalFile;
+  }
+  return null;
+}
+
 async function exportDeliveryPack(payload) {
   const folder = payload?.folder;
-  const chapters = Array.isArray(payload?.chapters) ? payload.chapters : [];
+  const handoff = payload?.mode === "handoff";
+  const incoming = Array.isArray(payload?.chapters) ? payload.chapters : [];
+  const chapters = handoff
+    ? incoming.filter((chapter) => chapterPackSource(chapter, true))
+    : incoming;
   if (typeof folder !== "string") {
     return { ok: false, reason: "A project folder is required to export." };
   }
   if (chapters.length === 0) {
-    return { ok: false, reason: "Add at least one chapter before exporting." };
-  }
-  const missing = chapters.filter((chapter) => !(chapter?.masteredFile || chapter?.workingFile) || !chapter.mastered);
-  if (missing.length) {
     return {
       ok: false,
-      reason: `Master every chapter first. Missing: ${missing.map((chapter) => chapter.title || chapter.id).slice(0, 3).join(", ")}.`,
+      reason: handoff
+        ? "Record at least one chapter before handing the book off."
+        : "Add at least one chapter before exporting.",
     };
+  }
+  if (!handoff) {
+    const missing = chapters.filter((chapter) => !chapterPackSource(chapter, false) || !chapter.mastered);
+    if (missing.length) {
+      return {
+        ok: false,
+        reason: `Master every chapter first. Missing: ${missing.map((chapter) => chapter.title || chapter.id).slice(0, 3).join(", ")}.`,
+      };
+    }
   }
 
   const masterCore = loadCoreModule("master");
@@ -619,11 +643,12 @@ async function exportDeliveryPack(payload) {
   const markersCore = loadCoreModule("markers");
   const preset = presetFromPayload(masterCore, payload);
   const profile = masterCore.deliveryProfile(preset);
-  const outputFolder = path.join(folder, "export", profile.folderName);
+  const packName = handoff ? `${profile.folderName}-handoff` : profile.folderName;
+  const outputFolder = path.join(folder, "export", packName);
   // Linked/external books may not have an export/ folder yet; the staging dir
   // is created inside it, so make sure it exists before mkdtemp.
   await fs.mkdir(path.dirname(outputFolder), { recursive: true });
-  const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), `.${profile.folderName}-staging-`));
+  const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), `.${packName}-staging-`));
   const temporaryFolder = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-labs-export-"));
   const entries = [];
   const outputFiles = [];
@@ -631,7 +656,10 @@ async function exportDeliveryPack(payload) {
 
   try {
     for (const [index, chapter] of chapters.entries()) {
-      const sourceFile = chapter.masteredFile || chapter.workingFile;
+      const sourceFile = chapterPackSource(chapter, handoff);
+      if (!sourceFile) {
+        continue;
+      }
       const filePath = audioPath(folder, sourceFile);
       const decoded = await decodeAudioPcm(filePath);
       const samples = mixInterleavedToMono(float32View(decoded.pcm), decoded.channels);
@@ -669,7 +697,7 @@ async function exportDeliveryPack(payload) {
     }
 
     const failed = entries.filter((entry) => entry.status === "fail");
-    if (failed.length) {
+    if (!handoff && failed.length) {
       const preview = failed.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || `failed ${preset.label} checks`}`).join("; ");
       throw new Error(`${preset.label} export stopped because ${failed.length} chapter${failed.length === 1 ? "" : "s"} failed: ${preview}`);
     }
@@ -680,7 +708,7 @@ async function exportDeliveryPack(payload) {
         index: index + 1,
         title: chapter.title ?? `Chapter ${index + 1}`,
         text_path: "",
-        audio_path: `audio/${chapter.masteredFile || chapter.workingFile}`,
+        audio_path: `audio/${chapterPackSource(chapter, handoff)}`,
         author_status: "approved",
       })),
     };
@@ -690,7 +718,7 @@ async function exportDeliveryPack(payload) {
     }
 
     const retailSpec = exportCore.ACX_SPEC?.retail_sample_s ?? { min: 60, max: 300 };
-    if (profile.includeRetailSample && retailPcm) {
+    if (!handoff && profile.includeRetailSample && retailPcm) {
       const start = Math.min(retailPcm.length, Math.round(profile.headSeconds * profile.sampleRate));
       const availableLength = Math.max(0, retailPcm.length - start);
       const minimumSamples = Math.round(retailSpec.min * profile.sampleRate);

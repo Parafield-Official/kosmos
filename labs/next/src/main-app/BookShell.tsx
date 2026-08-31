@@ -8,9 +8,6 @@ export function BookShell({
   onTab,
   onBack,
   onDelete,
-  onExport,
-  canExport = false,
-  exportBusy = false,
   children,
 }: {
   project: BookProject;
@@ -18,9 +15,6 @@ export function BookShell({
   onTab: (tab: BookTab) => void;
   onBack: () => void;
   onDelete?: () => void;
-  onExport?: () => void;
-  canExport?: boolean;
-  exportBusy?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -57,17 +51,15 @@ export function BookShell({
           Pronunciation
           {tab === "pronunciation" ? <span className="ma-book-nav-dot" aria-hidden="true" /> : null}
         </button>
-        {onExport ? (
-          <button
-            type="button"
-            className="ma-book-nav-item ma-book-nav-export"
-            onClick={onExport}
-            disabled={!canExport || exportBusy}
-          >
-            <ExportGlyph />
-            {exportBusy ? "Exporting…" : "Export ACX"}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={tab === "export" ? "ma-book-nav-item ma-book-nav-export is-on" : "ma-book-nav-item ma-book-nav-export"}
+          onClick={() => onTab("export")}
+        >
+          <BookNavIcon tab="export" />
+          Export ACX
+          {tab === "export" ? <span className="ma-book-nav-dot" aria-hidden="true" /> : null}
+        </button>
         {onDelete ? (
           <>
             <span className="ma-book-nav-rule" aria-hidden="true" />
@@ -105,6 +97,15 @@ function BookNavIcon({ tab }: { tab: BookTab }) {
       </svg>
     );
   }
+  if (tab === "export") {
+    return (
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M10 3.4v8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M6.8 6.4 10 3.2l3.2 3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M4.2 11.6v3.2A1.5 1.5 0 0 0 5.7 16.3h8.6a1.5 1.5 0 0 0 1.5-1.5v-3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M3.5 11.8V8.2m3 6.2V5.6m3 11V3.4m3 11V5.6m3 6.2V8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -116,16 +117,6 @@ function ChevronLeft() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
       <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ExportGlyph() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M10 3.4v8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M6.8 6.4 10 3.2l3.2 3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4.2 11.6v3.2A1.5 1.5 0 0 0 5.7 16.3h8.6a1.5 1.5 0 0 0 1.5-1.5v-3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }

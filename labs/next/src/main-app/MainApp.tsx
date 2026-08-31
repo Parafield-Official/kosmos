@@ -18,13 +18,13 @@ import { BookShell } from "./BookShell";
 import { DashboardScreen } from "./DashboardScreen";
 import { ChaptersScreen } from "./ChaptersScreen";
 import { PronunciationScreen } from "./PronunciationScreen";
+import { ExportAcxScreen } from "./ExportAcxScreen";
 import { ChapterWorkspace } from "./ChapterWorkspace";
 import { ChapterEditor } from "./ChapterEditor";
 import { SettingsScreen } from "./SettingsScreen";
 import { VaultReadSheet } from "./vault-media";
 import { ThemeAtmosphere } from "./ThemeAtmosphere";
 import { THEME_ACCENT_EVENT, accentOption, readThemeAccent, type ThemeAccent, type ThemeAccentOption } from "./theme";
-import { exportBookPack } from "./punch";
 import "./main-app.css";
 
 type WorkScreen =
@@ -57,7 +57,6 @@ export function MainApp() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BookProject | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
 
   useEffect(() => {
     const onThemeAccent = (event: Event) => {
@@ -258,17 +257,6 @@ export function MainApp() {
       />
     );
   } else if (screen.name === "book") {
-    const canExport =
-      screen.project.chapters.length > 0 && screen.project.chapters.every((chapter) => chapter.mastered);
-    const startExport = () => {
-      if (exportBusy) {
-        return;
-      }
-      setExportBusy(true);
-      void exportBookPack(screen.project)
-        .then((next) => commit(next))
-        .finally(() => setExportBusy(false));
-    };
     overlay = (
       <BookShell
         project={screen.project}
@@ -276,9 +264,6 @@ export function MainApp() {
         onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
         onBack={openLibrary}
         onDelete={() => setDeleteTarget(screen.project)}
-        canExport={canExport}
-        exportBusy={exportBusy}
-        onExport={startExport}
       >
         {screen.tab === "dashboard" ? (
           <DashboardScreen
@@ -298,13 +283,14 @@ export function MainApp() {
             onRead={(chapterId) => openReader(screen.project, chapterId)}
             onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
             onChange={(next) => void commit(next)}
-            canExport={canExport}
-            exportBusy={exportBusy}
-            onExport={startExport}
+            onOpenExport={() => setScreen({ name: "book", project: screen.project, tab: "export" })}
           />
         ) : null}
         {screen.tab === "pronunciation" ? (
           <PronunciationScreen project={screen.project} onChange={(next) => void commit(next)} />
+        ) : null}
+        {screen.tab === "export" ? (
+          <ExportAcxScreen project={screen.project} onChange={(next) => void commit(next)} />
         ) : null}
       </BookShell>
     );

@@ -241,9 +241,9 @@ export function ReviewScreen({
           </button>
         )}
         <div className="ma-chapter-head-actions">
-          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
-            Reading
-          </button>
+            <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
+              Page
+            </button>
           {resolved.length > 0 || punches.length > 0 ? (
             <button type="button" className="booth-tool" onClick={() => setHistoryOpen(true)}>
               History
@@ -326,7 +326,7 @@ export function ReviewScreen({
       </div>
 
       {readingOpen ? (
-        <BoothSheet title="Reading" wide onClose={() => setReadingOpen(false)}>
+        <BoothSheet title="Teleprompter" wide onClose={() => setReadingOpen(false)}>
           <BoothReadingPanel
             highlight={highlight}
             lineSpacing={lineSpacing}

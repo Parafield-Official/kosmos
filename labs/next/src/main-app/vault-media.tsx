@@ -8,6 +8,29 @@ function bookHasAudiobook(project: BookProject): boolean {
   return project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered && Boolean(chapter.masteredFile));
 }
 
+function chapterListenFile(
+  chapter: { masteredFile?: string; workingFile?: string; originalFile?: string } | undefined,
+  partial: boolean,
+): string | undefined {
+  if (!chapter) {
+    return undefined;
+  }
+  if (chapter.masteredFile) {
+    return chapter.masteredFile;
+  }
+  if (!partial) {
+    return undefined;
+  }
+  return chapter.workingFile || chapter.originalFile;
+}
+
+function bookCanPlay(project: BookProject, partial: boolean): boolean {
+  if (partial) {
+    return project.chapters.some((chapter) => chapterListenFile(chapter, true));
+  }
+  return bookHasAudiobook(project);
+}
+
 function formatClock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) {
     return "0:00";
@@ -157,23 +180,25 @@ export function VaultListenSheet({
   renderCover,
   onBack,
   embedded,
+  allowPartial = false,
 }: {
   seed: BookProject;
   library: BookProject[];
   renderCover: (project: BookProject) => ReactNode;
   onBack: () => void;
   embedded?: boolean;
+  allowPartial?: boolean;
 }) {
   const shelf = useMemo(() => {
     if (embedded) {
-      return bookHasAudiobook(seed) ? [seed] : [];
+      return bookCanPlay(seed, allowPartial) ? [seed] : [];
     }
     const completed = library.filter(bookHasAudiobook);
     if (completed.some((item) => item.id === seed.id)) {
       return completed;
     }
-    return bookHasAudiobook(seed) ? [seed, ...completed] : completed;
-  }, [embedded, library, seed]);
+    return bookCanPlay(seed, allowPartial) ? [seed, ...completed] : completed;
+  }, [allowPartial, embedded, library, seed]);
   const shelfIds = useMemo(() => shelf.map((item) => item.id), [shelf]);
   const [bookId, setBookId] = useState(seed.id);
   const [chapterIndex, setChapterIndex] = useState(0);
@@ -218,7 +243,7 @@ export function VaultListenSheet({
 
   useEffect(() => {
     const current = shelfRef.current.find((item) => item.id === bookId) ?? seedRef.current;
-    const file = current.chapters[chapterIndex]?.masteredFile;
+    const file = chapterListenFile(current.chapters[chapterIndex], allowPartial);
     const audio = new Audio();
     audioRef.current = audio;
     audio.playbackRate = rateRef.current;
@@ -297,7 +322,7 @@ export function VaultListenSheet({
         audioRef.current = null;
       }
     };
-  }, [bookId, chapterIndex]);
+  }, [allowPartial, bookId, chapterIndex]);
 
   useEffect(() => {
     if (audioRef.current) {

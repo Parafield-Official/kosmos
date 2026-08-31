@@ -207,9 +207,11 @@ declare global {
       exportDelivery?: (payload: {
         folder: string;
         presetId?: string;
+        mode?: "acx" | "handoff";
         chapters: Array<{
           id: string;
           title: string;
+          originalFile?: string;
           workingFile?: string;
           masteredFile?: string;
           mastered?: boolean;
