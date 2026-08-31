@@ -58,6 +58,7 @@ import {
   encodePcmWav,
   float32ToBase64,
   highlightBand,
+  isSpokenChapterHeading,
   measureRows,
   mergeRecordedWords,
   resumeSecondsOf,
@@ -1003,7 +1004,14 @@ export function RecordScreen({
             <span>{chapter.title}</span>
           </button>
         </header>
-      ) : null}
+      ) : (
+        <div className="booth-chrome">
+          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
+            <TypeGlyph />
+            <span>Page</span>
+          </button>
+        </div>
+      )}
 
       <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
         <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
@@ -1013,10 +1021,14 @@ export function RecordScreen({
                 script.paragraphs.map((para, paraIndex) => {
                   let word = para.firstWord;
                   const paraCurrent = cursor >= para.firstWord && cursor < para.firstWord + para.wordCount;
+                  const heading = isSpokenChapterHeading(
+                    para.tokens.map((token) => token.text).join(""),
+                    chapter.title,
+                  );
                   return (
                     <p
                       key={paraIndex}
-                      className={`ma-tp-line${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
+                      className={`ma-tp-line${heading ? " is-heading" : ""}${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
                     >
                       {para.tokens.map((token, tokenIndex) => {
                         const glossary = token.glossaryId
@@ -1212,10 +1224,6 @@ export function RecordScreen({
             </label>
             <div className="booth-tool-row">
               {boothTools}
-              <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
-                <TypeGlyph />
-                <span>Page</span>
-              </button>
               {importSlot}
             </div>
           </div>

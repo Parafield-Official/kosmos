@@ -4461,7 +4461,20 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   height: 100%;
 }
 
+.booth-chrome,
+.booth-chrome-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.booth-chrome {
+  flex: none;
+}
+
 .ma-review-embed > .ma-overview-head,
+.ma-review-embed > .booth-chrome,
 .ma-review-embed > .ma-proof-alerts {
   flex: none;
 }

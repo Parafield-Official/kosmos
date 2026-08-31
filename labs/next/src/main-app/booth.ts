@@ -20,6 +20,12 @@ export type BoothParagraph = BoothMarkedParagraph;
 
 const BLOCK_SELECTOR = "p, h1, h2, h3, li, blockquote";
 
+export function isSpokenChapterHeading(text: string, title: string): boolean {
+  const spoken = text.trim().replace(/\s+/g, " ").toLowerCase();
+  const name = title.trim().replace(/\s+/g, " ").toLowerCase();
+  return Boolean(spoken && name && spoken === name);
+}
+
 export function paragraphsFromHtml(html: string): string[] {
   const doc = new DOMParser().parseFromString(html || "", "text/html");
   const nodes = Array.from(doc.body.querySelectorAll(BLOCK_SELECTOR));

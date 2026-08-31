@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { tokenizeManuscript } from "../../../../src/core/proof/normalize";
+import { isSpokenChapterHeading } from "./booth";
 import {
   buildNarrationRedoRanges,
   createNarratorRedoPickup,
@@ -15,6 +16,7 @@ import type { ChapterPickup, PromptHighlightMode, PromptTheme } from "./store";
  */
 export function ReviewScript({
   chapterId,
+  chapterTitle,
   manuscript,
   transcript,
   pickups = [],
@@ -27,6 +29,7 @@ export function ReviewScript({
   onRedo,
 }: {
   chapterId: string;
+  chapterTitle?: string;
   manuscript: string;
   transcript: TranscriptWord[];
   pickups?: ChapterPickup[];
@@ -177,7 +180,14 @@ export function ReviewScript({
         onMouseUp={onMouseUp}
       >
         {blocks.map((block, index) => (
-          <p key={index}>
+          <p
+            key={index}
+            className={
+              chapterTitle && isSpokenChapterHeading(block.parts.map((part) => part.text).join(""), chapterTitle)
+                ? "is-heading"
+                : undefined
+            }
+          >
             {block.parts.map((part, partIndex) =>
               part.tokenIndex === undefined ? (
                 <span key={partIndex}>{part.text}</span>

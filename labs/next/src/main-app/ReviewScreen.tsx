@@ -5,7 +5,7 @@ import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
 import { paragraphsFromHtml } from "./booth";
-import { flagKindLabel, flagWrongCopy } from "./flag-kind";
+import { flagKindLabel } from "./flag-kind";
 import { PunchRecorder } from "./PunchRecorder";
 import { applyPunchRecording, previewPunchRecording } from "./punch";
 import { ReviewScript } from "./ReviewScript";
@@ -233,29 +233,30 @@ export function ReviewScreen({
 
   return (
     <section className={embedded ? "ma-review-embed" : "ma-screen ma-review"} aria-label={`Review ${chapter.title}`}>
-      <header className="ma-overview-head">
+      <header className={embedded ? "booth-chrome" : "ma-overview-head"}>
         {embedded ? null : (
           <button type="button" className="ma-back" onClick={onBack} aria-label="Back to chapter">
             <ChevronLeft />
             <span>{chapter.title}</span>
           </button>
         )}
-        <div className="ma-chapter-head-actions">
-            <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
-              Page
-            </button>
+        <div className={embedded ? "booth-chrome-tools" : "ma-chapter-head-actions"}>
+          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
+            <TypeGlyph />
+            <span>Page</span>
+          </button>
           {resolved.length > 0 || punches.length > 0 ? (
             <button type="button" className="booth-tool" onClick={() => setHistoryOpen(true)}>
               History
             </button>
           ) : null}
           {onStartOver ? (
-            <button type="button" className="btn btn-sm" onClick={onStartOver}>
+            <button type="button" className="booth-tool" onClick={onStartOver}>
               Start over
             </button>
           ) : null}
           {onContinueMaster ? (
-            <button type="button" className="btn btn-clear" onClick={onContinueMaster} disabled={mastering}>
+            <button type="button" className="booth-tool" onClick={onContinueMaster} disabled={mastering}>
               {mastering ? "Mastering…" : "Mastering"}
             </button>
           ) : null}
@@ -274,6 +275,7 @@ export function ReviewScreen({
         {manuscript ? (
           <ReviewScript
             chapterId={chapterId}
+            chapterTitle={chapter.title}
             manuscript={manuscript}
             transcript={transcript}
             pickups={open}
@@ -474,23 +476,25 @@ function PickupRow({
 }) {
   const kind = pickupKindPresentation(pickup.kind);
   const bounds = pickupLineBounds(pickup);
+  const word = (pickup.expected || pickup.heard || "").trim();
+  const line = (pickup.line_text || "").trim();
   return (
-    <li className="ma-pickup-row neu-card">
+    <li className="ma-pickup-row ma-booth-panel">
       <div className="ma-pickup-head">
         <span className={`ma-pickup-kind ma-pickup-${kind.tone}`}>{flagKindLabel(pickup.kind)}</span>
         <span className="ma-pickup-time">
           {bounds.start.toFixed(1)}s – {bounds.end.toFixed(1)}s
         </span>
       </div>
-      <p className="ma-pickup-wrong">{flagWrongCopy(pickup)}</p>
-      <p className="ma-pickup-line">{pickup.line_text || pickup.expected || "—"}</p>
+      <p className="ma-pickup-word">{word || "—"}</p>
       {pickup.heard && pickup.heard !== pickup.expected ? (
         <p className="ma-pickup-heard">Heard “{pickup.heard}”</p>
       ) : null}
-      <div className="ma-step-actions">
+      {line && line !== word ? <p className="ma-pickup-line">{line}</p> : null}
+      <div className="ma-flag-actions">
         <button
           type="button"
-          className="btn btn-sm"
+          className="booth-tool"
           disabled={!hasOriginal}
           onClick={onPlayOriginal}
           aria-pressed={playing === `original-${pickup.id}`}
@@ -499,29 +503,37 @@ function PickupRow({
         </button>
         <button
           type="button"
-          className="btn btn-sm"
+          className="booth-tool"
           disabled={!hasWorking}
           onClick={onPlayWorking}
           aria-pressed={playing === `working-${pickup.id}`}
         >
           {playing === `working-${pickup.id}` ? "Playing newer" : "Listen updated"}
         </button>
-        <button type="button" className="btn btn-sm" onClick={onKeep}>
+        <button type="button" className="booth-tool" onClick={onKeep}>
           Keep take
         </button>
-        <button type="button" className="btn btn-sm" onClick={onFixed}>
+        <button type="button" className="booth-tool" onClick={onFixed}>
           Mark resolved
         </button>
-        <button type="button" className="btn btn-sm" onClick={onPunch}>
+        <button type="button" className="booth-tool is-wide" onClick={onPunch}>
           Re-record
         </button>
         {onNeverFlag && suppressLabel(pickup) ? (
-          <button type="button" className="btn btn-sm btn-clear" onClick={onNeverFlag}>
+          <button type="button" className="booth-tool is-wide" onClick={onNeverFlag}>
             Never flag “{suppressLabel(pickup)}”
           </button>
         ) : null}
       </div>
     </li>
+  );
+}
+
+function TypeGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.2 4.2V3.2h9.6v1M8 3.2v9.6M5.8 12.8h4.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }
 

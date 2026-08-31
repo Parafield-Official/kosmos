@@ -3259,10 +3259,10 @@
 
 .quest-workspace.is-booth .quest-work-title h1 {
   overflow: hidden;
-  font-size: 1.72rem;
-  font-weight: 600;
-  letter-spacing: -0.05em;
-  line-height: 1.05;
+  font-size: 1.22rem;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3581,14 +3581,30 @@
 .vault-overlay .quest-workspace .ma-record-embed {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 15.4rem;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "chrome chrome"
+    "prompt rail";
   align-items: stretch;
-  gap: 1.75rem;
+  column-gap: 1.75rem;
+  row-gap: 0.75rem;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  padding: 0.15rem 1.15rem 0.2rem;
-  justify-content: center;
+  padding: 0.05rem 0 0.2rem;
+  justify-content: stretch;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed > .booth-chrome {
+  grid-area: chrome;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed > .ma-flow-prompt {
+  grid-area: prompt;
+}
+
+.vault-overlay .quest-workspace .ma-record-embed > .ma-booth-mic {
+  grid-area: rail;
 }
 
 .vault-overlay .quest-workspace .ma-booth-mic {
@@ -3609,62 +3625,145 @@
 }
 
 .vault-overlay .quest-workspace .ma-review-embed {
-  gap: 0.95rem;
-  padding: 0.15rem 1.15rem 0.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.05rem 0 0.2rem;
+  height: 100%;
+  min-height: 0;
 }
 
-.vault-overlay .quest-workspace .ma-review-embed > .ma-overview-head {
+.vault-overlay .quest-workspace .ma-review-embed > .ma-proof-stage {
+  flex: 1;
+  min-height: 0;
+}
+
+.vault-overlay .quest-workspace .booth-chrome,
+.vault-overlay .quest-workspace .ma-record-embed > .booth-chrome {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-start;
   margin: 0;
-  justify-content: center;
-  gap: 0.65rem;
-  padding: 0 0.15rem 0.2rem;
+  padding: 0;
+}
+
+.vault-overlay .quest-workspace .booth-chrome-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .vault-overlay .quest-workspace .ma-proof-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 15.4rem;
+  grid-template-columns: minmax(0, 1fr) 18.2rem;
+  align-items: stretch;
   gap: 1.75rem;
   min-height: 0;
+  height: 100%;
 }
 
 .vault-overlay .quest-workspace .ma-proof-prompt {
   display: flex;
-  justify-content: center;
-  padding: 0.15rem 1.05rem 2.1rem 0.45rem;
+  justify-content: flex-start;
+  align-items: stretch;
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  padding: 0.15rem 1.05rem 2.1rem 0;
   box-sizing: border-box;
 }
 
 .vault-overlay .quest-workspace .ma-proof-prompt .ma-review-script {
-  width: min(100%, 38.5rem);
-  margin-inline: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin-inline: 0;
 }
 
 .vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose {
+  height: 100%;
+  min-height: 0;
+  padding: 1.45rem 1.55rem 1.8rem;
   border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 10px 0 16px -12px rgba(0, 0, 0, 0.28),
+    0 18px 44px rgba(8, 6, 4, 0.3);
+}
+
+.vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose p.is-heading,
+.vault-overlay .quest-workspace .ma-record-embed .ma-tp-line.is-heading {
+  margin: 0 0 1.55em;
+  color: color-mix(in srgb, currentColor 42%, transparent);
+  font-size: 0.78em;
+  font-weight: 400;
+  letter-spacing: 0.05em;
 }
 
 .vault-overlay .quest-workspace .ma-proof-side {
   display: flex;
   flex-direction: column;
-  width: min(100%, 14.6rem);
-  margin-inline: auto;
-  padding: 0.1rem 0.2rem 1.65rem;
+  width: min(100%, 18.2rem);
+  min-height: 0;
+  max-height: 100%;
+  height: 100%;
+  margin-inline: 0;
+  padding: 0.15rem 0 2.1rem;
   box-sizing: border-box;
+  overflow: auto;
 }
 
 .vault-overlay .quest-workspace .ma-proof-side .ma-chapter-empty,
-.vault-overlay .quest-workspace .ma-pickup-row {
-  padding: 0.95rem 1rem;
-  border-radius: 18px;
-  background: rgba(8, 6, 5, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 12px 28px rgba(0, 0, 0, 0.18);
+.vault-overlay .quest-workspace .ma-proof-side .ma-pickup-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.78rem;
+  padding: 1.05rem 1rem 1.1rem;
 }
 
 .vault-overlay .quest-workspace .ma-pickup-list {
-  gap: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.vault-overlay .quest-workspace .ma-pickup-kind,
+.vault-overlay .quest-workspace .ma-pickup-time,
+.vault-overlay .quest-workspace .ma-pickup-heard {
+  color: rgba(247, 242, 235, 0.62);
+}
+
+.vault-overlay .quest-workspace .ma-pickup-word {
+  margin: 0;
+  color: #f7f2eb;
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.vault-overlay .quest-workspace .ma-pickup-line {
+  color: rgba(247, 242, 235, 0.78);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.vault-overlay .quest-workspace .ma-flag-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  margin-top: 0.2rem;
+}
+
+.vault-overlay .quest-workspace .ma-flag-actions .booth-tool {
+  width: 100%;
+  min-height: 2.05rem;
+  justify-content: center;
+}
+
+.vault-overlay .quest-workspace .ma-flag-actions .booth-tool.is-wide {
+  grid-column: 1 / -1;
 }
 
 .vault-overlay .quest-sheet .ma-editor-bar {
@@ -3685,8 +3784,8 @@
   min-height: 0;
 }
 
-.vault-overlay .ma-review-embed > .ma-overview-head {
-  justify-content: center;
+.vault-overlay .ma-review-embed > .booth-chrome {
+  justify-content: flex-start;
 }
 
 .vault-overlay .quest-sheet .ma-tool,
@@ -4152,22 +4251,22 @@
 .vault-overlay .quest-workspace .ma-record-embed .ma-flow-prompt {
   display: flex;
   flex-direction: row;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: stretch;
   min-height: 0;
   max-height: 100%;
   height: 100%;
-  padding: 0.15rem 1.05rem 2.1rem 0.45rem;
+  padding: 0.15rem 1.05rem 2.1rem 0;
   box-sizing: border-box;
 }
 
 .vault-overlay .quest-workspace .ma-record-embed .ma-teleprompter {
-  width: min(100%, 38.5rem);
+  width: 100%;
   height: 100%;
   min-height: 0;
   flex: 1;
   align-self: stretch;
-  margin-inline: auto;
+  margin-inline: 0;
   border-radius: 18px;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
