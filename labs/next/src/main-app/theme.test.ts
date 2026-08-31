@@ -4,6 +4,7 @@ import {
   atmosphereClouds,
   clampPigmentHex,
   hslFromHex,
+  marbleVeins,
   parseHexColor,
   pigmentHexFromHsl,
   rgbToHsl,
@@ -16,11 +17,12 @@ describe("pigment colour math", () => {
     expect(parseHexColor("not-a-color")).toBeNull();
   });
 
-  it("lets mixed pigments stay bright", () => {
+  it("keeps mixed pigments inside the dark atmosphere range", () => {
     const neon = clampPigmentHex("#ffe600");
     const hsl = hslFromHex(neon);
-    expect(hsl.s).toBeGreaterThan(0.7);
-    expect(hsl.l).toBeGreaterThan(0.45);
+    expect(hsl.s).toBeGreaterThanOrEqual(PIGMENT_BOUNDS.satMin - 0.01);
+    expect(hsl.s).toBeLessThanOrEqual(PIGMENT_BOUNDS.satMax + 0.01);
+    expect(hsl.l).toBeGreaterThanOrEqual(PIGMENT_BOUNDS.lightMin - 0.01);
     expect(hsl.l).toBeLessThanOrEqual(PIGMENT_BOUNDS.lightMax + 0.01);
   });
 
@@ -59,5 +61,26 @@ describe("atmosphere mesh", () => {
     const mean = (list: typeof ui) => list.reduce((sum, cloud) => sum + cloud.o, 0) / list.length;
     expect(mean(plaster)).toBeGreaterThan(mean(ui));
     expect(Math.max(...plaster.map((cloud) => cloud.o))).toBeLessThan(0.55);
+  });
+});
+
+describe("marble veins", () => {
+  it("repeats for a seed and diverges for another", () => {
+    const first = marbleVeins(42, 7);
+    const again = marbleVeins(42, 7);
+    const other = marbleVeins(99, 7);
+    expect(first).toEqual(again);
+    expect(first[0]).not.toEqual(other[0]);
+  });
+
+  it("stays a stain so white stone remains the field", () => {
+    const veins = marbleVeins(11, 8);
+    expect(Math.max(...veins.map((vein) => vein.o))).toBeLessThan(0.14);
+  });
+
+  it("leans elongated rather than circular", () => {
+    const veins = marbleVeins(5, 8);
+    const elongated = veins.filter((vein) => vein.w > vein.h * 1.6);
+    expect(elongated.length).toBeGreaterThan(veins.length / 2);
   });
 });

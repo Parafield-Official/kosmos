@@ -28,7 +28,7 @@ export function BookShell({
       <nav className="ma-book-nav" aria-label="Book">
         <button type="button" className="ma-book-nav-back" onClick={onBack}>
           <ChevronLeft />
-          Projects
+          Back
         </button>
         <button
           type="button"

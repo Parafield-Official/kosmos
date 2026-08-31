@@ -80,16 +80,18 @@
 }
 
 .ma-settings > .ma-set-masthead,
-.ma-settings > .ma-set-columns {
+.ma-settings > .ma-set-columns,
+.ma-settings > .ma-set-kicker-wide,
+.ma-settings > .ma-set-card-wide {
   width: min(100%, 44rem);
   margin-inline: auto;
 }
 
 .ma-set-masthead {
   display: grid;
-  grid-template-columns: 5.2rem minmax(0, 1fr) 5.2rem;
+  grid-template-columns: 7.2rem minmax(0, 1fr) 7.2rem;
   align-items: center;
-  margin: 0 0 0.85rem;
+  margin: 0 0 1.15rem;
 }
 
 .ma-set-masthead .vault-media-back {
@@ -133,20 +135,35 @@
   min-width: 0;
   display: grid;
   align-content: start;
-  gap: 0;
+  gap: 0.15rem;
 }
 
 @media (min-width: 980px) {
   .ma-settings > .ma-set-masthead,
-  .ma-settings > .ma-set-columns {
+  .ma-settings > .ma-set-columns,
+  .ma-settings > .ma-set-kicker-wide,
+  .ma-settings > .ma-set-card-wide {
     width: min(100%, 64rem);
   }
 
   .ma-set-columns {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 2.15rem;
-    row-gap: 1.85rem;
+    column-gap: 2.6rem;
+    row-gap: 2.15rem;
     align-items: start;
+  }
+
+  .ma-set-card-wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ma-set-card-wide > .ma-set-item {
+    border-top: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .ma-set-card-wide > .ma-set-item:first-child {
+    border-left: 0;
   }
 }
 
@@ -157,6 +174,14 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+
+.ma-set-kicker-wide {
+  margin-top: 1.85rem;
+}
+
+.ma-set-card-wide {
+  display: grid;
 }
 
 .ma-set-col > .ma-set-kicker:first-child {
@@ -199,7 +224,8 @@
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  max-width: 26rem;
+  width: 100%;
+  max-width: none;
 }
 
 .ma-set-slider input[type="range"] {
@@ -224,13 +250,14 @@
 .ma-set-themes {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  max-width: 28rem;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: none;
 }
 
 .ma-set-paper-groups {
   display: grid;
-  gap: 0.85rem;
+  gap: 1.1rem;
 }
 
 .ma-set-paper-label {
@@ -243,20 +270,21 @@
 }
 
 .ma-set-theme {
-  flex: 1 1 4.8rem;
-  min-width: 4.4rem;
-  min-height: 2.35rem;
+  flex: 1 1 5.6rem;
+  min-width: 5.2rem;
+  min-height: 2.55rem;
+  padding: 0.45rem 0.7rem;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 12px;
   font: inherit;
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition:
-    transform 100ms ease-out,
-    box-shadow 180ms ease;
+    box-shadow 180ms ease,
+    filter 160ms ease;
 }
 
 .ma-set-theme.is-cream {
@@ -282,7 +310,7 @@
 }
 
 .ma-set-theme:hover {
-  transform: scale(1.02);
+  filter: brightness(1.06);
 }
 
 .ma-set-theme:active {
@@ -291,13 +319,18 @@
 
 .ma-set-item {
   display: grid;
-  gap: 0.62rem;
-  padding: 1.4rem 1.5rem 1.45rem;
-  border-top: 1px solid rgba(21, 21, 23, 0.08);
+  gap: 0.9rem;
+  padding: 1.28rem 1.35rem 1.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .ma-set-card > .ma-set-item:first-child {
   border-top: 0;
+}
+
+.ma-set-copy {
+  display: grid;
+  gap: 0.28rem;
 }
 
 .ma-set-head {
@@ -332,16 +365,20 @@
 
 .ma-set-sub {
   margin: 0;
-  max-width: 34rem;
-  font-size: 0.84rem;
+  max-width: none;
+  font-size: 0.82rem;
   font-weight: 400;
   letter-spacing: -0.011em;
-  line-height: 1.45;
+  line-height: 1.4;
   color: var(--ink-soft);
 }
 
 .ma-set-value {
-  margin: 0.1rem 0 0;
+  margin: 0;
+  padding: 0.52rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 6, 5, 0.22);
   font-family: var(--font-mono);
   font-size: 0.74rem;
   color: var(--mute);
@@ -352,76 +389,88 @@
 }
 
 .ma-set-control {
-  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0;
 }
 
-.ma-lamp-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.42rem 0.28rem 0.28rem;
-  border-radius: 14px;
-  background: rgba(120, 120, 130, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(12px) saturate(140%);
-  -webkit-backdrop-filter: blur(12px) saturate(140%);
+.ma-lamp-plate {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(5, 1fr);
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.4rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(52, 48, 44, 0.55) 0%, rgba(16, 14, 12, 0.82) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
-.ma-lamp-all {
-  min-width: 3.2rem;
-  height: 1.85rem;
-  padding: 0 0.7rem;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--ink-soft);
+.ma-lamp-paddle {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  justify-items: center;
+  align-content: space-between;
+  gap: 0.28rem;
+  height: 3.55rem;
+  padding: 0.38rem 0.2rem 0.4rem;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(78, 72, 66, 0.42) 0%, rgba(22, 18, 16, 0.95) 100%);
+  color: rgba(247, 242, 235, 0.5);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 3px 6px rgba(0, 0, 0, 0.28);
   transition:
     color 160ms ease,
     background 160ms ease,
+    box-shadow 160ms ease,
     transform 100ms ease-out;
 }
 
-.ma-lamp-all.is-on {
-  background: rgba(255, 255, 255, 0.16);
-  color: var(--ink);
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+.ma-lamp-paddle i {
+  width: 0.85rem;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.4);
 }
 
-.ma-lamp-pip {
-  width: 1.45rem;
-  height: 1.45rem;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: radial-gradient(ellipse at 50% 38%, #f3e6c4 0 34%, #c9b48a 62%, #6a5a40 100%);
+.ma-lamp-paddle span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ma-lamp-paddle[data-on="true"] {
+  color: #f7f2eb;
+  background: linear-gradient(180deg, rgba(96, 88, 76, 0.7) 0%, rgba(30, 26, 22, 0.96) 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 0 5px 1px rgba(255, 236, 200, 0.28);
-  cursor: pointer;
-  transition: transform 100ms ease-out, filter 160ms ease;
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
-.ma-lamp-pip[data-on="false"] {
-  background: radial-gradient(ellipse at 50% 40%, #8a8478 0 40%, #4a443c 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+.ma-lamp-paddle[data-on="true"] i {
+  background: #f4e3b0;
+  box-shadow: 0 0 8px 2px rgba(255, 226, 160, 0.7);
 }
 
-.ma-lamp-pip:hover,
-.ma-lamp-all:hover {
-  filter: brightness(1.08);
+.ma-lamp-paddle:hover {
+  filter: brightness(1.06);
 }
 
-.ma-lamp-all:active,
-.ma-lamp-pip:active {
-  transform: scale(0.94);
+.ma-lamp-paddle:active {
+  transform: scale(0.97);
+}
+
+.ma-set-control > .btn {
+  width: fit-content;
 }
 
 .ma-set-control-row {
@@ -430,9 +479,45 @@
   gap: 0.5rem;
 }
 
+.ma-settings .ma-seg-btn.ma-set-theme.is-on {
+  background: inherit;
+  color: inherit;
+  text-shadow: none;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-white,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-white.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-ivory,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-ivory.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-cream,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-cream.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-newsprint,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-newsprint.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-laid,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-laid.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-sepia,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-sepia.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-kraft,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-kraft.is-on {
+  color: #1a1714;
+  text-shadow: none;
+}
+
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-black,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-black.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-dark,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-dark.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-glass,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-glass.is-on,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-smoke,
+.main-app .vault-overlay .ma-settings .ma-set-theme.is-smoke.is-on {
+  color: #f7f2eb;
+  text-shadow: none;
+}
+
 .ma-set-control .glass-look {
-  width: fit-content;
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
 }
 
 .ma-settings .glass-look {
@@ -462,8 +547,9 @@
 }
 
 .ma-seg {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
+  width: 100%;
   gap: 0.12rem;
   padding: 0.22rem;
   border-radius: 14px;
@@ -471,6 +557,7 @@
 }
 
 .ma-seg-btn {
+  flex: 1 1 0;
   min-width: 4.2rem;
   padding: 0.4rem 0.75rem;
   border: 1px solid transparent;
@@ -512,7 +599,7 @@
 
 .ma-settings .ma-seg-btn:hover,
 .ma-settings .ma-seg-btn:focus-visible {
-  color: #151517;
+  color: inherit;
 }
 
 .ma-settings .ma-seg-btn.is-on {
@@ -529,11 +616,18 @@
 }
 
 .ma-seg-fonts {
-  max-width: 28rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.32rem;
+  width: 100%;
+  max-width: none;
+  padding: 0.38rem;
 }
 
 .ma-seg-fonts .ma-seg-btn {
-  min-width: 5.4rem;
+  flex: none;
+  min-width: 0;
+  width: 100%;
 }
 
 .ma-set-divider {
@@ -3132,7 +3226,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  padding: 58px 0.7rem 1.2rem;
+  padding: 1.15rem 0.85rem 1.2rem;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   -webkit-app-region: no-drag;
 }
@@ -3818,9 +3912,10 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   --ma-paper-bright: #ffffff;
   --ma-line: rgba(18, 18, 20, 0.11);
   --ma-line-strong: rgba(18, 18, 20, 0.2);
-  --ma-tint: color-mix(in srgb, var(--ma-accent) 52%, #ffffff);
-  --ma-shadow: rgba(var(--ma-accent-rgb), 0.16);
-  --ma-shadow-deep: rgba(var(--ma-accent-rgb), 0.25);
+  --ma-gold: #e8c47a;
+  --ma-tint: #e8d5a3;
+  --ma-shadow: rgba(40, 32, 24, 0.16);
+  --ma-shadow-deep: rgba(40, 32, 24, 0.25);
   --ma-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ma-pointer-x: 0;
   --ma-pointer-y: 0;
@@ -4857,6 +4952,14 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   max-width: 28rem;
 }
 
+.ma-settings .ma-pigment {
+  max-width: none;
+}
+
+.ma-settings .ma-pigment-tray {
+  width: 100%;
+}
+
 .ma-pigment-tray {
   display: flex;
   flex-wrap: wrap;
@@ -5403,19 +5506,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 /* Settings on the vault frost — same magazine glass as + / inspect. */
 .main-app .vault-overlay .ma-settings .ma-set-card {
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in srgb, var(--ma-accent) 22%, rgba(255, 255, 255, 0.28)) 0%,
-      rgba(255, 246, 232, 0.12) 42%,
-      rgba(36, 26, 22, 0.22) 100%
-    );
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 18px 40px rgba(12, 8, 6, 0.18);
-  backdrop-filter: blur(18px) saturate(140%);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  background: var(--info-glass);
+  border: var(--info-glass-border);
+  box-shadow: var(--info-glass-shadow);
+  backdrop-filter: var(--info-glass-blur);
+  -webkit-backdrop-filter: var(--info-glass-blur);
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-item {
@@ -5437,17 +5532,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-value {
-  color: rgba(247, 242, 235, 0.52);
+  color: rgba(247, 242, 235, 0.72);
+  background: rgba(8, 6, 5, 0.38);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .main-app .vault-overlay .ma-settings .ma-back {
-  color: rgba(247, 242, 235, 0.7);
-}
-
-.main-app .vault-overlay .ma-settings .ma-back:hover,
-.main-app .vault-overlay .ma-settings .ma-back:focus-visible {
-  color: #fff;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+  color: rgba(247, 244, 238, 0.88);
 }
 
 .main-app .vault-overlay .ma-settings .glass-look {
@@ -5474,8 +5565,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.45);
 }
 
-.main-app .vault-overlay .ma-settings .ma-seg,
-.main-app .vault-overlay .ma-settings .ma-lamp-row {
+.main-app .vault-overlay .ma-settings .ma-seg {
   background: rgba(8, 6, 5, 0.32);
   border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow:
@@ -5483,26 +5573,46 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.main-app .vault-overlay .ma-settings .ma-seg-btn,
-.main-app .vault-overlay .ma-settings .ma-lamp-all {
-  color: rgba(247, 242, 235, 0.52);
+.main-app .vault-overlay .ma-settings .ma-seg-btn {
+  color: rgba(247, 242, 235, 0.55);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .main-app .vault-overlay .ma-settings .ma-seg-btn:hover,
-.main-app .vault-overlay .ma-settings .ma-seg-btn:focus-visible,
-.main-app .vault-overlay .ma-settings .ma-lamp-all:hover {
+.main-app .vault-overlay .ma-settings .ma-seg-btn:focus-visible {
   color: #fff;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.06);
+  background: transparent;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.45);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 0 16px 3px rgba(255, 255, 255, 0.2);
 }
 
-.main-app .vault-overlay .ma-settings .ma-seg-btn.is-on,
-.main-app .vault-overlay .ma-settings .ma-lamp-all.is-on {
-  background: rgba(255, 255, 255, 0.14);
+.main-app .vault-overlay .ma-settings .ma-seg-btn:active {
+  transform: scale(0.97);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+    inset 0 0 12px 2px rgba(255, 255, 255, 0.14);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg-btn.is-on {
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 18px 3px rgba(255, 255, 255, 0.18);
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+.main-app .vault-overlay .ma-settings .ma-seg-btn.is-on:hover,
+.main-app .vault-overlay .ma-settings .ma-seg-btn.is-on:focus-visible {
+  background: transparent;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 22px 4px rgba(255, 255, 255, 0.26);
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-theme.is-on {
@@ -5593,7 +5703,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .main-app .vault-overlay .ma-settings .ma-pigment-caption,
 .main-app .vault-overlay .ma-settings .ma-pigment-caption strong {
-  color: var(--ma-tint);
+  color: #fff;
 }
 
 .main-app .vault-overlay .ma-settings .ma-pigment-mixer {
@@ -5606,7 +5716,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: rgba(247, 242, 235, 0.55);
 }
 
-.main-app .vault-overlay .ma-settings .btn {
+.main-app .vault-overlay .btn {
   color: #f7f2eb;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -5615,8 +5725,18 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
+.main-app .vault-overlay .btn.btn-clear,
+.main-app .vault-overlay .continue.btn {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
 .main-app .vault-overlay .ma-settings .btn:hover:not(:disabled),
-.main-app .vault-overlay .ma-settings .btn:focus-visible:not(:disabled) {
+.main-app .vault-overlay .ma-settings .btn:focus-visible:not(:disabled),
+.main-app .vault-overlay .btn:hover:not(:disabled),
+.main-app .vault-overlay .btn:focus-visible:not(:disabled) {
   color: #fff;
   background: rgba(255, 255, 255, 0.14);
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
@@ -5639,7 +5759,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-book-nav {
-  padding-top: 0.85rem;
+  padding-top: 1.15rem;
   background: transparent;
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: none;
@@ -5647,14 +5767,12 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   -webkit-backdrop-filter: none;
 }
 
-.main-app .vault-overlay .ma-book-nav-back,
 .main-app .vault-overlay .ma-book-nav-item {
   color: rgba(247, 242, 235, 0.72);
   background: transparent;
   box-shadow: none;
 }
 
-.main-app .vault-overlay .ma-book-nav-back svg,
 .main-app .vault-overlay .ma-book-nav-item svg {
   filter:
     drop-shadow(0 1px 0 rgba(255, 255, 255, 0.28))
@@ -5662,16 +5780,12 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   transition: filter 180ms ease;
 }
 
-.main-app .vault-overlay .ma-book-nav-back:hover,
-.main-app .vault-overlay .ma-book-nav-back:focus-visible,
 .main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete),
 .main-app .vault-overlay .ma-book-nav-item:focus-visible:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) {
   color: #fff;
   background: rgba(255, 255, 255, 0.07);
 }
 
-.main-app .vault-overlay .ma-book-nav-back:hover svg,
-.main-app .vault-overlay .ma-book-nav-back:focus-visible svg,
 .main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) svg,
 .main-app .vault-overlay .ma-book-nav-item:focus-visible:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) svg,
 .main-app .vault-overlay .ma-book-nav-item.is-on svg {
@@ -5753,14 +5867,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   padding: 1.3rem 1.4rem 1.2rem;
   border-radius: 26px;
   color: #f7f2eb;
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 246, 232, 0.16) 38%, rgba(36, 26, 22, 0.22) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.48),
-    0 22px 48px rgba(12, 8, 6, 0.26);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  background: var(--info-glass);
+  border: var(--info-glass-border);
+  box-shadow: var(--info-glass-shadow);
+  backdrop-filter: var(--info-glass-blur);
+  -webkit-backdrop-filter: var(--info-glass-blur);
 }
 
 .main-app .vault-overlay .ma-dash-cover {
@@ -5807,7 +5918,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-dashboard .ma-author-input {
-  color: var(--ma-tint);
+  color: rgba(247, 242, 235, 0.78);
 }
 
 .main-app .vault-overlay .ma-dashboard .ma-title-input:hover,
@@ -5918,12 +6029,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   padding: 0.85rem 1rem 0.95rem;
   border-radius: 18px;
   color: #f7f2eb;
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 246, 232, 0.12) 40%, rgba(36, 26, 22, 0.18) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  background: var(--info-glass);
+  border: var(--info-glass-border);
+  box-shadow: var(--info-glass-shadow);
+  backdrop-filter: var(--info-glass-blur);
+  -webkit-backdrop-filter: var(--info-glass-blur);
 }
 
 .main-app .vault-overlay .ma-dash-stats dt {

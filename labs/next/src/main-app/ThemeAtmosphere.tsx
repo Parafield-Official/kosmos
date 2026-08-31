@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type CSSProperties } from "react";
-import { atmosphereClouds, atmosphereCloudVars, readAtmosphereSeed } from "./theme";
+import { atmosphereClouds, atmosphereCloudVars, marbleVeins, mulberry32, readAtmosphereSeed } from "./theme";
 
 export function ThemeAtmosphere() {
   const fieldRef = useRef<HTMLDivElement>(null);
@@ -61,18 +61,26 @@ export function ThemeAtmosphere() {
   );
 }
 
-/** Pigment mesh + grain in the plaster of the vault. Salt offsets each face. */
+/** White marble with a per-user theme-colour stain. Salt offsets each face. */
 export function VaultPigment({ salt }: { salt: number }) {
-  const clouds = useMemo(
-    () => atmosphereClouds(readAtmosphereSeed() ^ salt, 4, 0.62).map(atmosphereCloudVars),
-    [salt],
-  );
+  const seed = readAtmosphereSeed() ^ salt;
+  const clouds = useMemo(() => marbleVeins(seed, 7).map(atmosphereCloudVars), [seed]);
+  const grain = useMemo(() => {
+    const random = mulberry32(seed ^ 0x9e37);
+    return {
+      "--grain-x": `${(random() * 70).toFixed(1)}%`,
+      "--grain-y": `${(random() * 70).toFixed(1)}%`,
+      "--grain-r": `${(-11 + random() * 22).toFixed(1)}deg`,
+      "--grain-s": `${(1.04 + random() * 0.18).toFixed(3)}`,
+    } as CSSProperties;
+  }, [seed]);
 
   return (
-    <span className="vault-pigment" aria-hidden="true">
+    <span className="vault-pigment" style={grain} aria-hidden="true">
       {clouds.map((style, index) => (
         <span className="vault-pigment-cloud" style={style as CSSProperties} key={index} />
       ))}
+      <span className="vault-pigment-vein" />
       <span className="vault-pigment-grain" />
     </span>
   );

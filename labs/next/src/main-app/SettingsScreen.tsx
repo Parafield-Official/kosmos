@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { GlassLookSwitch } from "../GlassLookSwitch";
 import { clearOnboarded } from "../flow";
 import type { AppUpdateStatus } from "../window";
@@ -29,6 +29,31 @@ import type { PromptTheme, ReadingFont } from "./store";
 import { ThemeColourPicker } from "./ThemeColourPicker";
 import { readThemeAccent, type ThemeAccent } from "./theme";
 import { LAMP_ALL, readLamps, writeLamps } from "./vault-lamps";
+
+function SetItem({
+  icon,
+  title,
+  sub,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  sub?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="ma-set-item">
+      <div className="ma-set-copy">
+        <div className="ma-set-head">
+          {icon}
+          <strong>{title}</strong>
+        </div>
+        {sub ? <p className="ma-set-sub">{sub}</p> : null}
+      </div>
+      {children ? <div className="ma-set-control">{children}</div> : null}
+    </div>
+  );
+}
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [workspace, setWorkspace] = useState<string | null>(null);
@@ -147,217 +172,149 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
         <div className="ma-set-col">
           <p className="ma-set-kicker">Display</p>
           <div className="ma-set-card">
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <ThemeIcon />
-                <strong>Theme</strong>
+            <SetItem icon={<ThemeIcon />} title="Theme" sub="Glass appearance across Kosmos.">
+              <GlassLookSwitch compact />
+            </SetItem>
+            <SetItem icon={<AccentIcon />} title="Theme colour" sub="Atmosphere for the room. The canvas stays white.">
+              <ThemeColourPicker accent={themeAccent} onAccent={setThemeAccent} />
+            </SetItem>
+            <SetItem icon={<TextSizeIcon />} title="Text size" sub="Size of text across the whole app.">
+              <div className="ma-seg" role="radiogroup" aria-label="Text size">
+                {FONT_SCALE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={fontScale === option.value}
+                    className={fontScale === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                    onClick={() => chooseFontScale(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              <p className="ma-set-sub">Glass appearance across Kosmos.</p>
-              <div className="ma-set-control">
-                <GlassLookSwitch compact />
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <AccentIcon />
-                <strong>Theme colour</strong>
-              </div>
-              <p className="ma-set-sub">Atmosphere and selected controls. The canvas stays white.</p>
-              <div className="ma-set-control">
-                <ThemeColourPicker accent={themeAccent} onAccent={setThemeAccent} />
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <TextSizeIcon />
-                <strong>Text size</strong>
-              </div>
-              <p className="ma-set-sub">Size of text across the whole app.</p>
-              <div className="ma-set-control">
-                <div className="ma-seg" role="radiogroup" aria-label="Text size">
-                  {FONT_SCALE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={fontScale === option.value}
-                      className={fontScale === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
-                      onClick={() => chooseFontScale(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <LampIcon />
-                <strong>Gallery lights</strong>
-              </div>
-              <p className="ma-set-sub">Five ceiling cans. All off, or each one on its own.</p>
-              <div className="ma-set-control">
-                <GalleryLights />
-              </div>
-            </div>
+            </SetItem>
+            <SetItem icon={<LampIcon />} title="Gallery lights" sub="Five ceiling cans. All off, or each one on its own.">
+              <GalleryLights />
+            </SetItem>
           </div>
 
           <p className="ma-set-kicker">Reading</p>
           <div className="ma-set-card">
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <ReadingFontIcon />
-                <strong>Reading font</strong>
+            <SetItem icon={<ReadingFontIcon />} title="Reading font" sub="Teleprompter, reader, and chapter text.">
+              <div className="ma-seg ma-seg-fonts" role="radiogroup" aria-label="Reading font">
+                {READING_FONT_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={readingFont === option.value}
+                    className={readingFont === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                    style={{ fontFamily: READING_FONT_STACKS[option.value] }}
+                    onClick={() => chooseReadingFont(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              <p className="ma-set-sub">Teleprompter, reader, and chapter text.</p>
-              <div className="ma-set-control">
-                <div className="ma-seg ma-seg-fonts" role="radiogroup" aria-label="Reading font">
-                  {READING_FONT_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={readingFont === option.value}
-                      className={readingFont === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
-                      style={{ fontFamily: READING_FONT_STACKS[option.value] }}
-                      onClick={() => chooseReadingFont(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <PageThemeIcon />
-                <strong>Reading page</strong>
-              </div>
-              <p className="ma-set-sub">Digital pages or physical paper.</p>
-              <div className="ma-set-control">
-                <div className="ma-set-paper-groups">
-                  {PROMPT_THEME_GROUPS.map((group) => (
-                    <div className="ma-set-paper-group" key={group.label}>
-                      <p className="ma-set-paper-label">{group.label}</p>
-                      <div className="ma-set-themes" role="radiogroup" aria-label={group.label}>
-                        {group.options.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={promptTheme === option.value}
-                            className={`ma-set-theme is-${option.value}${promptTheme === option.value ? " is-on" : ""}`}
-                            onClick={() => choosePromptTheme(option.value)}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
+            </SetItem>
+            <SetItem icon={<PageThemeIcon />} title="Reading page" sub="Digital pages or physical paper.">
+              <div className="ma-set-paper-groups">
+                {PROMPT_THEME_GROUPS.map((group) => (
+                  <div className="ma-set-paper-group" key={group.label}>
+                    <p className="ma-set-paper-label">{group.label}</p>
+                    <div className="ma-set-themes" role="radiogroup" aria-label={group.label}>
+                      {group.options.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={promptTheme === option.value}
+                          className={`ma-set-theme is-${option.value}${promptTheme === option.value ? " is-on" : ""}`}
+                          onClick={() => choosePromptTheme(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            </SetItem>
           </div>
         </div>
 
         <div className="ma-set-col">
           <p className="ma-set-kicker">Proofreading</p>
           <div className="ma-set-card">
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <ProofIcon />
-                <strong>Nearby flags</strong>
+            <SetItem
+              icon={<ProofIcon />}
+              title="Nearby flags"
+              sub={SENSITIVITY_OPTIONS.find((option) => option.value === engine.proof_sensitivity)?.hint}
+            >
+              <div className="ma-seg" role="radiogroup" aria-label="Nearby flags">
+                {SENSITIVITY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={engine.proof_sensitivity === option.value}
+                    className={engine.proof_sensitivity === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                    onClick={() => patchEngine({ proof_sensitivity: option.value })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
-              <p className="ma-set-sub">
-                {SENSITIVITY_OPTIONS.find((option) => option.value === engine.proof_sensitivity)?.hint}
-              </p>
-              <div className="ma-set-control">
-                <div className="ma-seg" role="radiogroup" aria-label="Nearby flags">
-                  {SENSITIVITY_OPTIONS.map((option) => (
+            </SetItem>
+            <SetItem icon={<PauseIcon />} title="Long pause" sub="Gaps longer than this are flagged. Shorter breaths are ignored.">
+              <label className="ma-set-slider">
+                <input
+                  type="range"
+                  min={PAUSE_RANGE.min}
+                  max={PAUSE_RANGE.max}
+                  step={PAUSE_RANGE.step}
+                  value={engine.pause_threshold_seconds}
+                  aria-label="Pause threshold in seconds"
+                  onChange={(event) => patchEngine({ pause_threshold_seconds: Number(event.target.value) })}
+                />
+                <span className="ma-set-slider-value">{engine.pause_threshold_seconds.toFixed(1)} s</span>
+              </label>
+            </SetItem>
+            <SetItem
+              icon={<ShakyIcon />}
+              title="Shaky alerts"
+              sub={CONFIDENCE_OPTIONS.find((option) => Math.abs(option.value - engine.proof_confidence_floor) < 0.001)?.hint}
+            >
+              <div className="ma-seg" role="radiogroup" aria-label="Shaky alerts">
+                {CONFIDENCE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={Math.abs(option.value - engine.proof_confidence_floor) < 0.001}
+                    className={
+                      Math.abs(option.value - engine.proof_confidence_floor) < 0.001 ? "ma-seg-btn is-on" : "ma-seg-btn"
+                    }
+                    onClick={() => patchEngine({ proof_confidence_floor: option.value })}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </SetItem>
+            <SetItem icon={<FilterIcon />} title="Marks on the page" sub="Which mismatches appear on the manuscript.">
+              <div className="ma-seg" role="group" aria-label="Marks on the page">
+                {PROOF_MARK_OPTIONS.map((option) => {
+                  const on = engine.mark_kinds.includes(option.value);
+                  return (
                     <button
                       key={option.value}
                       type="button"
-                      role="radio"
-                      aria-checked={engine.proof_sensitivity === option.value}
-                      className={engine.proof_sensitivity === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
-                      onClick={() => patchEngine({ proof_sensitivity: option.value })}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <PauseIcon />
-                <strong>Long pause</strong>
-              </div>
-              <p className="ma-set-sub">Gaps longer than this are flagged. Shorter breaths are ignored.</p>
-              <div className="ma-set-control">
-                <label className="ma-set-slider">
-                  <input
-                    type="range"
-                    min={PAUSE_RANGE.min}
-                    max={PAUSE_RANGE.max}
-                    step={PAUSE_RANGE.step}
-                    value={engine.pause_threshold_seconds}
-                    aria-label="Pause threshold in seconds"
-                    onChange={(event) => patchEngine({ pause_threshold_seconds: Number(event.target.value) })}
-                  />
-                  <span className="ma-set-slider-value">{engine.pause_threshold_seconds.toFixed(1)} s</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <ShakyIcon />
-                <strong>Shaky alerts</strong>
-              </div>
-              <p className="ma-set-sub">
-                {CONFIDENCE_OPTIONS.find((option) => Math.abs(option.value - engine.proof_confidence_floor) < 0.001)?.hint}
-              </p>
-              <div className="ma-set-control">
-                <div className="ma-seg" role="radiogroup" aria-label="Shaky alerts">
-                  {CONFIDENCE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={Math.abs(option.value - engine.proof_confidence_floor) < 0.001}
-                      className={
-                        Math.abs(option.value - engine.proof_confidence_floor) < 0.001 ? "ma-seg-btn is-on" : "ma-seg-btn"
-                      }
-                      onClick={() => patchEngine({ proof_confidence_floor: option.value })}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <FilterIcon />
-                <strong>Marks on the page</strong>
-              </div>
-              <p className="ma-set-sub">Which mismatches appear on the manuscript.</p>
-              <div className="ma-set-control ma-set-checks">
-                {PROOF_MARK_OPTIONS.map((option) => (
-                  <label key={option.value} className="ma-set-check">
-                    <input
-                      type="checkbox"
-                      checked={engine.mark_kinds.includes(option.value)}
-                      onChange={() => {
-                        const on = engine.mark_kinds.includes(option.value);
+                      aria-pressed={on}
+                      title={option.hint}
+                      className={on ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                      onClick={() => {
                         const next = on
                           ? engine.mark_kinds.filter((kind) => kind !== option.value)
                           : [...engine.mark_kinds, option.value];
@@ -366,153 +323,106 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                         }
                         patchEngine({ mark_kinds: next as ProofMarkKind[] });
                       }}
-                    />
-                    <span>
-                      <strong>{option.label}</strong>
-                      <em>{option.hint}</em>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <FilterIcon />
-                <strong>Never-flagged words</strong>
-              </div>
-              <p className="ma-set-sub">Per book. On a proof flag, tap Never flag this word.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="ma-set-col">
-          <p className="ma-set-kicker">Sound</p>
-          <div className="ma-set-card">
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <MasterIcon />
-                <strong>Loudness target</strong>
-              </div>
-              <p className="ma-set-sub">RMS for the mastered file. ACX accepts −23 to −18 dBFS.</p>
-              <div className="ma-set-control">
-                <label className="ma-set-slider">
-                  <input
-                    type="range"
-                    min={RMS_RANGE.min}
-                    max={RMS_RANGE.max}
-                    step={RMS_RANGE.step}
-                    value={engine.acx_target_rms_dbfs}
-                    aria-label="ACX target RMS in dBFS"
-                    onChange={(event) => patchEngine({ acx_target_rms_dbfs: Number(event.target.value) })}
-                  />
-                  <span className="ma-set-slider-value">{engine.acx_target_rms_dbfs.toFixed(1)} dBFS</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <MasterIcon />
-                <strong>Delivery target</strong>
-              </div>
-              <p className="ma-set-sub">
-                {SPEC_PRESET_OPTIONS.find((option) => option.value === engine.spec_preset_id)?.hint}
-              </p>
-              <div className="ma-set-control">
-                <div className="ma-seg" role="radiogroup" aria-label="Delivery target">
-                  {SPEC_PRESET_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={engine.spec_preset_id === option.value}
-                      className={engine.spec_preset_id === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
-                      onClick={() => patchEngine({ spec_preset_id: option.value })}
                     >
                       {option.label}
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <MasterIcon />
-                <strong>Audio format</strong>
-              </div>
-              <p className="ma-set-value">Mono (ACX default)</p>
-              <p className="ma-set-sub">Used for chapter exports.</p>
-            </div>
+            </SetItem>
+            <SetItem icon={<FilterIcon />} title="Never-flagged words" sub="Per book. On a proof flag, tap Never flag this word.">
+              <p className="ma-set-value">Set from a proof flag</p>
+            </SetItem>
           </div>
-        </div>
 
-        <div className="ma-set-col">
-          <p className="ma-set-kicker">App</p>
+          <p className="ma-set-kicker">Sound</p>
           <div className="ma-set-card">
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <FolderIcon />
-                <strong>Workspace</strong>
-              </div>
-              <p className="ma-set-sub">An empty folder. New books are saved inside it.</p>
-              <p className="ma-set-value" title={workspace ?? undefined}>
-                {workspace ?? "No workspace chosen yet."}
-              </p>
-              <div className="ma-set-control">
-                <button type="button" className="btn" disabled={picking} onClick={() => void pickWorkspace()}>
-                  {picking ? "Opening picker…" : workspace ? "Change workspace" : "Choose workspace"}
-                </button>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <RestartIcon />
-                <strong>Restart onboarding</strong>
-              </div>
-              <p className="ma-set-sub">Welcome flow again. Microphone and speech-model access stay as they are.</p>
-              <div className="ma-set-control">
-                <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
-                  <RestartIcon />
-                  Reset
-                </button>
-              </div>
-            </div>
-
-            <div className="ma-set-item">
-              <div className="ma-set-head">
-                <InfoIcon />
-                <strong>About Kosmos Labs</strong>
-              </div>
-              <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
-              <p className="ma-set-sub">{updateMessage}</p>
-              <div className="ma-set-control ma-set-control-row">
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={checking || update?.skipped}
-                  onClick={() => void checkForUpdates()}
-                >
-                  {checking ? "Checking…" : "Check for updates"}
-                </button>
-                {update?.canInstall ? (
+            <SetItem icon={<MasterIcon />} title="Loudness target" sub="RMS for the mastered file. ACX accepts -23 to -18 dBFS.">
+              <label className="ma-set-slider">
+                <input
+                  type="range"
+                  min={RMS_RANGE.min}
+                  max={RMS_RANGE.max}
+                  step={RMS_RANGE.step}
+                  value={engine.acx_target_rms_dbfs}
+                  aria-label="ACX target RMS in dBFS"
+                  onChange={(event) => patchEngine({ acx_target_rms_dbfs: Number(event.target.value) })}
+                />
+                <span className="ma-set-slider-value">{engine.acx_target_rms_dbfs.toFixed(1)} dBFS</span>
+              </label>
+            </SetItem>
+            <SetItem
+              icon={<MasterIcon />}
+              title="Delivery target"
+              sub={SPEC_PRESET_OPTIONS.find((option) => option.value === engine.spec_preset_id)?.hint}
+            >
+              <div className="ma-seg" role="radiogroup" aria-label="Delivery target">
+                {SPEC_PRESET_OPTIONS.map((option) => (
                   <button
+                    key={option.value}
                     type="button"
-                    className="btn btn-clear"
-                    onClick={() => void window.kosmosNext?.installAppUpdate?.()}
+                    role="radio"
+                    aria-checked={engine.spec_preset_id === option.value}
+                    className={engine.spec_preset_id === option.value ? "ma-seg-btn is-on" : "ma-seg-btn"}
+                    onClick={() => patchEngine({ spec_preset_id: option.value })}
                   >
-                    Get update
+                    {option.label}
                   </button>
-                ) : null}
-                <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
-                  View releases
-                </button>
+                ))}
               </div>
-            </div>
+            </SetItem>
+            <SetItem icon={<MasterIcon />} title="Audio format" sub="Used for chapter exports.">
+              <p className="ma-set-value">Mono (ACX default)</p>
+            </SetItem>
           </div>
         </div>
+      </div>
+
+      <p className="ma-set-kicker ma-set-kicker-wide">App</p>
+      <div className="ma-set-card ma-set-card-wide">
+        <SetItem icon={<FolderIcon />} title="Workspace" sub="An empty folder. New books are saved inside it.">
+          <p className="ma-set-value" title={workspace ?? undefined}>
+            {workspace ?? "No workspace chosen yet."}
+          </p>
+          <button type="button" className="btn" disabled={picking} onClick={() => void pickWorkspace()}>
+            {picking ? "Opening picker…" : workspace ? "Change workspace" : "Choose workspace"}
+          </button>
+        </SetItem>
+        <SetItem
+          icon={<RestartIcon />}
+          title="Restart onboarding"
+          sub="Welcome flow again. Microphone and speech-model access stay as they are."
+        >
+          <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
+            <RestartIcon />
+            Reset
+          </button>
+        </SetItem>
+        <SetItem icon={<InfoIcon />} title="About Kosmos Labs" sub={updateMessage}>
+          <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
+          <div className="ma-set-control-row">
+            <button
+              type="button"
+              className="btn"
+              disabled={checking || update?.skipped}
+              onClick={() => void checkForUpdates()}
+            >
+              {checking ? "Checking…" : "Check for updates"}
+            </button>
+            {update?.canInstall ? (
+              <button
+                type="button"
+                className="btn btn-clear"
+                onClick={() => void window.kosmosNext?.installAppUpdate?.()}
+              >
+                Get update
+              </button>
+            ) : null}
+            <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
+              View releases
+            </button>
+          </div>
+        </SetItem>
       </div>
     </section>
   );
@@ -545,14 +455,16 @@ function GalleryLights() {
   }
 
   return (
-    <div className="ma-lamp-row" role="toolbar" aria-label="Gallery lights">
+    <div className="ma-lamp-plate" role="toolbar" aria-label="Gallery lights">
       <button
         type="button"
-        className={allOn ? "ma-lamp-all is-on" : "ma-lamp-all"}
+        className="ma-lamp-paddle is-master"
+        data-on={allOn ? "true" : "false"}
         aria-pressed={allOn}
         onClick={() => setMask(allOn ? 0 : LAMP_ALL)}
       >
-        All
+        <i />
+        <span>All</span>
       </button>
       {Array.from({ length: 5 }, (_, index) => {
         const on = ((lamps >> index) & 1) === 1;
@@ -560,12 +472,15 @@ function GalleryLights() {
           <button
             key={index}
             type="button"
-            className="ma-lamp-pip"
+            className="ma-lamp-paddle"
             data-on={on ? "true" : "false"}
             aria-label={`Light ${index + 1}`}
             aria-pressed={on}
             onClick={() => setMask(lamps ^ (1 << index))}
-          />
+          >
+            <i />
+            <span>{index + 1}</span>
+          </button>
         );
       })}
     </div>
