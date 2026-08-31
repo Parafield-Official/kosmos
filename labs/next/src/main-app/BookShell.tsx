@@ -37,6 +37,7 @@ export function BookShell({
         >
           <BookNavIcon tab="dashboard" />
           Home
+          {tab === "dashboard" ? <span className="ma-book-nav-dot" aria-hidden="true" /> : null}
         </button>
         <button
           type="button"
@@ -45,6 +46,7 @@ export function BookShell({
         >
           <BookNavIcon tab="chapters" />
           Chapters
+          {tab === "chapters" ? <span className="ma-book-nav-dot" aria-hidden="true" /> : null}
         </button>
         <button
           type="button"
@@ -53,6 +55,7 @@ export function BookShell({
         >
           <BookNavIcon tab="pronunciation" />
           Pronunciation
+          {tab === "pronunciation" ? <span className="ma-book-nav-dot" aria-hidden="true" /> : null}
         </button>
         {onExport ? (
           <button

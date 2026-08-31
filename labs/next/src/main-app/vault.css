@@ -299,10 +299,10 @@
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background:
-    repeating-linear-gradient(90deg, rgba(255, 252, 245, 0.28) 0 1px, transparent 1px 2px),
-    radial-gradient(ellipse at 50% 40%, #fff8ea 0 38%, #ead9b0 62%, #b8a57a 100%);
+    repeating-linear-gradient(90deg, rgba(255, 236, 210, 0.32) 0 1px, transparent 1px 2px),
+    radial-gradient(ellipse at 50% 40%, #ffe4b8 0 38%, #f0c078 62%, #c48a48 100%);
   box-shadow:
-    0 0 7px 2px rgba(255, 242, 214, 0.42);
+    0 0 8px 2px rgba(255, 196, 120, 0.48);
 }
 
 .vault-floor {

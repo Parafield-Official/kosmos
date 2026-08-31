@@ -3219,14 +3219,14 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   z-index: 1;
   height: 100%;
   display: grid;
-  grid-template-columns: 12.25rem minmax(0, 1fr);
+  grid-template-columns: 13.6rem minmax(0, 1fr);
 }
 
 .ma-book-nav {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 1.15rem 0.85rem 1.2rem;
+  gap: 0.28rem;
+  padding: 1.15rem 0.9rem 1.2rem;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   -webkit-app-region: no-drag;
 }
@@ -3235,15 +3235,15 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-book-nav-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.52rem;
   width: 100%;
   border: 0;
-  border-radius: 10px;
-  padding: 0.48rem 0.65rem;
+  border-radius: 12px;
+  padding: 0.56rem 0.72rem;
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.94rem;
   text-align: left;
   cursor: pointer;
 }
@@ -3259,11 +3259,32 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #fff;
 }
 
+.ma-book-nav-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+  animation: ma-nav-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes ma-nav-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .ma-book-nav-rule {
   display: block;
   height: 1px;
-  margin: 0.75rem 0.45rem 0.4rem;
-  background: rgba(255, 255, 255, 0.12);
+  margin: 0.32rem 0.55rem;
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .ma-book-nav-delete {
@@ -3379,21 +3400,27 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-book-main > .ma-pronounce {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
-.ma-pronounce-lists {
+.ma-pronounce-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1rem;
-  min-height: 0;
+  gap: 0.28rem;
 }
 
-.ma-pronounce-lists .ma-glossary {
+.ma-pronounce-head .ma-title {
+  margin: 0;
+}
+
+.ma-pronounce-head .ma-set-sub {
+  max-width: 36em;
+}
+
+.ma-pronounce .ma-glossary {
+  min-height: 0;
   overflow: auto;
-  height: 100%;
 }
 
 .ma-book-main > .ma-chapters {
@@ -3843,7 +3870,6 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 @media (max-width: 960px) {
   .ma-booth-settings,
-  .ma-pronounce-lists,
   .ma-record-gate,
   .ma-hero-stats {
     grid-template-columns: 1fr;
@@ -4531,13 +4557,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 /* Book shell and dashboard. */
 .ma-book-shell {
   z-index: 1;
-  grid-template-columns: 11.75rem minmax(0, 1fr);
+  grid-template-columns: 13.6rem minmax(0, 1fr);
 }
 
 .ma-book-nav {
   position: relative;
-  gap: 0.3rem;
-  padding: 62px 0.75rem 1.2rem;
+  gap: 0.34rem;
+  padding: 62px 0.85rem 1.2rem;
   border-color: var(--ma-line);
   background: rgba(255, 255, 255, 0.38);
   box-shadow: 12px 0 34px rgba(var(--ma-accent-rgb), 0.055);
@@ -4548,18 +4574,18 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-book-nav-back,
 .ma-book-nav-item {
   position: relative;
-  min-height: 2.35rem;
-  gap: 0.62rem;
+  min-height: 2.55rem;
+  gap: 0.68rem;
   color: var(--ink-soft);
-  border-radius: 12px;
+  border-radius: 13px;
   transition: color 160ms var(--ma-ease-out), background 160ms var(--ma-ease-out), box-shadow 180ms var(--ma-ease-out), transform 100ms var(--ma-ease-out);
 }
 
 .ma-book-nav-back svg,
 .ma-book-nav-item svg {
   flex: none;
-  width: 1rem;
-  height: 1rem;
+  width: 1.12rem;
+  height: 1.12rem;
 }
 
 .ma-book-nav-title {
@@ -5337,6 +5363,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     transform: none !important;
     transition: none !important;
   }
+
+  .ma-book-nav-dot {
+    animation: none;
+    opacity: 0.85;
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -5783,7 +5814,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete),
 .main-app .vault-overlay .ma-book-nav-item:focus-visible:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) {
   color: #fff;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .main-app .vault-overlay .ma-book-nav-item:hover:not(:disabled):not(.ma-book-nav-export):not(.ma-book-nav-delete) svg,
@@ -5796,9 +5827,16 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .main-app .vault-overlay .ma-book-nav-item.is-on {
   color: #fff;
-  background: transparent;
-  box-shadow: none;
-  text-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 8px 18px rgba(0, 0, 0, 0.12);
+  text-shadow: none;
+}
+
+.main-app .vault-overlay .ma-book-nav-dot {
+  background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
 }
 
 .main-app .vault-overlay .ma-book-nav-item:active:not(:disabled),
@@ -5806,15 +5844,20 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   transform: scale(0.97);
 }
 
+.main-app .vault-overlay .ma-book-nav-rule {
+  margin: 0.28rem 0.62rem;
+  background: rgba(255, 255, 255, 0.38);
+}
+
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export {
   color: #ffd27a;
-  background: rgba(214, 168, 88, 0.12);
+  background: transparent;
 }
 
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:hover:not(:disabled),
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:focus-visible:not(:disabled) {
   color: #ffe7b0;
-  background: rgba(214, 168, 88, 0.22);
+  background: rgba(214, 168, 88, 0.18);
   text-shadow: 0 0 12px rgba(255, 214, 140, 0.55);
 }
 
@@ -6062,6 +6105,91 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   text-align: center;
 }
 
+.main-app .vault-overlay .ma-pronounce {
+  gap: 0.95rem;
+  padding: 1.05rem 1.35rem 1.3rem;
+  color: #f7f2eb;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-title {
+  color: #fff;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-set-sub,
+.main-app .vault-overlay .ma-pronounce .ma-glossary-head p,
+.main-app .vault-overlay .ma-pronounce .ma-glossary-empty {
+  color: rgba(247, 242, 235, 0.62);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary,
+.main-app .vault-overlay .ma-pronounce .ma-suppress {
+  background: var(--info-glass);
+  border: var(--info-glass-border);
+  box-shadow: var(--info-glass-shadow);
+  backdrop-filter: var(--info-glass-blur);
+  -webkit-backdrop-filter: var(--info-glass-blur);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary-head h2 {
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary-list li {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary-list li strong {
+  color: #fff;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-glossary-list li.is-set strong {
+  color: rgba(247, 242, 235, 0.72);
+}
+
+.main-app .vault-overlay .ma-pronounce .neu-input {
+  color: #f7f2eb;
+  background: rgba(10, 8, 8, 0.28);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.main-app .vault-overlay .ma-pronounce .neu-input::placeholder {
+  color: rgba(247, 242, 235, 0.38);
+}
+
+.main-app .vault-overlay .ma-pronounce .neu-input:focus {
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(10, 8, 8, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.main-app .vault-overlay .ma-pronounce .btn {
+  color: #f7f2eb;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.main-app .vault-overlay .ma-pronounce .btn:hover:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .btn:focus-visible:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.main-app .vault-overlay .ma-pronounce .btn:disabled {
+  color: rgba(247, 242, 235, 0.32);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-suppress-list li {
+  color: #f7f2eb;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 @media (max-width: 760px) {
   .main-app .vault-overlay .ma-dash-hero {
     grid-template-columns: 1fr;
@@ -6097,7 +6225,9 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   }
 
   .main-app .vault-overlay .ma-dash-hero,
-  .main-app .vault-overlay .ma-dash-stats > div {
+  .main-app .vault-overlay .ma-dash-stats > div,
+  .main-app .vault-overlay .ma-pronounce .ma-glossary,
+  .main-app .vault-overlay .ma-pronounce .ma-suppress {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(36, 28, 24, 0.92);
