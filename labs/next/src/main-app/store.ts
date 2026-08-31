@@ -18,7 +18,18 @@ export type ChapterStage = "blank" | "recording" | "proofing" | "mastering" | "d
 export type AudioSlot = "original" | "working" | "mastered";
 export type PromptHighlightMode = "word" | "line" | "paragraph";
 export type ReadingFont = "serif" | "sans" | "palatino" | "courier" | "clear" | "hyperlegible";
-export type PromptTheme = "dark" | "sepia" | "cream";
+export type PromptTheme =
+  | "white"
+  | "black"
+  | "glass"
+  | "smoke"
+  | "cream"
+  | "ivory"
+  | "sepia"
+  | "newsprint"
+  | "laid"
+  | "kraft"
+  | "dark";
 
 export type RoomCheckStatus = "pass" | "warn" | "fail";
 

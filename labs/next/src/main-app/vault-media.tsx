@@ -105,15 +105,9 @@ export function VaultReadSheet({
             <BackGlyph />
             <span>Back</span>
           </button>
-          <div className="vault-read-meta">
-            <h2 className="vault-read-title" id="vault-read-title">
-              {project.title}
-            </h2>
-            <p className="vault-read-sub">
-              <span className="vault-read-author">{project.author.trim() || "Unknown author"}</span>
-              <span className="vault-read-chapter-name">{chapter?.title ?? "Untitled"}</span>
-            </p>
-          </div>
+          <h2 className="vault-read-chapter-name" id="vault-read-title">
+            {chapter?.title ?? "Untitled"}
+          </h2>
         </header>
         <div className={`vault-read-page is-${paper} ma-prose`} ref={scrollRef}>
           {loading ? (

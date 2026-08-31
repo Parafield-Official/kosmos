@@ -138,38 +138,41 @@ export function LibraryScreen({
         pane={pane}
         nav={nav}
         overlay={overlay}
+        createSheet={
+          dialogOpen ? (
+            <NewProjectDialog
+              embedded
+              onClose={() => setDialogOpen(false)}
+              onCreated={async (input) => {
+                setDialogOpen(false);
+                try {
+                  let project = await createBook({
+                    title: input.title,
+                    author: input.author,
+                    coverDataUrl: input.coverDataUrl,
+                    parentFolder: input.parentFolder,
+                  });
+                  if (input.manuscript) {
+                    const name = await writeManuscript(project.folder, input.manuscript);
+                    if (name) {
+                      project = await persistBook({ ...project, manuscript: name });
+                    }
+                  }
+                  onCreated(project, input.manuscript);
+                } catch (error) {
+                  setNotice(error instanceof Error ? error.message : "Could not create the book.");
+                }
+              }}
+            />
+          ) : null
+        }
         onOpen={onOpen}
         onHome={onHome}
         onCreate={() => void startNewBook()}
         onImport={() => void openExisting()}
         onSettings={onSettings}
+        onCreateClose={() => setDialogOpen(false)}
       />
-
-      {dialogOpen ? (
-        <NewProjectDialog
-          onClose={() => setDialogOpen(false)}
-          onCreated={async (input) => {
-            setDialogOpen(false);
-            try {
-              let project = await createBook({
-                title: input.title,
-                author: input.author,
-                coverDataUrl: input.coverDataUrl,
-                parentFolder: input.parentFolder,
-              });
-              if (input.manuscript) {
-                const name = await writeManuscript(project.folder, input.manuscript);
-                if (name) {
-                  project = await persistBook({ ...project, manuscript: name });
-                }
-              }
-              onCreated(project, input.manuscript);
-            } catch (error) {
-              setNotice(error instanceof Error ? error.message : "Could not create the book.");
-            }
-          }}
-        />
-      ) : null}
 
       {externalPrompt ? (
         <ExternalPrompt

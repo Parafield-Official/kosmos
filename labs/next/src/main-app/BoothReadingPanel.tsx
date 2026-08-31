@@ -1,4 +1,5 @@
 import type { PromptHighlightMode, PromptTheme } from "./store";
+import { PROMPT_THEME_GROUPS } from "./reading-prefs";
 
 /** Spec knobs only: current indicator, line spacing, texture, font size. */
 export function BoothReadingPanel({
@@ -66,18 +67,27 @@ export function BoothReadingPanel({
 
       <div className="ma-booth-set">
         <p className="ma-booth-kicker">Teleprompter texture</p>
-        <div className="ma-booth-choices" role="radiogroup" aria-label="Teleprompter texture">
-          {(["dark", "sepia", "cream"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={theme === value}
-              className={theme === value ? "is-on" : undefined}
-              onClick={() => onTheme(value)}
-            >
-              {value === "dark" ? "Dark" : value === "sepia" ? "Sepia" : "Cream"}
-            </button>
+        <div className="ma-booth-paper">
+          {PROMPT_THEME_GROUPS.map((group) => (
+            <div className="ma-booth-paper-group" key={group.label}>
+              <p className="ma-booth-paper-label">{group.label}</p>
+              <div className="ma-booth-themes" role="radiogroup" aria-label={group.label}>
+                {group.options.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={theme === option.value || (option.value === "black" && theme === "dark")}
+                    className={`ma-booth-theme is-${option.value}${
+                      theme === option.value || (option.value === "black" && theme === "dark") ? " is-on" : ""
+                    }`}
+                    onClick={() => onTheme(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>

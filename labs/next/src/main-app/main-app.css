@@ -3,6 +3,8 @@
    Continues the onboarding design language.
    ───────────────────────────────────────────────────────────── */
 
+@import "./paper.css";
+
 .main-app {
   position: absolute;
   inset: 0;
@@ -214,12 +216,28 @@
 
 .ma-set-themes {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
-  max-width: 22rem;
+  max-width: 28rem;
+}
+
+.ma-set-paper-groups {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ma-set-paper-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
 }
 
 .ma-set-theme {
-  flex: 1;
+  flex: 1 1 4.8rem;
+  min-width: 4.4rem;
   min-height: 2.35rem;
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 12px;
@@ -302,7 +320,7 @@
   color: var(--ink);
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.75))
-    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.35));
+    drop-shadow(0 0 12px rgba(255, 255, 255, 0.35));
 }
 
 .ma-set-sub {
@@ -2548,12 +2566,31 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-booth-choices,
 .ma-booth-themes {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
+}
+
+.ma-booth-paper {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.ma-booth-paper-label {
+  margin: 0 0 0.28rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.ma-booth-theme {
+  flex: 1 1 4.4rem;
+  min-width: 4.2rem;
 }
 
 .ma-booth-choices button,
 .ma-booth-themes button {
-  flex: 1;
   min-height: 2rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
@@ -2562,6 +2599,14 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   font: inherit;
   font-size: 0.74rem;
   cursor: pointer;
+}
+
+.ma-booth-choices button {
+  flex: 1;
+}
+
+.ma-booth-themes button {
+  flex: 1 1 4.4rem;
 }
 
 .ma-booth-choices button.is-on,
@@ -3766,6 +3811,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   --ma-paper-bright: #ffffff;
   --ma-line: rgba(18, 18, 20, 0.11);
   --ma-line-strong: rgba(18, 18, 20, 0.2);
+  --ma-tint: color-mix(in srgb, var(--ma-accent) 52%, #ffffff);
   --ma-shadow: rgba(var(--ma-accent-rgb), 0.16);
   --ma-shadow-deep: rgba(var(--ma-accent-rgb), 0.25);
   --ma-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -5375,11 +5421,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   color: #fff;
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.5));
+    drop-shadow(0 0 12px rgba(255, 255, 255, 0.45));
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-value {
-  color: rgba(214, 196, 168, 0.78);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-settings .ma-back {
@@ -5489,7 +5535,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-slider-value {
-  color: rgba(214, 196, 168, 0.88);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-check {
@@ -5513,7 +5559,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-settings .ma-set-check em {
-  color: rgba(214, 196, 168, 0.7);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-settings .ma-pigment-tray {
@@ -5535,7 +5581,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .main-app .vault-overlay .ma-settings .ma-pigment-caption,
 .main-app .vault-overlay .ma-settings .ma-pigment-caption strong {
-  color: rgba(214, 196, 168, 0.82);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-settings .ma-pigment-mixer {
@@ -5545,7 +5591,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-settings .ma-pigment-field span {
-  color: rgba(214, 196, 168, 0.72);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-settings .btn {
@@ -5619,7 +5665,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .main-app .vault-overlay .ma-book-nav-item.is-on svg {
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.5));
+    drop-shadow(0 0 12px rgba(255, 255, 255, 0.45));
 }
 
 .main-app .vault-overlay .ma-book-nav-item.is-on {
@@ -5635,22 +5681,22 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export {
-  color: var(--ma-accent);
-  background: rgba(var(--ma-accent-rgb), 0.12);
+  color: #ffd27a;
+  background: rgba(214, 168, 88, 0.12);
 }
 
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:hover:not(:disabled),
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:focus-visible:not(:disabled) {
-  color: var(--ma-accent);
-  background: rgba(var(--ma-accent-rgb), 0.22);
-  text-shadow: 0 0 12px rgba(var(--ma-accent-rgb), 0.55);
+  color: #ffe7b0;
+  background: rgba(214, 168, 88, 0.22);
+  text-shadow: 0 0 12px rgba(255, 214, 140, 0.55);
 }
 
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:hover:not(:disabled) svg,
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-export:focus-visible:not(:disabled) svg {
   filter:
-    drop-shadow(0 0 5px rgba(var(--ma-accent-rgb), 0.95))
-    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.55));
+    drop-shadow(0 0 5px rgba(255, 224, 160, 0.95))
+    drop-shadow(0 0 12px rgba(255, 196, 110, 0.55));
 }
 
 .main-app .vault-overlay .ma-book-nav-item.ma-book-nav-delete {
@@ -5749,7 +5795,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-dashboard .ma-author-input {
-  color: rgba(214, 196, 168, 0.9);
+  color: var(--ma-tint);
 }
 
 .main-app .vault-overlay .ma-dashboard .ma-title-input:hover,
@@ -5779,7 +5825,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-dash-meter-label {
-  color: rgba(214, 196, 168, 0.72);
+  color: var(--ma-tint);
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5831,7 +5877,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .main-app .vault-overlay .ma-dash-act:focus-visible:not(:disabled) svg {
   filter:
     drop-shadow(0 0 5px rgba(255, 255, 255, 0.95))
-    drop-shadow(0 0 12px rgba(var(--ma-accent-rgb), 0.55));
+    drop-shadow(0 0 12px rgba(255, 255, 255, 0.45));
 }
 
 .main-app .vault-overlay .ma-dash-act:active:not(:disabled) {
@@ -5870,7 +5916,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .main-app .vault-overlay .ma-dash-stats dt {
   margin: 0;
-  color: rgba(214, 196, 168, 0.72);
+  color: var(--ma-tint);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -5889,7 +5935,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .main-app .vault-overlay .ma-dash-empty {
   width: min(40rem, 100%);
   margin: 0 auto;
-  color: rgba(214, 196, 168, 0.78);
+  color: var(--ma-tint);
   font-size: 0.9rem;
   text-align: center;
 }

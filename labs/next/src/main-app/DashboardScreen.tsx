@@ -179,7 +179,7 @@ export function DashboardScreen({
             </button>
             <button type="button" className="ma-dash-act" onClick={() => manuscriptRef.current?.click()}>
               <ManuscriptGlyph />
-              <span>{project.manuscript ? "Update manuscript" : "Choose manuscript"}</span>
+              <span>{project.manuscript ? "Update" : "Choose manuscript"}</span>
             </button>
             {project.manuscript ? (
               <button type="button" className="ma-dash-act" onClick={requestAnalyze}>

@@ -25,29 +25,29 @@ export type PigmentHsl = {
   l: number;
 };
 
-/** Atmosphere-safe pigment: dark and muted so the white canvas stays the page. */
+/** Theme colour may be light or dark — user picks the full range. */
 export const PIGMENT_BOUNDS = {
-  satMin: 0.04,
-  satMax: 0.6,
-  lightMin: 0.09,
-  lightMax: 0.28,
+  satMin: 0,
+  satMax: 1,
+  lightMin: 0.12,
+  lightMax: 0.86,
 } as const;
 
 export const THEME_ACCENT_OPTIONS: ReadonlyArray<ThemeAccentOption> = [
-  { value: "graphite", label: "Graphite", hex: "#1b1c1e", rgb: "27, 28, 30" },
-  { value: "slate", label: "Slate", hex: "#2c3842", rgb: "44, 56, 66" },
-  { value: "cobalt", label: "Cobalt", hex: "#193b63", rgb: "25, 59, 99" },
-  { value: "ink", label: "Ink", hex: "#221c3d", rgb: "34, 28, 61" },
-  { value: "plum", label: "Plum", hex: "#50384c", rgb: "80, 56, 76" },
-  { value: "wine", label: "Wine", hex: "#542436", rgb: "84, 36, 54" },
-  { value: "oxblood", label: "Oxblood", hex: "#651f26", rgb: "101, 31, 38" },
-  { value: "umber", label: "Umber", hex: "#4a3224", rgb: "74, 50, 36" },
-  { value: "moss", label: "Moss", hex: "#293b32", rgb: "41, 59, 50" },
-  { value: "pine", label: "Pine", hex: "#1a3530", rgb: "26, 53, 48" },
+  { value: "graphite", label: "Graphite", hex: "#8a8d94", rgb: "138, 141, 148" },
+  { value: "slate", label: "Slate", hex: "#6d8aa3", rgb: "109, 138, 163" },
+  { value: "cobalt", label: "Cobalt", hex: "#3d7de0", rgb: "61, 125, 224" },
+  { value: "ink", label: "Ink", hex: "#6b5ee8", rgb: "107, 94, 232" },
+  { value: "plum", label: "Plum", hex: "#d06ba0", rgb: "208, 107, 160" },
+  { value: "wine", label: "Wine", hex: "#d44d72", rgb: "212, 77, 114" },
+  { value: "oxblood", label: "Oxblood", hex: "#e05252", rgb: "224, 82, 82" },
+  { value: "umber", label: "Umber", hex: "#c45f38", rgb: "196, 95, 56" },
+  { value: "moss", label: "Moss", hex: "#4f9a62", rgb: "79, 154, 98" },
+  { value: "pine", label: "Pine", hex: "#2f8f7a", rgb: "47, 143, 122" },
 ];
 
 export const DEFAULT_THEME_ACCENT: ThemeAccent = "plum";
-export const DEFAULT_CUSTOM_HEX = "#50384c";
+export const DEFAULT_CUSTOM_HEX = "#d06ba0";
 
 const ACCENT_KEY = "kosmos-labs-theme-accent";
 const CUSTOM_KEY = "kosmos-labs-theme-custom";

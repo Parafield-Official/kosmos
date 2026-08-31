@@ -20,11 +20,13 @@ export function VaultRoom({
   pane = "home",
   nav = "home",
   overlay = null,
+  createSheet = null,
   onOpen,
   onHome,
   onCreate,
   onImport,
   onSettings,
+  onCreateClose,
 }: {
   projects: BookProject[];
   loading: boolean;
@@ -32,11 +34,13 @@ export function VaultRoom({
   pane?: "home" | "glass";
   nav?: "home" | "settings" | "none";
   overlay?: ReactNode;
+  createSheet?: ReactNode;
   onOpen: (project: BookProject) => void;
   onHome: () => void;
   onCreate: () => void;
   onImport: () => void;
   onSettings: () => void;
+  onCreateClose?: () => void;
 }) {
   const [lamps, setLamps] = useState(readLamps);
   const [compose, setCompose] = useState(false);
@@ -44,7 +48,7 @@ export function VaultRoom({
   const [inspectView, setInspectView] = useState<"card" | "read" | "listen">("card");
   const dockRef = useRef<HTMLDivElement>(null);
   const slots = Math.max(COLUMNS * VISIBLE_ROWS, Math.ceil(projects.length / COLUMNS) * COLUMNS);
-  const localSheet = compose || Boolean(inspect);
+  const localSheet = compose || Boolean(inspect) || Boolean(createSheet);
   const glassOn = pane === "glass" || localSheet;
   const interactive = pane === "home" && !localSheet;
   const occupied = useMemo(
@@ -60,8 +64,7 @@ export function VaultRoom({
   }
 
   function pickCreate() {
-    closeSheets();
-    onCreate();
+    void onCreate();
   }
 
   function pickImport() {
@@ -71,7 +74,14 @@ export function VaultRoom({
 
   useEffect(() => {
     closeSheets();
+    onCreateClose?.();
   }, [pane, nav]);
+
+  useEffect(() => {
+    if (createSheet) {
+      setCompose(false);
+    }
+  }, [createSheet]);
 
   useEffect(() => {
     function onLamps() {
@@ -93,11 +103,15 @@ export function VaultRoom({
         setInspectView("card");
         return;
       }
+      if (createSheet) {
+        onCreateClose?.();
+        return;
+      }
       closeSheets();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [localSheet, inspect, inspectView]);
+  }, [localSheet, inspect, inspectView, createSheet]);
 
   return (
     <section
@@ -209,9 +223,15 @@ export function VaultRoom({
 
         {overlay && !localSheet ? <div className="vault-overlay">{overlay}</div> : null}
 
-        {compose ? (
+        {compose && !createSheet ? (
           <div className="vault-sheet-layer" onClick={closeSheets}>
             <ComposePanel onCreate={pickCreate} onImport={pickImport} />
+          </div>
+        ) : null}
+
+        {createSheet ? (
+          <div className="vault-sheet-layer" onClick={() => onCreateClose?.()}>
+            {createSheet}
           </div>
         ) : null}
 

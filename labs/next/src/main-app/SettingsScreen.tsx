@@ -16,7 +16,7 @@ import {
   type ProofMarkKind,
 } from "./engine-prefs";
 import {
-  PROMPT_THEME_OPTIONS,
+  PROMPT_THEME_GROUPS,
   READING_FONT_OPTIONS,
   READING_FONT_STACKS,
   readPromptTheme,
@@ -237,20 +237,27 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                 <PageThemeIcon />
                 <strong>Reading page</strong>
               </div>
-              <p className="ma-set-sub">Paper behind the script.</p>
+              <p className="ma-set-sub">Digital pages or physical paper.</p>
               <div className="ma-set-control">
-                <div className="ma-set-themes" role="radiogroup" aria-label="Reading page">
-                  {PROMPT_THEME_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={promptTheme === option.value}
-                      className={`ma-set-theme is-${option.value}${promptTheme === option.value ? " is-on" : ""}`}
-                      onClick={() => choosePromptTheme(option.value)}
-                    >
-                      {option.label}
-                    </button>
+                <div className="ma-set-paper-groups">
+                  {PROMPT_THEME_GROUPS.map((group) => (
+                    <div className="ma-set-paper-group" key={group.label}>
+                      <p className="ma-set-paper-label">{group.label}</p>
+                      <div className="ma-set-themes" role="radiogroup" aria-label={group.label}>
+                        {group.options.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={promptTheme === option.value}
+                            className={`ma-set-theme is-${option.value}${promptTheme === option.value ? " is-on" : ""}`}
+                            onClick={() => choosePromptTheme(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>

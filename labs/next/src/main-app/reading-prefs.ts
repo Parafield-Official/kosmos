@@ -37,11 +37,46 @@ export const READING_FONT_OPTIONS: ReadonlyArray<{ value: ReadingFont; label: st
   { value: "hyperlegible", label: "Atkinson" },
 ];
 
-export const PROMPT_THEME_OPTIONS: ReadonlyArray<{ value: PromptTheme; label: string }> = [
-  { value: "cream", label: "Cream" },
-  { value: "sepia", label: "Sepia" },
-  { value: "dark", label: "Dark" },
+export const PROMPT_THEME_VALUES = [
+  "white",
+  "black",
+  "glass",
+  "smoke",
+  "cream",
+  "ivory",
+  "sepia",
+  "newsprint",
+  "laid",
+  "kraft",
+] as const satisfies readonly PromptTheme[];
+
+export const PROMPT_THEME_GROUPS: ReadonlyArray<{
+  label: string;
+  options: ReadonlyArray<{ value: PromptTheme; label: string }>;
+}> = [
+  {
+    label: "Digital",
+    options: [
+      { value: "white", label: "White" },
+      { value: "black", label: "Black" },
+      { value: "glass", label: "Glass" },
+      { value: "smoke", label: "Smoke" },
+    ],
+  },
+  {
+    label: "Paper",
+    options: [
+      { value: "cream", label: "Cream" },
+      { value: "ivory", label: "Ivory" },
+      { value: "sepia", label: "Sepia" },
+      { value: "newsprint", label: "Newsprint" },
+      { value: "laid", label: "Laid" },
+      { value: "kraft", label: "Kraft" },
+    ],
+  },
 ];
+
+export const PROMPT_THEME_OPTIONS = PROMPT_THEME_GROUPS.flatMap((group) => group.options);
 
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -77,7 +112,8 @@ export function writeReadingFont(font: ReadingFont): void {
 }
 
 export function readPromptTheme(): PromptTheme {
-  return readStored(THEME_KEY, ["dark", "sepia", "cream"] as const, "dark");
+  const stored = readStored(THEME_KEY, [...PROMPT_THEME_VALUES, "dark"] as const, "black");
+  return stored === "dark" ? "black" : stored;
 }
 
 export function writePromptTheme(theme: PromptTheme): void {

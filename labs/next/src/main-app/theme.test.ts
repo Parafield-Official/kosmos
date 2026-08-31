@@ -16,12 +16,11 @@ describe("pigment colour math", () => {
     expect(parseHexColor("not-a-color")).toBeNull();
   });
 
-  it("keeps mixed pigments inside the dark atmosphere range", () => {
+  it("lets mixed pigments stay bright", () => {
     const neon = clampPigmentHex("#ffe600");
     const hsl = hslFromHex(neon);
-    expect(hsl.s).toBeGreaterThanOrEqual(PIGMENT_BOUNDS.satMin - 0.01);
-    expect(hsl.s).toBeLessThanOrEqual(PIGMENT_BOUNDS.satMax + 0.01);
-    expect(hsl.l).toBeGreaterThanOrEqual(PIGMENT_BOUNDS.lightMin - 0.01);
+    expect(hsl.s).toBeGreaterThan(0.7);
+    expect(hsl.l).toBeGreaterThan(0.45);
     expect(hsl.l).toBeLessThanOrEqual(PIGMENT_BOUNDS.lightMax + 0.01);
   });
 

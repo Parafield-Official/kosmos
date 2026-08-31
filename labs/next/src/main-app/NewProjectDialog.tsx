@@ -132,9 +132,11 @@ async function detectManuscriptCover(file: File): Promise<string | null> {
 export function NewProjectDialog({
   onCreated,
   onClose,
+  embedded,
 }: {
   onCreated: (input: NewProjectInput) => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
@@ -205,19 +207,24 @@ export function NewProjectDialog({
   }
 
   return (
-    <div className="ma-scrim" role="dialog" aria-modal="true" aria-label="New project" onClick={onClose}>
-      <div className="ma-dialog neu-panel" onClick={(event) => event.stopPropagation()}>
-        <h2 className="ma-dialog-title">Create a project</h2>
+    <div className={embedded ? "vault-create-wrap" : "ma-scrim"} role="dialog" aria-modal="true" aria-label="New project" onClick={embedded ? undefined : onClose}>
+      <article
+        className={embedded ? "vault-create" : "ma-dialog neu-panel"}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="vault-create-kicker">New project</p>
+        <h2 className="ma-dialog-title" id="vault-create-title">
+          Create a project
+        </h2>
         <p className="ma-dialog-sub">
-          Upload the manuscript first. Then pick a folder on this computer — Kosmos creates a project folder there and
-          saves the manuscript inside it.
+          Manuscript first, then a folder on this computer. Kosmos saves the book there.
         </p>
 
         <div className="ma-field ma-field-full">
           <span>Manuscript</span>
           <button
             type="button"
-            className="ma-manuscript-pick neu-inset"
+            className="ma-manuscript-pick"
             onClick={() => manuscriptRef.current?.click()}
           >
             <UploadIcon />
@@ -241,7 +248,7 @@ export function NewProjectDialog({
           {hasBridge ? (
             <button
               type="button"
-              className="ma-manuscript-pick neu-inset"
+              className="ma-manuscript-pick"
               disabled={picking || !manuscript}
               onClick={() => {
                 setPicking(true);
@@ -277,7 +284,7 @@ export function NewProjectDialog({
         <div className="ma-dialog-body">
           <button
             type="button"
-            className="ma-cover-pick neu-inset"
+            className="ma-cover-pick"
             onClick={() => fileRef.current?.click()}
             aria-label="Choose cover image"
           >
@@ -302,7 +309,7 @@ export function NewProjectDialog({
             <label className="ma-field">
               <span>Title</span>
               <input
-                className="neu-input"
+                className="ma-create-input"
                 value={title}
                 placeholder="The Silent Orbit"
                 onChange={(event) => setTitle(event.target.value)}
@@ -316,7 +323,7 @@ export function NewProjectDialog({
             <label className="ma-field">
               <span>Author</span>
               <input
-                className="neu-input"
+                className="ma-create-input"
                 value={author}
                 placeholder="Your name"
                 onChange={(event) => setAuthor(event.target.value)}
@@ -327,19 +334,19 @@ export function NewProjectDialog({
         </div>
 
         <div className="ma-dialog-actions">
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="vault-create-btn" onClick={onClose}>
             Cancel
           </button>
           <button
             type="button"
-            className="btn btn-clear"
+            className="vault-create-btn is-primary"
             onClick={submit}
             disabled={!title.trim() || !manuscript || (hasBridge && !parentFolder)}
           >
             Create project
           </button>
         </div>
-      </div>
+      </article>
     </div>
   );
 }
