@@ -220,16 +220,6 @@ export function PronunciationScreen({
       >
         <div className="ma-pronounce-add-lead">
           <p className="ma-pronounce-add-kicker">Add a word</p>
-          {undecided > 0 ? (
-            <button
-              type="button"
-              className="ma-pronounce-fill"
-              disabled={fillBusy}
-              onClick={() => void fillFromDictionary()}
-            >
-              {fillBusy ? "Looking them up…" : `Fill ${undecided} from the dictionary`}
-            </button>
-          ) : null}
         </div>
         <div className="ma-pronounce-add-row">
           <span className="ma-pronounce-add-icon" aria-hidden="true">
@@ -269,6 +259,17 @@ export function PronunciationScreen({
               >
                 {playing ? <PauseGlyph /> : <PlayGlyph />}
                 <span>Clip</span>
+              </button>
+            ) : null}
+            {undecided > 0 ? (
+              <button
+                type="button"
+                className="ma-record-btn"
+                disabled={fillBusy}
+                aria-label={`Fill ${undecided} empty guides from the dictionary`}
+                onClick={() => void fillFromDictionary()}
+              >
+                {fillBusy ? "Looking up…" : "Autofill"}
               </button>
             ) : null}
             <button type="submit" className="btn btn-clear" disabled={!draftSpelling.trim()}>

@@ -10,8 +10,6 @@ export function BrandMark() {
       data-open={open ? "true" : "false"}
       aria-label="Kosmos"
       aria-expanded={open}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
     >

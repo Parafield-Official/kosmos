@@ -959,7 +959,7 @@ function windowChromeState() {
   const maximized = labWindow.isMaximized();
   const expanded = isWindowExpanded(labWindow);
   const onApp = ROOM_PLACES.has(labPlace);
-  const showTrafficChrome = platform === "darwin" && onApp && !expanded;
+  const showTrafficChrome = platform === "darwin" && onApp;
   return { platform, fullscreen, maximized, expanded, showTrafficChrome };
 }
 
@@ -1259,7 +1259,7 @@ function openLab() {
     hasShadow: true,
     icon: path.join(__dirname, "..", "labs/next/public/brand/logo.png"),
     show: false,
-    titleBarStyle: "hidden",
+    titleBarStyle: "hiddenInset",
     trafficLightPosition: TRAFFIC_LIGHTS,
     webPreferences: {
       preload: path.join(__dirname, "labs-preload.cjs"),
@@ -1351,6 +1351,11 @@ function openLab() {
     const fitted = fitAppFrame(labWindow, screen.getDisplayMatching(labWindow.getBounds()).workArea);
     applySize(labWindow, fitted, true);
     onWindowChromeChange();
+    setImmediate(() => {
+      if (labWindow && !labWindow.isDestroyed()) {
+        syncWindowChrome();
+      }
+    });
   });
   labWindow.on("unmaximize", onWindowChromeChange);
   let aspectLock = false;

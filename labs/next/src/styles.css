@@ -154,17 +154,14 @@ select {
   display: none;
 }
 
-.viewport[data-traffic-chrome="false"] .liquid.traffic-glass,
-.viewport[data-window-expanded="true"] .liquid.traffic-glass {
+.viewport[data-traffic-chrome="false"] .liquid.traffic-glass {
   display: none !important;
   visibility: hidden;
   pointer-events: none;
 }
 
 .viewport[data-traffic-chrome="false"][data-place="app"] .drag-strip-start,
-.viewport[data-traffic-chrome="false"][data-place="theme"] .drag-strip-start,
-.viewport[data-window-expanded="true"][data-place="app"] .drag-strip-start,
-.viewport[data-window-expanded="true"][data-place="theme"] .drag-strip-start {
+.viewport[data-traffic-chrome="false"][data-place="theme"] .drag-strip-start {
   left: 12px;
 }
 

@@ -39,7 +39,7 @@ export const LIGHT_RANGE = 1.48;
 export const LIGHT_RADIUS = 0.12;
 export const LIGHT_INTENSITY = 0.78;
 export const AMBIENT = 0.16;
-export const VOLUME_DENSITY = 0.22;
+export const VOLUME_DENSITY = 0.2;
 export const NICHE_DEPTH = 0.055;
 
 export const LAMP_ALL = 0b11111;

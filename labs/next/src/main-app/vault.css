@@ -37,9 +37,9 @@
   --vault-reveal-t: 2.85%;
   --vault-reveal-b: 2.73%;
   --vault-reveal-x: 1.51%;
-  --vault-bezel-t: calc(var(--vault-pad-t) + var(--vault-reveal-t));
+  --vault-bezel-t: max(56px, calc(var(--vault-pad-t) + var(--vault-reveal-t)));
   --vault-bezel-b: calc(var(--vault-pad-b) + var(--vault-reveal-b));
-  --vault-bezel-x: calc(var(--vault-pad-x) + var(--vault-reveal-x));
+  --vault-bezel-x: max(20px, calc(var(--vault-pad-x) + var(--vault-reveal-x)));
   --vault-pad-y: var(--vault-pad-t);
   --vault-pad: var(--vault-pad-t);
   --vault-reveal-y: var(--vault-reveal-t);
@@ -62,9 +62,9 @@
   --vault-reveal-t: 2.85%;
   --vault-reveal-b: 2.73%;
   --vault-reveal-x: 1.51%;
-  --vault-bezel-t: calc(var(--vault-pad-t) + var(--vault-reveal-t));
+  --vault-bezel-t: max(56px, calc(var(--vault-pad-t) + var(--vault-reveal-t)));
   --vault-bezel-b: calc(var(--vault-pad-b) + var(--vault-reveal-b));
-  --vault-bezel-x: calc(var(--vault-pad-x) + var(--vault-reveal-x));
+  --vault-bezel-x: max(20px, calc(var(--vault-pad-x) + var(--vault-reveal-x)));
   --vault-pad-y: var(--vault-pad-t);
   --vault-pad: var(--vault-pad-t);
   --vault-reveal-y: var(--vault-reveal-t);
@@ -256,6 +256,12 @@
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.7),
     inset 0 -1px 2px rgba(80, 70, 58, 0.28);
+}
+
+.vault-spot-unit[data-on="true"] .vault-spot-lens {
+  box-shadow:
+    0 0 10px 3px rgba(255, 236, 210, 0.58),
+    0 10px 22px 4px rgba(255, 214, 170, 0.28);
 }
 
 .vault-spot-unit[data-on="false"] .vault-spot-bowl {
