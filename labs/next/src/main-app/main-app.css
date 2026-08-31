@@ -2868,21 +2868,28 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
-  min-height: 2.6rem;
+  min-height: 2.35rem;
   padding: 0 1.05rem;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   color: #ffffff;
   font: inherit;
   font-weight: 600;
   letter-spacing: -0.02em;
   cursor: pointer;
-  transition: transform 100ms var(--ease), background 140ms var(--ease);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 0 16px 3px rgba(255, 255, 255, 0.12);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.25);
+  transition: transform 100ms var(--ease), background 140ms var(--ease), box-shadow 160ms ease;
 }
 
 .ma-rec-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 0 16px 3px rgba(255, 255, 255, 0.2);
 }
 
 .ma-rec-btn:active {
@@ -3876,8 +3883,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-record-embed {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 0.45rem;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 0.55rem;
   min-height: 0;
   flex: 1;
   height: 100%;

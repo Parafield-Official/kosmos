@@ -985,6 +985,77 @@ export function RecordScreen({
         </header>
       ) : null}
 
+      <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
+        <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
+          <div className="ma-teleprompter-scroll" ref={promptRef}>
+            <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
+              {script.paragraphs.length ? (
+                script.paragraphs.map((para, paraIndex) => {
+                  let word = para.firstWord;
+                  const paraCurrent = cursor >= para.firstWord && cursor < para.firstWord + para.wordCount;
+                  return (
+                    <p
+                      key={paraIndex}
+                      className={`ma-tp-line${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
+                    >
+                      {para.tokens.map((token, tokenIndex) => {
+                        const glossary = token.glossaryId
+                          ? glossaryEntry(project.glossary, token.glossaryId)
+                          : undefined;
+                        const markClass = tokenMarkClass(token);
+                        if (!token.isWord) {
+                          return (
+                            <span
+                              key={tokenIndex}
+                              className={markClass.trim() || undefined}
+                              style={tokenMarkStyle(token)}
+                            >
+                              {token.text}
+                            </span>
+                          );
+                        }
+                        const index = word;
+                        word += 1;
+                        const isNow = highlight === "word" && index === cursor;
+                        const covered = highlight !== "word" && inBand(index);
+                        const flagged = (chapter.pickups ?? []).some(
+                          (pickup) => pickup.status === "open" && pickup.manuscript_index === index,
+                        );
+                        const haltedHere = halt?.expectedIndex === index;
+                        return (
+                          <span
+                            key={tokenIndex}
+                            ref={(node) => {
+                              if (node) {
+                                wordRefs.current.set(index, node);
+                              } else {
+                                wordRefs.current.delete(index);
+                              }
+                            }}
+                            className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
+                            style={tokenMarkStyle(token)}
+                            title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
+                            onClick={() => chooseResume(index)}
+                          >
+                            {token.text}
+                          </span>
+                        );
+                      })}
+                    </p>
+                  );
+                })
+              ) : (
+                <p className="ma-teleprompter-empty">No text yet. Add chapter content to use the teleprompter.</p>
+              )}
+            </div>
+          </div>
+          <div className="ma-teleprompter-guide" aria-hidden="true">
+            <span className="ma-teleprompter-caret" />
+            <span className="ma-teleprompter-caret is-right" />
+          </div>
+        </div>
+      </section>
+
       <section className="ma-flow-block ma-booth-mic" aria-label="Mic and control">
         {boothNotice ? <p className="ma-booth-notice" role="status">{boothNotice}</p> : null}
         {punchStatus !== "idle" ? (
@@ -1014,167 +1085,105 @@ export function RecordScreen({
             </div>
           </div>
         ) : null}
-        <div className="booth-tool-row">
-          {boothTools}
-          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)}>
-            Reading
-          </button>
-          {importSlot}
-        </div>
-        <div className="ma-booth-mic-row">
-          <label className="ma-booth-input">
-            <span>Microphone</span>
-            <select
-              value={inputId}
-              disabled={recording}
-              onChange={(event) => {
-                setInputId(event.target.value);
-                persistChoice(MIC_KEY, event.target.value);
-              }}
-            >
-              <option value="">System default</option>
-              {audioInputs.map((device, index) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label || `Microphone ${index + 1}`}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="ma-recorder">
-        <div className="ma-level" aria-hidden="true">
-          <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
-        </div>
-        <div className="ma-recorder-controls">
-          {workflow.primaryLabel ? (
-            <button
-              type="button"
-              className={recording && !paused ? "ma-rec-btn is-recording" : "ma-rec-btn"}
-              onClick={onPrimary}
-              disabled={saving}
-            >
-              <span className={recording && !paused ? "ma-rec-dot is-stop" : "ma-rec-dot"} />
-              {saving ? "Saving…" : workflow.primaryLabel === "Resume recording" ? "Continue" : workflow.primaryLabel}
-            </button>
-          ) : (
-            <span className="ma-rec-time">Saving…</span>
-          )}
-          {recording && !paused ? (
-            <button type="button" className="btn btn-sm" onClick={pauseRecording}>
-              Pause
-            </button>
-          ) : null}
-          {workflow.canStartOver ? (
-            <button type="button" className="btn btn-sm" onClick={() => void startOver()}>
-              Start over
-            </button>
-          ) : null}
-          {chapter.originalFile && !recording ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
-                  onChange(clearOriginalTape(projectRef.current, chapterId));
-                }
-              }}
-            >
-              Delete audio
-            </button>
-          ) : null}
-          {embedded && onContinueProof && shownPct >= 100 ? (
-            <button type="button" className="btn btn-sm btn-clear" onClick={onContinueProof} disabled={proofing}>
-              {proofing ? "Proofing…" : "Proofread"}
-            </button>
-          ) : null}
-          <div className="ma-rec-meta">
-            <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
-            <span className="ma-rec-mark">
-              {shownPct}% · Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
-            </span>
-          </div>
-        </div>
-        {originalUrl && !recording ? (
-          <div className="ma-take-latest">
-            <span className="ma-take-label">Original</span>
-            <audio className="ma-audio" src={originalUrl} controls />
-          </div>
-        ) : null}
-        {error ? <p className="ma-error">{error}</p> : null}
-        <p className="ma-visually-hidden">{followHint}</p>
-        <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
-        </div>
-      </section>
 
-      <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
-      <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
-        <div className="ma-teleprompter-scroll" ref={promptRef}>
-          <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
-            {script.paragraphs.length ? (
-              script.paragraphs.map((para, paraIndex) => {
-                let word = para.firstWord;
-                const paraCurrent = cursor >= para.firstWord && cursor < para.firstWord + para.wordCount;
-                return (
-                  <p
-                    key={paraIndex}
-                    className={`ma-tp-line${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
-                  >
-                    {para.tokens.map((token, tokenIndex) => {
-                      const glossary = token.glossaryId
-                        ? glossaryEntry(project.glossary, token.glossaryId)
-                        : undefined;
-                      const markClass = tokenMarkClass(token);
-                      if (!token.isWord) {
-                        return (
-                          <span
-                            key={tokenIndex}
-                            className={markClass.trim() || undefined}
-                            style={tokenMarkStyle(token)}
-                          >
-                            {token.text}
-                          </span>
-                        );
-                      }
-                      const index = word;
-                      word += 1;
-                      const isNow = highlight === "word" && index === cursor;
-                      const covered = highlight !== "word" && inBand(index);
-                      const flagged = (chapter.pickups ?? []).some(
-                        (pickup) => pickup.status === "open" && pickup.manuscript_index === index,
-                      );
-                      const haltedHere = halt?.expectedIndex === index;
-                      return (
-                        <span
-                          key={tokenIndex}
-                          ref={(node) => {
-                            if (node) {
-                              wordRefs.current.set(index, node);
-                            } else {
-                              wordRefs.current.delete(index);
-                            }
-                          }}
-                          className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
-                          style={tokenMarkStyle(token)}
-                          title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
-                          onClick={() => chooseResume(index)}
-                        >
-                          {token.text}
-                        </span>
-                      );
-                    })}
-                  </p>
-                );
-              })
-            ) : (
-              <p className="ma-teleprompter-empty">No text yet. Add chapter content to use the teleprompter.</p>
-            )}
+        <div className="ma-booth-dock">
+          <div className="booth-tool-row">
+            {boothTools}
+            <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Reading">
+              <TypeGlyph />
+              <span>Reading</span>
+            </button>
+            {importSlot}
+          </div>
+
+          <div className="ma-recorder">
+            <div className="ma-level" aria-hidden="true">
+              <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
+            </div>
+            <div className="ma-recorder-controls">
+              {workflow.primaryLabel ? (
+                <button
+                  type="button"
+                  className={recording && !paused ? "ma-rec-btn is-recording" : "ma-rec-btn"}
+                  onClick={onPrimary}
+                  disabled={saving}
+                >
+                  <span className={recording && !paused ? "ma-rec-dot is-stop" : "ma-rec-dot"} />
+                  {saving ? "Saving…" : workflow.primaryLabel === "Resume recording" ? "Continue" : workflow.primaryLabel}
+                </button>
+              ) : (
+                <span className="ma-rec-time">Saving…</span>
+              )}
+              {recording && !paused ? (
+                <button type="button" className="booth-tool" onClick={pauseRecording} title="Pause">
+                  <PauseGlyph />
+                  <span>Pause</span>
+                </button>
+              ) : null}
+              {workflow.canStartOver ? (
+                <button type="button" className="booth-tool" onClick={() => void startOver()} title="Start over">
+                  <RestartGlyph />
+                  <span>Start over</span>
+                </button>
+              ) : null}
+              {chapter.originalFile && !recording ? (
+                <button
+                  type="button"
+                  className="booth-tool is-danger"
+                  title="Delete audio"
+                  onClick={() => {
+                    if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
+                      onChange(clearOriginalTape(projectRef.current, chapterId));
+                    }
+                  }}
+                >
+                  <TrashGlyph />
+                  <span>Delete</span>
+                </button>
+              ) : null}
+              {embedded && onContinueProof && shownPct >= 100 ? (
+                <button type="button" className="booth-tool is-primary" onClick={onContinueProof} disabled={proofing}>
+                  <ProofGoGlyph />
+                  <span>{proofing ? "Proofing…" : "Proofread"}</span>
+                </button>
+              ) : null}
+            </div>
+            <div className="ma-rec-meta">
+              <label className="ma-booth-input">
+                <MicInputGlyph />
+                <span className="ma-visually-hidden">Microphone</span>
+                <select
+                  value={inputId}
+                  disabled={recording}
+                  onChange={(event) => {
+                    setInputId(event.target.value);
+                    persistChoice(MIC_KEY, event.target.value);
+                  }}
+                >
+                  <option value="">System default</option>
+                  {audioInputs.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || `Microphone ${index + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <span className="ma-rec-time">{recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}</span>
+              <span className="ma-rec-mark">
+                {shownPct}% · Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
+              </span>
+            </div>
+            {originalUrl && !recording ? (
+              <div className="ma-take-latest">
+                <span className="ma-take-label">Original</span>
+                <audio className="ma-audio" src={originalUrl} controls />
+              </div>
+            ) : null}
+            {error ? <p className="ma-error">{error}</p> : null}
+            <p className="ma-visually-hidden">{followHint}</p>
+            <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
           </div>
         </div>
-        <div className="ma-teleprompter-guide" aria-hidden="true">
-          <span className="ma-teleprompter-caret" />
-          <span className="ma-teleprompter-caret is-right" />
-        </div>
-      </div>
       </section>
 
       {readingOpen ? (
@@ -1253,6 +1262,57 @@ function ChevronLeft() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
       <path d="M10 3 5 8l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TypeGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.2 4.2V3.2h9.6v1M8 3.2v9.6M5.8 12.8h4.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MicInputGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.2" y="2.2" width="5.6" height="8" rx="2.8" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.6 8.2a4.4 4.4 0 0 0 8.8 0M8 12.6V14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PauseGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5.2 3.4h1.8v9.2H5.2zM9 3.4h1.8v9.2H9z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RestartGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.4 8a4.6 4.6 0 1 0 1.2-3.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M3.2 2.8v3.2h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TrashGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.2 4.4h9.6M6.2 4.4V3.2h3.6v1.2M5.1 4.4l.5 8.2h4.8l.5-8.2" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ProofGoGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4.2 2.6h5.6L12.4 5.4v8H4.2V2.6Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+      <path d="M9.6 2.8V5.4h2.6M6 8.2h4.2M6 10.6h3.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
     </svg>
   );
 }

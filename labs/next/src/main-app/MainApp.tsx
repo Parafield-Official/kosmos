@@ -258,6 +258,17 @@ export function MainApp() {
       />
     );
   } else if (screen.name === "book") {
+    const canExport =
+      screen.project.chapters.length > 0 && screen.project.chapters.every((chapter) => chapter.mastered);
+    const startExport = () => {
+      if (exportBusy) {
+        return;
+      }
+      setExportBusy(true);
+      void exportBookPack(screen.project)
+        .then((next) => commit(next))
+        .finally(() => setExportBusy(false));
+    };
     overlay = (
       <BookShell
         project={screen.project}
@@ -265,19 +276,9 @@ export function MainApp() {
         onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
         onBack={openLibrary}
         onDelete={() => setDeleteTarget(screen.project)}
-        canExport={
-          screen.project.chapters.length > 0 && screen.project.chapters.every((chapter) => chapter.mastered)
-        }
+        canExport={canExport}
         exportBusy={exportBusy}
-        onExport={() => {
-          if (exportBusy) {
-            return;
-          }
-          setExportBusy(true);
-          void exportBookPack(screen.project)
-            .then((next) => commit(next))
-            .finally(() => setExportBusy(false));
-        }}
+        onExport={startExport}
       >
         {screen.tab === "dashboard" ? (
           <DashboardScreen
@@ -297,6 +298,9 @@ export function MainApp() {
             onRead={(chapterId) => openReader(screen.project, chapterId)}
             onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
             onChange={(next) => void commit(next)}
+            canExport={canExport}
+            exportBusy={exportBusy}
+            onExport={startExport}
           />
         ) : null}
         {screen.tab === "pronunciation" ? (

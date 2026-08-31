@@ -120,53 +120,52 @@ export function ChapterWorkspace({
     onStep("recording");
   }
 
-  const booth = step === "recording" || step === "proofreading";
   const chapterIndex = project.chapters.findIndex((item) => item.id === chapterId) + 1;
 
   return (
-    <section className={booth ? "quest-workspace is-booth" : "quest-workspace"} aria-label={chapter.title}>
+    <section className="quest-workspace is-booth" aria-label={chapter.title}>
       <header className="quest-work-head">
         <button type="button" className="vault-media-back" onClick={onBack} aria-label="Back to chapters">
           <ChevronLeft />
           <span>Back</span>
         </button>
         <div className="quest-work-title">
-          <p className="quest-work-kicker">Chapter {String(Math.max(1, chapterIndex)).padStart(2, "0")}</p>
-          <h1>{chapter.title}</h1>
+          <h1>
+            <span className="quest-work-num">{String(Math.max(1, chapterIndex)).padStart(2, "0")}</span>
+            {chapter.title}
+          </h1>
         </div>
-        <span className="quest-work-spacer" aria-hidden="true" />
+        <nav className="quest-steps" aria-label="Chapter steps">
+          {STEPS.map((item) => {
+            const locked = stepLocked(item.id, chapter);
+            const done =
+              item.id === "recording"
+                ? chapter.recordedPct >= 1
+                : item.id === "proofreading"
+                  ? chapter.proofed
+                  : chapter.mastered;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`quest-step is-${item.id}${step === item.id ? " is-on" : ""}${done ? " is-done" : ""}`}
+                disabled={locked}
+                onClick={() => onStep(item.id)}
+              >
+                <span className="quest-step-icon" aria-hidden="true">
+                  {item.id === "recording" ? <MicStepIcon /> : null}
+                  {item.id === "proofreading" ? <ProofStepIcon /> : null}
+                  {item.id === "mastering" ? <WaveStepIcon /> : null}
+                </span>
+                <span className="quest-step-copy">
+                  <strong>{item.label}</strong>
+                  <em>{done ? "Done" : locked ? "Locked" : item.hint}</em>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
       </header>
-
-      <nav className="quest-steps" aria-label="Chapter steps">
-        {STEPS.map((item) => {
-          const locked = stepLocked(item.id, chapter);
-          const done =
-            item.id === "recording"
-              ? chapter.recordedPct >= 1
-              : item.id === "proofreading"
-                ? chapter.proofed
-                : chapter.mastered;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`quest-step is-${item.id}${step === item.id ? " is-on" : ""}${done ? " is-done" : ""}`}
-              disabled={locked}
-              onClick={() => onStep(item.id)}
-            >
-              <span className="quest-step-icon" aria-hidden="true">
-                {item.id === "recording" ? <MicStepIcon /> : null}
-                {item.id === "proofreading" ? <ProofStepIcon /> : null}
-                {item.id === "mastering" ? <WaveStepIcon /> : null}
-              </span>
-              <span className="quest-step-copy">
-                <strong>{item.label}</strong>
-                <em>{done ? "Done" : locked ? "Locked" : item.hint}</em>
-              </span>
-            </button>
-          );
-        })}
-      </nav>
 
       {proofError ? <p className="ma-error ma-chapter-workspace-error">{proofError}</p> : null}
 
@@ -295,12 +294,15 @@ function RecordingStep({
             type="button"
             className={`booth-tool${roomStatus ? ` is-${roomStatus}` : ""}`}
             onClick={onOpenRoom}
+            title={roomChipLabel(project.roomCheck)}
           >
-            {roomChipLabel(project.roomCheck)}
+            <RoomGlyph />
+            <span>{roomChipLabel(project.roomCheck)}</span>
           </button>
           {onOpenGuide ? (
-            <button type="button" className="booth-tool" onClick={onOpenGuide}>
-              Guide{guideCount > 1 ? ` ${guideCount}` : ""}
+            <button type="button" className="booth-tool" onClick={onOpenGuide} title="Pronunciation guide">
+              <GuideGlyph />
+              <span>Guide{guideCount > 1 ? ` ${guideCount}` : ""}</span>
             </button>
           ) : null}
         </>
@@ -342,11 +344,13 @@ function ChapterAudioImport({
     <>
       <button
         type="button"
-        className="btn btn-clear"
+        className="booth-tool"
         disabled={importing}
+        title={chapter?.hasOriginalAudio ? "Replace original" : "Upload audio file"}
         onClick={() => importRef.current?.click()}
       >
-        {importing ? "Importing…" : chapter?.hasOriginalAudio ? "Replace original" : "Upload audio file"}
+        <UploadGlyph />
+        <span>{importing ? "Importing…" : chapter?.hasOriginalAudio ? "Replace" : "Upload"}</span>
       </button>
       <input
         ref={importRef}
@@ -607,6 +611,34 @@ function WaveStepIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M3.2 10h1.4M6 6.4v7.2M8.8 4.6v10.8M11.6 7.2v5.6M14.4 5.4v9.2M17.2 9.2v1.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function RoomGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.2 12.4V6.8L8 3.4l4.8 3.4v5.6H3.2Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+      <path d="M6.4 12.4v-3.2h3.2v3.2" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function GuideGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="3" y="3.2" width="7.2" height="9.6" rx="1.2" stroke="currentColor" strokeWidth="1.35" />
+      <path d="M5.2 6.2h3.2M5.2 8.4h2.4" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+      <path d="M11.2 5.2h1.6a1.2 1.2 0 0 1 1.2 1.2v6.2H8.8" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function UploadGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 11.2V4.2M5.4 6.4 8 3.8l2.6 2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.2 11.4v1.2A1.2 1.2 0 0 0 4.4 13.8h7.2a1.2 1.2 0 0 0 1.2-1.2v-1.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

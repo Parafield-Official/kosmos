@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { chapterCompletionPct } from "./book-stats";
 import { chapterStage, readChapterContent, removeChapter, type BookChapter, type BookProject, type ChapterStage } from "./store";
@@ -10,6 +10,9 @@ export function ChaptersScreen({
   onRead,
   onAddChapter,
   onChange,
+  onExport,
+  canExport = false,
+  exportBusy = false,
 }: {
   project: BookProject;
   onOpenChapter: (chapterId: string) => void;
@@ -17,6 +20,9 @@ export function ChaptersScreen({
   onRead: (chapterId: string) => void;
   onAddChapter: (title: string) => void;
   onChange: (next: BookProject) => void;
+  onExport?: () => void;
+  canExport?: boolean;
+  exportBusy?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -132,7 +138,10 @@ export function ChaptersScreen({
               <g mask="url(#quest-trail-cut)" style={{ filter: "none" }}>
                 <path className="quest-vine-road" d={layout.path} />
                 {layout.segments.map((segment, index) => {
-                  const walked = allDone || completeAt[index] || completeAt[index + 1];
+                  const toFinish = Boolean(layout.finish) && index === layout.segments.length - 1;
+                  const walked = toFinish
+                    ? allDone
+                    : allDone || completeAt[index] || completeAt[index + 1];
                   return (
                     <path
                       className={walked ? "quest-vine-lit" : "quest-vine-wait"}
@@ -146,12 +155,13 @@ export function ChaptersScreen({
           ) : null}
 
           {layout.dots.map((dot, index) => {
-            const finished = Boolean(completeAt[index]);
-            const now = !allDone && index === currentIndex;
+            const isFinish = Boolean(layout.finish) && index === layout.dots.length - 1;
+            const finished = isFinish ? allDone : Boolean(completeAt[index]);
+            const now = isFinish ? false : !allDone && index === currentIndex;
             return (
               <span
                 key={`bead-${index}`}
-                className={`quest-bead${now ? " is-now" : finished ? " is-lit" : ""}`}
+                className={`quest-bead${isFinish ? " is-finish" : ""}${now ? " is-now" : finished ? " is-lit" : ""}`}
                 style={{ left: dot.x, top: dot.y }}
                 aria-hidden="true"
               />
@@ -180,6 +190,16 @@ export function ChaptersScreen({
             );
           })}
 
+          {layout.finish && onExport ? (
+            <QuestFinish
+              side={layout.finish.side}
+              top={layout.finish.y}
+              ready={canExport}
+              busy={exportBusy}
+              onExport={onExport}
+            />
+          ) : null}
+
           {adding ? (
             <div className="quest-add-card" style={{ top: layout.addTop }}>
               <input
@@ -204,11 +224,6 @@ export function ChaptersScreen({
             </div>
           ) : null}
 
-          {allDone ? (
-            <p className="quest-complete" role="status">
-              Trail complete. Every chapter is mastered.
-            </p>
-          ) : null}
         </div>
       )}
     </section>
@@ -229,54 +244,46 @@ function snakeSegment(prev: { x: number; y: number }, curr: { x: number; y: numb
   return `M ${n(prev.x)} ${n(prev.y)} C ${n(prev.x + dx * 0.08)} ${n(prev.y + dy * 0.36)}, ${n(curr.x - dx * 0.08)} ${n(curr.y - dy * 0.36)}, ${n(curr.x)} ${n(curr.y)}`;
 }
 
-/** One hop only: a straight run from stop to stop. */
-function hopSegment(prev: { x: number; y: number }, curr: { x: number; y: number }): string {
-  return `M ${n(prev.x)} ${n(prev.y)} L ${n(curr.x)} ${n(curr.y)}`;
+function questStop(index: number, even: boolean, midX: number, amp: number, startY: number, step: number) {
+  const onRight = even ? index % 2 === 0 : index % 2 === 1;
+  return {
+    x: midX + (onRight ? amp : -amp),
+    y: startY + index * step,
+    side: onRight ? ("right" as const) : ("left" as const),
+  };
 }
 
 function questLayout(count: number, even: boolean, width: number) {
   const viewW = Math.max(width, 480);
   const midX = viewW / 2;
-  const amp = viewW * 0.138;
+  const amp = viewW * 0.11;
   const startY = 104;
-  const step = 236;
-  const snake = count >= 3;
-  const nodes = Array.from({ length: count }, (_, index) => {
-    const onRight = even ? index % 2 === 0 : index % 2 === 1;
-    return {
-      x: midX + (onRight ? amp : -amp),
-      y: startY + index * step,
-      side: onRight ? ("right" as const) : ("left" as const),
-    };
-  });
+  const step = 268;
+  const nodes = Array.from({ length: count }, (_, index) => questStop(index, even, midX, amp, startY, step));
+  const finish = count > 0 ? questStop(count, even, midX, amp, startY, step) : null;
+  const stops = finish ? [...nodes, finish] : nodes;
   const segments: string[] = [];
-  for (let index = 1; index < nodes.length; index += 1) {
-    const prev = nodes[index - 1];
-    const curr = nodes[index];
+  for (let index = 1; index < stops.length; index += 1) {
+    const prev = stops[index - 1];
+    const curr = stops[index];
     if (!prev || !curr) {
       continue;
     }
-    segments.push(snake ? snakeSegment(prev, curr) : hopSegment(prev, curr));
+    segments.push(snakeSegment(prev, curr));
   }
-  const first = nodes[0];
-  const last = nodes[nodes.length - 1];
-  const lead = snake && first
-    ? `M ${n(midX)} 24 C ${n(midX)} ${n(first.y * 0.42)}, ${n(first.x)} ${n(first.y - 36)}, ${n(first.x)} ${n(first.y)}`
-    : "";
-  const tail = snake && last
-    ? `M ${n(last.x)} ${n(last.y)} C ${n(last.x)} ${n(last.y + 36)}, ${n(midX)} ${n(last.y + 68)}, ${n(midX)} ${n(last.y + 96)}`
-    : "";
-  const viewH = startY + Math.max(count - 1, 0) * step + (snake ? 120 : 72);
+  const last = finish ?? nodes[nodes.length - 1];
+  const viewH = startY + Math.max(count, 0) * step + 128;
   const cut = 20;
   return {
     nodes,
-    dots: nodes.map((node) => ({ x: node.x, y: node.y, cut })),
+    finish,
+    dots: stops.map((node) => ({ x: node.x, y: node.y, cut })),
     segments,
-    path: [lead, ...segments, tail].filter(Boolean).join(" "),
+    path: segments.join(" "),
     viewBox: `0 0 ${n(viewW)} ${n(viewH)}`,
     viewH,
     viewW,
-    addTop: last ? last.y + (snake ? 112 : 88) : 24,
+    addTop: last ? last.y + 148 : 24,
   };
 }
 
@@ -308,43 +315,92 @@ function QuestNode({
   const overLength = estimateDurationMinutes(words) > MAX_CHAPTER_MINUTES;
   const stage = chapterStage(chapter);
   const done = pct >= 100;
-  const finished = chapterStopDone(chapter);
+  const action = chapterPrimaryAction(stage);
 
   return (
     <article
       className={`quest-node is-${side}${current ? " is-current" : ""}${done ? " is-done" : ""}`}
       style={{ top }}
     >
-      <button type="button" className="quest-cover" onClick={onOpen} aria-label={`Record ${chapter.title}`}>
+      <button type="button" className="quest-cover" onClick={onOpen} aria-label={`${action.label} ${chapter.title}`}>
         <span className="quest-folio" aria-hidden="true">
           <ChapterPagePreview project={project} chapter={chapter} />
         </span>
-        <span className="quest-ring" style={{ ["--quest-pct" as string]: `${pct}%` }} />
         {done ? <span className="quest-seal">Done</span> : null}
       </button>
       <div className="quest-meta">
-        <p className="quest-index">{String(index).padStart(2, "0")}</p>
-        <h2 className="quest-title">{chapter.title}</h2>
-        <p className="quest-status">
-          {stageLabel(stage)} · {pct}%
-          {overLength ? ` · Over ${MAX_CHAPTER_MINUTES} min` : ""}
-        </p>
-        <div className="quest-meter" aria-hidden="true">
-          <i style={{ width: `${pct}%` }} />
+        <div className="quest-copy">
+          <p className="quest-index">{String(index).padStart(2, "0")}</p>
+          <h2 className="quest-title">{chapter.title}</h2>
+          <p className="quest-status">
+            {stageLabel(stage)} · {pct}%
+            {overLength ? ` · Over ${MAX_CHAPTER_MINUTES} min` : ""}
+          </p>
         </div>
         <div className="quest-acts">
           <button type="button" className="quest-act is-primary" onClick={onOpen}>
-            <MicGlyph />
-            {finished ? "Open" : "Record"}
+            {action.icon}
+            {action.label}
           </button>
-          <button type="button" className="quest-act" onClick={onRead} aria-label="Read" title="Read">
-            <ReadGlyph />
-          </button>
-          <button type="button" className="quest-act" onClick={onEdit} aria-label="Edit" title="Edit">
-            <EditGlyph />
-          </button>
-          <button type="button" className="quest-act is-danger" onClick={onRemove} aria-label="Remove" title="Remove">
-            <TrashGlyph />
+        </div>
+      </div>
+      <div className="quest-node-dock" role="group" aria-label={`${chapter.title} tools`}>
+        <button type="button" className="quest-dock-btn" onClick={onRead} aria-label="Read" title="Read">
+          <ReadGlyph />
+        </button>
+        <span className="quest-dock-rule" aria-hidden="true" />
+        <button type="button" className="quest-dock-btn" onClick={onEdit} aria-label="Edit" title="Edit">
+          <EditGlyph />
+        </button>
+        <span className="quest-dock-rule" aria-hidden="true" />
+        <button type="button" className="quest-dock-btn is-danger" onClick={onRemove} aria-label="Remove" title="Remove">
+          <TrashGlyph />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function chapterPrimaryAction(stage: ChapterStage): { label: string; icon: ReactNode } {
+  if (stage === "proofing") {
+    return { label: "Proofread", icon: <ProofGlyph /> };
+  }
+  if (stage === "mastering" || stage === "done") {
+    return { label: "Master", icon: <WaveGlyph /> };
+  }
+  return { label: "Record", icon: <MicGlyph /> };
+}
+
+function QuestFinish({
+  side,
+  top,
+  ready,
+  busy,
+  onExport,
+}: {
+  side: "left" | "right";
+  top: number;
+  ready: boolean;
+  busy: boolean;
+  onExport: () => void;
+}) {
+  return (
+    <article className={`quest-node is-${side} is-finish${ready ? " is-ready" : ""}`} style={{ top }}>
+      <span className="quest-finish-mark" aria-hidden="true">
+        <ExportGlyph />
+      </span>
+      <div className="quest-meta">
+        <div className="quest-copy">
+          <p className="quest-index">End</p>
+          <h2 className="quest-title">Export ACX</h2>
+          <p className="quest-status">
+            {busy ? "Packing the book…" : ready ? "Ready to pack" : "Master every chapter first"}
+          </p>
+        </div>
+        <div className="quest-acts">
+          <button type="button" className="quest-act is-primary" onClick={onExport} disabled={!ready || busy}>
+            <ExportGlyph />
+            {busy ? "Exporting…" : "Export"}
           </button>
         </div>
       </div>
@@ -465,6 +521,32 @@ function MicGlyph() {
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="5.2" y="2.2" width="5.6" height="8" rx="2.8" stroke="currentColor" strokeWidth="1.4" />
       <path d="M3.6 8.2a4.4 4.4 0 0 0 8.8 0M8 12.6V14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProofGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4.2 2.6h5.6L12.4 5.4v8H4.2V2.6Z" stroke="currentColor" strokeWidth="1.35" strokeLinejoin="round" />
+      <path d="M9.6 2.8V5.4h2.6M6 8.2h4.2M6 10.6h3.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function WaveGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.6 8h1.1M4.8 5.2v5.6M7 3.8v8.4M9.2 5.8v4.4M11.4 4.4v7.2M13.6 7.4v1.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ExportGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2.6v6.4M5.4 5 8 2.4 10.6 5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.4 9.2v2.6A1.2 1.2 0 0 0 4.6 13h6.8a1.2 1.2 0 0 0 1.2-1.2V9.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
