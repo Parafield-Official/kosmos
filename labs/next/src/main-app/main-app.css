@@ -85,6 +85,7 @@
 .ma-settings > .ma-set-card-wide {
   width: min(100%, 44rem);
   margin-inline: auto;
+  flex: none;
 }
 
 .ma-set-masthead {
@@ -182,6 +183,7 @@
 
 .ma-set-card-wide {
   display: grid;
+  min-height: min-content;
 }
 
 .ma-set-col > .ma-set-kicker:first-child {
@@ -1570,10 +1572,10 @@
 
 .ma-glossary-list li {
   display: grid;
-  grid-template-columns: minmax(8rem, 0.8fr) minmax(10rem, 1.4fr) auto auto;
-  gap: 0.55rem;
+  grid-template-columns: minmax(6rem, 0.8fr) minmax(5.5rem, 0.7fr) auto;
+  gap: 0.45rem;
   align-items: center;
-  padding: 0.55rem 0.2rem;
+  padding: 0.42rem 0.1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -3400,9 +3402,13 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-book-main > .ma-pronounce {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: start;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  gap: 0.85rem;
+  gap: 1.45rem;
+  padding: 1.85rem 2.55rem 2.2rem 2.4rem;
 }
 
 .ma-pronounce-head {
@@ -3418,9 +3424,224 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   max-width: 36em;
 }
 
-.ma-pronounce .ma-glossary {
+.ma-pronounce-add {
+  display: grid;
+  grid-template-columns: auto minmax(8.5rem, 0.9fr) minmax(11rem, 1.35fr) auto;
+  align-items: center;
+  gap: 0.8rem 0.95rem;
+  padding: 1.15rem 1.3rem;
+  border-radius: 20px;
+}
+
+.ma-pronounce-add-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  color: inherit;
+}
+
+.ma-pronounce-add-icon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.ma-pronounce-add-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.ma-pronounce-add .ma-word-input,
+.ma-pronounce-add .ma-guide-input {
+  width: 100%;
+  min-width: 0;
+  field-sizing: content;
+}
+
+.ma-pronounce-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 2.05rem;
+  min-height: 0;
+  height: 100%;
+}
+
+.ma-pronounce-board > .ma-glossary {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-self: stretch;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 1.85rem 2rem 1.8rem;
+}
+
+.ma-glossary-pane {
   min-height: 0;
   overflow: auto;
+}
+
+.ma-pronounce-board > .ma-glossary .ma-glossary-pane,
+.ma-pronounce-board > .ma-suppress .ma-glossary-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ma-pronounce-board > .ma-glossary.is-empty .ma-glossary-pane,
+.ma-pronounce-board > .ma-suppress.is-empty .ma-glossary-pane {
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.ma-pronounce .ma-glossary-empty {
+  margin: 0;
+  text-align: center;
+  font-size: 0.92rem;
+}
+
+.ma-pronounce .ma-glossary-list {
+  width: 100%;
+  gap: 0;
+}
+
+.ma-pronounce .ma-glossary-list li {
+  display: grid;
+  grid-template-columns: max-content minmax(10.5rem, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem 1.05rem;
+  padding: 0.92rem 0.25rem 0.92rem 0.15rem;
+}
+
+.ma-pronounce .ma-glossary-list li strong {
+  flex: none;
+  width: auto;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ma-pronounce .ma-glossary-list .ma-guide-input {
+  width: 100%;
+  min-width: 0;
+  flex: none;
+  field-sizing: content;
+}
+
+.ma-word-acts {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.32rem;
+  justify-content: flex-end;
+}
+
+.ma-word-act {
+  display: grid;
+  place-items: center;
+  width: 2.05rem;
+  height: 2.05rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.ma-word-act svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.ma-word-act:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.ma-word-act.is-live,
+.ma-word-act.is-danger {
+  color: inherit;
+}
+
+.ma-record-btn,
+.ma-clip-file {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 2.15rem;
+  width: auto;
+  padding: 0 0.85rem 0 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+}
+
+.ma-record-btn svg,
+.ma-clip-file svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.ma-record-btn.is-live,
+.ma-clip-file.is-live {
+  color: inherit;
+}
+
+.ma-word-act:active:not(:disabled),
+.ma-record-btn:active,
+.ma-clip-file:active {
+  transform: scale(0.97);
+}
+
+.ma-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 0.78rem;
+}
+
+.ma-wave i {
+  display: block;
+  width: 2px;
+  height: 35%;
+  border-radius: 99px;
+  background: currentColor;
+  animation: ma-wave 0.9s ease-in-out infinite;
+}
+
+.ma-wave i:nth-child(2) {
+  animation-delay: 0.12s;
+}
+
+.ma-wave i:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+.ma-wave i:nth-child(4) {
+  animation-delay: 0.36s;
+}
+
+@keyframes ma-wave {
+  0%,
+  100% {
+    height: 28%;
+  }
+  50% {
+    height: 100%;
+  }
 }
 
 .ma-book-main > .ma-chapters {
@@ -3870,9 +4091,28 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 @media (max-width: 960px) {
   .ma-booth-settings,
+  .ma-pronounce-board,
   .ma-record-gate,
   .ma-hero-stats {
     grid-template-columns: 1fr;
+  }
+
+  .ma-pronounce-add {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ma-pronounce-add .ma-guide-input,
+  .ma-pronounce-add-tools {
+    grid-column: 1 / -1;
+  }
+
+  .ma-pronounce .ma-glossary-list li {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .ma-pronounce .ma-glossary-list li .ma-word-acts {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 
   .ma-review-embed {
@@ -5364,7 +5604,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
     transition: none !important;
   }
 
-  .ma-book-nav-dot {
+  .ma-book-nav-dot,
+  .ma-wave i {
     animation: none;
     opacity: 0.85;
   }
@@ -6106,8 +6347,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce {
-  gap: 0.95rem;
-  padding: 1.05rem 1.35rem 1.3rem;
+  gap: 1.5rem;
+  padding: 1.9rem 2.65rem 2.25rem 2.5rem;
   color: #f7f2eb;
 }
 
@@ -6122,7 +6363,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-glossary,
-.main-app .vault-overlay .ma-pronounce .ma-suppress {
+.main-app .vault-overlay .ma-pronounce .ma-suppress,
+.main-app .vault-overlay .ma-pronounce-add {
   background: var(--info-glass);
   border: var(--info-glass-border);
   box-shadow: var(--info-glass-shadow);
@@ -6130,9 +6372,20 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   -webkit-backdrop-filter: var(--info-glass-blur);
 }
 
+.main-app .vault-overlay .ma-pronounce-board > .ma-glossary,
+.main-app .vault-overlay .ma-pronounce-board > .ma-suppress {
+  padding: 1.9rem 2.05rem 1.85rem;
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-record-btn,
+.main-app .vault-overlay .ma-pronounce .ma-clip-file {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
 .main-app .vault-overlay .ma-pronounce .ma-glossary-head h2 {
   color: #fff;
-  font-size: 1.05rem;
+  font-size: 1.02rem;
   font-weight: 560;
   letter-spacing: -0.03em;
 }
@@ -6166,7 +6419,10 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(255, 255, 255, 0.12);
 }
 
-.main-app .vault-overlay .ma-pronounce .btn {
+.main-app .vault-overlay .ma-pronounce .btn,
+.main-app .vault-overlay .ma-pronounce .ma-word-act,
+.main-app .vault-overlay .ma-pronounce .ma-record-btn,
+.main-app .vault-overlay .ma-pronounce .ma-clip-file {
   color: #f7f2eb;
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
@@ -6174,14 +6430,33 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .main-app .vault-overlay .ma-pronounce .btn:hover:not(:disabled),
-.main-app .vault-overlay .ma-pronounce .btn:focus-visible:not(:disabled) {
+.main-app .vault-overlay .ma-pronounce .btn:focus-visible:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-word-act:hover:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-word-act:focus-visible:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-record-btn:hover:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-record-btn:focus-visible:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-clip-file:hover:not(:disabled),
+.main-app .vault-overlay .ma-pronounce .ma-clip-file:focus-visible:not(:disabled) {
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
 }
 
-.main-app .vault-overlay .ma-pronounce .btn:disabled {
+.main-app .vault-overlay .ma-pronounce .btn:disabled,
+.main-app .vault-overlay .ma-pronounce .ma-word-act:disabled {
   color: rgba(247, 242, 235, 0.32);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-word-act.is-live,
+.main-app .vault-overlay .ma-pronounce .ma-record-btn.is-live,
+.main-app .vault-overlay .ma-pronounce .ma-clip-file.is-live {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.main-app .vault-overlay .ma-pronounce .ma-word-act.is-danger:hover:not(:disabled) {
+  color: #ff8a82;
+  background: rgba(180, 52, 48, 0.24);
 }
 
 .main-app .vault-overlay .ma-pronounce .ma-suppress-list li {
@@ -6227,7 +6502,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   .main-app .vault-overlay .ma-dash-hero,
   .main-app .vault-overlay .ma-dash-stats > div,
   .main-app .vault-overlay .ma-pronounce .ma-glossary,
-  .main-app .vault-overlay .ma-pronounce .ma-suppress {
+  .main-app .vault-overlay .ma-pronounce .ma-suppress,
+  .main-app .vault-overlay .ma-pronounce-add {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background: rgba(36, 28, 24, 0.92);

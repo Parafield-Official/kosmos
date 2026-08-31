@@ -25,7 +25,7 @@ export function spellingKey(spelling: string): string {
 }
 
 export function isResolved(entry: GlossaryEntry): boolean {
-  return Boolean(entry.respell?.trim());
+  return Boolean(entry.respell?.trim() || entry.clip_path);
 }
 
 /** Whole-word count, including possessives — same rule as the original voice guide. */
@@ -149,6 +149,13 @@ export function setGlossaryRespell(project: BookProject, id: string, respell: st
   return {
     ...project,
     glossary: renameGlossaryEntry(project.glossary ?? [], id, entry.spelling, respell, entry.voice_note),
+  };
+}
+
+export function setGlossaryClip(project: BookProject, id: string, clipPath: string | undefined): BookProject {
+  return {
+    ...project,
+    glossary: (project.glossary ?? []).map((entry) => (entry.id === id ? { ...entry, clip_path: clipPath } : entry)),
   };
 }
 

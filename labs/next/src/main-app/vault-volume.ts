@@ -50,7 +50,7 @@ const VOLUME_FRAG = /* glsl */ `
     float shell = pow(1.0 - abs(dot(normalize(vNormal), view)), 1.35);
     float along = pow(max(dot(-view, uLightDir), 0.0), 5.0);
     float glow = cone * atten * uIntensity * uShown * mix(0.22, 0.95, shell) * mix(0.75, 1.25, along);
-    vec3 rgb = vec3(0.50) + vec3(1.0, 0.88, 0.7) * glow * 0.12;
+    vec3 rgb = vec3(0.50) + vec3(1.0, 0.94, 0.86) * glow * 0.14;
     rgb = clamp(rgb, vec3(0.47), vec3(0.62));
     gl_FragColor = vec4(rgb, 1.0);
   }

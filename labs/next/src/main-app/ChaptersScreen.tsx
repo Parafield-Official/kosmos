@@ -3,8 +3,6 @@ import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/co
 import { chapterCompletionPct } from "./book-stats";
 import { chapterStage, readChapterContent, removeChapter, type BookChapter, type BookProject, type ChapterStage } from "./store";
 
-const ROW = 13.6;
-
 export function ChaptersScreen({
   project,
   onOpenChapter,
@@ -94,20 +92,27 @@ export function ChaptersScreen({
           style={{ minHeight: `${Math.max(layout.height, 18)}rem` }}
         >
           <svg className="quest-vine" viewBox={layout.viewBox} preserveAspectRatio="none" aria-hidden="true">
-            {even ? <path className="quest-vine-trunk" d={layout.trunk} /> : null}
-            <path className="quest-vine-glow" d={layout.path} />
-            <path className="quest-vine-line" d={layout.path} />
+            {layout.segments.map((segment, index) => (
+              <path className="quest-vine-dim" d={segment} key={`dim-${index}`} />
+            ))}
+            {layout.segments.map((segment, index) => (
+              <path
+                className={allDone || index < Math.max(currentIndex, 0) ? "quest-vine-lit" : "quest-vine-wait"}
+                d={segment}
+                key={`lit-${index}`}
+              />
+            ))}
             {layout.dots.map((dot, index) => (
               <circle
                 key={index}
                 className={
-                  allDone || (currentIndex >= 0 && index <= currentIndex)
+                  allDone || index < currentIndex || index === currentIndex
                     ? "quest-vine-dot is-lit"
                     : "quest-vine-dot"
                 }
                 cx={dot.x}
                 cy={dot.y}
-                r={even ? 1.15 : 1.35}
+                r="1.2"
               />
             ))}
           </svg>
@@ -135,7 +140,7 @@ export function ChaptersScreen({
           })}
 
           {adding ? (
-            <div className="quest-add-card" style={{ top: `${layout.addTop}rem` }}>
+            <div className="quest-add-card" style={{ top: `${layout.addTop}%` }}>
               <input
                 className="quest-add-input"
                 autoFocus
@@ -171,10 +176,10 @@ export function ChaptersScreen({
 
 function questLayout(count: number) {
   const even = count > 0 && count % 2 === 0;
-  const left = even ? 22 : 28;
-  const right = even ? 78 : 72;
-  const startY = 10;
-  const step = 24;
+  const left = 46;
+  const right = 54;
+  const startY = 16;
+  const step = 36;
   const nodes = Array.from({ length: count }, (_, index) => {
     const startRight = even;
     const onRight = startRight ? index % 2 === 0 : index % 2 === 1;
@@ -182,35 +187,30 @@ function questLayout(count: number) {
       x: onRight ? right : left,
       y: startY + index * step,
       side: onRight ? ("right" as const) : ("left" as const),
-      top: 0.4 + index * ROW,
+      top: (startY + index * step) / Math.max(36, startY + Math.max(count - 1, 0) * step + 20),
     };
   });
   const dots = nodes.map((node) => ({ x: node.x, y: node.y }));
-  let path = "";
-  if (nodes[0]) {
-    path = `M ${nodes[0].x} ${nodes[0].y}`;
-    for (let index = 1; index < nodes.length; index += 1) {
-      const prev = nodes[index - 1];
-      const curr = nodes[index];
-      if (!prev || !curr) {
-        continue;
-      }
-      const midY = (prev.y + curr.y) / 2;
-      const swing = even ? (prev.x + curr.x) / 2 : 50;
-      path += ` C ${prev.x} ${midY - 2}, ${swing} ${midY}, ${curr.x} ${curr.y}`;
+  const segments: string[] = [];
+  for (let index = 1; index < nodes.length; index += 1) {
+    const prev = nodes[index - 1];
+    const curr = nodes[index];
+    if (!prev || !curr) {
+      continue;
     }
+    const dy = curr.y - prev.y;
+    segments.push(
+      `M ${prev.x} ${prev.y} C ${prev.x} ${prev.y + dy * 0.55}, ${curr.x} ${curr.y - dy * 0.55}, ${curr.x} ${curr.y}`,
+    );
   }
-  const lastY = nodes.length ? startY + (nodes.length - 1) * step : startY;
-  const height = Math.max(18, 2.4 + count * ROW + (count ? 4 : 0));
-  const viewH = Math.max(36, startY + Math.max(count - 1, 0) * step + 18);
+  const viewH = Math.max(36, startY + Math.max(count - 1, 0) * step + 20);
   return {
-    nodes,
+    nodes: nodes.map((node) => ({ ...node, top: (node.y / viewH) * 100 })),
     dots,
-    path: path || `M 50 ${startY}`,
-    trunk: `M 50 ${startY - 6} L 50 ${lastY + 8}`,
+    segments,
     viewBox: `0 0 100 ${viewH}`,
-    height,
-    addTop: 0.4 + count * ROW,
+    height: Math.max(20, 3.2 + count * 16.5),
+    addTop: count ? (startY + count * step) / viewH * 100 : 8,
   };
 }
 
@@ -246,7 +246,7 @@ function QuestNode({
   return (
     <article
       className={`quest-node is-${side}${current ? " is-current" : ""}${done ? " is-done" : ""}`}
-      style={{ top: `${top}rem` }}
+      style={{ top: `${top}%` }}
     >
       <button type="button" className="quest-cover" onClick={onOpen} aria-label={`Record ${chapter.title}`}>
         <span className="quest-folio" aria-hidden="true">

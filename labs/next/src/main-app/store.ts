@@ -914,6 +914,15 @@ export async function copyOriginalToWorking(project: BookProject, chapterId: str
   return writeChapterAudio(project, chapterId, new Blob([copy], { type: "audio/wav" }), { slot: "working" });
 }
 
+/** Pronunciation guide clip in the book audio folder. */
+export async function writeGlossaryClip(
+  project: BookProject,
+  entryId: string,
+  blob: Blob,
+): Promise<string | null> {
+  return writeChapterAudio(project, `glossary-${entryId}`, blob, { slot: "original" });
+}
+
 /** Read a saved take back as an object URL for playback. */
 export async function readChapterAudioUrl(project: BookProject, file: string): Promise<string | null> {
   if (project.folder && window.kosmosNext?.readChapterAudio) {

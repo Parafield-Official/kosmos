@@ -23,13 +23,13 @@ const VERT_PAD: f32 = NICHE_W * 46.0 / 127.0;
 const BOOK_W: f32 = 0.803;
 const BOOK_H: f32 = 0.909;
 const NICHE_DEPTH: f32 = 0.055;
-const WARM: vec3f = vec3f(1.0, 0.88, 0.7);
-const VOLUME_STEPS: i32 = 8;
+const WARM: vec3f = vec3f(1.0, 0.94, 0.86);
+const VOLUME_STEPS: i32 = 10;
 const AIM_Y: f32 = 0.72;
 const AIM_Z: f32 = 0.92;
 const AIM_SPLAY: f32 = 0.0;
-const VOLUME_DENSITY: f32 = 0.05;
-const PLASTER_ALBEDO: f32 = 0.62;
+const VOLUME_DENSITY: f32 = 0.12;
+const PLASTER_ALBEDO: f32 = 0.58;
 
 struct Hit {
   p: vec3f,
@@ -146,8 +146,8 @@ fn hitAlcove(uv: vec2f) -> Hit {
   if (uv.y <= depthT && uv.x >= ceilLeft && uv.x <= ceilRight) {
     hit.p = vec3f(uv.x * W, H, mix(0.0, -D, saturate(ceilingT)));
     hit.n = vec3f(0.0, -1.0, 0.0);
-    hit.spec = 0.1;
-    hit.gloss = 20.0;
+    hit.spec = 0.06;
+    hit.gloss = 16.0;
     return hit;
   }
 
@@ -157,8 +157,8 @@ fn hitAlcove(uv: vec2f) -> Hit {
   if (uv.y >= 1.0 - depthB && uv.x >= floorLeft && uv.x <= floorRight) {
     hit.p = vec3f(uv.x * W, 0.0, mix(-D, 0.0, saturate(floorT)));
     hit.n = vec3f(0.0, 1.0, 0.0);
-    hit.spec = 0.28;
-    hit.gloss = 48.0;
+    hit.spec = 0.05;
+    hit.gloss = 14.0;
     return hit;
   }
 
@@ -295,8 +295,8 @@ fn inScatter(p: vec3f, rd: vec3f) -> vec3f {
   for (var i = 0; i < LIGHT_COUNT; i++) {
     let energy = sampleLight(p, i);
     let travel = lightTravelAt(i);
-    let along = pow(max(dot(-rd, travel), 0.0), 4.5);
-    let phase = mix(0.85, 1.55, along);
+    let along = pow(max(dot(-rd, travel), 0.0), 2.2);
+    let phase = mix(1.0, 1.7, along);
     glow += srgbToLinear3(WARM) * energy * VOLUME_DENSITY * phase;
   }
   return glow;
@@ -335,20 +335,20 @@ fn shadeSurface(hit: Hit) -> vec3f {
   if (N.y < -0.4) {
     for (var i = 0; i < LIGHT_COUNT; i++) {
       let d = distance(hit.p.xz, lightPosAt(i).xz);
-      ceilingKiss += exp(-d * 16.0) * sampleLight(hit.p, i);
+      ceilingKiss += exp(-d * 18.0) * sampleLight(hit.p, i);
     }
   }
   var bounce = 0.0;
   if (abs(N.x) > 0.55) {
-    bounce = 0.16;
-  } else if (N.z > 0.5) {
     bounce = 0.12;
-  } else if (N.y > 0.5) {
-    bounce = 0.28;
-  } else if (N.y < -0.4) {
+  } else if (N.z > 0.5) {
     bounce = 0.1;
+  } else if (N.y > 0.5) {
+    bounce = 0.12;
+  } else if (N.y < -0.4) {
+    bounce = 0.08;
   } else {
-    bounce = 0.18;
+    bounce = 0.14;
   }
   if (hit.well > 0.5 && N.z > 0.5) {
     direct *= 0.42;
@@ -362,7 +362,7 @@ fn shadeSurface(hit: Hit) -> vec3f {
       direct *= 0.52 * lip;
     }
   }
-  return direct * (0.42 + bounce) * PLASTER_ALBEDO + lightColor * ceilingKiss * 0.55;
+  return direct * (0.42 + bounce) * PLASTER_ALBEDO + lightColor * ceilingKiss * 0.28;
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -375,19 +375,14 @@ fn shadeSurface(hit: Hit) -> vec3f {
     return vec4f(identity, 1.0);
   }
   let strength = mix(0.0, 1.0, saturate(params.lit));
-  let N = hit.n;
-  let soffit = hit.well < 0.5 && N.y < -0.35;
-  let floor = hit.well < 0.5 && N.y > 0.35;
-  let alcoveSide = hit.well < 0.5 && abs(N.x) > 0.55;
-  let nicheLip = hit.well > 0.5 && (N.y < -0.35 || abs(N.x) > 0.4);
-  if (!(soffit || floor || alcoveSide || nicheLip)) {
-    if (hit.well > 0.5 && N.z > 0.7) {
-      return vec4f(identity - vec3f(0.04) * strength, 1.0);
-    }
-    return vec4f(identity, 1.0);
-  }
-  let lit = shadeSurface(hit);
-  var rgb = identity + (lit - vec3f(0.12)) * 0.52 * strength;
-  rgb = clamp(rgb, vec3f(0.38), vec3f(0.64));
+  let H = worldH();
+  let cam = vec3f(0.5, 0.42 * H, 0.62);
+  let toHit = hit.p - cam;
+  let dist = length(toHit);
+  let rd = toHit / max(dist, 0.0001);
+  let volume = raymarchVolume(cam, rd, dist);
+  let lit = shadeSurface(hit) + volume;
+  var rgb = identity + (lit - vec3f(0.1)) * 0.46 * strength;
+  rgb = clamp(rgb, vec3f(0.41), vec3f(0.59));
   return vec4f(rgb, 1.0);
 }
