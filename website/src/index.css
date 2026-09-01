@@ -207,9 +207,6 @@ button { font: inherit; }
 .eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .24em; text-transform: uppercase; color: rgba(255,255,255,.56); }
 .text-glow { text-shadow: 0 0 40px rgba(255,255,255,.26), 0 0 90px rgba(255,255,255,.12); }
 .hero-vignette { background: radial-gradient(circle at 50% 45%, transparent 8%, rgba(7,5,7,.08) 45%, rgba(7,5,7,.78) 100%), linear-gradient(to bottom, rgba(0,0,0,.14), transparent 30%, rgba(10,6,8,.58)); }
-.sound-orb { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; }
-.sound-orb i { width: 12px; height: 2px; border-radius: 99px; background: rgba(255,255,255,.75); box-shadow: -4px 0 0 rgba(255,255,255,.36), 4px 0 0 rgba(255,255,255,.36); }
-
 .quote-section { background: linear-gradient(180deg, #010a17 0%, #0a4267 30%, #20658e 60%, #6badc4 100%); }
 .cloud-left { margin-left: -50%; }
 .cloud-right { margin-right: -75%; }

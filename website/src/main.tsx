@@ -103,7 +103,6 @@ function Hero() {
           <Button href={route("download", "#windows")} dark className="flex-1"><WindowsIcon /><span>Windows</span></Button>
         </div>
       </div>
-      <div className="absolute bottom-8 left-8 hidden items-center gap-3 text-xs leading-4 text-white/60 md:flex"><span className="sound-orb"><i /></span><span>Human voice<br />stays human</span></div>
       <div className="absolute bottom-8 right-8 hidden gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex"><span>Local</span><span>Open source</span><span>$0</span></div>
     </section>
   );
