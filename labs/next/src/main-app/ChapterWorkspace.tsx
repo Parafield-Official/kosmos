@@ -12,6 +12,7 @@ import { PronunciationCheatSheet } from "./PronunciationCheatSheet";
 import { RecordScreen } from "./RecordScreen";
 import { ReviewScreen } from "./ReviewScreen";
 import { RoomCheck, roomChipLabel } from "./RoomCheck";
+import { formatTapeTime } from "./TapePlayer";
 import { paragraphsFromHtml } from "./booth";
 import {
   clearOriginalTape,
@@ -367,11 +368,24 @@ function MasteringStep({
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const [listen, setListen] = useState<"original" | "working" | "mastered">("original");
+  const [clock, setClock] = useState({ current: 0, duration: 0 });
   const [measureNonce, setMeasureNonce] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+  const loadedRef = useRef<string | null>(null);
+
+  function releaseAudio() {
+    audioRef.current?.pause();
+    audioRef.current = null;
+    loadedRef.current = null;
+    if (urlRef.current) {
+      URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+    }
+  }
 
   useEffect(() => () => {
-    audioRef.current?.pause();
+    releaseAudio();
   }, []);
 
   useEffect(() => {
@@ -452,26 +466,62 @@ function MasteringStep({
     }
   }
 
+  function tickClock(audio: HTMLAudioElement) {
+    setClock({
+      current: audio.currentTime,
+      duration: Number.isFinite(audio.duration) ? audio.duration : 0,
+    });
+  }
+
   async function playSlot(file: string | undefined, id: string) {
     if (!file) {
       return;
     }
-    audioRef.current?.pause();
+    releaseAudio();
     const url = await readChapterAudioUrl(project, file);
     if (!url) {
       return;
     }
+    urlRef.current = url;
     const audio = new Audio(url);
     audioRef.current = audio;
+    loadedRef.current = id;
     setPlaying(id);
+    const onTime = () => tickClock(audio);
+    audio.addEventListener("timeupdate", onTime);
+    audio.addEventListener("loadedmetadata", onTime);
     audio.addEventListener("ended", () => {
       setPlaying(null);
-      URL.revokeObjectURL(url);
+      tickClock(audio);
     });
     void audio.play().catch(() => {
       setPlaying(null);
-      URL.revokeObjectURL(url);
     });
+  }
+
+  function toggleListen() {
+    const audio = audioRef.current;
+    if (audio && loadedRef.current === listen) {
+      if (playing === listen) {
+        audio.pause();
+        setPlaying(null);
+        return;
+      }
+      void audio.play().then(() => setPlaying(listen)).catch(() => setPlaying(null));
+      return;
+    }
+    void playSlot(listenFile, listen);
+  }
+
+  function seekListen(event: { currentTarget: HTMLDivElement; clientX: number }) {
+    const audio = audioRef.current;
+    if (!audio || clock.duration <= 0) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const next = ((event.clientX - rect.left) / Math.max(1, rect.width)) * clock.duration;
+    audio.currentTime = Math.max(0, Math.min(clock.duration, next));
+    tickClock(audio);
   }
 
   async function listenQuiet() {
@@ -482,11 +532,12 @@ function MasteringStep({
     if (!file) {
       return;
     }
-    audioRef.current?.pause();
+    releaseAudio();
     const url = await readChapterAudioUrl(project, file);
     if (!url) {
       return;
     }
+    urlRef.current = url;
     const range = quietListenRange(acxReport);
     const audio = new Audio(url);
     audioRef.current = audio;
@@ -503,70 +554,92 @@ function MasteringStep({
     void audio.play().catch(() => URL.revokeObjectURL(url));
   }
 
+  const listenPct = clock.duration > 0 ? Math.min(100, (clock.current / clock.duration) * 100) : 0;
+
   return (
     <div className="quest-master">
-      <div className="quest-master-stage">
+      <div className="quest-master-desk">
         <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
-          {Array.from({ length: 40 }, (_, index) => (
-            <i key={index} style={{ animationDelay: `${index * 28}ms`, animationDuration: `${0.55 + (index % 5) * 0.12}s` }} />
+          {Array.from({ length: 72 }, (_, index) => (
+            <i key={index} style={{ animationDelay: `${index * 22}ms`, animationDuration: `${0.5 + (index % 5) * 0.11}s` }} />
           ))}
         </div>
-        <div className="quest-listen">
-          <button
-            type="button"
-            className="quest-listen-play"
-            disabled={!listenFile}
-            onClick={() => {
-              if (playing === listen) {
-                audioRef.current?.pause();
-                setPlaying(null);
-                return;
-              }
-              void playSlot(listenFile, listen);
+        <div className="quest-player">
+          <div className="quest-player-row">
+            <button
+              type="button"
+              className="quest-listen-play"
+              disabled={!listenFile}
+              onClick={toggleListen}
+              aria-label={playing === listen ? "Pause" : "Play"}
+            >
+              {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
+            </button>
+            <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
+              {(
+                [
+                  { id: "original" as const, label: "Original", file: chapter.originalFile },
+                  { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
+                  { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={listen === item.id}
+                  className={listen === item.id ? "is-on" : undefined}
+                  disabled={!item.file}
+                  onClick={() => {
+                    setListen(item.id);
+                    if (playing) {
+                      void playSlot(item.file, item.id);
+                    }
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <span className="quest-player-time">
+              {formatTapeTime(clock.current)} / {formatTapeTime(clock.duration)}
+            </span>
+          </div>
+          <div
+            className="quest-player-seek"
+            role="slider"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(clock.duration)}
+            aria-valuenow={Math.round(clock.current)}
+            aria-label="Take position"
+            style={{ ["--tape-pct" as string]: `${listenPct}%` }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
+              seekListen(event);
             }}
-            aria-label={playing === listen ? "Pause" : "Play"}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                seekListen(event);
+              }
+            }}
           >
-            {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
-          </button>
-          <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
-            {(
-              [
-                { id: "original" as const, label: "Original", file: chapter.originalFile },
-                { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
-                { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
-              ] as const
-            ).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={listen === item.id}
-                className={listen === item.id ? "is-on" : undefined}
-                disabled={!item.file}
-                onClick={() => {
-                  setListen(item.id);
-                  if (playing) {
-                    void playSlot(item.file, item.id);
-                  }
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
+            <i style={{ width: `${listenPct}%` }} />
           </div>
         </div>
-        <div className="quest-master-acts">
+        <div className="quest-master-foot">
           <button type="button" className="quest-act is-primary" onClick={() => void runMaster()} disabled={mastering}>
-            {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master this chapter"}
+            {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master"}
           </button>
-          <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
-            {checking ? "Measuring…" : "Check for Audible"}
-          </button>
-          {onNextChapter ? (
-            <button type="button" className="quest-act" onClick={onNextChapter}>
-              Next chapter
+          <div className="quest-master-more">
+            <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
+              {checking ? "Measuring…" : "Check Audible"}
             </button>
-          ) : null}
+            {onNextChapter ? (
+              <button type="button" className="quest-act" onClick={onNextChapter}>
+                Next
+              </button>
+            ) : null}
+          </div>
         </div>
         {chapter.acxTrafficLight && !acxReport ? (
           <p className="quest-master-note">

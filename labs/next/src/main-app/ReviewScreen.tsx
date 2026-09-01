@@ -18,6 +18,7 @@ import {
 } from "./reading-prefs";
 import { originalChapterTranscript, workingChapterTranscript } from "./review-timing";
 import { addSuppressedWord, suppressLabel } from "./suppress";
+import { formatTapeTime } from "./TapePlayer";
 import {
   applyChapterPickups,
   readChapterAudioUrl,
@@ -67,6 +68,8 @@ export function ReviewScreen({
   const [readingOpen, setReadingOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moreId, setMoreId] = useState<string | null>(null);
+  const [sheetTake, setSheetTake] = useState<"original" | "working">("original");
+  const [playWindow, setPlayWindow] = useState<{ start: number; end: number } | null>(null);
   const originalUrl = useRef<string | null>(null);
   const workingUrl = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -159,6 +162,7 @@ export function ReviewScreen({
     audioRef.current = null;
     setPlaying(null);
     setPlayAt(null);
+    setPlayWindow(null);
   }
 
   function playRange(slot: "original" | "working", pickup: ChapterPickup) {
@@ -177,6 +181,8 @@ export function ReviewScreen({
     const key = `${slot}-${pickup.id}`;
     setPlaying(key);
     setPlayAt(startAt);
+    setPlayWindow({ start: startAt, end: stopAt });
+    setSheetTake(slot);
     const onTime = () => {
       setPlayAt(audio.currentTime);
       if (audio.currentTime >= stopAt) {
@@ -184,17 +190,32 @@ export function ReviewScreen({
         audio.removeEventListener("timeupdate", onTime);
         setPlaying(null);
         setPlayAt(null);
+        setPlayWindow(null);
       }
     };
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("ended", () => {
       setPlaying(null);
       setPlayAt(null);
+      setPlayWindow(null);
     });
     void audio.play().catch(() => {
       setPlaying(null);
       setPlayAt(null);
+      setPlayWindow(null);
     });
+  }
+
+  function seekFlag(event: { currentTarget: HTMLDivElement; clientX: number }) {
+    const audio = audioRef.current;
+    if (!audio || !playWindow) {
+      return;
+    }
+    const span = Math.max(0.05, playWindow.end - playWindow.start);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const next = playWindow.start + ((event.clientX - rect.left) / Math.max(1, rect.width)) * span;
+    audio.currentTime = Math.max(playWindow.start, Math.min(playWindow.end, next));
+    setPlayAt(audio.currentTime);
   }
 
   function patchPickup(pickup: ChapterPickup, status: ChapterPickup["status"]) {
@@ -322,7 +343,10 @@ export function ReviewScreen({
                 playing={playing}
                 hasOriginal={Boolean(chapter.originalFile)}
                 onPlayOriginal={() => playRange("original", pickup)}
-                onMore={() => setMoreId(pickup.id)}
+                onMore={() => {
+                  setSheetTake("original");
+                  setMoreId(pickup.id);
+                }}
                 onPunch={() => {
                   setSessionIds(null);
                   setPunching(pickup);
@@ -358,56 +382,71 @@ export function ReviewScreen({
           {morePickup.heard && morePickup.heard !== morePickup.expected ? (
             <p className="booth-sheet-copy">Heard “{morePickup.heard}”.</p>
           ) : null}
-          <div className="ma-flag-sheet">
-            <button
-              type="button"
-              className="booth-tool"
-              disabled={!chapter.originalFile}
-              onClick={() => playRange("original", morePickup)}
-            >
-              {playing === `original-${morePickup.id}` ? "Pause original" : "Listen original"}
-            </button>
-            <button
-              type="button"
-              className="booth-tool"
-              disabled={!chapter.workingFile}
-              onClick={() => playRange("working", morePickup)}
-            >
-              {playing === `working-${morePickup.id}` ? "Pause updated" : "Listen updated"}
-            </button>
-            <button
-              type="button"
-              className="booth-tool"
-              onClick={() => {
-                patchPickup(morePickup, "ignored");
-                setMoreId(null);
-              }}
-            >
-              Keep this take
-            </button>
-            <button
-              type="button"
-              className="booth-tool"
-              onClick={() => {
-                patchPickup(morePickup, "done");
-                setMoreId(null);
-              }}
-            >
-              Mark resolved
-            </button>
-            {morePickup.kind !== "pause" && suppressLabel(morePickup) ? (
+          <FlagHear
+            pickup={morePickup}
+            take={sheetTake}
+            playing={playing}
+            playAt={playAt}
+            playWindow={playWindow}
+            hasOriginal={Boolean(chapter.originalFile)}
+            hasWorking={Boolean(chapter.workingFile)}
+            onTake={(take) => {
+              setSheetTake(take);
+              if (playing) {
+                playRange(take, morePickup);
+              }
+            }}
+            onToggle={() => {
+              const key = `${sheetTake}-${morePickup.id}`;
+              if (playing === key) {
+                stopPlayback();
+                return;
+              }
+              playRange(sheetTake, morePickup);
+            }}
+            onSeek={seekFlag}
+          />
+          <section className="ma-flag-decide">
+            <p className="ma-flag-kicker">Decide</p>
+            <div className="ma-flag-acts">
               <button
                 type="button"
                 className="booth-tool"
                 onClick={() => {
-                  neverFlag(morePickup);
+                  patchPickup(morePickup, "ignored");
                   setMoreId(null);
                 }}
               >
-                Never flag “{suppressLabel(morePickup)}”
+                <KeepGlyph />
+                Keep
               </button>
-            ) : null}
-          </div>
+              <button
+                type="button"
+                className="booth-tool is-primary"
+                onClick={() => {
+                  patchPickup(morePickup, "done");
+                  setMoreId(null);
+                }}
+              >
+                <ResolveGlyph />
+                Resolve
+              </button>
+              {morePickup.kind !== "pause" && suppressLabel(morePickup) ? (
+                <button
+                  type="button"
+                  className="booth-tool"
+                  title={`Never flag “${suppressLabel(morePickup)}”`}
+                  onClick={() => {
+                    neverFlag(morePickup);
+                    setMoreId(null);
+                  }}
+                >
+                  <NeverGlyph />
+                  Never
+                </button>
+              ) : null}
+            </div>
+          </section>
         </BoothSheet>
       ) : null}
 
@@ -582,6 +621,127 @@ function PickupRow({
         </button>
       </div>
     </li>
+  );
+}
+
+function FlagHear({
+  pickup,
+  take,
+  playing,
+  playAt,
+  playWindow,
+  hasOriginal,
+  hasWorking,
+  onTake,
+  onToggle,
+  onSeek,
+}: {
+  pickup: ChapterPickup;
+  take: "original" | "working";
+  playing: string | null;
+  playAt: number | null;
+  playWindow: { start: number; end: number } | null;
+  hasOriginal: boolean;
+  hasWorking: boolean;
+  onTake: (take: "original" | "working") => void;
+  onToggle: () => void;
+  onSeek: (event: { currentTarget: HTMLDivElement; clientX: number }) => void;
+}) {
+  const key = `${take}-${pickup.id}`;
+  const live = playing === key;
+  const bounds = pickupLineBounds(pickup);
+  const start = playWindow?.start ?? Math.max(0, bounds.start - 0.5);
+  const end = playWindow?.end ?? bounds.end + 0.15;
+  const span = Math.max(0.05, end - start);
+  const here = playAt ?? start;
+  const pct = playWindow && live ? Math.min(100, Math.max(0, ((here - start) / span) * 100)) : 0;
+  const canPlay = take === "original" ? hasOriginal : hasWorking;
+  return (
+    <section className="ma-flag-hear">
+      <p className="ma-flag-kicker">Hear</p>
+      <div className="ma-flag-player">
+        <button
+          type="button"
+          className="quest-listen-play"
+          disabled={!canPlay}
+          onClick={onToggle}
+          aria-label={live ? "Pause" : "Play"}
+        >
+          {live ? <PauseGlyph /> : <PlayGlyph />}
+        </button>
+        <div className="ma-flag-takes" role="tablist" aria-label="Which take to hear">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={take === "original"}
+            className={take === "original" ? "is-on" : undefined}
+            disabled={!hasOriginal}
+            onClick={() => onTake("original")}
+          >
+            Original
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={take === "working"}
+            className={take === "working" ? "is-on" : undefined}
+            disabled={!hasWorking}
+            onClick={() => onTake("working")}
+          >
+            Updated
+          </button>
+        </div>
+        <span className="ma-flag-time">
+          {formatTapeTime(Math.max(0, here - start))} / {formatTapeTime(span)}
+        </span>
+      </div>
+      <div
+        className="ma-flag-seek"
+        role="slider"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(span)}
+        aria-valuenow={Math.round(Math.max(0, here - start))}
+        aria-label="Flag position"
+        style={{ ["--tape-pct" as string]: `${pct}%` }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onSeek(event);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            onSeek(event);
+          }
+        }}
+      >
+        <i style={{ width: `${pct}%` }} />
+      </div>
+    </section>
+  );
+}
+
+function KeepGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.6 8.2 6.4 11 12.4 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ResolveGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.1" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.3 8.1 7.2 10l3.6-4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function NeverGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.1" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M4.5 4.5 11.5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

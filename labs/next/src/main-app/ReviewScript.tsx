@@ -346,10 +346,10 @@ export function ReviewScript({
           </p>
         ))}
       </div>
-      {lostPlace && playAt != null ? (
+      {playKey ? (
         <button
           type="button"
-          className="ma-locate-speak"
+          className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
           onClick={locatePlay}
           title="Locate the word being played"
           aria-label="Locate the word being played"
