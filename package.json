@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
@@ -52,6 +52,8 @@
       "dist/**/*",
       "dist-core/**/*",
       "electron/**/*",
+      "!electron/**/*.test.cjs",
+      "!electron/glass-test-preload.cjs",
       "acx_spec.json",
       "package.json"
     ],
@@ -116,7 +118,7 @@
     }
   },
   "dependencies": {
-    "electron-updater": "6.6.2",
+    "electron-updater": "6.8.9",
     "fflate": "0.8.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -130,7 +132,7 @@
     "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^5.2.0",
     "concurrently": "^10.0.4",
-    "electron": "^40.10.2",
+    "electron": "44.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "jiti": "2.7.0",

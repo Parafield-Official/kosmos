@@ -28,6 +28,7 @@ const {
 } = require("./labs-audio.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
+const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
 
 const execFileAsync = promisify(execFile);
 
@@ -800,34 +801,28 @@ function openMicrophoneSettings() {
   return { ok: false };
 }
 
-async function openDiscordInvite(payload) {
-  const appUrl = typeof payload?.appUrl === "string" ? payload.appUrl : "";
-  const webUrl = typeof payload?.webUrl === "string" ? payload.webUrl : "";
-  if (!appUrl && !webUrl) {
-    return { ok: false };
-  }
+const DISCORD_INVITE_APP = "discord://-/invite/g4aVz59mQ9";
+const DISCORD_INVITE_WEB = "https://discord.gg/g4aVz59mQ9";
 
-  if (appUrl && process.platform === "darwin") {
+async function openDiscordInvite() {
+  if (process.platform === "darwin") {
     try {
-      await execFileAsync("open", ["-a", "Discord", appUrl]);
+      await execFileAsync("open", ["-a", "Discord", DISCORD_INVITE_APP]);
       return { ok: true, via: "app" };
     } catch {
       // Discord is not installed; fall through to the browser invite.
     }
-  } else if (appUrl) {
+  } else {
     try {
-      await shell.openExternal(appUrl);
+      await shell.openExternal(DISCORD_INVITE_APP);
       return { ok: true, via: "app" };
     } catch {
       // No Discord protocol handler; fall through to the browser invite.
     }
   }
 
-  if (webUrl) {
-    await shell.openExternal(webUrl);
-    return { ok: true, via: "web" };
-  }
-  return { ok: false };
+  await shell.openExternal(DISCORD_INVITE_WEB);
+  return { ok: true, via: "web" };
 }
 
 function notifyDebugPlace(place) {
@@ -1388,6 +1383,7 @@ function openDebugWindow() {
       sandbox: true,
     },
   });
+  secureRendererWindow(debugWindow, { allowedUrls: ["http://127.0.0.1:5174/debug.html"] });
 
   debugWindow.setAlwaysOnTop(true, "floating");
   const revealDebug = () => {
@@ -1439,6 +1435,7 @@ function openLab() {
       sandbox: true,
     },
   });
+  secureRendererWindow(labWindow, { allowedUrls: ["http://127.0.0.1:5174/"] });
 
   let revealed = false;
   const reveal = () => {
@@ -1636,11 +1633,11 @@ function openLab() {
 app.whenReady().then(async () => {
   await loadWorkspacePath();
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(isMicrophonePermission(permission));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(isTrustedRenderer(webContents) && isMicrophonePermission(permission));
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => (
-    isMicrophonePermission(permission) || permission !== "media"
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => (
+    isTrustedRenderer(webContents) && isMicrophonePermission(permission)
   ));
 
   ipcMain.handle("labs:access-microphone", () => requestMicrophoneAccess());
@@ -1651,7 +1648,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("labs:download-speech-model", (event) => downloadSpeechModel(event));
   ipcMain.handle("labs:reset-access", () => resetAccessState());
   ipcMain.handle("labs:open-microphone-settings", () => openMicrophoneSettings());
-  ipcMain.handle("labs:open-discord", (_event, payload) => openDiscordInvite(payload));
+  ipcMain.handle("labs:open-discord", () => openDiscordInvite());
   ipcMain.handle("labs:app-info", () => ({
     version: app.getVersion(),
     update: labsAppUpdater?.getStatus() ?? idleUpdateStatus(),
