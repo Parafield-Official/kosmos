@@ -44,8 +44,8 @@
   --tl-pad: 10px;
   --tl-capsule-w: calc(var(--tl-cluster) + var(--tl-pad) * 2);
   --tl-capsule-h: calc(var(--tl-size) + var(--tl-pad) * 2);
-  --tl-left: 12px;
-  --tl-top: 10px;
+  --tl-left: 16px;
+  --tl-top: 20px;
   --tl-dot-x: calc(var(--tl-left) + var(--tl-pad));
   --hosted-bg: #06041a;
   --hosted-margin: 8vh;
@@ -256,9 +256,30 @@ button {
     height 520ms var(--ease);
 }
 
-.viewport[data-place="app"] {
+.viewport[data-place="app"],
+.viewport[data-place="theme"] {
   overflow: hidden;
   border-radius: 36px;
+}
+
+.viewport.native[data-platform="win32"],
+.viewport.native[data-platform="linux"] {
+  border-radius: 0;
+}
+
+.viewport.native[data-platform="win32"] {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(21, 21, 23, 0.28) transparent;
+}
+
+.viewport.native[data-platform="win32"] *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.viewport.native[data-platform="win32"] *::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(21, 21, 23, 0.28);
 }
 
 .viewport[data-place="app"] .glass-backdrop,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { PIGMENT_OFFER_EVENT, markPigmentChosen, shouldOfferPigment } from "../flow";
 import {
   appendChapter,
   deleteBook,
@@ -24,6 +25,7 @@ import { ChapterEditor } from "./ChapterEditor";
 import { SettingsScreen } from "./SettingsScreen";
 import { VaultReadSheet } from "./vault-media";
 import { ThemeAtmosphere } from "./ThemeAtmosphere";
+import { PigmentOnboardingPanel } from "./ThemeOnboardingScreen";
 import { THEME_ACCENT_EVENT, accentOption, readThemeAccent, type ThemeAccent, type ThemeAccentOption } from "./theme";
 import "./main-app.css";
 
@@ -57,6 +59,7 @@ export function MainApp() {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BookProject | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [pickingPigment, setPickingPigment] = useState(shouldOfferPigment);
 
   useEffect(() => {
     const onThemeAccent = (event: Event) => {
@@ -65,12 +68,23 @@ export function MainApp() {
       setThemePaint(option);
     };
     window.addEventListener(THEME_ACCENT_EVENT, onThemeAccent);
-    return () => window.removeEventListener(THEME_ACCENT_EVENT, onThemeAccent);
+    function onPigmentOffer() {
+      setPickingPigment(true);
+      setScreen({ name: "library" });
+    }
+    window.addEventListener(PIGMENT_OFFER_EVENT, onPigmentOffer);
+    return () => {
+      window.removeEventListener(THEME_ACCENT_EVENT, onThemeAccent);
+      window.removeEventListener(PIGMENT_OFFER_EVENT, onPigmentOffer);
+    };
   }, []);
 
   const openProject = useCallback((project: BookProject, tab: BookTab = "dashboard") => {
+    if (pickingPigment) {
+      return;
+    }
     setScreen({ name: "book", project, tab });
-  }, []);
+  }, [pickingPigment]);
 
   const openLibrary = useCallback(() => {
     setScreen({ name: "library" });
@@ -95,8 +109,11 @@ export function MainApp() {
   }, []);
 
   const openSettings = useCallback(() => {
+    if (pickingPigment) {
+      return;
+    }
     setScreen((current) => (current.name === "settings" ? current : { name: "settings", from: current }));
-  }, []);
+  }, [pickingPigment]);
 
   const commit = useCallback(async (next: BookProject) => {
     setScreen((current) => {
@@ -228,11 +245,20 @@ export function MainApp() {
   } as CSSProperties;
 
   const hosted = vaultHosts();
-  const pane = screen.name === "library" ? "home" : "glass";
-  const nav = screen.name === "settings" ? "settings" : screen.name === "library" ? "home" : "none";
+  const pane = pickingPigment || screen.name !== "library" ? "glass" : "home";
+  const nav = pickingPigment || screen.name === "library" ? "home" : screen.name === "settings" ? "settings" : "none";
 
   let overlay: ReactNode = null;
-  if (screen.name === "settings") {
+  if (pickingPigment) {
+    overlay = (
+      <PigmentOnboardingPanel
+        onComplete={() => {
+          markPigmentChosen();
+          setPickingPigment(false);
+        }}
+      />
+    );
+  } else if (screen.name === "settings") {
     overlay = <SettingsScreen onBack={() => setScreen(screen.from)} />;
   } else if (screen.name === "chapter") {
     overlay = (
@@ -313,7 +339,13 @@ export function MainApp() {
   }
 
   return (
-    <div className="main-app" data-screen={screen.name} data-theme-accent={themeAccent} style={themeStyle}>
+    <div
+      className="main-app"
+      data-screen={screen.name}
+      data-theme-accent={themeAccent}
+      data-pigment-onboard={pickingPigment ? "true" : undefined}
+      style={themeStyle}
+    >
       <ThemeAtmosphere />
 
       {hosted ? (

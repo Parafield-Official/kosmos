@@ -30,7 +30,8 @@
    Niche 127×143 · col 70 · row 35 · side 74 · vert 46 · book 102×130
    Spots: 5, column-centered, 15/42 from the lip to the light’s outer side. */
 
-.viewport[data-place="app"] {
+.viewport[data-place="app"],
+.viewport[data-place="theme"] {
   --vault-pad-t: 6.7%;
   --vault-pad-b: 6.45%;
   --vault-pad-x: 3.4%;
@@ -1047,6 +1048,11 @@
 .vault-overlay > .ma-screen.ma-settings {
   padding: 1.35rem 1.85rem 6.2rem;
   gap: 0.55rem;
+}
+
+.vault-overlay > .ma-screen.ma-settings.ma-theme-onboard {
+  padding: 1.6rem 1.5rem 1.7rem;
+  gap: 1.15rem;
 }
 
 .vault-overlay > .ma-screen.quest-sheet {

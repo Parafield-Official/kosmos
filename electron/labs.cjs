@@ -184,7 +184,7 @@ async function persistWorkspacePath(next) {
 }
 
 function getMicrophoneStatus() {
-  if (process.platform === "darwin" && typeof systemPreferences.getMediaAccessStatus === "function") {
+  if (typeof systemPreferences.getMediaAccessStatus === "function") {
     return systemPreferences.getMediaAccessStatus("microphone");
   }
   return "unknown";
@@ -752,13 +752,17 @@ async function resetAccessState() {
 }
 
 function openMicrophoneSettings() {
-  if (process.platform !== "darwin") {
-    return { ok: false };
+  if (process.platform === "darwin") {
+    void shell.openExternal(
+      "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
+    );
+    return { ok: true };
   }
-  void shell.openExternal(
-    "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
-  );
-  return { ok: true };
+  if (process.platform === "win32") {
+    void shell.openExternal("ms-settings:privacy-microphone");
+    return { ok: true };
+  }
+  return { ok: false };
 }
 
 async function openDiscordInvite(payload) {
@@ -812,11 +816,12 @@ const START_SIZE = { width: 520, height: 360 };
 const APP_FRAME = { width: 1180, height: 760 };
 const APP_ASPECT = APP_FRAME.width / APP_FRAME.height;
 const DEBUG_SIZE = { width: 176, height: 400 };
-const TRAFFIC_LIGHTS = { x: 22, y: 20 };
+const TRAFFIC_LIGHTS = { x: 20, y: 32 };
 const OFFSCREEN_LIGHTS = { x: -100, y: -100 };
 const WINDOW_EDGE_SLOP = 4;
 const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "theme", "app"]);
 const ROOM_PLACES = new Set(["app"]);
+const FRAMED_PLATFORM = process.platform === "win32" || process.platform === "linux";
 const GLASS_BLUR_MAX = 48;
 /** @type {import("electron").BrowserWindow | null} */
 let labWindow = null;
@@ -1101,17 +1106,26 @@ function scheduleNativeGlass(win, material) {
   }, 32);
 }
 
+function windowChrome(win) {
+  if (!FRAMED_PLATFORM || typeof win.getContentSize !== "function") {
+    return { width: 0, height: 0 };
+  }
+  const outer = win.getSize();
+  const inner = win.getContentSize();
+  return {
+    width: Math.max(0, outer[0] - inner[0]),
+    height: Math.max(0, outer[1] - inner[1]),
+  };
+}
+
 function fitAppFrame(win, size) {
   const current = win.getBounds();
   const work = screen.getDisplayMatching(current).workArea;
-  const maxWidth = Math.max(APP_FRAME.width, work.width - 24);
-  const maxHeight = Math.max(APP_FRAME.height, work.height - 24);
-  let width = Math.max(APP_FRAME.width, Math.round(size?.width ?? current.width));
+  const chrome = windowChrome(win);
+  const maxWidth = Math.max(320, work.width - 24 - chrome.width);
+  const maxHeight = Math.max(300, work.height - 24 - chrome.height);
+  let width = Math.round(size?.width ?? APP_FRAME.width);
   let height = Math.round(width / APP_ASPECT);
-  if (height < APP_FRAME.height) {
-    height = APP_FRAME.height;
-    width = Math.round(height * APP_ASPECT);
-  }
   if (width > maxWidth) {
     width = maxWidth;
     height = Math.round(width / APP_ASPECT);
@@ -1120,9 +1134,13 @@ function fitAppFrame(win, size) {
     height = maxHeight;
     width = Math.round(height * APP_ASPECT);
   }
+  if (width > maxWidth) {
+    width = maxWidth;
+    height = Math.round(width / APP_ASPECT);
+  }
   return {
-    width: Math.max(APP_FRAME.width, width),
-    height: Math.max(APP_FRAME.height, height),
+    width: Math.max(320, width),
+    height: Math.max(300, height),
   };
 }
 
@@ -1131,13 +1149,17 @@ function applySize(win, size, animate) {
     return;
   }
   const current = win.getBounds();
+  const content = typeof win.getContentSize === "function" ? win.getContentSize() : [current.width, current.height];
   const work = screen.getDisplayMatching(current).workArea;
   let width;
   let height;
-  if (labPlace === "app") {
+  if (ROOM_PLACES.has(labPlace)) {
     win.setResizable(true);
     win.setFullScreenable(true);
-    win.setMinimumSize(APP_FRAME.width, APP_FRAME.height);
+    const chrome = windowChrome(win);
+    const minWidth = Math.min(APP_FRAME.width, Math.max(320, screen.getDisplayMatching(win.getBounds()).workArea.width - 24 - chrome.width));
+    const minHeight = Math.round(minWidth / APP_ASPECT);
+    win.setMinimumSize(minWidth + chrome.width, minHeight + chrome.height);
     if (typeof win.setMaximizable === "function") {
       win.setMaximizable(true);
     }
@@ -1153,13 +1175,20 @@ function applySize(win, size, animate) {
     width = Math.max(320, Math.round(size?.width ?? START_SIZE.width));
     height = Math.max(300, Math.round(size?.height ?? START_SIZE.height));
   }
-  if (current.width === width && current.height === height) {
+  const measuredWidth = FRAMED_PLATFORM ? content[0] : current.width;
+  const measuredHeight = FRAMED_PLATFORM ? content[1] : current.height;
+  if (measuredWidth === width && measuredHeight === height) {
     return;
   }
   let x = Math.round(current.x + (current.width - width) / 2);
   let y = Math.round(current.y + (current.height - height) / 2);
   x = Math.min(Math.max(work.x + 12, x), Math.max(work.x + 12, work.x + work.width - width - 12));
   y = Math.min(Math.max(work.y + 12, y), Math.max(work.y + 12, work.y + work.height - height - 12));
+  if (FRAMED_PLATFORM && typeof win.setContentSize === "function") {
+    win.setPosition(x, y, Boolean(animate));
+    win.setContentSize(width, height, Boolean(animate));
+    return;
+  }
   win.setBounds({ x, y, width, height }, Boolean(animate));
 }
 
@@ -1253,14 +1282,16 @@ function openLab() {
     x: 80,
     y: 60,
     title: "Kosmos",
-    transparent: true,
-    backgroundColor: "#00000000",
-    roundedCorners: true,
+    useContentSize: true,
+    autoHideMenuBar: true,
+    transparent: !FRAMED_PLATFORM,
+    backgroundColor: FRAMED_PLATFORM ? "#111111" : "#00000000",
+    roundedCorners: !FRAMED_PLATFORM,
     hasShadow: true,
     icon: path.join(__dirname, "..", "labs/next/public/brand/logo.png"),
     show: false,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: TRAFFIC_LIGHTS,
+    titleBarStyle: FRAMED_PLATFORM ? "default" : "hiddenInset",
+    trafficLightPosition: FRAMED_PLATFORM ? undefined : TRAFFIC_LIGHTS,
     webPreferences: {
       preload: path.join(__dirname, "labs-preload.cjs"),
       contextIsolation: true,
@@ -1343,7 +1374,7 @@ function openLab() {
   labWindow.on("enter-full-screen", onWindowChromeChange);
   labWindow.on("leave-full-screen", onWindowChromeChange);
   labWindow.on("maximize", () => {
-    if (labPlace !== "app" || !labWindow || labWindow.isDestroyed()) {
+    if (!ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed()) {
       onWindowChromeChange();
       return;
     }
@@ -1360,10 +1391,11 @@ function openLab() {
   labWindow.on("unmaximize", onWindowChromeChange);
   let aspectLock = false;
   labWindow.on("will-resize", (event, newBounds) => {
-    if (aspectLock || labPlace !== "app" || !labWindow || labWindow.isDestroyed() || labWindow.isFullScreen()) {
+    if (aspectLock || !ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed() || labWindow.isFullScreen()) {
       return;
     }
-    if (newBounds.width < APP_FRAME.width - 1 || newBounds.height < APP_FRAME.height - 1) {
+    const min = labWindow.getMinimumSize();
+    if (newBounds.width < min[0] - 1 || newBounds.height < min[1] - 1) {
       event.preventDefault();
       return;
     }

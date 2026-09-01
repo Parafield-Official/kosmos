@@ -8,6 +8,10 @@ export interface FrameSize {
 export const STORAGE_KEY = "kosmos-next-onboarding";
 /** Persists across quits: once true, launches skip straight to the main app. */
 export const ONBOARDED_KEY = "kosmos-onboarded";
+/** Set after the first-run pigment panel; returning users never see it again. */
+export const PIGMENT_KEY = "kosmos-pigment-chosen";
+const PIGMENT_OFFER_KEY = "kosmos-force-pigment";
+export const PIGMENT_OFFER_EVENT = "kosmos-pigment-offer";
 
 export const INTRO_TAGLINE =
   "you’re creating an audiobook, but you’re paying softwares for recording, teleprompter, and sound mastering.";
@@ -35,7 +39,53 @@ export const APP_SIZE: FrameSize = { width: 1180, height: 760 };
 export const PLACES: Place[] = ["mark", "intro", "brand", "welcome", "community", "access", "theme", "app"];
 
 export function isRoomPlace(place: Place): boolean {
-  return place === "app";
+  return place === "app" || place === "theme";
+}
+
+export function hasChosenPigment(): boolean {
+  try {
+    return window.localStorage.getItem(PIGMENT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markPigmentChosen() {
+  try {
+    window.localStorage.setItem(PIGMENT_KEY, "1");
+    window.sessionStorage.removeItem(PIGMENT_OFFER_KEY);
+  } catch {
+    // Non-fatal; the panel may appear once more next launch.
+  }
+}
+
+/** Debug dock / access → app: show the pigment glass on the live vault. */
+export function offerPigment() {
+  try {
+    window.sessionStorage.setItem(PIGMENT_OFFER_KEY, "1");
+  } catch {
+    // Non-fatal.
+  }
+  window.dispatchEvent(new Event(PIGMENT_OFFER_EVENT));
+}
+
+export function shouldOfferPigment(): boolean {
+  try {
+    if (window.sessionStorage.getItem(PIGMENT_OFFER_KEY) === "1") {
+      return true;
+    }
+    if (window.localStorage.getItem(PIGMENT_KEY) === "1") {
+      return false;
+    }
+    // Users who finished the old flow already picked a colour in Settings.
+    if (isOnboarded()) {
+      window.localStorage.setItem(PIGMENT_KEY, "1");
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function placeLabel(place: Place): string {
@@ -106,7 +156,9 @@ export function markOnboarded() {
 export function clearOnboarded() {
   try {
     window.localStorage.removeItem(ONBOARDED_KEY);
+    window.localStorage.removeItem(PIGMENT_KEY);
     window.sessionStorage.removeItem(STORAGE_KEY);
+    window.sessionStorage.removeItem(PIGMENT_OFFER_KEY);
   } catch {
     // Non-fatal.
   }
@@ -126,6 +178,14 @@ export function readStoredPlace(): Place {
       value === "theme" ||
       value === "app"
     ) {
+      if (value === "theme") {
+        try {
+          window.sessionStorage.setItem(PIGMENT_OFFER_KEY, "1");
+        } catch {
+          // Non-fatal.
+        }
+        return "app";
+      }
       return value;
     }
     // Returning, already-onboarded users land in the main app (Xcode-style).

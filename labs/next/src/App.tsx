@@ -10,6 +10,7 @@ import {
   STATEMENT_MS,
   isRoomPlace,
   markOnboarded,
+  offerPigment,
   prefersReducedMotion,
   readStoredPlace,
   sameSize,
@@ -28,7 +29,6 @@ import { applyClearedAccess, syncAccessState, type AccessSnapshot } from "./acce
 import { AccessScreen } from "./AccessScreen";
 import { CommunityScreen } from "./CommunityScreen";
 import { MainApp } from "./main-app/MainApp";
-import { ThemeOnboardingScreen } from "./main-app/ThemeOnboardingScreen";
 
 type WindowChrome = {
   platform: NodeJS.Platform;
@@ -107,11 +107,19 @@ export function App() {
   }, [place]);
 
   function go(next: Place) {
+    if (next === "theme") {
+      offerPigment();
+      next = "app";
+    }
     setPlace(next);
     storePlace(next);
   }
 
   function jump(next: Place) {
+    if (next === "theme") {
+      offerPigment();
+      next = "app";
+    }
     setPlace(next);
     storePlace(next);
     setFlowSeed((n) => n + 1);
@@ -191,11 +199,12 @@ export function App() {
       <AccessScreen
         key={`access-${flowSeed}`}
         initialSnapshot={accessSnapshot}
-        onComplete={() => go("theme")}
+        onComplete={() => {
+          offerPigment();
+          go("app");
+        }}
       />
     );
-  } else if (place === "theme") {
-    body = <ThemeOnboardingScreen key={`theme-${flowSeed}`} onComplete={() => go("app")} />;
   } else {
     body = <MainApp />;
   }
@@ -205,6 +214,7 @@ export function App() {
     <div
       className={electron ? "viewport native" : "viewport hosted"}
       data-place={place}
+      data-platform={windowChrome.platform}
       data-traffic-chrome={windowChrome.showTrafficChrome ? "true" : "false"}
       data-window-expanded={windowChrome.expanded ? "true" : "false"}
       style={electron ? undefined : { width: size.width, height: size.height }}
