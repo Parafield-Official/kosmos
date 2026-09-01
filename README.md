@@ -1,78 +1,68 @@
 # Kosmos
 
-[Download for Mac](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg) · [Download for Windows](https://github.com/Manishram-ai/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe)
+[Download for Mac](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg) · [Download for Windows](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe)
 
-Kosmos is a free, offline desktop app for turning a manuscript and human
-recordings into proofed, delivery-ready audiobook files. Your book and your voice
-stay on this computer. There are no accounts, meters, analytics, or
-cloud-uploaded manuscripts.
+Kosmos is a free desktop studio for human-made audiobooks. Import a manuscript,
+record each chapter or bring audio from another editor, proofread the take
+against the page, master the sound, and export a delivery-ready book.
 
-Kosmos does not read the book, generate a voice, replace a DAW, or promise
-to catch acting, accents, clicks, or echo. Proof catches text mismatches; a
-human still listens.
+The project stays in a folder on your computer. Kosmos has no account,
+subscription, usage meter, analytics, cloud manuscript upload, AI narrator, or
+voice cloning. Automation helps with words and delivery specs; a human still
+makes the final listening and performance decisions.
 
-## Current build
+## Lightbox workflow
 
-This repository is being built in the phases described in [`docs/SPEC.md`](docs/SPEC.md).
-The current build carries the consecutive Phase 0–5 slices: a local project
-folder and Journey A proof flow; ACX measurement, mastering, and named export;
-TXT/Markdown, DOCX (bold/italic/underline/highlight spans), EPUB, and text-layer
-PDF import with split/merge/rename; deterministic glossary candidates with
-human pronunciation clips; author/narrator roles, chapter notes, pickup status
-and notes, and a live pasteable invite on People (no zip pack); a styled manual teleprompter,
-DAW marker export, listen-safe DIY recording review, one-line punch splicing,
-and room testing; plus duet seat painting, N1/N2 pickup filters, seat packs,
-bed/overdub mixing, and separate stems. The master applies conservative
-steady-noise cleanup when needed, then runs loudness → true-peak limiting →
-room-tone padding and refuses a take whose noise cannot be fixed without
-damaging the voice. The shipped proof fixture can be loaded
-without a network connection. Project settings expose batch proof sensitivity,
-the long-pause threshold, ACX target RMS, and teleprompter display defaults;
-the versioned ACX pass limits themselves remain pinned in `acx_spec.json`.
+Every chapter moves through the same three stages:
 
-The teleprompter can follow narration locally with word-level highlighting.
-Kosmos warms a persistent whisper.cpp recognizer when voice follow starts,
-shows its check count and latency, and stops the recognizer when narration
-stops. Full-chapter Proof keeps the higher-quality one-shot decoder; the live
-path is a listen-only guide and never saves microphone audio.
+1. **Record** — read from a voice-following teleprompter, check the room, record
+   chapter takes, and punch individual lines. You can also import an existing
+   recording.
+2. **Proofread** — compare the take with the manuscript, play each flagged line,
+   leave notes, and turn real mismatches into pickups.
+3. **Sound** — listen to the original, working, and mastered takes; master for
+   ACX or EBU; and inspect loudness, true peak, noise floor, format, and room
+   tone before delivery.
 
-Rich manuscript imports use Microsoft's offline [MarkItDown](https://github.com/microsoft/markitdown)
-helper in release installers, with the built-in Kosmos parser as a safe
-fallback. Source builds can point to a local helper with `MARKITDOWN_PATH`;
-plain-text and Markdown chapter parsing remain local and deterministic.
+The wider book workspace adds TXT, Markdown, DOCX, EPUB, and text-layer PDF
+import; chapter split, merge, and rename; pronunciation guides with human voice
+clips; author and narrator roles; duet seats; live invites; progress tracking;
+and a named ACX export pack with credits and a retail sample.
 
-This is a pre-release development build. Release packaging stages the audited
-FFmpeg/ffprobe and whisper.cpp runtimes plus the checksum-verified `small.en`
-model inside the application. Source builds may still override those tools for
-development.
+Kosmos includes an audiobook-focused recorder, but it is not a general-purpose
+multitrack music workstation. Narrators can record and punch directly in Kosmos
+or continue using Reaper, Audition, or another editor and import the result.
 
-## Install (release builds)
+This is a pre-release development build. Release packaging includes the audited
+FFmpeg/ffprobe and whisper.cpp runtimes plus checksum-verified local speech
+models. Rich manuscript imports use Microsoft's offline
+[MarkItDown](https://github.com/microsoft/markitdown) helper with a built-in
+fallback.
 
-1. Download the Mac `.dmg` or Windows `.exe` from the latest GitHub Release.
-2. macOS: open the disk image and drag Kosmos to Applications. If
-   Gatekeeper blocks an unsigned build, right-click the app and choose Open.
-3. Windows: run the installer. If SmartScreen appears for an unsigned build,
-   choose More info → Run anyway.
-4. If you still have the first public installer, download the current Mac or
-   Windows file once and replace that app. Later versions then arrive in
-   Kosmos; restart when you are not recording. Your book folder is unchanged.
+## Install
 
-Whisper CLI, the persistent Whisper server, and the checksum-verified
-`small.en` model are already included in the installer. Proof and listen-only
-voice follow work offline immediately after installation: there is no
-model download, account, Python setup, or cloud fallback.
+1. Choose the Mac or Windows download from the latest GitHub Release.
+2. On macOS, open the download and drag Kosmos to Applications. If Gatekeeper
+   blocks an unsigned pre-release, right-click the app and choose **Open**.
+3. On Windows, run the installer. If SmartScreen appears, choose **More info →
+   Run anyway**.
+4. On first launch, allow microphone access, choose where project folders live,
+   and confirm the local proofreading tool is ready. Release builds include the
+   required tools; if a model is missing, setup downloads it once.
 
-## Journey A (first vertical slice)
+After setup, recording, proofreading, mastering, and export run locally. Later
+versions arrive through the in-app updater; restart when you are not recording.
+Your book folder is unchanged.
 
-The target first-use flow is:
+## Start a book
 
-1. File → New Project and choose a folder.
-2. Paste or import one chapter of plain text.
-3. Attach that chapter's WAV or MP3 (or choose **Try the proof fixture**).
-4. Click Proof. Kosmos uses local Whisper when installed; for a fixture or
-   development build you may paste a local transcript instead.
-5. Review timestamped word mismatches and check the ACX traffic light with RMS, true peak, noise floor, rate,
-   channels, duration, and room-tone values.
+1. Create a project and choose a manuscript.
+2. Choose the local folder where Kosmos will keep the project.
+3. Let Kosmos analyze and split the manuscript into chapters.
+4. Open a chapter and **Record**, or import an existing recording.
+5. Continue to **Proofread**, resolve the flags, then open **Sound** to master
+   and check the chapter.
+6. When every chapter is mastered, export the finished book from **Export ACX**.
 
 ## ACX mastering and automatic noise cleanup
 
@@ -110,19 +100,12 @@ and best-take selection workflows are specified in
 still confirms the listening experience, but the app prepares the exact pickup
 only when a bounded repair cannot preserve the human voice.
 
-## Working next to Reaper
-
-Record and edit in Reaper (or another DAW), then attach the finished WAV to a
-chapter. Kosmos is the script, proof, pickup, and ACX desk beside your DAW;
-it is not a replacement multitrack editor. The optional in-app recorder is for
-DIY authors who need a simple record/stop/punch workflow.
-
 ## Offline by design
 
-Prep, proof, teleprompter, ACX checking, mastering, and export are local. The
-app has no sign-in, telemetry, crash phone-home, cloud LLM, voice clone, or
-remote narrator marketplace. Shared work happens by passing the Kosmos project
-folder (or a ZIP) between people.
+Manuscript prep, recording, voice follow, proofreading, ACX checking, mastering,
+and export are local. The app has no sign-in, telemetry, crash phone-home,
+cloud LLM, voice clone, or remote narrator marketplace. Collaboration is
+explicit: invite another person to the project or hand off the project folder.
 
 ## Build from source (contributors)
 
