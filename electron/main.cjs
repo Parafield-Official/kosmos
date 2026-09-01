@@ -22,7 +22,7 @@ const { loadTurnSecrets, mintIceServers } = require("./turn.cjs");
 const { exportVoiceGuide: exportVoiceGuideFiles } = require("./voice-guide.cjs");
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
-const { runCommand } = require("./process.cjs");
+const { runCommand, terminateActiveCommands } = require("./process.cjs");
 const { convertWithMarkItDown } = require("./markitdown.cjs");
 const { isMicrophonePermission, ensureMicrophoneAccess } = require("./media-access.cjs");
 const {
@@ -143,6 +143,20 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
+  const releaseRendererWorkers = () => {
+    // A crashed or reloading renderer cannot reliably send proof:stop-live.
+    // Release both models instead of leaving them resident without an owner.
+    liveFollowStream.stop();
+    liveFollowServer.stop();
+    liveAsrServer.stop();
+    terminateActiveCommands();
+  };
+  window.webContents.on("render-process-gone", releaseRendererWorkers);
+  window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) {
+      releaseRendererWorkers();
+    }
+  });
 
   if (isDevelopment) {
     void window.loadURL("http://127.0.0.1:5173");
@@ -3958,12 +3972,19 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   appUpdater?.dispose();
-  liveFollowStream.stop();
-  liveFollowServer.stop();
-  liveAsrServer.stop();
+  liveFollowStream.stop({ force: true });
+  liveFollowServer.stop({ force: true });
+  liveAsrServer.stop({ force: true });
+  terminateActiveCommands({ force: true });
 });
 
 app.on("window-all-closed", () => {
+  // macOS keeps the application process alive after its last window closes.
+  // The native recognizers must not keep using CPU/GPU in that headless state.
+  liveFollowStream.stop();
+  liveFollowServer.stop();
+  liveAsrServer.stop();
+  terminateActiveCommands();
   if (process.platform !== "darwin") {
     app.quit();
   }

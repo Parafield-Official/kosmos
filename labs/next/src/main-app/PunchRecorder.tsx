@@ -61,7 +61,6 @@ export function PunchRecorder({
   const [recording, setRecording] = useState(false);
   const [paused, setPaused] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [level, setLevel] = useState(0);
   const [pending, setPending] = useState<Uint8Array | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -75,6 +74,10 @@ export function PunchRecorder({
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const muteRef = useRef<GainNode | null>(null);
   const timerRef = useRef<number | null>(null);
+  const levelRef = useRef<HTMLSpanElement | null>(null);
+  const captureGenerationRef = useRef(0);
+  const startingRef = useRef(false);
+  const aliveRef = useRef(true);
   const currentUrl = useRef<string | null>(null);
   const patchedUrl = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -86,10 +89,14 @@ export function PunchRecorder({
     [bound, manuscript, transcript],
   );
 
-  useEffect(() => () => {
-    stopCapture();
-    stopPlayback();
-    revokePreview();
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      stopCapture();
+      stopPlayback();
+      revokePreview();
+    };
   }, []);
 
   useEffect(() => {
@@ -149,9 +156,12 @@ export function PunchRecorder({
   }
 
   function stopCapture() {
+    captureGenerationRef.current += 1;
     setRecording(false);
     setPaused(false);
-    setLevel(0);
+    if (levelRef.current) {
+      levelRef.current.style.transform = "scaleX(0)";
+    }
     disconnectProcessor();
     sourceRef.current?.disconnect();
     sourceRef.current = null;
@@ -173,7 +183,10 @@ export function PunchRecorder({
       for (const sample of input) {
         sum += sample * sample;
       }
-      setLevel(Math.min(1, Math.sqrt(input.length ? sum / input.length : 0) * 2.4));
+      if (levelRef.current) {
+        const level = Math.min(1, Math.sqrt(input.length ? sum / input.length : 0) * 2.4);
+        levelRef.current.style.transform = `scaleX(${level})`;
+      }
       const mono = resamplePcmToMono(new Float32Array(input), ctx.sampleRate, TARGET_RATE);
       chunksRef.current.push(mono);
       countRef.current += mono.length;
@@ -182,11 +195,17 @@ export function PunchRecorder({
     processor.connect(mute);
     mute.connect(ctx.destination);
     timerRef.current = window.setInterval(() => {
-      setSeconds(countRef.current / TARGET_RATE);
-    }, 200);
+      // The label only displays whole seconds; avoid five full dialog renders
+      // per second for fractional values the user never sees.
+      setSeconds(Math.floor(countRef.current / TARGET_RATE));
+    }, 500);
   }
 
   async function startCapture() {
+    if (startingRef.current) {
+      return;
+    }
+    startingRef.current = true;
     stopPlayback();
     revokePreview();
     stopCapture();
@@ -196,6 +215,7 @@ export function PunchRecorder({
     countRef.current = 0;
     setSeconds(0);
     setPaused(false);
+    const generation = captureGenerationRef.current;
     const audio: MediaTrackConstraints = {
       ...(inputId ? { deviceId: { exact: inputId } } : {}),
       channelCount: 1,
@@ -205,17 +225,28 @@ export function PunchRecorder({
     };
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio });
+      if (generation !== captureGenerationRef.current || !aliveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       const AudioCtx =
         window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
       ctxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
+      if (generation !== captureGenerationRef.current || !aliveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        void ctx.close().catch(() => undefined);
+        return;
+      }
       sourceRef.current = source;
       attachProcessor(ctx, source);
       setRecording(true);
     } catch {
       stopCapture();
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -224,16 +255,26 @@ export function PunchRecorder({
       return;
     }
     disconnectProcessor();
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = false;
+    });
+    void ctxRef.current?.suspend().catch(() => undefined);
     setPaused(true);
-    setLevel(0);
+    if (levelRef.current) {
+      levelRef.current.style.transform = "scaleX(0)";
+    }
   }
 
-  function continueCapture() {
+  async function continueCapture() {
     const ctx = ctxRef.current;
     const source = sourceRef.current;
     if (!ctx || !source || !paused) {
       return;
     }
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    await ctx.resume();
     attachProcessor(ctx, source);
     setPaused(false);
   }
@@ -259,6 +300,9 @@ export function PunchRecorder({
     setPreviewError(null);
     try {
       const clip = await onPreview(wav, bound);
+      if (!aliveRef.current) {
+        return;
+      }
       revokePreview();
       currentUrl.current = wavUrl(clip.currentWavBase64);
       patchedUrl.current = wavUrl(clip.patchedWavBase64);
@@ -355,7 +399,7 @@ export function PunchRecorder({
             {!pending ? (
               <>
                 <div className="ma-punch-meter" aria-hidden="true">
-                  <span style={{ transform: `scaleX(${level})` }} />
+                  <span ref={levelRef} style={{ transform: "scaleX(0)" }} />
                 </div>
                 <p className="ma-punch-time">{formatPunchTime(seconds)}</p>
               </>
@@ -423,7 +467,7 @@ export function PunchRecorder({
             </>
           ) : paused ? (
             <>
-              <button type="button" className="btn" onClick={continueCapture} disabled={busy}>
+              <button type="button" className="btn" onClick={() => void continueCapture()} disabled={busy}>
                 Continue
               </button>
               <button

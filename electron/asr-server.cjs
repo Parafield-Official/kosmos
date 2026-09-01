@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
+const { terminateChild } = require("./process.cjs");
 
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -38,6 +39,7 @@ class PersistentWhisperServer {
     this.lastUsedAt = 0;
     this.useGpu = true;
     this.stderr = "";
+    this.requestControllers = new Set();
   }
 
   async warm({ serverPath, modelPath, threads }) {
@@ -65,7 +67,7 @@ class PersistentWhisperServer {
       // Metal can be unavailable on an older or constrained Mac even when the
       // server itself starts. Retry the same request once with CPU before the
       // caller falls back to the one-shot whisper-cli path.
-      if (this.useGpu) {
+      if (this.useGpu && this.child) {
         this.stop();
         this.useGpu = false;
         await this.ensureStarted({ serverPath, modelPath, threads });
@@ -91,7 +93,7 @@ class PersistentWhisperServer {
     }
   }
 
-  stop() {
+  stop({ force = false } = {}) {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -104,25 +106,30 @@ class PersistentWhisperServer {
     this.modelPath = null;
     this.serverPath = null;
     this.stderr = "";
-    if (child && !child.killed) {
-      child.kill();
+    for (const controller of this.requestControllers) {
+      controller.abort();
     }
+    this.requestControllers.clear();
+    terminateChild(child, { force });
   }
 
   async ensureStarted({ serverPath, modelPath, threads }) {
-    if (this.child && this.port && this.requestPath && this.modelPath === modelPath) {
-      await this.readyPromise;
+    if (this.isStartedFor({ serverPath, modelPath })) {
       return;
     }
     if (this.readyPromise) {
       await this.readyPromise;
-      return;
+      if (this.isStartedFor({ serverPath, modelPath })) {
+        return;
+      }
+    }
+    if (this.child) {
+      this.stop();
     }
     this.serverPath = serverPath;
     this.modelPath = modelPath;
-    this.readyPromise = this.start({ serverPath, modelPath, threads })
+    const readyPromise = this.start({ serverPath, modelPath, threads })
       .catch(async (error) => {
-        this.readyPromise = null;
         this.stop();
         if (this.useGpu) {
           this.useGpu = false;
@@ -133,7 +140,26 @@ class PersistentWhisperServer {
         }
         throw error;
       });
-    await this.readyPromise;
+    this.readyPromise = readyPromise;
+    try {
+      await readyPromise;
+    } finally {
+      if (this.readyPromise === readyPromise) {
+        this.readyPromise = null;
+      }
+    }
+  }
+
+  isStartedFor({ serverPath, modelPath }) {
+    return Boolean(
+      this.child
+      && this.child.exitCode == null
+      && this.child.signalCode == null
+      && this.port
+      && this.requestPath
+      && this.modelPath === modelPath
+      && this.serverPath === serverPath
+    );
   }
 
   async start({ serverPath, modelPath, threads }) {
@@ -173,7 +199,10 @@ class PersistentWhisperServer {
 
     const deadline = this.now() + STARTUP_TIMEOUT_MS;
     while (this.now() < deadline) {
-      if (exited || child.exitCode !== null) {
+      if (this.child !== child) {
+        throw new Error("Whisper server was stopped before it was ready.");
+      }
+      if (exited || child.exitCode !== null || child.signalCode != null) {
         throw new Error(`Whisper server exited before it was ready${this.stderr ? `: ${this.stderr.trim()}` : "."}`);
       }
       try {
@@ -195,6 +224,7 @@ class PersistentWhisperServer {
 
   async request({ wavBytes, language }) {
     const controller = new AbortController();
+    this.requestControllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const form = new FormData();
@@ -217,6 +247,7 @@ class PersistentWhisperServer {
       return await response.json();
     } finally {
       clearTimeout(timeout);
+      this.requestControllers.delete(controller);
     }
   }
 

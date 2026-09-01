@@ -37,6 +37,7 @@ export function useClipRecorder(onBlob?: (blob: Blob) => void) {
   const streamRef = useRef<MediaStream | null>(null);
   const freshTimer = useRef(0);
   const aliveRef = useRef(true);
+  const startingRef = useRef(false);
 
   onBlobRef.current = onBlob;
 
@@ -63,9 +64,10 @@ export function useClipRecorder(onBlob?: (blob: Blob) => void) {
   }
 
   async function start() {
-    if (!onBlobRef.current) {
+    if (!onBlobRef.current || startingRef.current || recorderRef.current) {
       return;
     }
+    startingRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!aliveRef.current) {
@@ -99,12 +101,17 @@ export function useClipRecorder(onBlob?: (blob: Blob) => void) {
         onBlobRef.current?.(blob);
       };
       recorderRef.current = recorder;
-      recorder.start(80);
+      // A timeslice emitted a new Blob event every 80 ms even though the clip is
+      // only consumed after Stop. One final chunk preserves the encoded audio
+      // while avoiding needless renderer callbacks and allocations.
+      recorder.start();
       setRecording(true);
     } catch {
       if (aliveRef.current) {
         setRecording(false);
       }
+    } finally {
+      startingRef.current = false;
     }
   }
 

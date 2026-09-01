@@ -6,8 +6,9 @@ export function ThemeAtmosphere() {
   const clouds = useMemo(() => atmosphereClouds(readAtmosphereSeed()).map(atmosphereCloudVars), []);
 
   useEffect(() => {
-    const root = fieldRef.current?.parentElement;
-    if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const field = fieldRef.current;
+    const root = field?.parentElement;
+    if (!field || !root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
 
@@ -16,12 +17,20 @@ export function ThemeAtmosphere() {
     let currentY = 0;
     let targetX = 0;
     let targetY = 0;
+    let windowActive = true;
 
     const render = () => {
+      if (!windowActive || document.hidden) {
+        frame = 0;
+        return;
+      }
       currentX += (targetX - currentX) * 0.11;
       currentY += (targetY - currentY) * 0.11;
-      root.style.setProperty("--ma-pointer-x", currentX.toFixed(3));
-      root.style.setProperty("--ma-pointer-y", currentY.toFixed(3));
+      // Scope the changing custom properties to the atmosphere subtree. They
+      // used to live on the whole app root, forcing style invalidation across
+      // every screen descendant for a purely decorative parallax update.
+      field.style.setProperty("--ma-pointer-x", currentX.toFixed(3));
+      field.style.setProperty("--ma-pointer-y", currentY.toFixed(3));
       if (Math.abs(targetX - currentX) > 0.002 || Math.abs(targetY - currentY) > 0.002) {
         frame = requestAnimationFrame(render);
       } else {
@@ -38,12 +47,37 @@ export function ThemeAtmosphere() {
       }
     };
 
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(frame);
+        frame = 0;
+      }
+    };
+
+    const onWindowBlur = () => {
+      windowActive = false;
+      cancelAnimationFrame(frame);
+      frame = 0;
+    };
+    const onWindowFocus = () => {
+      windowActive = true;
+      if (!frame && (Math.abs(targetX - currentX) > 0.002 || Math.abs(targetY - currentY) > 0.002)) {
+        frame = requestAnimationFrame(render);
+      }
+    };
+
     root.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
     return () => {
       root.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
       cancelAnimationFrame(frame);
-      root.style.removeProperty("--ma-pointer-x");
-      root.style.removeProperty("--ma-pointer-y");
+      field.style.removeProperty("--ma-pointer-x");
+      field.style.removeProperty("--ma-pointer-y");
     };
   }, []);
 

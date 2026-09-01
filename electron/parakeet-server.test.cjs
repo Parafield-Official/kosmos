@@ -6,6 +6,20 @@ const {
 } = require("./parakeet-server.cjs");
 
 describe("persistent Parakeet live server", () => {
+  function fakeChild() {
+    const child = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    child.killed = false;
+    child.kill = () => {
+      child.killed = true;
+      child.exitCode = 0;
+      child.emit("exit", 0);
+    };
+    return child;
+  }
+
   it("binds only to loopback", () => {
     expect(buildParakeetServerArgs({
       modelPath: "/models/realtime_eou_120m-v1-f16.gguf",
@@ -35,14 +49,7 @@ describe("persistent Parakeet live server", () => {
   });
 
   it("keeps one model-loaded child for warm and transcription requests", async () => {
-    const child = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.exitCode = null;
-    child.killed = false;
-    child.kill = () => {
-      child.killed = true;
-      child.exitCode = 0;
-    };
+    const child = fakeChild();
     let starts = 0;
     const server = new PersistentParakeetServer({
       idleTimeoutMs: 60_000,
@@ -80,6 +87,33 @@ describe("persistent Parakeet live server", () => {
     expect(starts).toBe(1);
     expect(first.engine).toBe("parakeet.cpp server");
     expect(second.words).toEqual([{ text: "hello", start: 0, end: 0.4, confidence: 0.9 }]);
+    server.stop();
+  });
+
+  it("restarts after an unexpected native server exit", async () => {
+    const children = [];
+    const server = new PersistentParakeetServer({
+      portFinder: async () => 8765 + children.length,
+      spawnImpl: () => {
+        const child = fakeChild();
+        children.push(child);
+        return child;
+      },
+      fetchImpl: async (_url, options = {}) => options.method
+        ? { ok: true, json: async () => ({ words: [] }) }
+        : { ok: true, json: async () => ({ status: "ok" }) },
+    });
+
+    await server.warm({ serverPath: "/server", modelPath: "/model" });
+    children[0].exitCode = 1;
+    children[0].emit("exit", 1);
+    await server.transcribe({
+      serverPath: "/server",
+      modelPath: "/model",
+      wavBytes: Buffer.from("RIFF"),
+    });
+
+    expect(children).toHaveLength(2);
     server.stop();
   });
 });

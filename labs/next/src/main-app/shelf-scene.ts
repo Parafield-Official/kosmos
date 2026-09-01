@@ -58,7 +58,10 @@ export function createShelfScene({ canvas, onOpen, onHover }: ShelfSceneOptions)
     canvas,
     antialias: true,
     alpha: true,
-    powerPreference: "high-performance",
+    // Do not wake a discrete GPU on Intel MacBooks for a scene that is static
+    // almost all of the time. This preference does not change rendering
+    // quality; it only lets the browser choose the more efficient adapter.
+    powerPreference: "low-power",
   });
   if (!renderer.getContext()) {
     throw new Error("WebGL unavailable");
@@ -133,10 +136,20 @@ export function createShelfScene({ canvas, onOpen, onHover }: ShelfSceneOptions)
   let heldHover = false;
   let dirty = true;
   let running = true;
+  let windowActive = true;
+  let raf = 0;
   let lastTime = performance.now();
 
   function markDirty() {
     dirty = true;
+    scheduleFrame();
+  }
+
+  function scheduleFrame() {
+    if (!running || !windowActive || document.hidden || raf) {
+      return;
+    }
+    raf = requestAnimationFrame(frame);
   }
 
   // ── Wall ─────────────────────────────────────────────────────────────────
@@ -362,6 +375,7 @@ export function createShelfScene({ canvas, onOpen, onHover }: ShelfSceneOptions)
 
   // ── Frame ────────────────────────────────────────────────────────────────
   function frame(now: number) {
+    raf = 0;
     if (!running) {
       return;
     }
@@ -410,13 +424,49 @@ export function createShelfScene({ canvas, onOpen, onHover }: ShelfSceneOptions)
         }
       }
     }
-    requestAnimationFrame(frame);
+    // The shelf has no ambient animation. Once the hover and parallax have
+    // settled, stop asking Chromium for frames entirely until an interaction,
+    // resize, texture load or state update invalidates the scene.
+    if (moving || dirty) {
+      scheduleFrame();
+    }
   }
+
+  function onVisibilityChange() {
+    if (document.hidden) {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      return;
+    }
+    lastTime = performance.now();
+    markDirty();
+  }
+
+  function onWindowBlur() {
+    windowActive = false;
+    if (raf) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+    dirty = true;
+  }
+
+  function onWindowFocus() {
+    windowActive = true;
+    lastTime = performance.now();
+    markDirty();
+  }
+
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("blur", onWindowBlur);
+  window.addEventListener("focus", onWindowFocus);
 
   resize();
   buildWall();
   buildBooks();
-  requestAnimationFrame(frame);
+  markDirty();
 
   // A handle for the shot script and for measuring the frame back off the
   // buffer while tuning; the render loop is paused when the page is hidden.
@@ -452,7 +502,14 @@ export function createShelfScene({ canvas, onOpen, onHover }: ShelfSceneOptions)
     },
     dispose() {
       running = false;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
       observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("click", onClick);

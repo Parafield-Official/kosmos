@@ -1,5 +1,5 @@
 const processModule = require("node:process");
-const { runCommand } = require("./process.cjs");
+const { activeCommandCount, runCommand, terminateActiveCommands } = require("./process.cjs");
 
 describe("local process boundary", () => {
   it("returns stdout from a successful helper", async () => {
@@ -18,5 +18,19 @@ describe("local process boundary", () => {
       ["-e", "process.stdout.write('x'.repeat(4096))"],
       { timeoutMs: 1000, maxOutputBytes: 128 },
     )).rejects.toThrow(/output exceeded/i);
+  });
+
+  it("tracks and terminates active helpers during app shutdown", async () => {
+    const command = runCommand(
+      processModule.execPath,
+      ["-e", "setTimeout(() => {}, 5000)"],
+      { timeoutMs: 10_000 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(activeCommandCount()).toBe(1);
+
+    terminateActiveCommands({ force: true });
+    await expect(command).rejects.toThrow(/exited|SIGKILL/i);
+    expect(activeCommandCount()).toBe(0);
   });
 });

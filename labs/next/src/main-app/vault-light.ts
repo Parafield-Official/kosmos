@@ -21,29 +21,42 @@ export type { VaultLightState };
 
 export type VaultLightKind = "webgpu" | "webgl";
 
+export interface VaultLightController {
+  invalidate(): void;
+  dispose(): void;
+}
+
+type LightBackend = VaultLightController;
+
 export function startVaultLight(
   canvas: HTMLCanvasElement,
   getState: () => VaultLightState,
   onReady?: (kind: VaultLightKind) => void,
-): () => void {
+): VaultLightController {
   let disposed = false;
-  let stop: (() => void) | undefined;
+  let backend: LightBackend | undefined;
+  let invalidated = true;
+  const pending = new AbortController();
 
   void (async () => {
-    const gpuStop = await startWebGpuLight(canvas, getState, () => disposed);
+    const gpuStop = await startWebGpuLight(canvas, getState, () => disposed, pending.signal);
     if (disposed) {
-      gpuStop?.();
+      gpuStop?.dispose();
       return;
     }
     if (gpuStop) {
-      stop = gpuStop;
+      backend = gpuStop;
+      if (invalidated) backend.invalidate();
+      invalidated = false;
       canvas.classList.add("is-ready");
       canvas.classList.remove("is-failed");
       onReady?.("webgpu");
       return;
     }
     try {
-      stop = startVaultVolume(canvas, getState);
+      backend = startVaultVolume(canvas, getState);
+      if (invalidated) backend.invalidate();
+      invalidated = false;
       canvas.classList.add("is-ready");
       canvas.classList.remove("is-failed");
       onReady?.("webgl");
@@ -53,9 +66,17 @@ export function startVaultLight(
     }
   })();
 
-  return () => {
-    disposed = true;
-    stop?.();
+  return {
+    invalidate() {
+      invalidated = true;
+      backend?.invalidate();
+      if (backend) invalidated = false;
+    },
+    dispose() {
+      disposed = true;
+      pending.abort();
+      backend?.dispose();
+    },
   };
 }
 
@@ -63,11 +84,13 @@ async function startWebGpuLight(
   canvas: HTMLCanvasElement,
   getState: () => VaultLightState,
   isDisposed: () => boolean,
-): Promise<(() => void) | null> {
+  signal: AbortSignal,
+): Promise<LightBackend | null> {
   let gpu: Awaited<ReturnType<typeof init>> | undefined;
+  let cleanupListeners: (() => void) | undefined;
 
   try {
-    await waitForSize(canvas);
+    await waitForSize(canvas, signal);
     if (isDisposed()) return null;
 
     gpu = await init();
@@ -92,14 +115,15 @@ async function startWebGpuLight(
     });
 
     let shown = 0;
-    let lastOccupied = -1;
-    let lastLamps = -1;
     let raf = 0;
     let primed = false;
+    let needsDraw = true;
+    let windowActive = true;
     const device = gpu;
 
     const draw = () => {
       if (isDisposed()) return;
+      needsDraw = false;
       const state = getState();
       const target = 1;
       if (!primed) {
@@ -109,8 +133,6 @@ async function startWebGpuLight(
         shown += (target - shown) * 0.14;
         if (Math.abs(target - shown) < 0.003) shown = target;
       }
-      lastOccupied = state.occupied;
-      lastLamps = state.lamps;
       lighting.set({ params: uniforms(canvasSurface.size, state, shown) });
       frame(device, (next) => {
         next.pass(canvasSurface, lighting);
@@ -119,64 +141,91 @@ async function startWebGpuLight(
     };
 
     const schedule = () => {
-      if (raf || isDisposed()) return;
+      needsDraw = true;
+      if (raf || isDisposed() || !windowActive || document.hidden) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
         draw();
       });
     };
 
-    canvasSurface.onResize(() => schedule());
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        needsDraw = true;
+      } else if (needsDraw) {
+        schedule();
+      }
+    };
 
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => {
-        if (!isDisposed()) draw();
-        resolve();
-      });
-    });
+    const onWindowBlur = () => {
+      windowActive = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      needsDraw = true;
+    };
+    const onWindowFocus = () => {
+      windowActive = true;
+      if (needsDraw) schedule();
+    };
+
+    canvasSurface.onResize(() => schedule());
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("focus", onWindowFocus);
+    cleanupListeners = () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
+    };
+
+    // Prime immediately. Waiting for rAF here can retain a WebGPU device
+    // indefinitely when the Electron window starts or becomes hidden, because
+    // Chromium intentionally suspends hidden-window animation frames.
+    draw();
+    await Promise.resolve();
     if (isDisposed()) {
+      cleanupListeners();
       device.dispose();
       return null;
     }
 
-    const poll = window.setInterval(() => {
-      if (isDisposed()) return;
-      const state = getState();
-      const target = 1;
-      if (state.occupied !== lastOccupied || state.lamps !== lastLamps || Math.abs(target - shown) > 0.003) {
-        schedule();
-      }
-    }, 120);
-
     schedule();
 
-    return () => {
-      window.clearInterval(poll);
-      if (raf) cancelAnimationFrame(raf);
-      device.dispose();
+    return {
+      invalidate: schedule,
+      dispose() {
+        if (raf) cancelAnimationFrame(raf);
+        cleanupListeners?.();
+        device.dispose();
+      },
     };
   } catch (error) {
     console.warn("[vault-light] WebGPU lighting unavailable", error);
+    cleanupListeners?.();
     gpu?.dispose();
     return null;
   }
 }
 
-function waitForSize(canvas: HTMLCanvasElement) {
+function waitForSize(canvas: HTMLCanvasElement, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     const ready = () => canvas.clientWidth > 0 && canvas.clientHeight > 0;
-    if (ready()) {
+    if (ready() || signal.aborted || !canvas.isConnected) {
       resolve();
       return;
     }
-    const next = () => {
-      if (ready() || !canvas.isConnected) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(next);
+    const observer = new ResizeObserver(() => {
+      if (ready()) finish();
+    });
+    const finish = () => {
+      observer.disconnect();
+      signal.removeEventListener("abort", finish);
+      resolve();
     };
-    requestAnimationFrame(next);
+    observer.observe(canvas);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 

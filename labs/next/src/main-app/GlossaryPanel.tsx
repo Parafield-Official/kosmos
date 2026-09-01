@@ -417,6 +417,10 @@ function GlossaryRow({
   const [playing, setPlaying] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pendingUrlRef = useRef<string | null>(null);
+  const transientPlaybackUrlRef = useRef<string | null>(null);
+  const playGenerationRef = useRef(0);
+  const aliveRef = useRef(true);
   const respellRef = useRef(respell);
   const rowRef = useRef<HTMLElement | null>(null);
   const saved = (entry.respell ?? "").trim();
@@ -427,10 +431,12 @@ function GlossaryRow({
     onClip
       ? (blob) => {
           const url = URL.createObjectURL(blob);
+          stopAudio();
           setPendingUrl((prev) => {
             if (prev) {
               URL.revokeObjectURL(prev);
             }
+            pendingUrlRef.current = url;
             return url;
           });
           const nextGuide = respellRef.current.trim();
@@ -447,13 +453,34 @@ function GlossaryRow({
   }, [entry.respell]);
 
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
-      audioRef.current?.pause();
-      if (pendingUrl) {
-        URL.revokeObjectURL(pendingUrl);
+      aliveRef.current = false;
+      stopAudio();
+      if (pendingUrlRef.current) {
+        URL.revokeObjectURL(pendingUrlRef.current);
+        pendingUrlRef.current = null;
       }
     };
   }, []);
+
+  function stopAudio() {
+    playGenerationRef.current += 1;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+    }
+    audioRef.current = null;
+    if (transientPlaybackUrlRef.current) {
+      URL.revokeObjectURL(transientPlaybackUrlRef.current);
+      transientPlaybackUrlRef.current = null;
+    }
+    if (aliveRef.current) {
+      setPlaying(false);
+    }
+  }
 
   function commitGuide(nextTarget?: EventTarget | null) {
     if (nextTarget instanceof Node && rowRef.current?.contains(nextTarget)) {
@@ -471,24 +498,31 @@ function GlossaryRow({
       return;
     }
     if (playing) {
-      audioRef.current?.pause();
-      setPlaying(false);
+      stopAudio();
       return;
     }
+    const generation = ++playGenerationRef.current;
     const url = localUrl ?? (project && entry.clip_path ? await readChapterAudioUrl(project, entry.clip_path) : null);
     if (!url) {
       return;
     }
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onended = () => {
-      setPlaying(false);
+    if (generation !== playGenerationRef.current || !aliveRef.current) {
       if (!localUrl) {
         URL.revokeObjectURL(url);
       }
-    };
-    await audio.play();
+      return;
+    }
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    transientPlaybackUrlRef.current = localUrl ? null : url;
+    audio.onended = stopAudio;
+    audio.onerror = stopAudio;
     setPlaying(true);
+    try {
+      await audio.play();
+    } catch {
+      stopAudio();
+    }
   }
 
   const Tag = variant === "card" ? "article" : "li";

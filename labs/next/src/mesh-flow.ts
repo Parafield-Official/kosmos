@@ -59,9 +59,13 @@ export function startMeshFlow(container: HTMLElement): () => void {
   if (anchors.length === 0) return () => {};
 
   let raf = 0;
+  let running = true;
+  let windowActive = true;
   const t0 = performance.now();
 
   function tick(now: number) {
+    raf = 0;
+    if (!running || !windowActive || document.hidden || !container.isConnected) return;
     const t = (now - t0) / 1000;
 
     for (const a of anchors) {
@@ -78,6 +82,37 @@ export function startMeshFlow(container: HTMLElement): () => void {
     raf = requestAnimationFrame(tick);
   }
 
-  raf = requestAnimationFrame(tick);
-  return () => cancelAnimationFrame(raf);
+  const start = () => {
+    if (!running || !windowActive || document.hidden || raf) return;
+    raf = requestAnimationFrame(tick);
+  };
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    } else {
+      start();
+    }
+  };
+  const onWindowBlur = () => {
+    windowActive = false;
+    cancelAnimationFrame(raf);
+    raf = 0;
+  };
+  const onWindowFocus = () => {
+    windowActive = true;
+    start();
+  };
+
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("blur", onWindowBlur);
+  window.addEventListener("focus", onWindowFocus);
+  start();
+  return () => {
+    running = false;
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("blur", onWindowBlur);
+    window.removeEventListener("focus", onWindowFocus);
+    cancelAnimationFrame(raf);
+  };
 }

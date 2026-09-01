@@ -6,6 +6,20 @@ const {
 } = require("./asr-server.cjs");
 
 describe("persistent Whisper server adapter", () => {
+  function fakeChild() {
+    const child = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    child.killed = false;
+    child.kill = () => {
+      child.killed = true;
+      child.exitCode = 0;
+      child.emit("exit", 0);
+    };
+    return child;
+  }
+
   it("binds only to loopback and uses official beam-5 QC decoding", () => {
     expect(buildWhisperServerArgs({
       serverPath: "/vendor/bin/whisper-server",
@@ -78,14 +92,7 @@ describe("persistent Whisper server adapter", () => {
   });
 
   it("keeps one model-loaded child for warm and transcription requests", async () => {
-    const child = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.exitCode = null;
-    child.killed = false;
-    child.kill = () => {
-      child.killed = true;
-      child.exitCode = 0;
-    };
+    const child = fakeChild();
     let starts = 0;
     const server = new PersistentWhisperServer({
       idleTimeoutMs: 60_000,
@@ -120,5 +127,69 @@ describe("persistent Whisper server adapter", () => {
     expect(starts).toBe(1);
     server.stop();
     expect(child.killed).toBe(true);
+  });
+
+  it("starts a fresh server after the native child exits unexpectedly", async () => {
+    const children = [];
+    const server = new PersistentWhisperServer({
+      portFinder: async () => 43210 + children.length,
+      spawnImpl: () => {
+        const child = fakeChild();
+        children.push(child);
+        return child;
+      },
+      fetchImpl: async (_url, options = {}) => options.method
+        ? { ok: true, json: async () => ({ segments: [{ words: [] }] }) }
+        : { ok: true, json: async () => ({ status: "ok" }) },
+    });
+
+    await server.warm({ serverPath: "/server", modelPath: "/model" });
+    children[0].exitCode = 1;
+    children[0].emit("exit", 1);
+    await server.transcribe({
+      serverPath: "/server",
+      modelPath: "/model",
+      wavBytes: Buffer.from("wav"),
+    });
+
+    expect(children).toHaveLength(2);
+    server.stop();
+  });
+
+  it("aborts an in-flight request without resurrecting the model after stop", async () => {
+    const child = fakeChild();
+    let starts = 0;
+    let inferenceStarted;
+    const inferenceReady = new Promise((resolve) => {
+      inferenceStarted = resolve;
+    });
+    const server = new PersistentWhisperServer({
+      portFinder: async () => 43210,
+      spawnImpl: () => {
+        starts += 1;
+        return child;
+      },
+      fetchImpl: async (_url, options = {}) => {
+        if (!options.method) {
+          return { ok: true, json: async () => ({ status: "ok" }) };
+        }
+        inferenceStarted();
+        return new Promise((_resolve, reject) => {
+          options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      },
+    });
+
+    const request = server.transcribe({
+      serverPath: "/server",
+      modelPath: "/model",
+      wavBytes: Buffer.from("wav"),
+    });
+    await inferenceReady;
+    server.stop();
+
+    await expect(request).rejects.toThrow(/aborted/i);
+    expect(starts).toBe(1);
+    expect(server.child).toBeNull();
   });
 });

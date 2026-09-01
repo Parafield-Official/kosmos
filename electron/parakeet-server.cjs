@@ -1,5 +1,6 @@
 const net = require("node:net");
 const { spawn } = require("node:child_process");
+const { terminateChild } = require("./process.cjs");
 
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -31,6 +32,7 @@ class PersistentParakeetServer {
     this.idleTimer = null;
     this.lastUsedAt = 0;
     this.stderr = "";
+    this.requestControllers = new Set();
   }
 
   async warm({ serverPath, modelPath }) {
@@ -55,7 +57,7 @@ class PersistentParakeetServer {
     };
   }
 
-  stop() {
+  stop({ force = false } = {}) {
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = null;
@@ -67,28 +69,51 @@ class PersistentParakeetServer {
     this.modelPath = null;
     this.serverPath = null;
     this.stderr = "";
-    if (child && !child.killed) {
-      child.kill();
+    for (const controller of this.requestControllers) {
+      controller.abort();
     }
+    this.requestControllers.clear();
+    terminateChild(child, { force });
   }
 
   async ensureStarted({ serverPath, modelPath }) {
-    if (this.child && this.port && this.modelPath === modelPath && this.serverPath === serverPath) {
-      await this.readyPromise;
+    if (this.isStartedFor({ serverPath, modelPath })) {
       return;
     }
     if (this.readyPromise) {
       await this.readyPromise;
-      return;
+      if (this.isStartedFor({ serverPath, modelPath })) {
+        return;
+      }
+    }
+    if (this.child) {
+      this.stop();
     }
     this.serverPath = serverPath;
     this.modelPath = modelPath;
-    this.readyPromise = this.start({ serverPath, modelPath }).catch((error) => {
-      this.readyPromise = null;
+    const readyPromise = this.start({ serverPath, modelPath }).catch((error) => {
       this.stop();
       throw error;
     });
-    await this.readyPromise;
+    this.readyPromise = readyPromise;
+    try {
+      await readyPromise;
+    } finally {
+      if (this.readyPromise === readyPromise) {
+        this.readyPromise = null;
+      }
+    }
+  }
+
+  isStartedFor({ serverPath, modelPath }) {
+    return Boolean(
+      this.child
+      && this.child.exitCode == null
+      && this.child.signalCode == null
+      && this.port
+      && this.modelPath === modelPath
+      && this.serverPath === serverPath
+    );
   }
 
   async start({ serverPath, modelPath }) {
@@ -118,7 +143,10 @@ class PersistentParakeetServer {
 
     const deadline = this.now() + STARTUP_TIMEOUT_MS;
     while (this.now() < deadline) {
-      if (exited || child.exitCode !== null) {
+      if (this.child !== child) {
+        throw new Error("Parakeet server was stopped before it was ready.");
+      }
+      if (exited || child.exitCode !== null || child.signalCode != null) {
         throw new Error(`Parakeet server exited before it was ready${this.stderr ? `: ${this.stderr.trim()}` : "."}`);
       }
       try {
@@ -140,6 +168,7 @@ class PersistentParakeetServer {
 
   async request({ wavBytes }) {
     const controller = new AbortController();
+    this.requestControllers.add(controller);
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const form = new FormData();
@@ -157,6 +186,7 @@ class PersistentParakeetServer {
       return await response.json();
     } finally {
       clearTimeout(timeout);
+      this.requestControllers.delete(controller);
     }
   }
 

@@ -24,12 +24,13 @@ export function TapePlayer({
     if (!audio) {
       return;
     }
+    const media = audio;
     function onTime() {
-      setCurrent(audio.currentTime);
-      onTimeRef.current?.(audio.currentTime, !audio.paused);
+      setCurrent(media.currentTime);
+      onTimeRef.current?.(media.currentTime, !media.paused);
     }
     function onMeta() {
-      setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+      setDuration(Number.isFinite(media.duration) ? media.duration : 0);
     }
     function onEnd() {
       setPlaying(false);

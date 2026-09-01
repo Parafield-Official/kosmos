@@ -29,9 +29,10 @@ export function TeleprompterFocus({
     if (!root) {
       return;
     }
+    const node = root;
 
     function measure() {
-      const box = root.getBoundingClientRect();
+      const box = node.getBoundingClientRect();
       if (box.width < 2 || box.height < 2) {
         return;
       }
@@ -94,12 +95,12 @@ export function TeleprompterFocus({
     }
 
     measure();
-    root.addEventListener("scroll", measure, { passive: true });
+    node.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("resize", measure);
     const observer = new ResizeObserver(measure);
-    observer.observe(root);
+    observer.observe(node);
     return () => {
-      root.removeEventListener("scroll", measure);
+      node.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
       observer.disconnect();
     };

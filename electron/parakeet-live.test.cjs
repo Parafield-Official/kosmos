@@ -4,6 +4,8 @@ const { parseLiveLine, PersistentParakeetLive } = require("./parakeet-live.cjs")
 function fakeChild() {
   const child = new EventEmitter();
   child.killed = false;
+  child.exitCode = null;
+  child.signalCode = null;
   child.writes = [];
   child.stdin = {
     write: (bytes) => {
@@ -16,6 +18,7 @@ function fakeChild() {
   child.stdout.setEncoding = () => undefined;
   child.kill = () => {
     child.killed = true;
+    child.exitCode = 0;
     child.emit("exit", 0);
   };
   return child;
@@ -56,6 +59,24 @@ describe("parakeet live process", () => {
     await expect(pending).resolves.toMatchObject({
       words: [{ text: "well", start: 0.8, end: 0.88, confidence: 0.95 }],
     });
+  });
+
+  it("replaces a running helper when the model changes", async () => {
+    const children = [];
+    const live = new PersistentParakeetLive({
+      spawnImpl: () => {
+        const child = fakeChild();
+        children.push(child);
+        return child;
+      },
+    });
+    await live.start({ serverPath: "/bin/parakeet-live", modelPath: "/models/old.gguf" });
+    await live.start({ serverPath: "/bin/parakeet-live", modelPath: "/models/new.gguf" });
+
+    expect(children).toHaveLength(2);
+    expect(children[0].killed).toBe(true);
+    expect(live.modelPath).toBe("/models/new.gguf");
+    live.stop();
   });
 });
 

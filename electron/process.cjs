@@ -1,6 +1,52 @@
 const { spawn } = require("node:child_process");
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const TERMINATION_GRACE_MS = 1000;
+const activeChildren = new Set();
+
+function childIsRunning(child) {
+  return Boolean(child && child.exitCode == null && child.signalCode == null);
+}
+
+/**
+ * Stop a native helper and escalate if it ignores SIGTERM. `child.killed` only
+ * means Node managed to send a signal; it does not mean the process exited.
+ */
+function terminateChild(child, { force = false, graceMs = TERMINATION_GRACE_MS } = {}) {
+  if (!childIsRunning(child)) {
+    return;
+  }
+  try {
+    child.kill(force ? "SIGKILL" : "SIGTERM");
+  } catch {
+    return;
+  }
+  if (force) {
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (childIsRunning(child)) {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        // The process may have exited between the state check and the signal.
+      }
+    }
+  }, graceMs);
+  timer.unref?.();
+  child.once?.("exit", () => clearTimeout(timer));
+}
+
+/** Stop all one-shot ffmpeg/Whisper/WhisperX helpers during application exit. */
+function terminateActiveCommands({ force = false } = {}) {
+  for (const child of activeChildren) {
+    terminateChild(child, { force });
+  }
+}
+
+function activeCommandCount() {
+  return activeChildren.size;
+}
 
 /** Run a local helper without allowing a wedged decoder to hang the app. */
 function runCommand(command, args = [], options = {}) {
@@ -15,7 +61,6 @@ function runCommand(command, args = [], options = {}) {
     let settled = false;
     let timedOut = false;
     let outputTooLarge = false;
-    let killTimer = null;
     let timeoutTimer;
     const stdout = [];
     const stderr = [];
@@ -25,16 +70,15 @@ function runCommand(command, args = [], options = {}) {
       env: options.env ? { ...process.env, ...options.env } : process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    activeChildren.add(child);
 
     const finish = (error, value) => {
       if (settled) {
         return;
       }
       settled = true;
+      activeChildren.delete(child);
       clearTimeout(timeoutTimer);
-      if (killTimer) {
-        clearTimeout(killTimer);
-      }
       if (error) {
         reject(error);
       } else {
@@ -44,8 +88,7 @@ function runCommand(command, args = [], options = {}) {
 
     timeoutTimer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => child.kill("SIGKILL"), 1000);
+      terminateChild(child);
     }, timeoutMs);
 
     const collect = (target, chunk) => {
@@ -54,8 +97,7 @@ function runCommand(command, args = [], options = {}) {
       }
       if (collectedBytes + chunk.length > maxOutputBytes) {
         outputTooLarge = true;
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => child.kill("SIGKILL"), 1000);
+        terminateChild(child);
         return;
       }
       collectedBytes += chunk.length;
@@ -85,4 +127,11 @@ function runCommand(command, args = [], options = {}) {
   });
 }
 
-module.exports = { DEFAULT_TIMEOUT_MS, runCommand };
+module.exports = {
+  DEFAULT_TIMEOUT_MS,
+  TERMINATION_GRACE_MS,
+  activeCommandCount,
+  runCommand,
+  terminateActiveCommands,
+  terminateChild,
+};

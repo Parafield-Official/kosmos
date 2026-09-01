@@ -13,6 +13,8 @@ export function PronunciationCheatSheet({
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const playGenerationRef = useRef(0);
   const count = entries.length;
   const safeIndex = count === 0 ? 0 : ((index % count) + count) % count;
   const entry = entries[safeIndex];
@@ -37,16 +39,21 @@ export function PronunciationCheatSheet({
   }, []);
 
   useEffect(() => {
-    audioRef.current?.pause();
-    audioRef.current = null;
-    setPlaying(false);
+    stopClip();
   }, [safeIndex]);
 
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-    };
-  }, []);
+  useEffect(() => () => stopClip(), []);
+
+  function stopClip() {
+    playGenerationRef.current += 1;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    setPlaying(false);
+  }
 
   if (!entry) {
     return <p className="booth-cheat-empty">No guides in this chapter yet.</p>;
@@ -60,34 +67,28 @@ export function PronunciationCheatSheet({
       return;
     }
     if (playing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setPlaying(false);
+      stopClip();
       return;
     }
+    const generation = ++playGenerationRef.current;
     const url = await readChapterAudioUrl(project, entry.clip_path);
     if (!url) {
       return;
     }
+    if (generation !== playGenerationRef.current) {
+      URL.revokeObjectURL(url);
+      return;
+    }
     const audio = new Audio(url);
     audioRef.current = audio;
+    audioUrlRef.current = url;
     setPlaying(true);
-    audio.onended = () => {
-      setPlaying(false);
-      audioRef.current = null;
-      URL.revokeObjectURL(url);
-    };
-    audio.onerror = () => {
-      setPlaying(false);
-      audioRef.current = null;
-      URL.revokeObjectURL(url);
-    };
+    audio.onended = stopClip;
+    audio.onerror = stopClip;
     try {
       await audio.play();
     } catch {
-      setPlaying(false);
-      audioRef.current = null;
-      URL.revokeObjectURL(url);
+      stopClip();
     }
   }
 

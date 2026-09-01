@@ -27,6 +27,7 @@ const {
   isWavBuffer,
 } = require("./labs-audio.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
+const { terminateActiveCommands } = require("./process.cjs");
 
 const execFileAsync = promisify(execFile);
 
@@ -839,7 +840,7 @@ function jumpLab(place) {
   if (!JUMP_PLACES.has(place) || !labWindow || labWindow.isDestroyed()) {
     return { ok: false };
   }
-  labPlace = place;
+  updateLabPlace(place);
   syncWindowChrome(place);
   labWindow.webContents.send("labs:jump", place);
   notifyDebugPlace(place);
@@ -981,17 +982,30 @@ function sendLivePcm(payload) {
   }
 }
 
-function stopLiveFollow() {
+function stopLiveFollow({ force = false } = {}) {
   try {
-    liveFollowStream.stop();
+    liveFollowStream.stop({ force });
   } catch {
     // Already stopped.
   }
-  liveFollowServer.stop();
+  liveFollowServer.stop({ force });
   liveFollowServerReady = false;
   liveFollowModelPath = null;
   liveFollowServerPath = null;
   return { ok: true };
+}
+
+function updateLabPlace(place) {
+  if (!JUMP_PLACES.has(place)) {
+    return;
+  }
+  const leftRecordingRoom = ROOM_PLACES.has(labPlace) && !ROOM_PLACES.has(place);
+  labPlace = place;
+  if (leftRecordingRoom) {
+    // Top-level place changes are renderer-owned, so the BrowserWindow stays
+    // alive. Release recording models when leaving the app room entirely.
+    stopLiveFollow();
+  }
 }
 
 async function restartLiveFollow(payload) {
@@ -1096,7 +1110,7 @@ function syncWindowChrome(place) {
     return;
   }
   if (typeof place === "string" && JUMP_PLACES.has(place)) {
-    labPlace = place;
+    updateLabPlace(place);
   }
   if (process.platform === "darwin") {
     pinTrafficLights();
@@ -1442,7 +1456,7 @@ function openLab() {
     const size = payload?.width && payload?.height ? payload : START_SIZE;
     const place = typeof payload?.place === "string" ? payload.place : "mark";
     if (JUMP_PLACES.has(place)) {
-      labPlace = place;
+      updateLabPlace(place);
     }
     applySize(labWindow, size, false);
     syncWindowChrome(place);
@@ -1504,7 +1518,7 @@ function openLab() {
     if (!JUMP_PLACES.has(place)) {
       return;
     }
-    labPlace = place;
+    updateLabPlace(place);
     if (ROOM_PLACES.has(place)) {
       pinTrafficLights(APP_FRAME);
       notifyWindowChrome();
@@ -1522,6 +1536,8 @@ function openLab() {
   ipcMain.on("labs:push-tuning", onPushTuning);
 
   labWindow.on("closed", () => {
+    stopLiveFollow();
+    terminateActiveCommands();
     ipcMain.removeListener("labs:ready", onReady);
     ipcMain.removeHandler("labs:resize");
     ipcMain.removeListener("labs:window-drag-start", onWindowDragStart);
@@ -1604,8 +1620,16 @@ function openLab() {
   labWindow.webContents.on("did-fail-load", (_event, code, desc, url) => {
     console.warn("[labs] failed to load", { code, desc, url });
   });
+  labWindow.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) {
+      stopLiveFollow();
+      terminateActiveCommands();
+    }
+  });
   labWindow.webContents.on("render-process-gone", (_event, details) => {
     console.warn("[labs] renderer gone", details);
+    stopLiveFollow();
+    terminateActiveCommands();
   });
 }
 
@@ -1709,6 +1733,18 @@ app.on("second-instance", () => {
     return;
   }
   openLab();
+});
+
+app.on("before-quit", () => {
+  labsAppUpdater?.dispose();
+  stopLiveFollow({ force: true });
+  terminateActiveCommands({ force: true });
+  liveWordsUnsub?.();
+  liveWordsUnsub = null;
+  if (nativeGlassTimer) {
+    clearTimeout(nativeGlassTimer);
+    nativeGlassTimer = null;
+  }
 });
 
 app.on("window-all-closed", () => {

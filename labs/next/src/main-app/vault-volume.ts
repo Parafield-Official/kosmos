@@ -60,7 +60,12 @@ const VOLUME_FRAG = /* glsl */ `
  * WebGL fallback: five cones in the alcove, aimed from the ceiling gimbals.
  * Used when WebGPU is missing so the shafts still occupy the air.
  */
-export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => VaultLightState): () => void {
+export interface VaultVolumeController {
+  invalidate(): void;
+  dispose(): void;
+}
+
+export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => VaultLightState): VaultVolumeController {
   const renderer = new THREE.WebGLRenderer({
     canvas,
     alpha: false,
@@ -128,7 +133,8 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
   let shown = 0;
   let running = true;
   let raf = 0;
-  let lastLamps = -1;
+  let needsDraw = true;
+  let windowActive = true;
 
   const resize = () => {
     const width = Math.max(1, canvas.clientWidth);
@@ -139,11 +145,11 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
 
   const draw = () => {
     if (!running) return;
+    needsDraw = false;
     const state = getState();
     const target = state.lit ? 1 : 0.08;
     shown += (target - shown) * 0.14;
     if (Math.abs(target - shown) < 0.003) shown = target;
-    lastLamps = state.lamps;
     for (let i = 0; i < materials.length; i++) {
       const on = ((state.lamps >> i) & 1) === 1 ? 1 : 0;
       materials[i].uniforms.uShown.value = shown * on;
@@ -153,35 +159,58 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
   };
 
   const schedule = () => {
-    if (raf || !running) return;
+    needsDraw = true;
+    if (raf || !running || !windowActive || document.hidden) return;
     raf = requestAnimationFrame(() => {
       raf = 0;
       draw();
     });
   };
 
+  const onVisibilityChange = () => {
+    if (document.hidden) {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      needsDraw = true;
+    } else if (needsDraw) {
+      schedule();
+    }
+  };
+  const onWindowBlur = () => {
+    windowActive = false;
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    needsDraw = true;
+  };
+  const onWindowFocus = () => {
+    windowActive = true;
+    if (needsDraw) schedule();
+  };
+
   resize();
   const observer = new ResizeObserver(resize);
   observer.observe(canvas);
-  const poll = window.setInterval(() => {
-    if (!running) return;
-    const state = getState();
-    const target = state.lit ? 1 : 0.08;
-    if (state.lamps !== lastLamps || Math.abs(target - shown) > 0.003) schedule();
-  }, 120);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("blur", onWindowBlur);
+  window.addEventListener("focus", onWindowFocus);
   schedule();
 
-  return () => {
-    running = false;
-    window.clearInterval(poll);
-    if (raf) cancelAnimationFrame(raf);
-    observer.disconnect();
-    for (const mesh of cones) {
-      mesh.geometry.dispose();
-    }
-    for (const material of materials) {
-      material.dispose();
-    }
-    renderer.dispose();
+  return {
+    invalidate: schedule,
+    dispose() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("focus", onWindowFocus);
+      observer.disconnect();
+      for (const mesh of cones) {
+        mesh.geometry.dispose();
+      }
+      for (const material of materials) {
+        material.dispose();
+      }
+      renderer.dispose();
+    },
   };
 }

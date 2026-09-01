@@ -1,4 +1,5 @@
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const { spawnSync } = require("node:child_process");
@@ -9,6 +10,7 @@ const { LIVE_MODEL } = require("./model.cjs");
 
 const FFMPEG_CONVERSION_TIMEOUT_MS = 30 * 60 * 1000;
 const WHISPER_TIMEOUT_MS = 3 * 60 * 60 * 1000;
+let whisperCliCache = null;
 
 /**
  * Local-only Whisper boundary. The desktop shell can ship whisper-cli and a
@@ -82,11 +84,22 @@ function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
     process.cwd() && path.join(process.cwd(), "vendor", "bin", `whisper-cli${extension}`),
     process.cwd() && path.join(process.cwd(), "vendor", `whisper-cli${extension}`),
   ].filter(Boolean);
+  const cacheKey = JSON.stringify({ candidates, requireBundled });
+  if (whisperCliCache?.key === cacheKey) {
+    try {
+      if (fsSync.statSync(whisperCliCache.path).isFile()) {
+        return whisperCliCache.path;
+      }
+    } catch {
+      whisperCliCache = null;
+    }
+  }
 
   for (const candidate of candidates) {
     try {
       const result = spawnSync(candidate, ["--version"], { stdio: "ignore", timeout: 5000 });
       if (result.status === 0) {
+        whisperCliCache = { key: cacheKey, path: candidate };
         return candidate;
       }
     } catch {
@@ -101,7 +114,9 @@ function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
   const lookup = process.platform === "win32" ? "where" : "which";
   const result = spawnSync(lookup, ["whisper-cli"], { encoding: "utf8" });
   if (result.status === 0 && result.stdout.trim()) {
-    return result.stdout.trim().split(/\r?\n/)[0];
+    const resolved = result.stdout.trim().split(/\r?\n/)[0];
+    whisperCliCache = { key: cacheKey, path: resolved };
+    return resolved;
   }
   return null;
 }
@@ -350,6 +365,7 @@ module.exports = {
   buildWhisperArgs,
   findModel,
   findLiveModel,
+  findWhisperCli,
   parseWhisperTime,
   transcribeAudio,
   segmentWords,

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { analyzeRoomTest, type RoomTestReport } from "../../../../src/core/acx/room";
 import { readEnginePrefs } from "./engine-prefs";
 import type { RoomCheckReport } from "./store";
@@ -130,21 +130,44 @@ export function RoomCheck({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const runGenerationRef = useRef(0);
+  const runningRef = useRef(false);
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      runGenerationRef.current += 1;
+      stopRef.current?.();
+    };
+  }, []);
 
   async function runCheck() {
-    if (recording) {
+    if (runningRef.current) {
       return;
     }
+    runningRef.current = true;
+    const generation = ++runGenerationRef.current;
     setError(null);
     setRecording(true);
     setElapsed(0);
     try {
       const stream = await openRoomStream();
+      if (generation !== runGenerationRef.current || !aliveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const AudioCtx =
         window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
       if (ctx.state === "suspended") {
         await ctx.resume();
+      }
+      if (generation !== runGenerationRef.current || !aliveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        void ctx.close().catch(() => undefined);
+        return;
       }
       const sampleRate = ctx.sampleRate || 48_000;
       const source = ctx.createMediaStreamSource(stream);
@@ -180,6 +203,7 @@ export function RoomCheck({
         }, 200);
         const finish = () => {
           window.clearInterval(tick);
+          processor.onaudioprocess = null;
           processor.disconnect();
           source.disconnect();
           mute.disconnect();
@@ -218,8 +242,11 @@ export function RoomCheck({
       }
       setError(reason instanceof Error ? reason.message : "Could not record room tone.");
     } finally {
-      setRecording(false);
-      setElapsed(0);
+      runningRef.current = false;
+      if (aliveRef.current) {
+        setRecording(false);
+        setElapsed(0);
+      }
     }
   }
 

@@ -29,7 +29,6 @@ import {
   truncateLiveTape,
 } from "../../../../src/core/teleprompter/session-tape";
 import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow";
-import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
 import { ConfirmAlert } from "./ConfirmAlert";
@@ -72,6 +71,9 @@ const SPACING_KEY = "kosmos-booth-spacing";
 const MIC_KEY = "kosmos-booth-mic";
 const TARGET_RATE = 16_000;
 const WHISPER_WINDOW_SECONDS = 1.6;
+// Page-following advances whole words, so polling it at display refresh rate only
+// burns renderer time without making the highlight look smoother.
+const LEAD_TICK_MS = 50;
 
 function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -101,7 +103,7 @@ function readSpacing(): number {
   return 1.55;
 }
 
-async function playPunchCue(samples: Float32Array, sampleRate: number): Promise<void> {
+async function playPunchCue(samples: Float32Array, sampleRate: number, signal?: AbortSignal): Promise<void> {
   if (samples.length === 0) {
     return;
   }
@@ -111,9 +113,15 @@ async function playPunchCue(samples: Float32Array, sampleRate: number): Promise<
   const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
   const audio = new Audio(url);
   await new Promise<void>((resolve, reject) => {
+    let settled = false;
     const finish = (reason?: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       audio.onended = null;
       audio.onerror = null;
+      signal?.removeEventListener("abort", abort);
       URL.revokeObjectURL(url);
       if (reason) {
         reject(reason);
@@ -121,6 +129,15 @@ async function playPunchCue(samples: Float32Array, sampleRate: number): Promise<
         resolve();
       }
     };
+    const abort = () => {
+      audio.pause();
+      finish(new Error("The restart cue was cancelled."));
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
     audio.onended = () => finish();
     audio.onerror = () => finish(new Error("The restart cue could not play."));
     void audio.play().catch(finish);
@@ -163,6 +180,18 @@ export function RecordScreen({
     () => buildBoothScriptFromHtml(chapterHtml, project.glossary ?? []),
     [chapterHtml, project.glossary],
   );
+  const glossaryById = useMemo(
+    () => new Map((project.glossary ?? []).map((entry) => [entry.id, entry])),
+    [project.glossary],
+  );
+  const flaggedWordIndices = useMemo(
+    () => new Set(
+      (chapter?.pickups ?? [])
+        .filter((pickup) => pickup.status === "open" && typeof pickup.manuscript_index === "number")
+        .map((pickup) => pickup.manuscript_index as number),
+    ),
+    [chapter?.pickups],
+  );
   const [highlight, setHighlight] = useState<PromptHighlightMode>(readHighlight);
   const [readingFont] = useState(readReadingFont);
   const [theme, setTheme] = useState(readPromptTheme);
@@ -182,8 +211,6 @@ export function RecordScreen({
   const [recording, setRecording] = useState(false);
   const [paused, setPaused] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [level, setLevel] = useState(0);
   const [cursor, setCursor] = useState(chapter?.resumeWordIndex ?? 0);
   const [error, setError] = useState<string | null>(null);
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
@@ -196,11 +223,13 @@ export function RecordScreen({
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
+  const wordRefCallbacks = useRef<Map<number, (node: HTMLSpanElement | null) => void>>(new Map());
   const followLiveRef = useRef(true);
   const autoScrollRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const levelFillRef = useRef<HTMLSpanElement | null>(null);
   const pcm16kRef = useRef<Float32Array[]>([]);
   const pcm16kCountRef = useRef(0);
   const hopQueueRef = useRef<Float32Array[]>([]);
@@ -208,6 +237,7 @@ export function RecordScreen({
   const whisperBufRef = useRef<Float32Array[]>([]);
   const whisperCountRef = useRef(0);
   const whisperBusyRef = useRef(false);
+  const whisperTaskRef = useRef<Promise<void> | null>(null);
   const streamingRef = useRef(false);
   const recordingRef = useRef(false);
   const pausedRef = useRef(false);
@@ -222,17 +252,21 @@ export function RecordScreen({
   const haltRef = useRef<LiveMismatch | null>(null);
   const haltResumeRef = useRef<number | undefined>(undefined);
   const punchBusyRef = useRef(false);
+  const punchCueAbortRef = useRef<AbortController | null>(null);
   const pickupsRef = useRef<ChapterPickup[]>([]);
   const dismissedRef = useRef<string[]>([]);
-  const timerRef = useRef<number | null>(null);
-  const leadRafRef = useRef<number | null>(null);
+  const leadTimerRef = useRef<number | null>(null);
+  const captureGenerationRef = useRef(0);
+  const startingRef = useRef(false);
   const cursorRef = useRef(0);
   const startedAtRef = useRef(0);
   const pausedAtRef = useRef(0);
   const chapterRef = useRef(chapter);
   const projectRef = useRef(project);
+  const highlightRef = useRef(highlight);
   chapterRef.current = chapter;
   projectRef.current = project;
+  highlightRef.current = highlight;
   expectedRef.current = script.expected;
   const manuscriptText = useMemo(() => paragraphsFromHtml(chapterHtml).join("\n"), [chapterHtml]);
   const manuscriptRef = useRef(manuscriptText);
@@ -272,12 +306,20 @@ export function RecordScreen({
       setOriginalUrl(null);
       return;
     }
+    let alive = true;
     let revoked: string | null = null;
     void readChapterAudioUrl(project, file).then((url) => {
+      if (!alive) {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+        return;
+      }
       revoked = url;
       setOriginalUrl(url);
     });
     return () => {
+      alive = false;
       if (revoked) {
         URL.revokeObjectURL(revoked);
       }
@@ -290,12 +332,20 @@ export function RecordScreen({
       setWorkingUrl(null);
       return;
     }
+    let alive = true;
     let revoked: string | null = null;
     void readChapterAudioUrl(project, file).then((url) => {
+      if (!alive) {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+        return;
+      }
       revoked = url;
       setWorkingUrl(url);
     });
     return () => {
+      alive = false;
       if (revoked) {
         URL.revokeObjectURL(revoked);
       }
@@ -306,6 +356,21 @@ export function RecordScreen({
     return () => {
       window.kosmosNext?.stopLiveFollow?.().catch(() => undefined);
     };
+  }, []);
+
+  const wordRef = useCallback((index: number) => {
+    let callback = wordRefCallbacks.current.get(index);
+    if (!callback) {
+      callback = (node) => {
+        if (node) {
+          wordRefs.current.set(index, node);
+        } else {
+          wordRefs.current.delete(index);
+        }
+      };
+      wordRefCallbacks.current.set(index, callback);
+    }
+    return callback;
   }, []);
 
   useEffect(() => {
@@ -454,7 +519,7 @@ export function RecordScreen({
   );
 
   const applyHeard = useCallback((words: LiveTranscriptWord[]) => {
-    if (!words.length || pausedRef.current || punchBusyRef.current) {
+    if (!words.length || !recordingRef.current || pausedRef.current || punchBusyRef.current) {
       return;
     }
     const shifted = words.map((word) => ({
@@ -517,6 +582,7 @@ export function RecordScreen({
   }, [applyHeard]);
 
   const runLead = useCallback(() => {
+    leadTimerRef.current = null;
     if (!recordingRef.current || pausedRef.current || haltRef.current || punchBusyRef.current) {
       return;
     }
@@ -524,7 +590,7 @@ export function RecordScreen({
       leadRef.current,
       performance.now(),
       expectedRef.current.length,
-      highlight === "word",
+      highlightRef.current === "word",
       speechAtRef.current || null,
     );
     leadRef.current = advanced.state;
@@ -532,33 +598,64 @@ export function RecordScreen({
       cursorRef.current = advanced.cursor;
       setCursor(advanced.cursor);
     }
-    leadRafRef.current = requestAnimationFrame(runLead);
-  }, [highlight]);
+    leadTimerRef.current = window.setTimeout(
+      runLead,
+      document.visibilityState === "hidden" ? 250 : LEAD_TICK_MS,
+    );
+  }, []);
+
+  const scheduleLead = useCallback(() => {
+    if (leadTimerRef.current === null) {
+      leadTimerRef.current = window.setTimeout(runLead, 0);
+    }
+  }, [runLead]);
+
+  const showLevel = useCallback((value: number) => {
+    if (levelFillRef.current) {
+      levelFillRef.current.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+    }
+  }, []);
 
   const cleanupCapture = useCallback(() => {
+    captureGenerationRef.current += 1;
     recordingRef.current = false;
     pausedRef.current = false;
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (leadTimerRef.current !== null) {
+      window.clearTimeout(leadTimerRef.current);
+      leadTimerRef.current = null;
     }
-    if (leadRafRef.current) {
-      cancelAnimationFrame(leadRafRef.current);
-      leadRafRef.current = null;
+    if (processorRef.current) {
+      processorRef.current.onaudioprocess = null;
+      processorRef.current.disconnect();
     }
-    processorRef.current?.disconnect();
     processorRef.current = null;
+    punchCueAbortRef.current?.abort();
+    punchCueAbortRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     void audioCtxRef.current?.close().catch(() => undefined);
     audioCtxRef.current = null;
+    hopQueueRef.current = [];
+    hopCountRef.current = 0;
+    whisperBufRef.current = [];
+    whisperCountRef.current = 0;
+    whisperBusyRef.current = false;
+    streamingRef.current = false;
+    showLevel(0);
     void window.kosmosNext?.stopLiveFollow?.().catch(() => undefined);
-  }, []);
+  }, [showLevel]);
 
   useEffect(() => cleanupCapture, [cleanupCapture]);
 
-  async function flushWhisperWindow() {
-    if (whisperBusyRef.current || streamingRef.current || whisperCountRef.current < TARGET_RATE * 0.8) {
+  async function flushWhisperWindow(waitForBusy = false): Promise<void> {
+    if (whisperBusyRef.current) {
+      if (!waitForBusy) {
+        return;
+      }
+      await whisperTaskRef.current;
+      return flushWhisperWindow(true);
+    }
+    if (streamingRef.current || whisperCountRef.current < TARGET_RATE * 0.8) {
       return;
     }
     const count = whisperCountRef.current;
@@ -577,17 +674,27 @@ export function RecordScreen({
       return;
     }
     whisperBusyRef.current = true;
-    try {
-      const wav = encodePcmWav(samples, TARGET_RATE);
-      const base64 = await blobToBase64(wav);
-      const result = await window.kosmosNext.transcribeHop({ wavBase64: base64 });
-      if (result.words?.length) {
-        applyHeard(result.words);
+    const task = (async () => {
+      try {
+        const wav = encodePcmWav(samples, TARGET_RATE);
+        const base64 = await blobToBase64(wav);
+        const result = await window.kosmosNext!.transcribeHop!({ wavBase64: base64 });
+        if (result.words?.length) {
+          applyHeard(result.words);
+        }
+      } catch {
+        // Follow stays on the last confirmed word.
+      } finally {
+        whisperBusyRef.current = false;
       }
-    } catch {
-      // Follow stays on the last confirmed word.
+    })();
+    whisperTaskRef.current = task;
+    try {
+      await task;
     } finally {
-      whisperBusyRef.current = false;
+      if (whisperTaskRef.current === task) {
+        whisperTaskRef.current = null;
+      }
     }
   }
 
@@ -595,7 +702,10 @@ export function RecordScreen({
     if (!recordingRef.current || pausedRef.current || punchBusyRef.current) {
       return;
     }
-    setLevel(Math.min(1, rms * 2.4));
+    // Updating this meter through React used to reconcile the full manuscript
+    // about eleven times a second. The meter is purely presentational, so write
+    // its one style directly and leave the teleprompter tree untouched.
+    showLevel(Math.min(1, rms * 2.4));
     if (rms > 0.02) {
       speechAtRef.current = performance.now();
     }
@@ -621,6 +731,7 @@ export function RecordScreen({
   }
 
   async function startSession(fromBeginning: boolean) {
+    const generation = ++captureGenerationRef.current;
     setError(null);
     const current = chapterRef.current;
     const startIndex = fromBeginning ? 0 : current?.resumeWordIndex ?? 0;
@@ -648,6 +759,10 @@ export function RecordScreen({
     let streaming = false;
     if (window.kosmosNext?.startLiveFollow) {
       const warmed = await window.kosmosNext.startLiveFollow();
+      if (generation !== captureGenerationRef.current) {
+        void window.kosmosNext.stopLiveFollow?.().catch(() => undefined);
+        return;
+      }
       streaming = Boolean(warmed.ok && warmed.streaming);
       streamingRef.current = streaming;
       setFollowHint(
@@ -664,6 +779,11 @@ export function RecordScreen({
       ? { deviceId: { exact: inputId }, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
       : { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
     const stream = await navigator.mediaDevices.getUserMedia({ audio });
+    if (generation !== captureGenerationRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
+      void window.kosmosNext?.stopLiveFollow?.().catch(() => undefined);
+      return;
+    }
     streamRef.current = stream;
     void navigator.mediaDevices.enumerateDevices().then((devices) => {
       setAudioInputs(devices.filter((device) => device.kind === "audioinput" && device.deviceId));
@@ -678,6 +798,9 @@ export function RecordScreen({
     const mute = ctx.createGain();
     mute.gain.value = 0;
     processor.onaudioprocess = (event) => {
+      if (!recordingRef.current || pausedRef.current || punchBusyRef.current) {
+        return;
+      }
       const input = event.inputBuffer.getChannelData(0);
       let sum = 0;
       for (const sample of input) {
@@ -693,22 +816,22 @@ export function RecordScreen({
     pausedRef.current = false;
     setRecording(true);
     setPaused(false);
-    setElapsed(0);
     startedAtRef.current = Date.now();
-    timerRef.current = window.setInterval(() => {
-      if (!pausedRef.current) {
-        setElapsed((Date.now() - startedAtRef.current) / 1000);
-      }
-    }, 250);
-    leadRafRef.current = requestAnimationFrame(runLead);
+    scheduleLead();
   }
 
   async function startRecording() {
+    if (startingRef.current || recordingRef.current) {
+      return;
+    }
+    startingRef.current = true;
     try {
       await startSession(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Microphone unavailable.");
       cleanupCapture();
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -727,7 +850,7 @@ export function RecordScreen({
     };
     leadRef.current = createLeadState(matchRef.current.cursor, performance.now());
     setFollowHint("Listening. The highlight follows what you read.");
-    leadRafRef.current = requestAnimationFrame(runLead);
+    scheduleLead();
   }
 
   function currentConfirmations(): LiveWordConfirmation[] {
@@ -783,6 +906,9 @@ export function RecordScreen({
     );
     const tracks = streamRef.current?.getAudioTracks() ?? [];
     punchBusyRef.current = true;
+    const cueAbort = new AbortController();
+    punchCueAbortRef.current?.abort();
+    punchCueAbortRef.current = cueAbort;
     pausedRef.current = true;
     setPaused(true);
     setPunchStatus(cue.kind === "recorded" ? "cueing" : "counting");
@@ -791,7 +917,7 @@ export function RecordScreen({
     });
     try {
       await audioCtxRef.current?.suspend();
-      await playPunchCue(cue.samples, TARGET_RATE);
+      await playPunchCue(cue.samples, TARGET_RATE, cueAbort.signal);
       setPunchStatus("restarting");
       const punchAt = plan.punchAtSeconds;
       if (window.kosmosNext?.restartLiveFollow) {
@@ -817,6 +943,9 @@ export function RecordScreen({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not restart the sentence.");
     } finally {
+      if (punchCueAbortRef.current === cueAbort) {
+        punchCueAbortRef.current = null;
+      }
       tracks.forEach((track) => {
         track.enabled = true;
       });
@@ -825,7 +954,7 @@ export function RecordScreen({
       setPaused(false);
       setPunchStatus("idle");
       setFollowHint("Picked up at the sentence. Recording continues on the original tape.");
-      leadRafRef.current = requestAnimationFrame(runLead);
+      scheduleLead();
     }
   }
 
@@ -833,6 +962,10 @@ export function RecordScreen({
     pausedRef.current = true;
     setPaused(true);
     pausedAtRef.current = Date.now();
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = false;
+    });
+    void audioCtxRef.current?.suspend().catch(() => undefined);
     setFollowHint("Paused. Your place is held. Resume adds to the same original tape.");
   }
 
@@ -842,21 +975,35 @@ export function RecordScreen({
     }
     pausedRef.current = false;
     setPaused(false);
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = true;
+    });
+    void audioCtxRef.current?.resume().catch(() => undefined);
     setFollowHint("Listening. The highlight follows what you read.");
-    leadRafRef.current = requestAnimationFrame(runLead);
+    scheduleLead();
   }
 
   async function stopAndSave() {
     setSaving(true);
+    // Stop producing new blocks before waiting for the final short-window
+    // transcription. Keep recordingRef true just long enough for its result to
+    // be incorporated into the saved cursor/word timing.
+    streamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = false;
+    });
+    await audioCtxRef.current?.suspend().catch(() => undefined);
+    // applyHeard intentionally ignores callbacks after recordingRef is cleared;
+    // flush first when there is a partial local Whisper window to preserve the
+    // last spoken words without accepting late callbacks after teardown.
+    await flushWhisperWindow(true);
     recordingRef.current = false;
-    await flushWhisperWindow();
     const samples = joinQueued(pcm16kRef.current);
     pcm16kRef.current = [];
     pcm16kCountRef.current = 0;
     cleanupCapture();
     setRecording(false);
     setPaused(false);
-    setLevel(0);
+    showLevel(0);
 
     const current = chapterRef.current;
     const fromIndex = resumeFromRef.current;
@@ -900,10 +1047,21 @@ export function RecordScreen({
     setCursor(0);
     scrollToCursor(0);
     setFollowHint("Original tape cleared. Start recording from the first word.");
+    await startRecordingFromBeginning();
+  }
+
+  async function startRecordingFromBeginning() {
+    if (startingRef.current || recordingRef.current) {
+      return;
+    }
+    startingRef.current = true;
     try {
       await startSession(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Microphone unavailable.");
+      cleanupCapture();
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -1062,9 +1220,7 @@ export function RecordScreen({
                       className={`ma-tp-line${heading ? " is-heading" : ""}${paraCurrent && highlight === "paragraph" ? " is-current" : ""}`}
                     >
                       {para.tokens.map((token, tokenIndex) => {
-                        const glossary = token.glossaryId
-                          ? glossaryEntry(project.glossary, token.glossaryId)
-                          : undefined;
+                        const glossary = token.glossaryId ? glossaryById.get(token.glossaryId) : undefined;
                         const markClass = tokenMarkClass(token);
                         if (!token.isWord) {
                           return (
@@ -1081,20 +1237,12 @@ export function RecordScreen({
                         word += 1;
                         const isNow = highlight === "word" && index === cursor;
                         const covered = highlight !== "word" && inBand(index);
-                        const flagged = (chapter.pickups ?? []).some(
-                          (pickup) => pickup.status === "open" && pickup.manuscript_index === index,
-                        );
+                        const flagged = flaggedWordIndices.has(index);
                         const haltedHere = halt?.expectedIndex === index;
                         return (
                           <span
                             key={tokenIndex}
-                            ref={(node) => {
-                              if (node) {
-                                wordRefs.current.set(index, node);
-                              } else {
-                                wordRefs.current.delete(index);
-                              }
-                            }}
+                            ref={wordRef(index)}
                             className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
                             style={tokenMarkStyle(token)}
                             title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
@@ -1167,7 +1315,7 @@ export function RecordScreen({
           <div className="ma-booth-panel ma-booth-session">
             <p className="ma-booth-kicker">Take</p>
             <div className="ma-level" aria-hidden="true">
-              <span className="ma-level-fill" style={{ width: `${Math.round(level * 100)}%` }} />
+              <span ref={levelFillRef} className="ma-level-fill" style={{ width: "0%" }} />
             </div>
             <div className="ma-recorder-controls">
               {workflow.primaryLabel ? (
@@ -1210,7 +1358,12 @@ export function RecordScreen({
                 </div>
               ) : null}
               {embedded && onContinueProof && shownPct >= 100 ? (
-                <button type="button" className="booth-tool is-primary" onClick={onContinueProof} disabled={proofing}>
+                <button
+                  type="button"
+                  className="booth-tool is-primary"
+                  onClick={onContinueProof}
+                  disabled={proofing || recording || saving}
+                >
                   <ProofGoGlyph />
                   <span>{proofing ? "Proofing…" : "Proofread"}</span>
                 </button>
@@ -1250,7 +1403,9 @@ export function RecordScreen({
               Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
             </p>
             <p className="ma-booth-place-copy">
-              {recording ? formatTime(elapsed) : chapter.originalFile ? "Original saved" : "Ready"}
+              {recording ? (
+                <RecordingElapsed paused={paused} startedAtRef={startedAtRef} />
+              ) : chapter.originalFile ? "Original saved" : "Ready"}
             </p>
           </div>
 
@@ -1367,6 +1522,29 @@ function joinQueued(parts: Float32Array[]): Float32Array {
   return out;
 }
 
+/** Keep the one-second clock update local instead of reconciling the manuscript. */
+function RecordingElapsed({
+  paused,
+  startedAtRef,
+}: {
+  paused: boolean;
+  startedAtRef: { readonly current: number };
+}) {
+  const [seconds, setSeconds] = useState(() => Math.max(0, (Date.now() - startedAtRef.current) / 1000));
+
+  useEffect(() => {
+    const update = () => setSeconds(Math.max(0, (Date.now() - startedAtRef.current) / 1000));
+    update();
+    if (paused) {
+      return;
+    }
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [paused, startedAtRef]);
+
+  return formatTime(seconds);
+}
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1459,10 +1637,6 @@ function ProofGoGlyph() {
       <path d="M9.6 2.8V5.4h2.6M6 8.2h4.2M6 10.6h3.1" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" />
     </svg>
   );
-}
-
-function glossaryEntry(glossary: GlossaryEntry[] | undefined, id: string): GlossaryEntry | undefined {
-  return glossary?.find((entry) => entry.id === id);
 }
 
 function tokenMarkClass(token: { dialogue?: boolean; seat?: string; glossaryId?: string }): string {

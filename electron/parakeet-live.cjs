@@ -1,5 +1,6 @@
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { terminateChild } = require("./process.cjs");
 
 const DEFAULT_FEED_WAIT_MS = 1_500;
 const START_SETTLE_MS = 120;
@@ -22,6 +23,9 @@ class PersistentParakeetLive {
     this.waiters = [];
     this.residual = new Float32Array(0);
     this.wordListeners = new Set();
+    this.serverPath = null;
+    this.modelPath = null;
+    this.stderr = "";
   }
 
   get running() {
@@ -29,8 +33,11 @@ class PersistentParakeetLive {
   }
 
   async start({ serverPath, modelPath }) {
-    if (this.running) {
+    if (this.running && this.serverPath === serverPath && this.modelPath === modelPath) {
       return { persistent: true, acceleration: "Metal", engine: "parakeet-live", streaming: true };
+    }
+    if (this.child) {
+      this.stop();
     }
     const child = this.spawnImpl(serverPath, [modelPath], {
       stdio: ["pipe", "pipe", "pipe"],
@@ -44,6 +51,9 @@ class PersistentParakeetLive {
     this.buffer = "";
     this.pending = [];
     this.residual = new Float32Array(0);
+    this.serverPath = serverPath;
+    this.modelPath = modelPath;
+    this.stderr = "";
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
       this.buffer += String(chunk);
@@ -62,6 +72,9 @@ class PersistentParakeetLive {
       }
       this.flushWaiters();
     });
+    child.stderr?.on("data", (chunk) => {
+      this.stderr = `${this.stderr}${String(chunk)}`.slice(-4_000);
+    });
     child.once("error", () => {
       if (this.child === child) {
         this.child = null;
@@ -76,7 +89,7 @@ class PersistentParakeetLive {
     });
     await waitFor(START_SETTLE_MS, () => !this.running);
     if (!this.running) {
-      throw new Error("Parakeet live stream failed to start.");
+      throw new Error(`Parakeet live stream failed to start${this.stderr ? `: ${this.stderr.trim()}` : "."}`);
     }
     return { persistent: true, acceleration: "Metal", engine: "parakeet-live", streaming: true };
   }
@@ -149,20 +162,24 @@ class PersistentParakeetLive {
     return { engine: "parakeet-live", streaming: true, words: lines.flatMap(parseLiveLine) };
   }
 
-  stop() {
+  stop({ force = false } = {}) {
     const child = this.child;
     this.child = null;
     this.buffer = "";
     this.pending = [];
     this.residual = new Float32Array(0);
-    if (child && !child.killed) {
+    this.serverPath = null;
+    this.modelPath = null;
+    this.stderr = "";
+    if (child) {
       try {
         child.stdin?.end();
       } catch {
         // ignore
       }
-      child.kill();
+      terminateChild(child, { force });
     }
+    this.flushWaiters();
   }
 
   flushWaiters() {
