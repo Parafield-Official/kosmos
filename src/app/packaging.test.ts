@@ -85,7 +85,8 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("secrets.APPLE_API_KEY_ID");
     expect(yaml).toContain("secrets.APPLE_API_ISSUER");
     expect(yaml).toContain("codesign --verify --deep --strict");
-    expect(yaml).toContain("xcrun stapler validate");
+    expect(yaml).toContain('xcrun stapler validate "$app_path"');
+    expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
   });
 
   it("keeps the macOS-only liquid-glass module optional for Windows packaging", () => {
