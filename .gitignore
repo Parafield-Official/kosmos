@@ -46,3 +46,7 @@ vendor/models/*
 .live-run/
 .local/
 design/shots/
+
+# Local agent review artifacts may contain unpublished manuscript excerpts.
+.hermes-review-*.png
+.hermes/plans/

@@ -123,6 +123,15 @@ describe("packaged renderer configuration", () => {
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
   });
 
+  it("blocks unsigned Windows installers from reaching a release", () => {
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("Get-AuthenticodeSignature");
+    expect(yaml).toContain("SignatureStatus]::Valid");
+    expect(yaml).toContain("WIN_CSC_LINK");
+    expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
+    expect(yaml).toMatch(/publish:[\s\S]*?permissions:\n\s+contents:\s+write/);
+  });
+
   it("keeps the macOS-only liquid-glass module optional for Windows packaging", () => {
     expect(packageJson.dependencies).not.toHaveProperty("electron-liquid-glass");
     expect(packageJson.optionalDependencies).toMatchObject({
