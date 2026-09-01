@@ -19,6 +19,7 @@ const {
   latestActivePunch,
   buildPunchPreview,
 } = require("./punch.cjs");
+const { normalizeAudioFormat } = require("./audio-metadata.cjs");
 
 const MAX_AUDIO_SECONDS = 2 * 60 * 60;
 const MAX_PCM_OUTPUT_BYTES = 1_500_000_000;
@@ -219,7 +220,10 @@ async function probeAudio(filePath) {
     sampleRate,
     duration,
     bitrateKbps: Number.isFinite(bitrate) ? bitrate / 1000 : undefined,
-    format: String(stream.codec_name ?? format.format_name ?? (path.extname(filePath).slice(1) || "wav")).toLowerCase(),
+    // ffprobe's codec_name describes the encoded samples (for example
+    // `pcm_s16le`), not the file container. ACX checks the latter, so keep
+    // this aligned with the main audio path and normalize both fields.
+    format: normalizeAudioFormat(path.extname(filePath), stream.codec_name, format.format_name),
   };
 }
 

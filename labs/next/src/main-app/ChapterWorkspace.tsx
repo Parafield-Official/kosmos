@@ -4,7 +4,7 @@ import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
 import { BoothSheet } from "./BoothSheet";
 import { ConfirmAlert } from "./ConfirmAlert";
-import { stepLocked, type ChapterStep } from "./chapter-flow";
+import { proofStepAction, stepLocked, type ChapterStep } from "./chapter-flow";
 import { readEnginePrefs } from "./engine-prefs";
 import { resolvedInText } from "./glossary";
 import { masterChapterWorking } from "./punch";
@@ -133,8 +133,14 @@ export function ChapterWorkspace({
                 key={item.id}
                 type="button"
                 className={`quest-step is-${item.id}${step === item.id ? " is-on" : ""}${done ? " is-done" : ""}`}
-                disabled={locked}
-                onClick={() => onStep(item.id)}
+                disabled={locked || (item.id === "proofreading" && proofing)}
+                onClick={() => {
+                  if (item.id === "proofreading" && proofStepAction(current) === "run") {
+                    void goProof();
+                    return;
+                  }
+                  onStep(item.id);
+                }}
               >
                 <span className="quest-step-icon" aria-hidden="true">
                   {item.id === "recording" ? <MicStepIcon /> : null}

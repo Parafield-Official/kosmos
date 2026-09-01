@@ -22,6 +22,7 @@ describe("audio metadata boundary", () => {
 
   it("uses codec metadata and normalizes the .aif alias", () => {
     expect(normalizeAudioFormat(".aif")).toBe("aiff");
+    expect(normalizeAudioFormat(".wav", "pcm_s16le", "wav")).toBe("wav");
     expect(normalizeAudioFormat(".mp3", "pcm_s16le", "wav")).toBe("wav");
     expect(normalizeAudioFormat(".bin", "mp3", "data")).toBe("mp3");
   });

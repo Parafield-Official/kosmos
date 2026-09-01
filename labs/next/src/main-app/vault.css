@@ -3227,6 +3227,7 @@
 
 .quest-workspace.is-booth .quest-work-head {
   position: relative;
+  z-index: 21;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "back title steps";
@@ -3234,6 +3235,14 @@
   column-gap: 0.9rem;
   margin-bottom: 0.85rem;
   min-height: 2.35rem;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.quest-workspace.is-booth .quest-work-head button,
+.quest-workspace.is-booth .quest-work-head nav {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .quest-workspace.is-booth .quest-work-head .vault-media-back {

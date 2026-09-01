@@ -23,3 +23,12 @@ export function stepLocked(step: ChapterStep, chapter: BookChapter): boolean {
   }
   return false;
 }
+
+/**
+ * A click on the Proofread step is also the user's request to run the proof
+ * engine. Only an already-completed proof with a recorded engine can navigate
+ * straight to the saved results; legacy/empty results must be checked again.
+ */
+export function proofStepAction(chapter: BookChapter): "run" | "navigate" {
+  return chapter.proofed && chapter.proofTimingEngine ? "navigate" : "run";
+}
