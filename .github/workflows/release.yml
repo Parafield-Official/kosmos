@@ -10,7 +10,31 @@ permissions:
   contents: write
 
 jobs:
+  authorize:
+    name: Authorize release source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out complete history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require tags to come from Lightbox-Interface
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            refs/heads/Lightbox-Interface:refs/remotes/origin/Lightbox-Interface
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/Lightbox-Interface || {
+            echo "Release tags must point to a commit merged into Lightbox-Interface." >&2
+            exit 1
+          }
+
   package:
+    needs: authorize
     name: Package ${{ matrix.target }} ${{ matrix.arch }}
     strategy:
       fail-fast: false

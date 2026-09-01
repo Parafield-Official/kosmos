@@ -75,6 +75,22 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/prerelease:\s*false/);
   });
 
+  it("only releases tags whose commits were merged into Lightbox-Interface", () => {
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("refs/remotes/origin/Lightbox-Interface");
+    expect(yaml).toContain('git merge-base --is-ancestor "$GITHUB_SHA"');
+    expect(yaml).toMatch(/package:\n\s+needs:\s+authorize/);
+  });
+
+  it("runs required build and test checks for Lightbox pull requests", () => {
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/ci.yml"), "utf8");
+    expect(yaml).toMatch(/pull_request:\n\s+branches:\n\s+- Lightbox-Interface/);
+    expect(yaml).toContain("name: Build and test");
+    expect(yaml).toContain("run: npm run build");
+    expect(yaml).toContain("run: npm test");
+    expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
+  });
+
   it("requires signed and notarized macOS releases for reliable in-app updates", () => {
     const mac = packageJson.build.mac as { notarize?: boolean };
     expect(mac.notarize).toBe(true);
