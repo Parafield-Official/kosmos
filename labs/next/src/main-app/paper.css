@@ -216,3 +216,166 @@
   position: relative;
   z-index: 1;
 }
+
+/*
+  Prompt focus is a three-role palette, not inverted ink.
+  Paper stays the page. Text stays the page ink. The mark is a third
+  color: studio amber / highlighter gold on pale stock, a cream lamp on
+  already-tan papers, phosphor amber or ice or ember on dark screens.
+  Body ink on those marks stays readable (Kindle / highlighter rule).
+*/
+.ma-teleprompter,
+.ma-review-prose,
+.ma-review-prompt-wrap {
+  --tp-rail: rgba(232, 196, 122, 0.42);
+  --tp-rail-soft: rgba(232, 196, 122, 0.16);
+  --tp-word: rgba(232, 196, 122, 0.78);
+  --tp-word-soft: rgba(232, 196, 122, 0.3);
+  --tp-caret: #e8c47a;
+  --tp-now: #fffdf6;
+  --tp-now-glow: rgba(232, 196, 122, 0.28);
+  --tp-heading: color-mix(in srgb, currentColor 72%, transparent);
+}
+
+/* White #f6f6f4 / #161616 — Kosmos gold highlighter, not charcoal. */
+.ma-teleprompter.is-white,
+.ma-review-prose.is-white,
+.ma-review-prompt-wrap.is-white {
+  --tp-rail: rgba(232, 196, 122, 0.48);
+  --tp-rail-soft: rgba(232, 196, 122, 0.18);
+  --tp-word: rgba(232, 196, 122, 0.82);
+  --tp-word-soft: rgba(232, 196, 122, 0.36);
+  --tp-caret: #c9a24e;
+  --tp-now: #161616;
+  --tp-now-glow: rgba(232, 196, 122, 0.28);
+  --tp-heading: color-mix(in srgb, #161616 88%, transparent);
+}
+
+/* Cream #f3eee6 / #1a1714 — honey, more saturated than the page. */
+.ma-teleprompter.is-cream,
+.ma-review-prose.is-cream,
+.ma-review-prompt-wrap.is-cream {
+  --tp-rail: rgba(217, 164, 65, 0.42);
+  --tp-rail-soft: rgba(217, 164, 65, 0.16);
+  --tp-word: rgba(217, 164, 65, 0.78);
+  --tp-word-soft: rgba(217, 164, 65, 0.32);
+  --tp-caret: #c48a2c;
+  --tp-now: #1a1714;
+  --tp-now-glow: rgba(217, 164, 65, 0.26);
+  --tp-heading: color-mix(in srgb, #1a1714 86%, transparent);
+}
+
+/* Ivory #f6ecd4 / #2a2218 — marigold, oranger than the yellow page. */
+.ma-teleprompter.is-ivory,
+.ma-review-prose.is-ivory,
+.ma-review-prompt-wrap.is-ivory {
+  --tp-rail: rgba(212, 137, 58, 0.4);
+  --tp-rail-soft: rgba(212, 137, 58, 0.16);
+  --tp-word: rgba(212, 137, 58, 0.74);
+  --tp-word-soft: rgba(212, 137, 58, 0.3);
+  --tp-caret: #b86c28;
+  --tp-now: #2a2218;
+  --tp-now-glow: rgba(212, 137, 58, 0.24);
+  --tp-heading: color-mix(in srgb, #2a2218 86%, transparent);
+}
+
+/* Sepia #cbb49a / #3d2d22 — cream lamp, lighter than the tan. */
+.ma-teleprompter.is-sepia,
+.ma-review-prose.is-sepia,
+.ma-review-prompt-wrap.is-sepia {
+  --tp-rail: rgba(244, 230, 196, 0.52);
+  --tp-rail-soft: rgba(244, 230, 196, 0.2);
+  --tp-word: rgba(244, 230, 196, 0.86);
+  --tp-word-soft: rgba(244, 230, 196, 0.4);
+  --tp-caret: #f4e6c4;
+  --tp-now: #3d2d22;
+  --tp-now-glow: rgba(244, 230, 196, 0.28);
+  --tp-heading: color-mix(in srgb, #3d2d22 88%, transparent);
+}
+
+/* Newsprint #d5ccb8 / #2c281f — editor yellow on gray stock. */
+.ma-teleprompter.is-newsprint,
+.ma-review-prose.is-newsprint,
+.ma-review-prompt-wrap.is-newsprint {
+  --tp-rail: rgba(230, 195, 92, 0.44);
+  --tp-rail-soft: rgba(230, 195, 92, 0.16);
+  --tp-word: rgba(230, 195, 92, 0.8);
+  --tp-word-soft: rgba(230, 195, 92, 0.34);
+  --tp-caret: #c9a334;
+  --tp-now: #2c281f;
+  --tp-now-glow: rgba(230, 195, 92, 0.26);
+  --tp-heading: color-mix(in srgb, #2c281f 86%, transparent);
+}
+
+/* Laid #efe4ce / #2a2318 — copper nib, off the cream weave. */
+.ma-teleprompter.is-laid,
+.ma-review-prose.is-laid,
+.ma-review-prompt-wrap.is-laid {
+  --tp-rail: rgba(196, 137, 74, 0.4);
+  --tp-rail-soft: rgba(196, 137, 74, 0.16);
+  --tp-word: rgba(196, 137, 74, 0.74);
+  --tp-word-soft: rgba(196, 137, 74, 0.3);
+  --tp-caret: #a86a32;
+  --tp-now: #2a2318;
+  --tp-now-glow: rgba(196, 137, 74, 0.24);
+  --tp-heading: color-mix(in srgb, #2a2318 86%, transparent);
+}
+
+/* Kraft #c49a62 / #2c1c0e — cream sunlight, not more brown. */
+.ma-teleprompter.is-kraft,
+.ma-review-prose.is-kraft,
+.ma-review-prompt-wrap.is-kraft {
+  --tp-rail: rgba(246, 234, 208, 0.5);
+  --tp-rail-soft: rgba(246, 234, 208, 0.2);
+  --tp-word: rgba(246, 234, 208, 0.84);
+  --tp-word-soft: rgba(246, 234, 208, 0.4);
+  --tp-caret: #f6ead0;
+  --tp-now: #2c1c0e;
+  --tp-now-glow: rgba(246, 234, 208, 0.28);
+  --tp-heading: color-mix(in srgb, #2c1c0e 90%, transparent);
+}
+
+/* Black #121214 — studio amber phosphor, not the cream text. */
+.ma-teleprompter.is-black,
+.ma-teleprompter.is-dark,
+.ma-review-prose.is-black,
+.ma-review-prose.is-dark,
+.ma-review-prompt-wrap.is-black,
+.ma-review-prompt-wrap.is-dark {
+  --tp-rail: rgba(232, 196, 122, 0.4);
+  --tp-rail-soft: rgba(232, 196, 122, 0.16);
+  --tp-word: rgba(232, 196, 122, 0.72);
+  --tp-word-soft: rgba(232, 196, 122, 0.28);
+  --tp-caret: #e8c47a;
+  --tp-now: #fffdf6;
+  --tp-now-glow: rgba(232, 196, 122, 0.36);
+  --tp-heading: color-mix(in srgb, #fffdf6 70%, transparent);
+}
+
+/* Glass — ice, off the warm cream type. */
+.ma-teleprompter.is-glass,
+.ma-review-prose.is-glass,
+.ma-review-prompt-wrap.is-glass {
+  --tp-rail: rgba(126, 200, 224, 0.38);
+  --tp-rail-soft: rgba(126, 200, 224, 0.14);
+  --tp-word: rgba(126, 200, 224, 0.7);
+  --tp-word-soft: rgba(126, 200, 224, 0.28);
+  --tp-caret: #8ec8e0;
+  --tp-now: #f7f2eb;
+  --tp-now-glow: rgba(126, 200, 224, 0.32);
+  --tp-heading: color-mix(in srgb, #f7f2eb 70%, transparent);
+}
+
+/* Smoke — ember, warmer and more orange than the cream type. */
+.ma-teleprompter.is-smoke,
+.ma-review-prose.is-smoke,
+.ma-review-prompt-wrap.is-smoke {
+  --tp-rail: rgba(232, 150, 74, 0.4);
+  --tp-rail-soft: rgba(232, 150, 74, 0.16);
+  --tp-word: rgba(232, 150, 74, 0.72);
+  --tp-word-soft: rgba(232, 150, 74, 0.28);
+  --tp-caret: #e8964a;
+  --tp-now: #fff6e8;
+  --tp-now-glow: rgba(232, 150, 74, 0.34);
+  --tp-heading: color-mix(in srgb, #fff6e8 70%, transparent);
+}

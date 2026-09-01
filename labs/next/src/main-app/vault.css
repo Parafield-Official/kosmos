@@ -4457,24 +4457,15 @@
 .vault-overlay .quest-workspace .ma-proof-prompt .ma-review-word.is-now {
   background: none;
   box-shadow: none;
-  color: #fff;
-  text-shadow: 0 0 16px rgba(255, 255, 255, 0.42);
+  color: var(--tp-now);
+  text-shadow: 0 0 16px var(--tp-now-glow);
   padding: 0;
-}
-
-.vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose.is-cream .ma-review-word.is-now,
-.vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose.is-sepia .ma-review-word.is-now,
-.vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose.is-ivory .ma-review-word.is-now {
-  background: none;
-  color: inherit;
-  text-shadow: 0 0 14px rgba(40, 28, 16, 0.22);
-  box-shadow: none;
 }
 
 .vault-overlay .quest-workspace .ma-proof-prompt .ma-review-prose p.is-heading,
 .vault-overlay .quest-workspace .ma-record-embed .ma-tp-line.is-heading {
   margin: 0 0 1.55em;
-  color: color-mix(in srgb, currentColor 42%, transparent);
+  color: var(--tp-heading);
   font-size: 0.78em;
   font-weight: 400;
   letter-spacing: 0.05em;
