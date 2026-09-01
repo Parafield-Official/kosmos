@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Download — Kosmos</title>
   <meta name="description" content="Download Kosmos for Mac or Windows, or get the source on GitHub. Free, local, open source." />
+  <link rel="icon" type="image/png" href="assets/kosmos-mark.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
@@ -20,16 +21,7 @@
 
   <header class="topbar">
     <a class="brand" href="index.html" aria-label="Kosmos home">
-      <svg viewBox="0 0 31.5 48.5" aria-hidden="true">
-        <defs>
-          <linearGradient id="bg1" x1="8" y1="0" x2="34.1" y2="28.9" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stop-color="#9e9e9e"/><stop offset=".28" stop-color="#a6a6a6"/><stop offset=".34" stop-color="#a3a3a3"/><stop offset=".40" stop-color="#3a3a3a"/><stop offset=".55" stop-color="#414141"/><stop offset=".60" stop-color="#7a7a7a"/><stop offset=".68" stop-color="#8e8e8e"/><stop offset=".80" stop-color="#a9a9a9"/><stop offset=".95" stop-color="#c4c4c4"/><stop offset="1" stop-color="#cccccc"/>
-          </linearGradient>
-        </defs>
-        <path d="M21.5 0 L21.5 19.5 L31.5 19.5 L31.5 29 L10 48.5 L10 28.5 L0.5 28.5 L0.5 18.5 Z" fill="url(#bg1)"/>
-        <rect x="0.5" y="18.5" width="9" height="10" fill="#fdfdfd"/>
-        <rect x="22" y="19.5" width="9.5" height="9.5" fill="#fdfdfd"/>
-      </svg>
+      <img src="assets/kosmos-mark.png" alt="" width="400" height="289" />
     </a>
     <nav class="links" aria-label="Primary">
       <a href="about.html">About</a>
@@ -65,16 +57,40 @@
     <h1 class="headline"><span>Get Kosmos.</span><span>Keep the book.</span></h1>
     <p class="lead">Free desktop app for Mac and Windows. Double-click. No terminal, no account, no “clone the repo” unless you want the source.</p>
 
-    <div class="downloads">
-      <article class="dl">
-        <h2>Mac</h2>
+    <div class="downloads" aria-label="Choose your platform">
+      <article class="dl" id="mac">
+        <div class="dl-head">
+          <span class="platform-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.79 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.09M12.03 7.25C11.88 5.02 13.69 3.18 15.77 3c.29 2.58-2.34 4.5-3.74 4.25"/></svg>
+          </span>
+          <div>
+            <p class="platform-label">macOS</p>
+            <h2>Download for Mac</h2>
+          </div>
+        </div>
         <p>Apple silicon. Open the disk image and drag Kosmos to Applications. If Gatekeeper blocks an unsigned pre-release, right-click the app and choose Open.</p>
-        <a class="pill" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg"><span>Download .dmg</span></a>
+        <a class="pill" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg" aria-label="Download Kosmos for Mac">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.79 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.53 4.09M12.03 7.25C11.88 5.02 13.69 3.18 15.77 3c.29 2.58-2.34 4.5-3.74 4.25"/></svg>
+          <span>Download</span>
+        </a>
+        <span class="dl-meta">Apple silicon · macOS</span>
       </article>
-      <article class="dl">
-        <h2>Windows</h2>
+      <article class="dl" id="windows">
+        <div class="dl-head">
+          <span class="platform-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M3 5.1 10.5 4v7.2H3V5.1Zm8.4-1.25L21 2.5v8.7h-9.6V3.85ZM3 12.1h7.5v7.2L3 18.2v-6.1Zm8.4 0H21v8.7l-9.6-1.35V12.1Z"/></svg>
+          </span>
+          <div>
+            <p class="platform-label">Windows</p>
+            <h2>Download for Windows</h2>
+          </div>
+        </div>
         <p>64-bit installer. If SmartScreen appears for an unsigned pre-release, choose More info → Run anyway.</p>
-        <a class="pill" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe"><span>Download .exe</span></a>
+        <a class="pill" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe" aria-label="Download Kosmos for Windows">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.1 10.5 4v7.2H3V5.1Zm8.4-1.25L21 2.5v8.7h-9.6V3.85ZM3 12.1h7.5v7.2L3 18.2v-6.1Zm8.4 0H21v8.7l-9.6-1.35V12.1Z"/></svg>
+          <span>Download</span>
+        </a>
+        <span class="dl-meta">64-bit · Windows 10 or later</span>
       </article>
     </div>
     <p class="lead">Already have the first public build? Download this one once and replace the old app. After that, Kosmos checks GitHub and installs later versions itself. Your book folder stays where it is.</p>
