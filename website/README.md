@@ -11,12 +11,12 @@ npm run build
 
 Routes:
 
-- `/` — cinematic landing and Lightbox workflow statement
-- `/about/` — product purpose and limits
-- `/features/` — narrator and author features
-- `/workflow/` — integrated-workflow comparison
-- `/faq/` — common questions and honest answers
-- `/download/` — separate Mac and Windows downloads
+- `/`: cinematic landing and Lightbox workflow statement
+- `/about/`: product purpose and limits
+- `/features/`: narrator and author features
+- `/workflow/`: integrated-workflow comparison
+- `/faq/`: common questions and honest answers
+- `/download/`: separate Mac and Windows downloads
 
 The shared visual system uses the centered Lightbox badge, a minimal floating
 menu, Newsreader headings, Inter body copy, liquid-glass surfaces, and a dark

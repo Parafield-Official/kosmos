@@ -222,7 +222,7 @@ const aboutStages = [
 function AboutPage() {
   return (
     <PageShell>
-      <PageHero kicker="About" title={<>One free app<br /><em>for your audiobooks.</em></>} lead="Import the manuscript. Record with a built-in teleprompter that follows your voice — or bring audio you already have. Kosmos proofreads the words, masters the sound, and packs the finished title for ACX." />
+      <PageHero kicker="About" title={<>One free app<br /><em>for your audiobooks.</em></>} lead="Import the manuscript. Record with a built-in teleprompter that follows your voice, or bring audio you already have. Kosmos proofreads the words, masters the sound, and packs the finished title for ACX." />
       <section className="editorial-grid">
         <article className="content-card liquid-glass editorial-intro">
           <p className="eyebrow">What you use it for</p>
@@ -249,10 +249,10 @@ function AboutPage() {
 }
 
 const narratorFeatures = [
-  ["A teleprompter that follows your voice", "Read the book as written — italics, bold, highlights and all. The current word lights up as you speak, and you can always scroll by hand."],
+  ["A teleprompter that follows your voice", "Read the book as written, including italics, bold, and highlights. The current word lights up as you speak, and you can always scroll by hand."],
   ["Proofread against the manuscript", "Skip, add, or swap a word and Kosmos flags the line. Review every mismatch after the take, with its audio and place on the page."],
   ["Fix a line without restarting the chapter", "Punch the flagged line inside Kosmos, or export markers for the audio editor you already use."],
-  ["Check the room before chapter one", "Record a few seconds of silence. Kosmos tells you if the room will pass after loudness — before you record the whole book."],
+  ["Check the room before chapter one", "Record a few seconds of silence. Kosmos tells you if the room will pass after loudness before you record the whole book."],
   ["Master for delivery", "See the loudness, true peak, noise floor, format, and room-tone result for every chapter. Export named files, credit slots, and a retail sample when the title is ready."],
   ["Two voices, one story", "Each person keeps their own seat. Record the bed, then the other voice, and fix only your lines. Either record in Kosmos or bring takes from another editor."],
 ];
@@ -261,7 +261,7 @@ const authorFeatures = [
   ["The book, split into chapters", "Import the manuscript. Split, merge, and rename. You are not scrolling a 400-page PDF."],
   ["How to say the names", "A draft list of the hard words. You keep, cut, and merge it. Record a short clip for anything a stranger would misread. The narrator hears you, not a guess."],
   ["Did they say your book?", "Each missed word shows the page, what was heard, and Play. Mark it done, needs a fix, or ignore. Leave a note on the line."],
-  ["Work the same book, no marketplace", "Save a name and a role. Send a live invite. The other person joins — including on hotel Wi-Fi or a phone hotspot. No store in the middle."],
+  ["Work the same book, no marketplace", "Save a name and a role. Send a live invite. The other person can join from hotel Wi-Fi or a phone hotspot. No store in the middle."],
   ["The book stays here", "No account. No upload of the unpublished book. What you share goes only to the person you invited."],
   ["Credits and a retail sample", "The export has slots for opening, closing, and a sample that starts on the story. You record those. Kosmos keeps them in the pack."],
 ];
@@ -292,7 +292,7 @@ const workflowRows = [
 function WorkflowPage() {
   return (
     <PageShell>
-      <PageHero kicker="Workflow" title={<>Your whole library.<br /><em>One continuous workflow.</em></>} lead="Import the manuscript, read from the built-in teleprompter, proofread, master, and export — without rebuilding the title in a different service at every step." />
+      <PageHero kicker="Workflow" title={<>Your whole library.<br /><em>One continuous workflow.</em></>} lead="Import the manuscript, read from the built-in teleprompter, proofread, master, and export without rebuilding the title in a different service at every step." />
       <section className="price-panel liquid-glass"><strong className="font-instrument">$0</strong><div><p className="eyebrow">Free and open source</p><p>Kosmos is built for local projects. No account, subscription, or per-finished-hour meter.</p></div></section>
       <section className="workflow-table liquid-glass" aria-label="Workflow comparison">
         <div className="workflow-row workflow-head"><span>The step</span><span>In Kosmos</span><span>With separate tools</span></div>
@@ -306,12 +306,12 @@ function WorkflowPage() {
 
 const faqs = [
   ["Is Kosmos free?", "Yes. $0. MIT license. No account, no trial clock, no per-finished-hour meter. Download the Mac or Windows build, or clone the source."],
-  ["Does my book leave this computer?", "Manuscript prep, the teleprompter, proofreading, delivery checks, mastering, and export all run locally. There is no sign-in and no cloud copy of the manuscript. Live together is an invite between two desks you choose — including hotel Wi-Fi and a phone hotspot — not a store and not an upload."],
+  ["Does my book leave this computer?", "Manuscript prep, the teleprompter, proofreading, delivery checks, mastering, and export all run locally. There is no sign-in and no cloud copy of the manuscript. Live together is an invite between two desks you choose, including hotel Wi-Fi and a phone hotspot. It is not a store or an upload."],
   ["Is this an AI narrator?", "No. Kosmos never reads the book and never clones a voice. It is a desk for a human take against a human manuscript."],
   ["Does Kosmos include a teleprompter?", "Yes. The built-in teleprompter follows your voice and highlights the current word as you speak, while keeping the manuscript’s formatting on screen. You can pause, resume, or scroll by hand at any time."],
   ["Can I record in Kosmos?", "Yes. Each chapter has a recorder, voice-following teleprompter, room check, take controls, and line punches. You can also import audio recorded in Reaper, Audition, or another editor. Kosmos is an audiobook studio, not a general-purpose multitrack music workstation."],
   ["What will it catch?", "Proofread flags words that do not match the page and long mid-sentence pauses. Sound measures delivery specs such as loudness, true peak, noise floor, format, and room tone, then applies bounded cleanup and mastering. A human still listens for performance and anything automation misses."],
-  ["How do an author and a narrator share a book?", "Save a name and a role. Create an invite — a code plus three spoken words. The other desk joins with the reply. You work the same project: notes, pickups, names, takes. No zip pack required for the live path. If a network blocks the live link, you can still hand the project folder across."],
+  ["How do an author and a narrator share a book?", "Save a name and a role. Create an invite with a code plus three spoken words. The other desk joins with the reply. You work the same project: notes, pickups, names, takes. No zip pack required for the live path. If a network blocks the live link, you can still hand the project folder across."],
   ["What happens during first-time setup?", "Kosmos asks for microphone access and a project-folder location, then checks that its local proofreading tool is ready. Release builds include the required tools; if a model is missing, setup downloads it once. After setup, recording, proofreading, mastering, and export run locally."],
   ["Mac or Windows?", "Both. Choose the Apple silicon Mac download or the 64-bit Windows download. This is a pre-release: if Gatekeeper or SmartScreen stops an unsigned build, open it from the context menu or More info."],
   ["How do I get a new version?", "Installed copies check GitHub for a later release and download it in the background. Restart when you are not recording. Your book folders are unchanged."],
@@ -320,7 +320,7 @@ const faqs = [
 function FaqPage() {
   return (
     <PageShell>
-      <PageHero kicker="FAQ" title={<>Straight answers<br /><em>for the booth.</em></>} lead="Kosmos gives human narrators a built-in voice-following teleprompter, recording, proofreading, and mastering — all local, with the final creative judgment left to you." />
+      <PageHero kicker="FAQ" title={<>Straight answers<br /><em>for the booth.</em></>} lead="Kosmos gives human narrators a built-in voice-following teleprompter, recording, proofreading, and mastering. Everything runs locally, with the final creative judgment left to you." />
       <section className="faq-list">{faqs.map(([question, answer], index) => <details className="faq-item liquid-glass" key={question} open={index === 0}><summary><span>{question}</span><i aria-hidden="true" /></summary><p>{answer}</p></details>)}</section>
       <div className="page-actions"><Button href={`${REPO}/issues`} dark external>Open an issue</Button><Button href={route("download")}>Download</Button></div>
     </PageShell>
