@@ -1,6 +1,6 @@
 # Kosmos
 
-[Download for Mac](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-mac-arm64.dmg) · [Download for Windows](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.1/Kosmos-0.1.1-win-x64.exe)
+[Download for Mac](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.2/Kosmos-0.1.2-mac-arm64.dmg) · [Download for Windows](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.2/Kosmos-0.1.2-win-x64.exe)
 
 Kosmos is a free desktop studio for human-made audiobooks. Import a manuscript,
 record each chapter or bring audio from another editor, proofread the take

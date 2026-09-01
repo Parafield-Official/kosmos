@@ -88,6 +88,16 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("xcrun stapler validate");
   });
 
+  it("keeps the macOS-only liquid-glass module optional for Windows packaging", () => {
+    expect(packageJson.dependencies).not.toHaveProperty("electron-liquid-glass");
+    expect(packageJson.optionalDependencies).toMatchObject({
+      "electron-liquid-glass": "^1.1.1",
+    });
+    expect(packageJson.build.files).toContain("dist/**/*");
+    const labsMain = readFileSync(resolve(__dirname, "../../electron/labs.cjs"), "utf8");
+    expect(labsMain).toMatch(/try\s*{[\s\S]+require\("electron-liquid-glass"\)[\s\S]+}\s*catch/);
+  });
+
   it("tells people on the first public installer to download once, then stay current in-app", () => {
     const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
     expect(readme).toMatch(/download (this|the current)[\s\S]+once/i);
