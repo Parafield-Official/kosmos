@@ -3,6 +3,7 @@ import type { AcxReport } from "../../../../src/core/acx/measure";
 import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
 import { BoothSheet } from "./BoothSheet";
+import { ConfirmAlert } from "./ConfirmAlert";
 import { stepLocked, type ChapterStep } from "./chapter-flow";
 import { readEnginePrefs } from "./engine-prefs";
 import { resolvedInText } from "./glossary";
@@ -226,25 +227,13 @@ export function ChapterWorkspace({
       ) : null}
 
       {startOverAsk ? (
-        <div className="ma-scrim" role="presentation" onClick={() => setStartOverAsk(false)}>
-          <div className="ma-alert neu-panel" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-            <div className="ma-alert-copy">
-              <h2 className="ma-alert-title">Start this chapter over?</h2>
-              <p className="ma-alert-sub">
-                This throws away the original recording, the working copy, and any punch-ins. You will record again from
-                the first word.
-              </p>
-            </div>
-            <div className="ma-alert-actions">
-              <button type="button" className="ma-alert-btn" onClick={() => setStartOverAsk(false)}>
-                Cancel
-              </button>
-              <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={confirmStartOver}>
-                Throw away the take
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmAlert
+          title="Start over?"
+          body={`“${chapter.title}” recordings will be permanently deleted. This can’t be undone.`}
+          confirm="Start over"
+          onConfirm={confirmStartOver}
+          onCancel={() => setStartOverAsk(false)}
+        />
       ) : null}
     </section>
   );
@@ -318,12 +307,10 @@ function ChapterAudioImport({
   const importRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
   const chapter = project.chapters.find((item) => item.id === chapterId);
 
-  async function importAudio(file: File) {
-    if (chapter?.hasOriginalAudio && !window.confirm("Replace the original tape with this file?")) {
-      return;
-    }
+  async function applyImport(file: File) {
     setImportError(null);
     setImporting(true);
     try {
@@ -333,6 +320,14 @@ function ChapterAudioImport({
     } finally {
       setImporting(false);
     }
+  }
+
+  async function importAudio(file: File) {
+    if (chapter?.hasOriginalAudio) {
+      setPendingImport(file);
+      return;
+    }
+    await applyImport(file);
   }
 
   return (
@@ -361,6 +356,21 @@ function ChapterAudioImport({
         }}
       />
       {importError ? <p className="ma-error">{importError}</p> : null}
+      {pendingImport ? (
+        <ConfirmAlert
+          title="Replace recording?"
+          body="The original tape will be replaced with this file. This can’t be undone."
+          confirm="Replace"
+          onConfirm={() => {
+            const file = pendingImport;
+            setPendingImport(null);
+            if (file) {
+              void applyImport(file);
+            }
+          }}
+          onCancel={() => setPendingImport(null)}
+        />
+      ) : null}
     </>
   );
 }

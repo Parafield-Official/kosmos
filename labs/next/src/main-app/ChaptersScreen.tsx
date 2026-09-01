@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { estimateDurationMinutes, MAX_CHAPTER_MINUTES } from "../../../../src/core/manuscript/split";
 import { chapterCompletionPct } from "./book-stats";
+import { ConfirmAlert, deleteChapterCopy } from "./ConfirmAlert";
 import { chapterStage, readChapterContent, removeChapter, type BookChapter, type BookProject, type ChapterStage } from "./store";
 
 export function ChaptersScreen({
@@ -459,43 +460,17 @@ function RemoveChapterConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const hasTape = chapter.hasOriginalAudio || chapter.hasWorkingAudio;
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
-
+  const ask = deleteChapterCopy(chapter.title, chapter.hasOriginalAudio || chapter.hasWorkingAudio);
   return (
-    <div className="ma-scrim" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title">Remove this chapter?</h2>
-          <p className="ma-alert-sub">
-            {hasTape
-              ? `“${chapter.title}” and its recordings will be permanently deleted. This can’t be undone.`
-              : `“${chapter.title}” will be permanently deleted. This can’t be undone.`}
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} disabled={busy} autoFocus>
-            Cancel
-          </button>
-          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm} disabled={busy}>
-            {busy ? "Removing…" : "Remove"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAlert
+      title={ask.title}
+      body={ask.body}
+      confirm={ask.confirm}
+      busy={busy}
+      busyLabel="Deleting…"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 

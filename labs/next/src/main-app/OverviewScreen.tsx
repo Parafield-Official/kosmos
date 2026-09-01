@@ -7,6 +7,7 @@ import {
   isResolved,
   setGlossaryRespell,
 } from "./glossary";
+import { analyzeManuscriptCopy, ConfirmAlert, deleteChapterCopy } from "./ConfirmAlert";
 import { GlossaryPanel } from "./GlossaryPanel";
 import { exportBookPack, masterChapterWorking } from "./punch";
 import { removeSuppressedWord } from "./suppress";
@@ -481,46 +482,15 @@ function AnalyzeConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
+  const ask = analyzeManuscriptCopy(replaceManuscript, hasRecordings);
   return (
-    <div className="ma-scrim" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="ma-reanalyze-title"
-        aria-describedby="ma-reanalyze-sub"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title" id="ma-reanalyze-title">
-            {replaceManuscript ? "Replace manuscript?" : "Re-analyze this book?"}
-          </h2>
-          <p className="ma-alert-sub" id="ma-reanalyze-sub">
-            {hasRecordings
-              ? "This rebuilds every chapter from the manuscript. Recordings, proof flags, and mastering on the current chapters will be lost."
-              : "This rebuilds every chapter from the manuscript. Chapter text and proof flags on the current chapters will be replaced."}
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} autoFocus>
-            Cancel
-          </button>
-          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm}>
-            {replaceManuscript ? "Replace" : "Re-analyze"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAlert
+      title={ask.title}
+      body={ask.body}
+      confirm={ask.confirm}
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 
@@ -535,47 +505,17 @@ function RemoveChapterConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const hasTape = chapter.hasOriginalAudio || chapter.hasWorkingAudio;
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
-
+  const ask = deleteChapterCopy(chapter.title, chapter.hasOriginalAudio || chapter.hasWorkingAudio);
   return (
-    <div className="ma-scrim" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="ma-remove-chapter-title"
-        aria-describedby="ma-remove-chapter-sub"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title" id="ma-remove-chapter-title">
-            Remove this chapter?
-          </h2>
-          <p className="ma-alert-sub" id="ma-remove-chapter-sub">
-            {hasTape
-              ? `“${chapter.title}” and its recordings will be permanently deleted. This can’t be undone.`
-              : `“${chapter.title}” will be permanently deleted. This can’t be undone.`}
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} disabled={busy} autoFocus>
-            Cancel
-          </button>
-          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm} disabled={busy}>
-            {busy ? "Removing…" : "Remove"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAlert
+      title={ask.title}
+      body={ask.body}
+      confirm={ask.confirm}
+      busy={busy}
+      busyLabel="Deleting…"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 

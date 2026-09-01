@@ -11,6 +11,7 @@ import {
   writeManuscript,
   type BookProject,
 } from "./store";
+import { ConfirmAlert } from "./ConfirmAlert";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { VaultRoom } from "./VaultRoom";
 
@@ -205,49 +206,16 @@ export function ConfirmDelete({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && !busy) {
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
-
   return (
-    <div className="ma-scrim" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="ma-alert-title"
-        aria-describedby="ma-alert-sub"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title" id="ma-alert-title">
-            Delete book?
-          </h2>
-          <p className="ma-alert-sub" id="ma-alert-sub">
-            “{project.title}” and all of its chapters and recordings will be permanently deleted. This can’t be undone.
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} disabled={busy} autoFocus>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="ma-alert-btn ma-alert-btn-danger"
-            onClick={onConfirm}
-            disabled={busy}
-          >
-            {busy ? "Deleting…" : "Delete"}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAlert
+      title="Delete book?"
+      body={`“${project.title}” and all of its chapters and recordings will be permanently deleted. This can’t be undone.`}
+      confirm="Delete"
+      busy={busy}
+      busyLabel="Deleting…"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 

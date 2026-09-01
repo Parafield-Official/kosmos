@@ -3,6 +3,7 @@ import type { AcxReport } from "../../../../src/core/acx/measure";
 import { alignTranscript, preservePickupWorkflow } from "../../../../src/core/proof/align";
 import { paragraphsFromHtml } from "./booth";
 import { ChapterMeter, quietListenRange } from "./ChapterMeter";
+import { ConfirmAlert } from "./ConfirmAlert";
 import { proofAlignOptions } from "./engine-prefs";
 import {
   addGlossaryWord,
@@ -61,6 +62,7 @@ export function ChapterScreen({
   const importRef = useRef<HTMLInputElement>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [pendingImport, setPendingImport] = useState<File | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [proofing, setProofing] = useState(false);
   const [proofNote, setProofNote] = useState<string | null>(null);
@@ -102,10 +104,7 @@ export function ChapterScreen({
   const recordedPct = Math.round(Math.min(1, Math.max(0, chapter.recordedPct)) * 100);
   const complete = chapter.recordedPct >= 1;
 
-  async function importAudio(file: File) {
-    if (current.hasOriginalAudio && !window.confirm("Replace the original tape with this file?")) {
-      return;
-    }
+  async function applyImport(file: File) {
     setImportError(null);
     setImporting(true);
     try {
@@ -127,6 +126,14 @@ export function ChapterScreen({
     } finally {
       setImporting(false);
     }
+  }
+
+  async function importAudio(file: File) {
+    if (current.hasOriginalAudio) {
+      setPendingImport(file);
+      return;
+    }
+    await applyImport(file);
   }
 
   async function runProof() {
@@ -455,6 +462,21 @@ export function ChapterScreen({
           {masterError ? <p className="ma-error">{masterError}</p> : null}
         </Step>
       </ol>
+      {pendingImport ? (
+        <ConfirmAlert
+          title="Replace recording?"
+          body="The original tape will be replaced with this file. This can’t be undone."
+          confirm="Replace"
+          onConfirm={() => {
+            const file = pendingImport;
+            setPendingImport(null);
+            if (file) {
+              void applyImport(file);
+            }
+          }}
+          onCancel={() => setPendingImport(null)}
+        />
+      ) : null}
     </section>
   );
 }

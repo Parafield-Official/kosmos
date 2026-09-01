@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ConfirmAlert } from "./ConfirmAlert";
 
 /** Confirm before a pronunciation clip overwrites an existing one. */
 export function ReplaceClipAsk({
@@ -12,35 +13,18 @@ export function ReplaceClipAsk({
 }) {
   const label = word?.trim();
   return (
-    <div className="ma-scrim is-global" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="ma-clip-replace-title"
-        aria-describedby="ma-clip-replace-sub"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title" id="ma-clip-replace-title">
-            Replace this clip?
-          </h2>
-          <p className="ma-alert-sub" id="ma-clip-replace-sub">
-            {label
-              ? `Recording again overwrites the current clip for “${label}”.`
-              : "Recording again overwrites the current clip."}
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} autoFocus>
-            Keep
-          </button>
-          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm}>
-            Replace
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAlert
+      global
+      title="Replace this clip?"
+      body={
+        label
+          ? `Recording again overwrites the clip for “${label}”. This can’t be undone.`
+          : "Recording again overwrites the current clip. This can’t be undone."
+      }
+      confirm="Replace"
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
 }
 

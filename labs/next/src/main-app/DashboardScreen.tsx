@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { bookStats, completionPct } from "./book-stats";
+import { analyzeManuscriptCopy, ConfirmAlert } from "./ConfirmAlert";
 import { bookInitials, type BookProject } from "./store";
 import { VaultListenSheet, VaultReadSheet } from "./vault-media";
 
@@ -316,51 +316,15 @@ function AnalyzeConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onCancel();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-
-  const host =
-    document.querySelector(".vault-overlay") ??
-    document.querySelector(".main-app");
-
-  const dialog = (
-    <div className="ma-scrim" role="presentation" onClick={onCancel}>
-      <div
-        className="ma-alert neu-panel"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="ma-reanalyze-title"
-        aria-describedby="ma-reanalyze-sub"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="ma-alert-copy">
-          <h2 className="ma-alert-title" id="ma-reanalyze-title">
-            {replaceManuscript ? "Replace manuscript?" : "Re-analyze this book?"}
-          </h2>
-          <p className="ma-alert-sub" id="ma-reanalyze-sub">
-            {hasRecordings
-              ? "This rebuilds every chapter from the manuscript. Recordings, proof flags, and mastering on the current chapters will be lost."
-              : "This rebuilds every chapter from the manuscript. Chapter text and proof flags on the current chapters will be replaced."}
-          </p>
-        </div>
-        <div className="ma-alert-actions">
-          <button type="button" className="ma-alert-btn" onClick={onCancel} autoFocus>
-            Cancel
-          </button>
-          <button type="button" className="ma-alert-btn ma-alert-btn-danger" onClick={onConfirm}>
-            {replaceManuscript ? "Replace" : "Re-analyze"}
-          </button>
-        </div>
-      </div>
-    </div>
+  const ask = analyzeManuscriptCopy(replaceManuscript, hasRecordings);
+  return (
+    <ConfirmAlert
+      title={ask.title}
+      body={ask.body}
+      confirm={ask.confirm}
+      portal
+      onConfirm={onConfirm}
+      onCancel={onCancel}
+    />
   );
-
-  return host ? createPortal(dialog, host) : dialog;
 }

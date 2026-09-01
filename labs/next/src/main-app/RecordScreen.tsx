@@ -34,6 +34,7 @@ import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow
 import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
+import { ConfirmAlert } from "./ConfirmAlert";
 import { TapePlayer } from "./TapePlayer";
 import {
   applyChapterPickup,
@@ -208,6 +209,7 @@ export function RecordScreen({
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
   const [lostPlace, setLostPlace] = useState(false);
+  const [warn, setWarn] = useState<"start-over" | "delete-tape" | null>(null);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -918,10 +920,7 @@ export function RecordScreen({
     );
   }
 
-  async function startOver() {
-    if (!window.confirm("Replace the original tape and start this chapter from the beginning?")) {
-      return;
-    }
+  async function applyStartOver() {
     cleanupCapture();
     setRecording(false);
     setPaused(false);
@@ -1218,7 +1217,7 @@ export function RecordScreen({
               {!recording && (workflow.canStartOver || chapter.originalFile) ? (
                 <div className="ma-rec-row">
                   {workflow.canStartOver ? (
-                    <button type="button" className="booth-tool" onClick={() => void startOver()}>
+                    <button type="button" className="booth-tool" onClick={() => setWarn("start-over")}>
                       <RestartGlyph />
                       Start over
                     </button>
@@ -1227,11 +1226,7 @@ export function RecordScreen({
                     <button
                       type="button"
                       className="booth-tool is-danger"
-                      onClick={() => {
-                        if (window.confirm("Delete this chapter’s original recording? Proof flags on it will go too.")) {
-                          onChange(clearOriginalTape(projectRef.current, chapterId));
-                        }
-                      }}
+                      onClick={() => setWarn("delete-tape")}
                     >
                       <TrashGlyph />
                       Delete
@@ -1304,6 +1299,31 @@ export function RecordScreen({
           <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </section>
+
+      {warn === "start-over" ? (
+        <ConfirmAlert
+          title="Start over?"
+          body={`“${chapter.title}” recordings will be permanently deleted. This can’t be undone.`}
+          confirm="Start over"
+          onConfirm={() => {
+            setWarn(null);
+            void applyStartOver();
+          }}
+          onCancel={() => setWarn(null)}
+        />
+      ) : null}
+      {warn === "delete-tape" ? (
+        <ConfirmAlert
+          title="Delete recording?"
+          body="This chapter’s original tape and proof flags will be permanently deleted. This can’t be undone."
+          confirm="Delete"
+          onConfirm={() => {
+            setWarn(null);
+            onChange(clearOriginalTape(projectRef.current, chapterId));
+          }}
+          onCancel={() => setWarn(null)}
+        />
+      ) : null}
 
       {readingOpen ? (
         <BoothSheet title="Teleprompter" wide onClose={() => setReadingOpen(false)}>
