@@ -3,10 +3,10 @@ name: Pull request checks
 on:
   pull_request:
     branches:
-      - Lightbox-Interface
+      - main
   push:
     branches:
-      - Lightbox-Interface
+      - main
 
 permissions:
   contents: read
