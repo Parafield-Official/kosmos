@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { FadersIcon } from "@phosphor-icons/react/dist/csr/Faders";
+import { FileAudioIcon } from "@phosphor-icons/react/dist/csr/FileAudio";
+import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
 import "./index.css";
 
 type Page = "home" | "about" | "features" | "workflow" | "faq" | "download";
@@ -210,6 +213,12 @@ const notItems = [
   ["Not an AI narrator", "It will not read the book or clone a voice. This is for a human recording."],
 ];
 
+const aboutStages = [
+  { name: "Record with the teleprompter", copy: "The built-in teleprompter follows your voice and lights the current word, with room check, chapter takes, and line punches.", Icon: FileAudioIcon },
+  { name: "Proofread", copy: "Every mismatch stays connected to its place on the page and its audio, so each pickup is easy to review.", Icon: FileTextIcon },
+  { name: "Sound", copy: "Master, listen, check delivery specs, and prepare the finished audiobook pack.", Icon: FadersIcon },
+];
+
 function AboutPage() {
   return (
     <PageShell>
@@ -222,14 +231,17 @@ function AboutPage() {
           <p>You can punch a line without starting the chapter again, import an existing take, and export a named delivery pack when the title is ready. Authors and narrators can also work from the same project.</p>
         </article>
         <div className="stage-stack">
-          {[["01", "Record", "Built-in teleprompter that follows your voice, plus room check, chapter takes, and line punches."], ["02", "Proofread", "Every mismatch stays connected to its place on the page and its audio."], ["03", "Sound", "Master, listen, check delivery specs, and prepare the finished pack."]].map(([number, name, copy]) => (
-            <article className="stage-card liquid-glass" key={number}><span>{number}</span><div><h3>{name}</h3><p>{copy}</p></div></article>
+          {aboutStages.map(({ name, copy, Icon }) => (
+            <article className="stage-card liquid-glass" key={name}>
+              <div className="stage-copy"><h3>{name}</h3><p>{copy}</p></div>
+              <span className="stage-mark" aria-hidden="true"><Icon weight="regular" /></span>
+            </article>
           ))}
         </div>
       </section>
       <section className="section-block">
         <p className="eyebrow">What Kosmos is not</p>
-        <div className="card-grid three">{notItems.map(([title, copy], index) => <article className="content-card liquid-glass" key={title}><span className="card-number">0{index + 1}</span><h3>{title}</h3><p>{copy}</p></article>)}</div>
+        <div className="card-grid three">{notItems.map(([title, copy]) => <article className="content-card liquid-glass not-card" key={title}><h3>{title}</h3><p>{copy}</p></article>)}</div>
       </section>
       <ClosingPanel />
     </PageShell>
