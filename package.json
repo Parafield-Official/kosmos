@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Manishram-ai/kosmos.git"
+    "url": "git+https://github.com/Parafield-Official/kosmos.git"
   },
   "type": "module",
   "engines": {
@@ -88,7 +88,7 @@
     "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",
     "publish": {
       "provider": "github",
-      "owner": "Manishram-ai",
+      "owner": "Parafield-Official",
       "repo": "kosmos"
     },
     "mac": {
@@ -98,6 +98,7 @@
       ],
       "category": "public.app-category.music",
       "hardenedRuntime": true,
+      "notarize": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {

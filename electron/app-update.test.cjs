@@ -181,9 +181,9 @@ describe("desktop auto-update", () => {
   it("points already-installed copies at the public Kosmos GitHub releases", () => {
     expect(UPDATE_FEED).toEqual({
       provider: "github",
-      owner: "Manishram-ai",
+      owner: "Parafield-Official",
       repo: "kosmos",
     });
-    expect(RELEASE_PAGE).toBe("https://github.com/Manishram-ai/kosmos/releases/latest");
+    expect(RELEASE_PAGE).toBe("https://github.com/Parafield-Official/kosmos/releases/latest");
   });
 });

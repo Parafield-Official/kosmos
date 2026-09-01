@@ -8,6 +8,14 @@ release/
 .env.*
 !.env.example
 *.local
+
+# Apple/Windows release credentials must stay in Keychain or CI secrets.
+.asc/config.json
+.signing/
+*.p8
+*.p12
+*.pfx
+*.certSigningRequest
 __pycache__/
 .booth/
 vendor/bin/ffmpeg

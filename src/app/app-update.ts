@@ -1,4 +1,4 @@
-export const KOSMOS_RELEASE_PAGE = "https://github.com/Manishram-ai/kosmos/releases/latest";
+export const KOSMOS_RELEASE_PAGE = "https://github.com/Parafield-Official/kosmos/releases/latest";
 export const LAST_SEEN_VERSION_KEY = "kosmos.last-seen-version";
 
 export type AppUpdatePhase =

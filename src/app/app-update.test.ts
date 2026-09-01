@@ -121,7 +121,7 @@ describe("in-app update notice", () => {
       kind: "open-release",
       label: "Get the latest installer",
     });
-    expect(KOSMOS_RELEASE_PAGE).toBe("https://github.com/Manishram-ai/kosmos/releases/latest");
+    expect(KOSMOS_RELEASE_PAGE).toBe("https://github.com/Parafield-Official/kosmos/releases/latest");
   });
 
   it("tells a development copy that only installed apps keep themselves current", () => {

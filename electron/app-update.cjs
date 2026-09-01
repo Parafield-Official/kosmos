@@ -5,10 +5,10 @@
  */
 const UPDATE_FEED = {
   provider: "github",
-  owner: "Manishram-ai",
+  owner: "Parafield-Official",
   repo: "kosmos",
 };
-const RELEASE_PAGE = "https://github.com/Manishram-ai/kosmos/releases/latest";
+const RELEASE_PAGE = "https://github.com/Parafield-Official/kosmos/releases/latest";
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
 function copyFor(state) {

@@ -50,9 +50,9 @@ fallback.
    and confirm the local proofreading tool is ready. Release builds include the
    required tools; if a model is missing, setup downloads it once.
 
-After setup, recording, proofreading, mastering, and export run locally. Later
-versions arrive through the in-app updater; restart when you are not recording.
-Your book folder is unchanged.
+Download the current release once. After setup, recording, proofreading,
+mastering, and export run locally. Later versions arrive through the in-app
+updater; restart when you are not recording. Your book folder is unchanged.
 
 ## Start a book
 

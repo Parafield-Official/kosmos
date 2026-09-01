@@ -53,10 +53,10 @@ describe("packaged renderer configuration", () => {
     const version = packageJson.version;
     expect(readme).not.toContain("releases/latest");
     expect(readme).toContain(
-      `https://github.com/Manishram-ai/kosmos/releases/download/v${version}/Kosmos-${version}-mac-arm64.dmg`,
+      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-mac-arm64.dmg`,
     );
     expect(readme).toContain(
-      `https://github.com/Manishram-ai/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
+      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
     );
   });
 
@@ -65,7 +65,7 @@ describe("packaged renderer configuration", () => {
     expect("electron-updater" in packageJson.devDependencies).toBe(false);
     expect(packageJson.build.publish).toMatchObject({
       provider: "github",
-      owner: "Manishram-ai",
+      owner: "Parafield-Official",
       repo: "kosmos",
     });
     const macTargets = packageJson.build.mac.target;
@@ -75,10 +75,22 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/prerelease:\s*false/);
   });
 
+  it("requires signed and notarized macOS releases for reliable in-app updates", () => {
+    const mac = packageJson.build.mac as { notarize?: boolean };
+    expect(mac.notarize).toBe(true);
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("secrets.MAC_CSC_LINK");
+    expect(yaml).toContain("secrets.MAC_CSC_KEY_PASSWORD");
+    expect(yaml).toContain("secrets.APPLE_API_KEY_B64");
+    expect(yaml).toContain("secrets.APPLE_API_KEY_ID");
+    expect(yaml).toContain("secrets.APPLE_API_ISSUER");
+    expect(yaml).toContain("codesign --verify --deep --strict");
+    expect(yaml).toContain("xcrun stapler validate");
+  });
+
   it("tells people on the first public installer to download once, then stay current in-app", () => {
     const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
     expect(readme).toMatch(/download (this|the current)[\s\S]+once/i);
     expect(readme).toMatch(/later versions/i);
   });
 });
-
