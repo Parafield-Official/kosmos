@@ -59,8 +59,11 @@ export function markPigmentChosen() {
   }
 }
 
-/** Debug dock / access → app: show the pigment glass on the live vault. */
+/** First-run / Settings reset: show the pigment glass on the live vault. */
 export function offerPigment() {
+  if (hasChosenPigment()) {
+    return;
+  }
   try {
     window.sessionStorage.setItem(PIGMENT_OFFER_KEY, "1");
   } catch {
@@ -71,11 +74,11 @@ export function offerPigment() {
 
 export function shouldOfferPigment(): boolean {
   try {
-    if (window.sessionStorage.getItem(PIGMENT_OFFER_KEY) === "1") {
-      return true;
-    }
     if (window.localStorage.getItem(PIGMENT_KEY) === "1") {
       return false;
+    }
+    if (window.sessionStorage.getItem(PIGMENT_OFFER_KEY) === "1") {
+      return true;
     }
     // Users who finished the old flow already picked a colour in Settings.
     if (isOnboarded()) {
@@ -126,8 +129,8 @@ export const ACCESS_FOLDER_DENIED = "No workspace chosen.";
 export const ACCESS_BRIDGE_MISSING = "Restart the Electron app to enable system permission dialogs.";
 export const DEBUG_RESET_ACCESS = "reset access";
 export const COMMUNITY_HEADING = "Join our community";
-export const THEME_HEADING = "Choose a colour for the room.";
-export const THEME_LEAD = "The canvas stays white. Pigment tints atmosphere, light, and selected controls.";
+export const THEME_HEADING = "Pick a colour.";
+export const THEME_LEAD = "It tints the room. Pages stay white.";
 export const COMMUNITY_POINT_1_TITLE = "Connect with creators";
 export const COMMUNITY_POINT_1_BODY = "A place for authors, narrators, and audiobook lovers to connect and engage in conversations.";
 export const COMMUNITY_POINT_2_TITLE = "Make Kosmos better";

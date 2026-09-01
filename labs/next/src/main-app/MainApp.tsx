@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { PIGMENT_OFFER_EVENT, markPigmentChosen, shouldOfferPigment } from "../flow";
+import { PIGMENT_OFFER_EVENT, hasChosenPigment, markPigmentChosen, shouldOfferPigment } from "../flow";
 import {
   appendChapter,
   deleteBook,
@@ -69,6 +69,9 @@ export function MainApp() {
     };
     window.addEventListener(THEME_ACCENT_EVENT, onThemeAccent);
     function onPigmentOffer() {
+      if (hasChosenPigment()) {
+        return;
+      }
       setPickingPigment(true);
       setScreen({ name: "library" });
     }

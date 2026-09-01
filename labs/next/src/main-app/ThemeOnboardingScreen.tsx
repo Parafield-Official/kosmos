@@ -25,7 +25,6 @@ export function PigmentOnboardingPanel({ onComplete }: { onComplete: () => void 
                   <AccentIcon />
                   <strong>Theme colour</strong>
                 </div>
-                <p className="ma-set-sub">Atmosphere for the room. The canvas stays white.</p>
               </div>
               <ThemeColourPicker
                 accent={paint.value}

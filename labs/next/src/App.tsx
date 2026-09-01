@@ -9,6 +9,7 @@ import {
   MARK_MS,
   STATEMENT_MS,
   isRoomPlace,
+  hasChosenPigment,
   markOnboarded,
   offerPigment,
   prefersReducedMotion,
@@ -200,7 +201,9 @@ export function App() {
         key={`access-${flowSeed}`}
         initialSnapshot={accessSnapshot}
         onComplete={() => {
-          offerPigment();
+          if (!hasChosenPigment()) {
+            offerPigment();
+          }
           go("app");
         }}
       />
