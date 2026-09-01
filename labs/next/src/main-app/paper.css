@@ -212,170 +212,158 @@
 .vault-read-page > *,
 .ma-paper > *,
 .ma-teleprompter-inner,
-.ma-review-prose > * {
+.ma-review-prose > *:not(.ma-teleprompter-guide) {
   position: relative;
   z-index: 1;
 }
 
 /*
-  Prompt focus is a three-role palette, not inverted ink.
-  Paper stays the page. Text stays the page ink. The mark is a third
-  color: studio amber / highlighter gold on pale stock, a cream lamp on
-  already-tan papers, phosphor amber or ice or ember on dark screens.
-  Body ink on those marks stays readable (Kindle / highlighter rule).
+  Ten papers, ten marks. Paper, ink, and the playhead each keep their own
+  hue family so the bar is not a gold wash on every page. The bar sits
+  under the type; --tp-now stays the page ink and does not glow over it.
 */
 .ma-teleprompter,
 .ma-review-prose,
 .ma-review-prompt-wrap {
-  --tp-rail: rgba(232, 196, 122, 0.42);
-  --tp-rail-soft: rgba(232, 196, 122, 0.16);
-  --tp-word: rgba(232, 196, 122, 0.78);
-  --tp-word-soft: rgba(232, 196, 122, 0.3);
-  --tp-caret: #e8c47a;
-  --tp-now: #fffdf6;
-  --tp-now-glow: rgba(232, 196, 122, 0.28);
+  --tp-rail: rgba(143, 160, 180, 0.34);
+  --tp-rail-soft: rgba(143, 160, 180, 0.12);
+  --tp-word: rgba(143, 160, 180, 0.56);
+  --tp-word-soft: rgba(143, 160, 180, 0.22);
+  --tp-caret: #7a8ca0;
+  --tp-now: inherit;
+  --tp-now-glow: transparent;
   --tp-heading: color-mix(in srgb, currentColor 72%, transparent);
 }
 
-/* White #f6f6f4 / #161616 — Kosmos gold highlighter, not charcoal. */
+/* White #f6f6f4 — cool slate, digital gray. */
 .ma-teleprompter.is-white,
 .ma-review-prose.is-white,
 .ma-review-prompt-wrap.is-white {
-  --tp-rail: rgba(232, 196, 122, 0.48);
-  --tp-rail-soft: rgba(232, 196, 122, 0.18);
-  --tp-word: rgba(232, 196, 122, 0.82);
-  --tp-word-soft: rgba(232, 196, 122, 0.36);
-  --tp-caret: #c9a24e;
+  --tp-rail: rgba(143, 160, 180, 0.36);
+  --tp-rail-soft: rgba(143, 160, 180, 0.14);
+  --tp-word: rgba(143, 160, 180, 0.58);
+  --tp-word-soft: rgba(143, 160, 180, 0.24);
+  --tp-caret: #6e8296;
   --tp-now: #161616;
-  --tp-now-glow: rgba(232, 196, 122, 0.28);
   --tp-heading: color-mix(in srgb, #161616 88%, transparent);
 }
 
-/* Cream #f3eee6 / #1a1714 — honey, more saturated than the page. */
-.ma-teleprompter.is-cream,
-.ma-review-prose.is-cream,
-.ma-review-prompt-wrap.is-cream {
-  --tp-rail: rgba(217, 164, 65, 0.42);
-  --tp-rail-soft: rgba(217, 164, 65, 0.16);
-  --tp-word: rgba(217, 164, 65, 0.78);
-  --tp-word-soft: rgba(217, 164, 65, 0.32);
-  --tp-caret: #c48a2c;
-  --tp-now: #1a1714;
-  --tp-now-glow: rgba(217, 164, 65, 0.26);
-  --tp-heading: color-mix(in srgb, #1a1714 86%, transparent);
-}
-
-/* Ivory #f6ecd4 / #2a2218 — marigold, oranger than the yellow page. */
-.ma-teleprompter.is-ivory,
-.ma-review-prose.is-ivory,
-.ma-review-prompt-wrap.is-ivory {
-  --tp-rail: rgba(212, 137, 58, 0.4);
-  --tp-rail-soft: rgba(212, 137, 58, 0.16);
-  --tp-word: rgba(212, 137, 58, 0.74);
-  --tp-word-soft: rgba(212, 137, 58, 0.3);
-  --tp-caret: #b86c28;
-  --tp-now: #2a2218;
-  --tp-now-glow: rgba(212, 137, 58, 0.24);
-  --tp-heading: color-mix(in srgb, #2a2218 86%, transparent);
-}
-
-/* Sepia #cbb49a / #3d2d22 — cream lamp, lighter than the tan. */
-.ma-teleprompter.is-sepia,
-.ma-review-prose.is-sepia,
-.ma-review-prompt-wrap.is-sepia {
-  --tp-rail: rgba(244, 230, 196, 0.52);
-  --tp-rail-soft: rgba(244, 230, 196, 0.2);
-  --tp-word: rgba(244, 230, 196, 0.86);
-  --tp-word-soft: rgba(244, 230, 196, 0.4);
-  --tp-caret: #f4e6c4;
-  --tp-now: #3d2d22;
-  --tp-now-glow: rgba(244, 230, 196, 0.28);
-  --tp-heading: color-mix(in srgb, #3d2d22 88%, transparent);
-}
-
-/* Newsprint #d5ccb8 / #2c281f — editor yellow on gray stock. */
-.ma-teleprompter.is-newsprint,
-.ma-review-prose.is-newsprint,
-.ma-review-prompt-wrap.is-newsprint {
-  --tp-rail: rgba(230, 195, 92, 0.44);
-  --tp-rail-soft: rgba(230, 195, 92, 0.16);
-  --tp-word: rgba(230, 195, 92, 0.8);
-  --tp-word-soft: rgba(230, 195, 92, 0.34);
-  --tp-caret: #c9a334;
-  --tp-now: #2c281f;
-  --tp-now-glow: rgba(230, 195, 92, 0.26);
-  --tp-heading: color-mix(in srgb, #2c281f 86%, transparent);
-}
-
-/* Laid #efe4ce / #2a2318 — copper nib, off the cream weave. */
-.ma-teleprompter.is-laid,
-.ma-review-prose.is-laid,
-.ma-review-prompt-wrap.is-laid {
-  --tp-rail: rgba(196, 137, 74, 0.4);
-  --tp-rail-soft: rgba(196, 137, 74, 0.16);
-  --tp-word: rgba(196, 137, 74, 0.74);
-  --tp-word-soft: rgba(196, 137, 74, 0.3);
-  --tp-caret: #a86a32;
-  --tp-now: #2a2318;
-  --tp-now-glow: rgba(196, 137, 74, 0.24);
-  --tp-heading: color-mix(in srgb, #2a2318 86%, transparent);
-}
-
-/* Kraft #c49a62 / #2c1c0e — cream sunlight, not more brown. */
-.ma-teleprompter.is-kraft,
-.ma-review-prose.is-kraft,
-.ma-review-prompt-wrap.is-kraft {
-  --tp-rail: rgba(246, 234, 208, 0.5);
-  --tp-rail-soft: rgba(246, 234, 208, 0.2);
-  --tp-word: rgba(246, 234, 208, 0.84);
-  --tp-word-soft: rgba(246, 234, 208, 0.4);
-  --tp-caret: #f6ead0;
-  --tp-now: #2c1c0e;
-  --tp-now-glow: rgba(246, 234, 208, 0.28);
-  --tp-heading: color-mix(in srgb, #2c1c0e 90%, transparent);
-}
-
-/* Black #121214 — studio amber phosphor, not the cream text. */
+/* Black #121214 — moonlight silver. */
 .ma-teleprompter.is-black,
 .ma-teleprompter.is-dark,
 .ma-review-prose.is-black,
 .ma-review-prose.is-dark,
 .ma-review-prompt-wrap.is-black,
 .ma-review-prompt-wrap.is-dark {
-  --tp-rail: rgba(232, 196, 122, 0.4);
-  --tp-rail-soft: rgba(232, 196, 122, 0.16);
-  --tp-word: rgba(232, 196, 122, 0.72);
-  --tp-word-soft: rgba(232, 196, 122, 0.28);
-  --tp-caret: #e8c47a;
+  --tp-rail: rgba(197, 208, 222, 0.34);
+  --tp-rail-soft: rgba(197, 208, 222, 0.12);
+  --tp-word: rgba(197, 208, 222, 0.56);
+  --tp-word-soft: rgba(197, 208, 222, 0.22);
+  --tp-caret: #c5d0de;
   --tp-now: #fffdf6;
-  --tp-now-glow: rgba(232, 196, 122, 0.36);
   --tp-heading: color-mix(in srgb, #fffdf6 70%, transparent);
 }
 
-/* Glass — ice, off the warm cream type. */
+/* Glass — ice cyan. */
 .ma-teleprompter.is-glass,
 .ma-review-prose.is-glass,
 .ma-review-prompt-wrap.is-glass {
-  --tp-rail: rgba(126, 200, 224, 0.38);
-  --tp-rail-soft: rgba(126, 200, 224, 0.14);
-  --tp-word: rgba(126, 200, 224, 0.7);
-  --tp-word-soft: rgba(126, 200, 224, 0.28);
-  --tp-caret: #8ec8e0;
+  --tp-rail: rgba(126, 184, 212, 0.36);
+  --tp-rail-soft: rgba(126, 184, 212, 0.14);
+  --tp-word: rgba(126, 184, 212, 0.58);
+  --tp-word-soft: rgba(126, 184, 212, 0.24);
+  --tp-caret: #7eb8d4;
   --tp-now: #f7f2eb;
-  --tp-now-glow: rgba(126, 200, 224, 0.32);
   --tp-heading: color-mix(in srgb, #f7f2eb 70%, transparent);
 }
 
-/* Smoke — ember, warmer and more orange than the cream type. */
+/* Smoke — dusty mauve. */
 .ma-teleprompter.is-smoke,
 .ma-review-prose.is-smoke,
 .ma-review-prompt-wrap.is-smoke {
-  --tp-rail: rgba(232, 150, 74, 0.4);
-  --tp-rail-soft: rgba(232, 150, 74, 0.16);
-  --tp-word: rgba(232, 150, 74, 0.72);
-  --tp-word-soft: rgba(232, 150, 74, 0.28);
-  --tp-caret: #e8964a;
+  --tp-rail: rgba(196, 154, 168, 0.36);
+  --tp-rail-soft: rgba(196, 154, 168, 0.14);
+  --tp-word: rgba(196, 154, 168, 0.58);
+  --tp-word-soft: rgba(196, 154, 168, 0.24);
+  --tp-caret: #c49aa8;
   --tp-now: #fff6e8;
-  --tp-now-glow: rgba(232, 150, 74, 0.34);
   --tp-heading: color-mix(in srgb, #fff6e8 70%, transparent);
+}
+
+/* Cream #f3eee6 — linen taupe. */
+.ma-teleprompter.is-cream,
+.ma-review-prose.is-cream,
+.ma-review-prompt-wrap.is-cream {
+  --tp-rail: rgba(200, 184, 160, 0.4);
+  --tp-rail-soft: rgba(200, 184, 160, 0.16);
+  --tp-word: rgba(200, 184, 160, 0.62);
+  --tp-word-soft: rgba(200, 184, 160, 0.26);
+  --tp-caret: #a89478;
+  --tp-now: #1a1714;
+  --tp-heading: color-mix(in srgb, #1a1714 86%, transparent);
+}
+
+/* Ivory #f6ecd4 — wheat. */
+.ma-teleprompter.is-ivory,
+.ma-review-prose.is-ivory,
+.ma-review-prompt-wrap.is-ivory {
+  --tp-rail: rgba(212, 188, 132, 0.42);
+  --tp-rail-soft: rgba(212, 188, 132, 0.16);
+  --tp-word: rgba(212, 188, 132, 0.64);
+  --tp-word-soft: rgba(212, 188, 132, 0.26);
+  --tp-caret: #b89a58;
+  --tp-now: #2a2218;
+  --tp-heading: color-mix(in srgb, #2a2218 86%, transparent);
+}
+
+/* Sepia #cbb49a — russet. */
+.ma-teleprompter.is-sepia,
+.ma-review-prose.is-sepia,
+.ma-review-prompt-wrap.is-sepia {
+  --tp-rail: rgba(160, 112, 72, 0.36);
+  --tp-rail-soft: rgba(160, 112, 72, 0.14);
+  --tp-word: rgba(160, 112, 72, 0.56);
+  --tp-word-soft: rgba(160, 112, 72, 0.22);
+  --tp-caret: #8a5a38;
+  --tp-now: #3d2d22;
+  --tp-heading: color-mix(in srgb, #3d2d22 88%, transparent);
+}
+
+/* Newsprint #d5ccb8 — pencil blue-gray. */
+.ma-teleprompter.is-newsprint,
+.ma-review-prose.is-newsprint,
+.ma-review-prompt-wrap.is-newsprint {
+  --tp-rail: rgba(124, 136, 148, 0.36);
+  --tp-rail-soft: rgba(124, 136, 148, 0.14);
+  --tp-word: rgba(124, 136, 148, 0.58);
+  --tp-word-soft: rgba(124, 136, 148, 0.24);
+  --tp-caret: #6a7682;
+  --tp-now: #2c281f;
+  --tp-heading: color-mix(in srgb, #2c281f 86%, transparent);
+}
+
+/* Laid #efe4ce — sage. */
+.ma-teleprompter.is-laid,
+.ma-review-prose.is-laid,
+.ma-review-prompt-wrap.is-laid {
+  --tp-rail: rgba(138, 152, 112, 0.36);
+  --tp-rail-soft: rgba(138, 152, 112, 0.14);
+  --tp-word: rgba(138, 152, 112, 0.58);
+  --tp-word-soft: rgba(138, 152, 112, 0.24);
+  --tp-caret: #6e7a54;
+  --tp-now: #2a2318;
+  --tp-heading: color-mix(in srgb, #2a2318 86%, transparent);
+}
+
+/* Kraft #c49a62 — sand. */
+.ma-teleprompter.is-kraft,
+.ma-review-prose.is-kraft,
+.ma-review-prompt-wrap.is-kraft {
+  --tp-rail: rgba(224, 184, 120, 0.42);
+  --tp-rail-soft: rgba(224, 184, 120, 0.16);
+  --tp-word: rgba(224, 184, 120, 0.64);
+  --tp-word-soft: rgba(224, 184, 120, 0.26);
+  --tp-caret: #c49a62;
+  --tp-now: #2c1c0e;
+  --tp-heading: color-mix(in srgb, #2c1c0e 90%, transparent);
 }

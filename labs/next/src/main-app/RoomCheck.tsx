@@ -260,7 +260,7 @@ export function RoomCheck({
         Sit still for {TARGET_SECONDS} seconds. This measures the room — fans, traffic, computer, mic hiss — not your
         voice. It does not lock recording.
       </p>
-      <div className="ma-step-actions">
+      <div className="ma-room-act">
         <button type="button" className="btn btn-clear" disabled={recording} onClick={() => void runCheck()}>
           {recording ? `Listening… ${elapsed.toFixed(0)}s` : shown ? "Check again" : "Record silence"}
         </button>
@@ -273,8 +273,10 @@ export function RoomCheck({
       {error ? <p className="ma-error">{error}</p> : null}
       {shown && quality ? (
         <div className={`ma-room-result is-${shown.status}`} aria-live="polite">
-          <p className="ma-room-status">{quality.title}</p>
-          {checkedAt ? <p className="ma-room-when">Checked {checkedAt}</p> : null}
+          <header className="ma-room-verdict">
+            <p className="ma-room-status">{quality.title}</p>
+            {checkedAt ? <p className="ma-room-when">Checked {checkedAt}</p> : null}
+          </header>
           <p className="ma-room-detail">{quality.detail}</p>
           <dl>
             <div>

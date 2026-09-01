@@ -1205,6 +1205,13 @@ export function RecordScreen({
       <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
         <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
           <div className="ma-teleprompter-scroll" ref={promptRef}>
+            <TeleprompterFocus
+              containerRef={promptRef}
+              nowIndex={cursor}
+              from={highlight === "word" ? cursor : (band?.from ?? cursor)}
+              to={highlight === "word" ? cursor : (band?.to ?? cursor)}
+              getWord={getPromptWord}
+            />
             <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
               {script.paragraphs.length ? (
                 script.paragraphs.map((para, paraIndex) => {
@@ -1260,13 +1267,6 @@ export function RecordScreen({
               )}
             </div>
           </div>
-          <TeleprompterFocus
-            containerRef={promptRef}
-            nowIndex={cursor}
-            from={highlight === "word" ? cursor : (band?.from ?? cursor)}
-            to={highlight === "word" ? cursor : (band?.to ?? cursor)}
-            getWord={getPromptWord}
-          />
           {lostPlace ? (
             <button
               type="button"

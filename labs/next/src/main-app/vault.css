@@ -4810,7 +4810,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  padding: 0.85rem 1rem 0.55rem 1.15rem;
+  padding: 1.1rem 1.25rem 0.95rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .booth-sheet-head h2 {
@@ -4843,7 +4844,11 @@
 .booth-sheet-body {
   min-height: 0;
   overflow: auto;
-  padding: 0.2rem 1.15rem 1.15rem;
+  padding: 1.15rem 1.25rem 1.35rem;
+}
+
+.booth-sheet:has(.ma-room) {
+  width: min(32.5rem, 100%);
 }
 
 .booth-sheet-copy {

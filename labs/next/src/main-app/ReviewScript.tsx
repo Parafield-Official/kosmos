@@ -317,6 +317,13 @@ export function ReviewScript({
           }}
           onMouseUp={onMouseUp}
         >
+          <TeleprompterFocus
+            containerRef={rootRef}
+            nowIndex={nowToken}
+            from={nowBand?.from ?? nowToken}
+            to={nowBand?.to ?? nowToken}
+            getWord={(index) => tokenEl(index)}
+          />
           {blocks.map((block, index) => (
             <p
               key={index}
@@ -351,13 +358,6 @@ export function ReviewScript({
             </p>
           ))}
         </div>
-        <TeleprompterFocus
-          containerRef={rootRef}
-          nowIndex={nowToken}
-          from={nowBand?.from ?? nowToken}
-          to={nowBand?.to ?? nowToken}
-          getWord={(index) => tokenEl(index)}
-        />
         <button
           type="button"
           className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
