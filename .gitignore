@@ -33,3 +33,4 @@ vendor/models/*
 .live-run/
 .local/
 design/shots/
+website-dist/
