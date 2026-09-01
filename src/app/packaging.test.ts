@@ -84,16 +84,16 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/prerelease:\s*false/);
   });
 
-  it("only releases tags whose commits were merged into Lightbox-Interface", () => {
+  it("only releases tags whose commits were merged into main", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
-    expect(yaml).toContain("refs/remotes/origin/Lightbox-Interface");
+    expect(yaml).toContain("refs/remotes/origin/main");
     expect(yaml).toContain('git merge-base --is-ancestor "$GITHUB_SHA"');
     expect(yaml).toMatch(/package:\n\s+needs:\s+authorize/);
   });
 
-  it("runs required build and test checks for Lightbox pull requests", () => {
+  it("runs required build and test checks for main pull requests", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/ci.yml"), "utf8");
-    expect(yaml).toMatch(/pull_request:\n\s+branches:\n\s+- Lightbox-Interface/);
+    expect(yaml).toMatch(/pull_request:\n\s+branches:\n\s+- main/);
     expect(yaml).toContain("name: Build and test");
     expect(yaml).toContain("run: npm run build");
     expect(yaml).toContain("run: npm test");
