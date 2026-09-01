@@ -169,7 +169,15 @@ function QuoteSection() {
 }
 
 function PageBackdrop() {
-  return <div className="page-backdrop" aria-hidden="true"><video autoPlay muted loop playsInline preload="metadata"><source src={VIDEO} type="video/mp4" /></video><span /></div>;
+  return (
+    <div className="page-backdrop" aria-hidden="true">
+      <video autoPlay muted loop playsInline preload="metadata"><source src={VIDEO} type="video/mp4" /></video>
+      <span className="page-backdrop-shade" />
+      <img className="page-backdrop-rainbow" src={RAINBOW} alt="" />
+      <img className="page-backdrop-cloud page-backdrop-cloud-left" src={CLOUD} alt="" />
+      <img className="page-backdrop-cloud page-backdrop-cloud-right" src={CLOUD} alt="" />
+    </div>
+  );
 }
 
 function PageHero({ kicker, title, lead }: { kicker: string; title: ReactNode; lead: string }) {
