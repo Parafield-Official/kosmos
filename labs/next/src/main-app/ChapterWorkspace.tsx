@@ -507,8 +507,8 @@ function MasteringStep({
     <div className="quest-master">
       <div className="quest-master-stage">
         <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
-          {Array.from({ length: 28 }, (_, index) => (
-            <i key={index} style={{ animationDelay: `${index * 36}ms`, animationDuration: `${0.72 + (index % 5) * 0.16}s` }} />
+          {Array.from({ length: 40 }, (_, index) => (
+            <i key={index} style={{ animationDelay: `${index * 28}ms`, animationDuration: `${0.55 + (index % 5) * 0.12}s` }} />
           ))}
         </div>
         <div className="quest-listen">
@@ -528,51 +528,37 @@ function MasteringStep({
           >
             {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
           </button>
-          <div className="quest-listen-body">
-            <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
-              {(
-                [
-                  { id: "original" as const, label: "Original", file: chapter.originalFile },
-                  { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
-                  { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={listen === item.id}
-                  className={listen === item.id ? "is-on" : undefined}
-                  disabled={!item.file}
-                  onClick={() => {
-                    setListen(item.id);
-                    if (playing) {
-                      void playSlot(item.file, item.id);
-                    }
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <p className="quest-listen-hint">
-              {listen === "mastered"
-                ? "Ready for Audible"
-                : listen === "working"
-                  ? "After proofreading"
-                  : "The booth tape"}
-            </p>
+          <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
+            {(
+              [
+                { id: "original" as const, label: "Original", file: chapter.originalFile },
+                { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
+                { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={listen === item.id}
+                className={listen === item.id ? "is-on" : undefined}
+                disabled={!item.file}
+                onClick={() => {
+                  setListen(item.id);
+                  if (playing) {
+                    void playSlot(item.file, item.id);
+                  }
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
         </div>
-        <button
-          type="button"
-          className="quest-act is-primary quest-master-go"
-          onClick={() => void runMaster()}
-          disabled={mastering}
-        >
-          {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master this chapter"}
-        </button>
         <div className="quest-master-acts">
+          <button type="button" className="quest-act is-primary" onClick={() => void runMaster()} disabled={mastering}>
+            {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master this chapter"}
+          </button>
           <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
             {checking ? "Measuring…" : "Check for Audible"}
           </button>
