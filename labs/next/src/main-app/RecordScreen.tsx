@@ -33,7 +33,9 @@ import type { GlossaryEntry } from "../../../../src/core/project/types";
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
 import { ConfirmAlert } from "./ConfirmAlert";
+import { alignedManuscriptTokens } from "../../../../src/core/proof/selection";
 import { TapePlayer } from "./TapePlayer";
+import { TeleprompterFocus } from "./TeleprompterFocus";
 import {
   applyChapterPickup,
   applyOriginalTape,
@@ -60,8 +62,10 @@ import {
   isSpokenChapterHeading,
   measureRows,
   mergeRecordedWords,
+  paragraphsFromHtml,
   resumeSecondsOf,
 } from "./booth";
+import { originalChapterTranscript, recordedWordAtTime, tokenIndexAtTime, workingChapterTranscript } from "./review-timing";
 
 const HIGHLIGHT_KEY = "kosmos-booth-highlight";
 const SPACING_KEY = "kosmos-booth-spacing";
@@ -230,6 +234,9 @@ export function RecordScreen({
   chapterRef.current = chapter;
   projectRef.current = project;
   expectedRef.current = script.expected;
+  const manuscriptText = useMemo(() => paragraphsFromHtml(chapterHtml).join("\n"), [chapterHtml]);
+  const manuscriptRef = useRef(manuscriptText);
+  manuscriptRef.current = manuscriptText;
   // Live follow is deliberately navigation-only. Final proofing below runs
   // WhisperX against the saved tape and owns all mismatch/pause flags.
   pickupsRef.current = chapter?.pickups ?? [];
@@ -354,6 +361,29 @@ export function RecordScreen({
     setLostPlace(false);
     scrollToCursor(cursorRef.current);
   }, [scrollToCursor]);
+
+  const getPromptWord = useCallback((index: number) => wordRefs.current.get(index) ?? null, []);
+
+  const syncCursorFromTape = useCallback((seconds: number, take: "original" | "working") => {
+    if (recordingRef.current) {
+      return;
+    }
+    const current = chapterRef.current;
+    if (!current) {
+      return;
+    }
+    const manuscript = manuscriptRef.current;
+    const words =
+      take === "working" ? workingChapterTranscript(manuscript, current) : originalChapterTranscript(manuscript, current);
+    const aligned = words.length ? alignedManuscriptTokens(manuscript, words) : [];
+    const index = tokenIndexAtTime(aligned, seconds) ?? recordedWordAtTime(current.recordedWords, seconds);
+    if (index == null) {
+      return;
+    }
+    followLiveRef.current = true;
+    cursorRef.current = index;
+    setCursor(index);
+  }, []);
 
   const updateBand = useCallback(
     (wordIndex: number) => {
@@ -1082,10 +1112,13 @@ export function RecordScreen({
               )}
             </div>
           </div>
-          <div className="ma-teleprompter-guide" aria-hidden="true">
-            <span className="ma-teleprompter-caret" />
-            <span className="ma-teleprompter-caret is-right" />
-          </div>
+          <TeleprompterFocus
+            containerRef={promptRef}
+            nowIndex={cursor}
+            from={highlight === "word" ? cursor : (band?.from ?? cursor)}
+            to={highlight === "word" ? cursor : (band?.to ?? cursor)}
+            getWord={getPromptWord}
+          />
           {lostPlace ? (
             <button
               type="button"
@@ -1188,8 +1221,20 @@ export function RecordScreen({
           {(originalUrl || workingUrl) && !recording ? (
             <div className="ma-booth-panel ma-tape">
               <p className="ma-booth-kicker">Tape</p>
-              {originalUrl ? <TapePlayer src={originalUrl} label="Original" /> : null}
-              {workingUrl ? <TapePlayer src={workingUrl} label="Working" /> : null}
+              {originalUrl ? (
+                <TapePlayer
+                  src={originalUrl}
+                  label="Original"
+                  onTime={(seconds) => syncCursorFromTape(seconds, "original")}
+                />
+              ) : null}
+              {workingUrl ? (
+                <TapePlayer
+                  src={workingUrl}
+                  label="Working"
+                  onTime={(seconds) => syncCursorFromTape(seconds, "working")}
+                />
+              ) : null}
             </div>
           ) : null}
 

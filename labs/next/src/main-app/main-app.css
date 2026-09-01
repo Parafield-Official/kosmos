@@ -1686,7 +1686,12 @@
 
 .ma-room-result {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.55rem;
+  margin-top: 0.15rem;
+  padding: 1.15rem 1.2rem 1.2rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .ma-room-result .ma-room-status {
@@ -2518,8 +2523,7 @@
 }
 
 .ma-tp-word.in-band {
-  background: rgba(255, 255, 255, 0.14);
-  padding: 0.1em 0;
+  background: none;
 }
 
 .ma-record-speed {
@@ -2599,10 +2603,11 @@
 }
 
 .ma-tp-word.is-now {
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.34);
-  color: #211a14;
-  padding: 0 0.06em;
+  background: none;
+  box-shadow: none;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.42);
+  padding: 0;
 }
 
 .ma-tp-word.is-flagged {
@@ -2633,6 +2638,12 @@
 .ma-teleprompter.is-cream .ma-tp-line.is-current,
 .ma-teleprompter.is-sepia .ma-tp-line.is-current {
   color: inherit;
+}
+
+.ma-teleprompter.is-cream .ma-tp-word.is-now,
+.ma-teleprompter.is-sepia .ma-tp-word.is-now {
+  color: inherit;
+  text-shadow: 0 0 14px rgba(40, 28, 16, 0.22);
 }
 
 .ma-teleprompter.font-sans .ma-teleprompter-inner {
@@ -2756,7 +2767,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-tp-word.is-now {
-  color: #211a14;
+  color: #fff;
 }
 
 .ma-booth-settings {
@@ -2934,7 +2945,55 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   position: absolute;
   inset: 0;
   z-index: 2;
+  overflow: hidden;
   pointer-events: none;
+}
+
+.ma-tp-rail {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 68% 120% at 50% 50%,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.16) 46%,
+    transparent 78%
+  );
+}
+
+.ma-tp-rail.is-word {
+  background: radial-gradient(
+    ellipse 72% 130% at 50% 50%,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(255, 255, 255, 0.28) 48%,
+    transparent 80%
+  );
+}
+
+.ma-teleprompter.is-cream .ma-tp-rail,
+.ma-teleprompter.is-sepia .ma-tp-rail,
+.ma-review-prompt-wrap.is-cream .ma-tp-rail,
+.ma-review-prompt-wrap.is-sepia .ma-tp-rail,
+.ma-review-prompt-wrap.is-ivory .ma-tp-rail {
+  background: radial-gradient(
+    ellipse 68% 120% at 50% 50%,
+    rgba(40, 28, 16, 0.16) 0%,
+    rgba(40, 28, 16, 0.07) 46%,
+    transparent 78%
+  );
+}
+
+.ma-teleprompter.is-cream .ma-tp-rail.is-word,
+.ma-teleprompter.is-sepia .ma-tp-rail.is-word,
+.ma-review-prompt-wrap.is-cream .ma-tp-rail.is-word,
+.ma-review-prompt-wrap.is-sepia .ma-tp-rail.is-word,
+.ma-review-prompt-wrap.is-ivory .ma-tp-rail.is-word {
+  background: radial-gradient(
+    ellipse 72% 130% at 50% 50%,
+    rgba(40, 28, 16, 0.3) 0%,
+    rgba(40, 28, 16, 0.12) 48%,
+    transparent 80%
+  );
 }
 
 .ma-teleprompter-caret {
@@ -2954,6 +3013,17 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   right: 10px;
   border-left: 0;
   border-right: 8px solid rgba(255, 255, 255, 0.88);
+}
+
+.ma-teleprompter.is-cream .ma-teleprompter-caret,
+.ma-review-prompt-wrap.is-cream .ma-teleprompter-caret {
+  border-left-color: rgba(32, 24, 18, 0.82);
+}
+
+.ma-teleprompter.is-cream .ma-teleprompter-caret.is-right,
+.ma-review-prompt-wrap.is-cream .ma-teleprompter-caret.is-right {
+  border-left-color: transparent;
+  border-right-color: rgba(32, 24, 18, 0.82);
 }
 
 .ma-recorder {
@@ -4533,6 +4603,11 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   gap: 0.55rem;
 }
 
+.ma-proof-prompt .ma-review-prompt-wrap {
+  flex: 1;
+  min-height: 0;
+}
+
 .ma-proof-prompt .ma-review-prose {
   flex: 1;
   min-height: 0;
@@ -4719,11 +4794,29 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-review-word.in-band {
-  background: rgba(255, 255, 255, 0.1);
+  background: none;
 }
 
 .ma-review-word.is-now {
-  box-shadow: inset 0 -2px currentColor;
+  background: none;
+  box-shadow: none;
+  color: #fff;
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.42);
+}
+
+.ma-review-prose.is-cream .ma-review-word.is-now,
+.ma-review-prose.is-sepia .ma-review-word.is-now,
+.ma-review-prose.is-ivory .ma-review-word.is-now {
+  color: inherit;
+  text-shadow: 0 0 14px rgba(40, 28, 16, 0.22);
+}
+
+.ma-review-prompt-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ma-review-embed > .ma-overview-head {
@@ -5794,9 +5887,16 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-tp-word.is-now {
-  background: rgba(255, 255, 255, 0.92);
-  color: #101012;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.34), 0 0 18px rgba(255, 255, 255, 0.16);
+  background: none;
+  color: #fff;
+  box-shadow: none;
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.42);
+}
+
+.ma-teleprompter.is-cream .ma-tp-word.is-now,
+.ma-teleprompter.is-sepia .ma-tp-word.is-now {
+  color: inherit;
+  text-shadow: 0 0 14px rgba(40, 28, 16, 0.22);
 }
 
 .ma-highlight-modes {

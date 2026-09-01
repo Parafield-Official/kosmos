@@ -122,6 +122,17 @@ export function VaultRoom({
       data-lamps={lamps}
       data-overflow={projects.length > VISIBLE_ROWS * COLUMNS ? "true" : "false"}
       aria-label="Your workspace"
+      style={
+        {
+          "--lamp-0": (lamps >> 0) & 1,
+          "--lamp-1": (lamps >> 1) & 1,
+          "--lamp-2": (lamps >> 2) & 1,
+          "--lamp-3": (lamps >> 3) & 1,
+          "--lamp-4": (lamps >> 4) & 1,
+          "--lamp-count":
+            ((lamps >> 0) & 1) + ((lamps >> 1) & 1) + ((lamps >> 2) & 1) + ((lamps >> 3) & 1) + ((lamps >> 4) & 1),
+        } as CSSProperties
+      }
     >
       <div className="vault-shell">
         <div className="vault-opening">
@@ -148,6 +159,15 @@ export function VaultRoom({
                     key={index}
                     data-on={((lamps >> index) & 1) === 1 ? "true" : "false"}
                     style={{ "--splay": `${(index - 2) * 4}deg` } as CSSProperties}
+                  />
+                ))}
+              </span>
+              <span className="vault-pools" aria-hidden="true">
+                {Array.from({ length: 5 }, (_, index) => (
+                  <i
+                    className="vault-pool"
+                    key={index}
+                    data-on={((lamps >> index) & 1) === 1 ? "true" : "false"}
                   />
                 ))}
               </span>
@@ -347,12 +367,14 @@ function VaultSlot({
       className={project ? "vault-slot" : "vault-slot is-empty"}
       data-row={row}
       data-col={col}
+      data-col-lit={((lamps >> col) & 1) === 1 ? "true" : "false"}
       data-lifted={lifted ? "true" : "false"}
       style={
         {
           "--irr": Math.min(1.35, light.irr / Math.max(peakLight, 1e-6)),
           "--cover-irr": Math.min(1.4, light.cover / Math.max(peakLight, 1e-6)),
           "--key-x": light.keyX,
+          "--col-lit": (lamps >> col) & 1,
         } as CSSProperties
       }
     >

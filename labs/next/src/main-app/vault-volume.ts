@@ -50,8 +50,8 @@ const VOLUME_FRAG = /* glsl */ `
     float shell = pow(1.0 - abs(dot(normalize(vNormal), view)), 1.35);
     float along = pow(max(dot(-view, uLightDir), 0.0), 5.0);
     float glow = cone * atten * uIntensity * uShown * mix(0.22, 0.95, shell) * mix(0.75, 1.25, along);
-    vec3 rgb = vec3(0.50) + vec3(1.0, 0.94, 0.86) * glow * 0.14;
-    rgb = clamp(rgb, vec3(0.47), vec3(0.62));
+    vec3 rgb = vec3(0.50) + vec3(1.0, 0.94, 0.86) * glow * 0.22;
+    rgb = clamp(rgb, vec3(0.28), vec3(0.72));
     gl_FragColor = vec4(rgb, 1.0);
   }
 `;
@@ -140,7 +140,7 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
   const draw = () => {
     if (!running) return;
     const state = getState();
-    const target = state.lit ? 1 : 0.14;
+    const target = state.lit ? 1 : 0.08;
     shown += (target - shown) * 0.14;
     if (Math.abs(target - shown) < 0.003) shown = target;
     lastLamps = state.lamps;
@@ -166,7 +166,7 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
   const poll = window.setInterval(() => {
     if (!running) return;
     const state = getState();
-    const target = state.lit ? 1 : 0.14;
+    const target = state.lit ? 1 : 0.08;
     if (state.lamps !== lastLamps || Math.abs(target - shown) > 0.003) schedule();
   }, 120);
   schedule();

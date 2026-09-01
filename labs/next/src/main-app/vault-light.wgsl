@@ -382,7 +382,7 @@ fn shadeSurface(hit: Hit) -> vec3f {
     return vec4f(identity, 1.0);
   }
   if (!anyLamp()) {
-    return vec4f(identity, 1.0);
+    return vec4f(vec3f(0.32), 1.0);
   }
   let strength = mix(0.0, 1.0, saturate(params.lit));
   let N = hit.n;
@@ -404,7 +404,7 @@ fn shadeSurface(hit: Hit) -> vec3f {
   } else if (hit.well > 0.5 && N.z > 0.7) {
     lit += vec3f(-0.04);
   }
-  var rgb = identity + (lit - vec3f(0.11)) * 0.56 * strength;
-  rgb = clamp(rgb, vec3f(0.36), vec3f(0.68));
+  var rgb = identity + (lit - vec3f(0.11)) * 0.72 * strength;
+  rgb = clamp(rgb, vec3f(0.22), vec3f(0.78));
   return vec4f(rgb, 1.0);
 }

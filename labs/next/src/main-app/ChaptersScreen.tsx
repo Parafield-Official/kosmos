@@ -334,7 +334,11 @@ function QuestNode({
           </p>
         </div>
         <div className="quest-acts">
-          <button type="button" className="quest-act is-primary" onClick={onOpen}>
+          <button
+            type="button"
+            className={`quest-act is-primary${stage === "done" ? " is-complete" : ""}`}
+            onClick={onOpen}
+          >
             {action.icon}
             {action.label}
           </button>
@@ -358,10 +362,13 @@ function QuestNode({
 }
 
 function chapterPrimaryAction(stage: ChapterStage): { label: string; icon: ReactNode } {
+  if (stage === "done") {
+    return { label: "Done", icon: <DoneGlyph /> };
+  }
   if (stage === "proofing") {
     return { label: "Proofread", icon: <ProofGlyph /> };
   }
-  if (stage === "mastering" || stage === "done") {
+  if (stage === "mastering") {
     return { label: "Master", icon: <WaveGlyph /> };
   }
   return { label: "Record", icon: <MicGlyph /> };
@@ -504,6 +511,15 @@ function WaveGlyph() {
   return (
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M2.6 8h1.1M4.8 5.2v5.6M7 3.8v8.4M9.2 5.8v4.4M11.4 4.4v7.2M13.6 7.4v1.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DoneGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5.2 8.1 7.1 10l3.7-4.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

@@ -10,6 +10,7 @@ import {
 import type { TranscriptWord } from "../../../../src/core/proof/align";
 import { flagKindLabel } from "./flag-kind";
 import { tokenIndexAtTime, tokenSpanFromSelection } from "./review-timing";
+import { TeleprompterFocus } from "./TeleprompterFocus";
 import type { ChapterPickup, PromptHighlightMode, PromptTheme } from "./store";
 
 /**
@@ -306,59 +307,68 @@ export function ReviewScript({
         </div>
       ) : null}
       {fail ? <p className="ma-error">{fail}</p> : null}
-      <div
-        ref={rootRef}
-        className={`ma-review-prose neu-card is-${theme}`}
-        style={{
-          ...(fontPx ? { fontSize: `${fontPx}px` } : {}),
-          ...(lineSpacing ? { lineHeight: lineSpacing } : {}),
-        }}
-        onMouseUp={onMouseUp}
-      >
-        {blocks.map((block, index) => (
-          <p
-            key={index}
-            className={
-              chapterTitle && isSpokenChapterHeading(block.parts.map((part) => part.text).join(""), chapterTitle)
-                ? "is-heading"
-                : undefined
-            }
-          >
-            {block.parts.map((part, partIndex) =>
-              part.tokenIndex === undefined ? (
-                <span key={partIndex}>{part.text}</span>
-              ) : (
-                <FlagWord
-                  key={partIndex}
-                  tokenIndex={part.tokenIndex}
-                  text={part.text}
-                  selected={Boolean(range && part.tokenIndex >= range.from && part.tokenIndex <= range.to)}
-                  pickup={pickupByToken.get(part.tokenIndex)}
-                  focused={Boolean(
-                    pickupByToken.get(part.tokenIndex) &&
-                      pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
-                  )}
-                  isNow={nowToken === part.tokenIndex}
-                  inBand={Boolean(
-                    nowBand && part.tokenIndex >= nowBand.from && part.tokenIndex <= nowBand.to,
-                  )}
-                  onFlag={(pickup) => onRedo(pickup)}
-                />
-              ),
-            )}
-          </p>
-        ))}
+      <div className={`ma-review-prompt-wrap is-${theme}`}>
+        <div
+          ref={rootRef}
+          className={`ma-review-prose neu-card is-${theme}`}
+          style={{
+            ...(fontPx ? { fontSize: `${fontPx}px` } : {}),
+            ...(lineSpacing ? { lineHeight: lineSpacing } : {}),
+          }}
+          onMouseUp={onMouseUp}
+        >
+          {blocks.map((block, index) => (
+            <p
+              key={index}
+              className={
+                chapterTitle && isSpokenChapterHeading(block.parts.map((part) => part.text).join(""), chapterTitle)
+                  ? "is-heading"
+                  : undefined
+              }
+            >
+              {block.parts.map((part, partIndex) =>
+                part.tokenIndex === undefined ? (
+                  <span key={partIndex}>{part.text}</span>
+                ) : (
+                  <FlagWord
+                    key={partIndex}
+                    tokenIndex={part.tokenIndex}
+                    text={part.text}
+                    selected={Boolean(range && part.tokenIndex >= range.from && part.tokenIndex <= range.to)}
+                    pickup={pickupByToken.get(part.tokenIndex)}
+                    focused={Boolean(
+                      pickupByToken.get(part.tokenIndex) &&
+                        pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
+                    )}
+                    isNow={nowToken === part.tokenIndex}
+                    inBand={Boolean(
+                      nowBand && part.tokenIndex >= nowBand.from && part.tokenIndex <= nowBand.to,
+                    )}
+                    onFlag={(pickup) => onRedo(pickup)}
+                  />
+                ),
+              )}
+            </p>
+          ))}
+        </div>
+        <TeleprompterFocus
+          containerRef={rootRef}
+          nowIndex={nowToken}
+          from={nowBand?.from ?? nowToken}
+          to={nowBand?.to ?? nowToken}
+          getWord={(index) => tokenEl(index)}
+        />
+        <button
+          type="button"
+          className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
+          onClick={locatePlay}
+          aria-disabled={!playKey}
+          title="Locate the word being played"
+          aria-label="Locate the word being played"
+        >
+          <LocateGlyph />
+        </button>
       </div>
-      <button
-        type="button"
-        className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
-        onClick={locatePlay}
-        aria-disabled={!playKey}
-        title="Locate the word being played"
-        aria-label="Locate the word being played"
-      >
-        <LocateGlyph />
-      </button>
     </section>
   );
 }

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AcxReport } from "../../../../src/core/acx/measure";
 import { ChapterMeter, quietListenRange } from "./ChapterMeter";
 import { importChapterOriginal, runChapterProof } from "./chapter-actions";
 import { BoothSheet } from "./BoothSheet";
 import { ConfirmAlert } from "./ConfirmAlert";
 import { proofStepAction, stepLocked, type ChapterStep } from "./chapter-flow";
-import { readEnginePrefs } from "./engine-prefs";
+import { readEnginePrefs, writeEnginePrefs, SPEC_PRESET_OPTIONS, type SpecPresetId } from "./engine-prefs";
 import { resolvedInText } from "./glossary";
 import { masterChapterWorking } from "./punch";
 import { PronunciationCheatSheet } from "./PronunciationCheatSheet";
@@ -16,7 +16,6 @@ import { formatTapeTime } from "./TapePlayer";
 import { paragraphsFromHtml } from "./booth";
 import {
   clearOriginalTape,
-  patchChapter,
   readChapterAudioUrl,
   readChapterContent,
   type BookProject,
@@ -57,6 +56,8 @@ export function ChapterWorkspace({
   const [startOverAsk, setStartOverAsk] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [shift, setShift] = useState<string | null>(null);
+  const shiftTimer = useRef(0);
 
   useEffect(() => {
     let alive = true;
@@ -69,6 +70,26 @@ export function ChapterWorkspace({
       alive = false;
     };
   }, [project, chapterId]);
+
+  useEffect(() => () => window.clearTimeout(shiftTimer.current), []);
+
+  useEffect(() => {
+    setShift(null);
+  }, [chapterId]);
+
+  function beginNextChapter() {
+    if (!onNextChapter || shift) {
+      return;
+    }
+    const index = project.chapters.findIndex((item) => item.id === chapterId);
+    const next = project.chapters[index + 1];
+    setShift(next?.title ?? "Chapters");
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    shiftTimer.current = window.setTimeout(() => {
+      onNextChapter();
+      setShift(null);
+    }, reduced ? 200 : 1250);
+  }
 
   if (!chapter) {
     return (
@@ -110,7 +131,7 @@ export function ChapterWorkspace({
   }
 
   return (
-    <section className="quest-workspace is-booth" aria-label={chapter.title}>
+    <section className={`quest-workspace is-booth${shift ? " is-shifting" : ""}`} aria-label={chapter.title}>
       <header className="quest-work-head">
         <button type="button" className="vault-media-back" onClick={onBack} aria-label="Back to chapters">
           <ChevronLeft />
@@ -191,10 +212,16 @@ export function ChapterWorkspace({
             project={project}
             chapterId={chapterId}
             onChange={onChange}
-            onNextChapter={onNextChapter}
+            onNextChapter={onNextChapter ? beginNextChapter : undefined}
           />
         ) : null}
       </div>
+
+      {shift ? (
+        <div className="quest-shift" role="status" aria-live="polite">
+          <p className="quest-shift-title">{shift}</p>
+        </div>
+      ) : null}
 
       {step === "recording" && roomOpen ? (
         <BoothSheet title="Room check" onClose={() => setRoomOpen(false)}>
@@ -373,11 +400,10 @@ function MasteringStep({
   const [casting, setCasting] = useState(false);
   const castTimer = useRef<number>(0);
   const [masterError, setMasterError] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
   const [listen, setListen] = useState<"original" | "working" | "mastered">("original");
+  const [preset, setPreset] = useState<SpecPresetId>(() => readEnginePrefs().spec_preset_id);
   const [clock, setClock] = useState({ current: 0, duration: 0 });
   const [measureNonce, setMeasureNonce] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -457,32 +483,6 @@ function MasteringStep({
       setMasterError(reason instanceof Error ? reason.message : "Mastering failed.");
     } finally {
       setMastering(false);
-    }
-  }
-
-  async function checkFile(file?: string) {
-    const target = file ?? current.masteredFile ?? current.workingFile ?? current.originalFile;
-    if (!target || !project.folder || !window.kosmosNext?.measureChapter) {
-      setCheckError("Check audio needs the desktop app and a take.");
-      return;
-    }
-    setCheckError(null);
-    setChecking(true);
-    try {
-      const result = await window.kosmosNext.measureChapter({
-        folder: project.folder,
-        file: target,
-        presetId: readEnginePrefs().spec_preset_id,
-      });
-      if (!result.ok || !result.report) {
-        throw new Error(result.reason || "Could not measure this chapter.");
-      }
-      setAcxReport(result.report);
-      onChange(patchChapter(project, chapterId, { acxTrafficLight: result.report.traffic_light }));
-    } catch (reason) {
-      setCheckError(reason instanceof Error ? reason.message : "Could not measure this chapter.");
-    } finally {
-      setChecking(false);
     }
   }
 
@@ -628,52 +628,78 @@ function MasteringStep({
                 {formatTapeTime(clock.current)} / {formatTapeTime(clock.duration)}
               </span>
             </div>
-            <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
-              {(
-                [
-                  { id: "original" as const, label: "Original", file: chapter.originalFile },
-                  { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
-                  { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={listen === item.id}
-                  className={listen === item.id ? "is-on" : undefined}
-                  disabled={!item.file}
-                  onClick={() => {
-                    setListen(item.id);
-                    if (playing) {
-                      void playSlot(item.file, item.id);
-                    }
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
+            <div className="quest-listen-legend">
+              <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
+                {(
+                  [
+                    { id: "original" as const, label: "Original", file: chapter.originalFile },
+                    { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
+                    { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
+                  ] as const
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={listen === item.id}
+                    className={listen === item.id ? "is-on" : undefined}
+                    disabled={!item.file}
+                    onClick={() => {
+                      setListen(item.id);
+                      if (playing) {
+                        void playSlot(item.file, item.id);
+                      }
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <ListenTakesInfo />
             </div>
           </div>
         </section>
         <section className="quest-master-action">
           <p className="quest-master-kicker">Master</p>
+          <div className="quest-master-spec" role="radiogroup" aria-label="Master for">
+            {SPEC_PRESET_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={preset === option.value}
+                className={preset === option.value ? "is-on" : undefined}
+                onClick={() => {
+                  writeEnginePrefs({ spec_preset_id: option.value });
+                  setPreset(option.value);
+                }}
+              >
+                {option.value === "acx" ? "ACX" : "EBU"}
+              </button>
+            ))}
+          </div>
+          <p className="quest-master-spec-hint">
+            {SPEC_PRESET_OPTIONS.find((option) => option.value === preset)?.hint}
+          </p>
           <button
             type="button"
             className={`quest-master-orb${mastering ? " is-busy" : ""}${casting ? " is-cast" : ""}`}
             onPointerDown={castMaster}
             onClick={() => void runMaster()}
             disabled={mastering}
-            aria-label={mastering ? "Mastering" : chapter.mastered ? "Master again" : "Master this chapter"}
+            aria-label={
+              mastering
+                ? "Mastering"
+                : chapter.mastered
+                  ? `Master again for ${preset === "acx" ? "ACX" : "EBU"}`
+                  : `Master this chapter for ${preset === "acx" ? "ACX" : "EBU"}`
+            }
           >
             <span className="quest-master-orb-ring" aria-hidden="true" />
             <span className="quest-master-orb-ring is-late" aria-hidden="true" />
             <span className="quest-master-orb-face">{mastering ? "…" : chapter.mastered ? "Again" : "Master"}</span>
           </button>
           <div className="quest-master-more">
-            <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
-              {checking ? "Measuring…" : "Check Audible"}
-            </button>
             {onNextChapter ? (
               <button type="button" className="quest-act" onClick={onNextChapter}>
                 Next
@@ -692,10 +718,73 @@ function MasteringStep({
             <ChapterMeter report={acxReport} masteringPlan={!chapter.mastered} onListenQuiet={() => void listenQuiet()} />
           </div>
         ) : null}
-        {checkError ? <p className="ma-error">{checkError}</p> : null}
         {masterError ? <p className="ma-error">{masterError}</p> : null}
       </div>
     </div>
+  );
+}
+
+function ListenTakesInfo() {
+  const [open, setOpen] = useState(false);
+  const popId = useId();
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <div className={`quest-listen-info-wrap${open ? " is-open" : ""}`}>
+      <button
+        type="button"
+        className="quest-listen-info"
+        aria-expanded={open}
+        aria-controls={popId}
+        aria-label="What each take is"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <InfoGlyph />
+      </button>
+      {open ? (
+        <>
+          <button type="button" className="quest-listen-info-scrim" aria-label="Close take guide" onClick={() => setOpen(false)} />
+          <div className="quest-listen-pop" id={popId} role="dialog" aria-label="Take types">
+            <p className="quest-listen-pop-kicker">Takes</p>
+            <ul>
+              <li>
+                <strong>Original</strong>
+                The booth recording or imported file, before any edits.
+              </li>
+              <li>
+                <strong>Unmastered</strong>
+                The working take after punches and proofing, before loudness polish.
+              </li>
+              <li>
+                <strong>Mastered</strong>
+                The file after you tap Master, using the platform you picked.
+              </li>
+            </ul>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function InfoGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 7.2v3.6M8 5.15h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
   );
 }
 

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 
-export function TapePlayer({ src, label }: { src: string; label: string }) {
+export function TapePlayer({
+  src,
+  label,
+  onTime,
+}: {
+  src: string;
+  label: string;
+  onTime?: (seconds: number, playing: boolean) => void;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const onTimeRef = useRef(onTime);
+  onTimeRef.current = onTime;
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -16,6 +26,7 @@ export function TapePlayer({ src, label }: { src: string; label: string }) {
     }
     function onTime() {
       setCurrent(audio.currentTime);
+      onTimeRef.current?.(audio.currentTime, !audio.paused);
     }
     function onMeta() {
       setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
@@ -59,6 +70,7 @@ export function TapePlayer({ src, label }: { src: string; label: string }) {
     const next = ((event.clientX - rect.left) / Math.max(1, rect.width)) * duration;
     audio.currentTime = Math.max(0, Math.min(duration, next));
     setCurrent(audio.currentTime);
+    onTimeRef.current?.(audio.currentTime, !audio.paused);
   }
 
   const pct = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;

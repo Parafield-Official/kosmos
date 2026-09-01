@@ -62,6 +62,23 @@ export function workingChapterTranscript(manuscript: string, chapter: BookChapte
   return words;
 }
 
+/** Booth word-clock index whose tape span covers `time`, or the last word already reached. */
+export function recordedWordAtTime(words: RecordedWord[] | undefined, time: number): number | null {
+  if (!words?.length || !Number.isFinite(time)) {
+    return null;
+  }
+  let last = -1;
+  for (const word of words) {
+    if (time >= word.start && time < word.end) {
+      return word.index;
+    }
+    if (word.start <= time) {
+      last = word.index;
+    }
+  }
+  return last >= 0 ? last : words[0]?.index ?? null;
+}
+
 /** Manuscript token whose tape span covers `time`, or the last word already reached. */
 export function tokenIndexAtTime(
   aligned: Array<{ tokenIndex: number; start?: number; end?: number }>,
