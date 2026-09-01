@@ -819,15 +819,41 @@ const DEBUG_SIZE = { width: 176, height: 400 };
 const TRAFFIC_LIGHTS = { x: 20, y: 32 };
 const OFFSCREEN_LIGHTS = { x: -100, y: -100 };
 
+function trafficLightsForSize(width, height) {
+  const w = width || APP_FRAME.width;
+  const h = height || APP_FRAME.height;
+  const stillIntro = ROOM_PLACES.has(labPlace) && (w < 800 || h < 520);
+  const useW = stillIntro ? APP_FRAME.width : w;
+  const useH = stillIntro ? APP_FRAME.height : h;
+  const scale = Math.min(useW / APP_FRAME.width, useH / APP_FRAME.height);
+  return {
+    x: Math.max(12, Math.round(TRAFFIC_LIGHTS.x * scale)),
+    y: Math.max(18, Math.round(TRAFFIC_LIGHTS.y * scale)),
+  };
+}
+
 function trafficLightsForWindow(win) {
   const size = typeof win.getContentSize === "function" ? win.getContentSize() : [APP_FRAME.width, APP_FRAME.height];
-  const width = size[0] || APP_FRAME.width;
-  const height = size[1] || APP_FRAME.height;
-  const scale = Math.min(width / APP_FRAME.width, height / APP_FRAME.height);
-  return {
-    x: Math.max(10, Math.round(TRAFFIC_LIGHTS.x * scale)),
-    y: Math.max(8, Math.round(TRAFFIC_LIGHTS.y * scale)),
-  };
+  return trafficLightsForSize(size[0], size[1]);
+}
+
+function pinTrafficLights(intended) {
+  if (!labWindow || labWindow.isDestroyed() || process.platform !== "darwin") {
+    return;
+  }
+  const chrome = windowChromeState();
+  labWindow.setWindowButtonVisibility(chrome.showTrafficChrome);
+  if (typeof labWindow.setTrafficLightPosition !== "function") {
+    return;
+  }
+  if (!chrome.showTrafficChrome) {
+    labWindow.setTrafficLightPosition(OFFSCREEN_LIGHTS);
+    return;
+  }
+  const next = intended?.width && intended?.height
+    ? trafficLightsForSize(intended.width, intended.height)
+    : trafficLightsForWindow(labWindow);
+  labWindow.setTrafficLightPosition(next);
 }
 const WINDOW_EDGE_SLOP = 4;
 const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "theme", "app"]);
@@ -993,12 +1019,8 @@ function syncWindowChrome(place) {
   if (typeof place === "string" && JUMP_PLACES.has(place)) {
     labPlace = place;
   }
-  const chrome = windowChromeState();
   if (process.platform === "darwin") {
-    labWindow.setWindowButtonVisibility(chrome.showTrafficChrome);
-    if (typeof labWindow.setTrafficLightPosition === "function") {
-      labWindow.setTrafficLightPosition(chrome.showTrafficChrome ? trafficLightsForWindow(labWindow) : OFFSCREEN_LIGHTS);
-    }
+    pinTrafficLights();
   } else {
     labWindow.setWindowButtonVisibility(false);
   }
@@ -1188,6 +1210,9 @@ function applySize(win, size, animate) {
   }
   const measuredWidth = FRAMED_PLATFORM ? content[0] : current.width;
   const measuredHeight = FRAMED_PLATFORM ? content[1] : current.height;
+  if (ROOM_PLACES.has(labPlace)) {
+    pinTrafficLights({ width, height });
+  }
   if (measuredWidth === width && measuredHeight === height) {
     return;
   }
@@ -1198,9 +1223,17 @@ function applySize(win, size, animate) {
   if (FRAMED_PLATFORM && typeof win.setContentSize === "function") {
     win.setPosition(x, y, Boolean(animate));
     win.setContentSize(width, height, Boolean(animate));
-    return;
+  } else {
+    win.setBounds({ x, y, width, height }, Boolean(animate));
   }
-  win.setBounds({ x, y, width, height }, Boolean(animate));
+  if (ROOM_PLACES.has(labPlace)) {
+    pinTrafficLights({ width, height });
+    setImmediate(() => {
+      if (labWindow && !labWindow.isDestroyed() && ROOM_PLACES.has(labPlace)) {
+        pinTrafficLights({ width, height });
+      }
+    });
+  }
 }
 
 function debugBoundsBesideLab() {
@@ -1353,7 +1386,12 @@ function openLab() {
       return;
     }
     labPlace = place;
-    syncWindowChrome(place);
+    if (ROOM_PLACES.has(place)) {
+      pinTrafficLights(APP_FRAME);
+      notifyWindowChrome();
+    } else {
+      syncWindowChrome(place);
+    }
     notifyDebugPlace(place);
   });
   ipcMain.handle("labs:set-material", (_event, material) => {
