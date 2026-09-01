@@ -21,15 +21,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require tags to come from Lightbox-Interface
+      - name: Require tags to come from main
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags origin \
-            refs/heads/Lightbox-Interface:refs/remotes/origin/Lightbox-Interface
-          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/Lightbox-Interface || {
-            echo "Release tags must point to a commit merged into Lightbox-Interface." >&2
+            refs/heads/main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
+            echo "Release tags must point to a commit merged into main." >&2
             exit 1
           }
 
