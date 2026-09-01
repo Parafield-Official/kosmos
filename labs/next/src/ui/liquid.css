@@ -757,7 +757,7 @@
 }
 
 .viewport[data-place="app"] .brand-mark:focus-visible .brand-mark-name {
-  max-width: 0;
+  max-width: 6.8rem;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -809,15 +809,15 @@
 
   .viewport[data-place="app"] .brand-mark:hover .brand-mark-content,
   .viewport[data-place="app"] .brand-mark:focus-visible .brand-mark-content {
-    padding: 0 1.2rem;
+    padding: 0 1.42rem 0 1.18rem;
   }
 
   .viewport[data-place="app"] .brand-mark:hover .brand-mark-name,
   .viewport[data-place="app"] .brand-mark:focus-visible .brand-mark-name {
-    max-width: 0;
-    margin-left: 0;
-    opacity: 0;
-    clip-path: inset(0 100% 0 0);
+    max-width: 6.8rem;
+    margin-left: 0.5rem;
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
   }
 }
 
@@ -843,10 +843,10 @@
 
   .viewport[data-place="app"] .brand-mark:hover .brand-mark-name,
   .viewport[data-place="app"] .brand-mark:focus-visible .brand-mark-name {
-    max-width: 0;
-    margin-left: 0;
-    opacity: 0;
-    clip-path: inset(0 100% 0 0);
+    max-width: 6.8rem;
+    margin-left: 0.5rem;
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
   }
 }
 
