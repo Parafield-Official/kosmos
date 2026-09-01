@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About — Kosmos</title>
+  <meta name="description" content="Kosmos is a free app for authors and narrators. Proofread the recording against the book. Export files Audible will take. The book stays on this computer." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="kosmos.css" />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="plate" aria-hidden="true">
+    <video class="plate-video" autoplay muted loop playsinline preload="auto">
+      <source src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260808_112712_da9d53df-6d27-4b12-bdf6-aa9dc2622bdf.mp4" type="video/mp4">
+    </video>
+  </div>
+
+  <header class="topbar">
+    <a class="brand" href="index.html" aria-label="Kosmos home">
+      <svg viewBox="0 0 31.5 48.5" aria-hidden="true">
+        <defs>
+          <linearGradient id="bg1" x1="8" y1="0" x2="34.1" y2="28.9" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#9e9e9e"/><stop offset=".28" stop-color="#a6a6a6"/><stop offset=".34" stop-color="#a3a3a3"/><stop offset=".40" stop-color="#3a3a3a"/><stop offset=".55" stop-color="#414141"/><stop offset=".60" stop-color="#7a7a7a"/><stop offset=".68" stop-color="#8e8e8e"/><stop offset=".80" stop-color="#a9a9a9"/><stop offset=".95" stop-color="#c4c4c4"/><stop offset="1" stop-color="#cccccc"/>
+          </linearGradient>
+        </defs>
+        <path d="M21.5 0 L21.5 19.5 L31.5 19.5 L31.5 29 L10 48.5 L10 28.5 L0.5 28.5 L0.5 18.5 Z" fill="url(#bg1)"/>
+        <rect x="0.5" y="18.5" width="9" height="10" fill="#fdfdfd"/>
+        <rect x="22" y="19.5" width="9.5" height="9.5" fill="#fdfdfd"/>
+      </svg>
+    </a>
+    <nav class="links" aria-label="Primary">
+      <a href="about.html" aria-current="page">About</a>
+      <a href="features.html">Features</a>
+      <a href="compare.html">Compare</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+    <div class="top-actions">
+      <a class="gh-mini" href="https://github.com/Parafield-Official/kosmos">GitHub</a>
+      <a class="pill pill-nav" href="download.html"><span>Download</span></a>
+    </div>
+    <button class="burger" id="burger" aria-expanded="false" aria-controls="menu" aria-label="Open menu"><i></i><i></i></button>
+  </header>
+
+  <nav class="menu" id="menu" aria-hidden="true" aria-label="Menu">
+    <div class="menu-inner">
+      <p class="menu-eyebrow">Menu</p>
+      <ul class="menu-list">
+        <li><a href="about.html">About</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="compare.html">Compare</a></li>
+        <li><a href="faq.html">FAQ</a></li>
+      </ul>
+      <div class="menu-foot">
+        <a class="pill" href="download.html"><span>Download</span></a>
+        <a class="ghost" href="https://github.com/Parafield-Official/kosmos">View on GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="wrap" id="main">
+    <p class="kicker">About</p>
+    <h1 class="headline"><span>One free app</span><span>for your audiobook.</span></h1>
+    <p class="lead">Import the book. Add the recording. Kosmos proofreads the words and exports files Audible will take. It runs on this computer. No account. No monthly fee.</p>
+
+    <section class="section prose">
+      <h2>What you use it for</h2>
+      <p>Most people buy this in pieces: a paid teleprompter, a paid proofreading upload, then another tool to hit Audible’s numbers. Kosmos is all of that in one download.</p>
+      <p>You get a page that follows as you read, a list of missed words you can play back, and a finished folder of named files ready to upload. Authors and narrators can work the same book together — including on hotel Wi-Fi or a phone hotspot.</p>
+    </section>
+
+    <section class="section">
+      <h2>What Kosmos is not</h2>
+      <ul class="jobs">
+        <li>
+          <span class="n">01</span>
+          <div>
+            <strong>Not a replacement for Reaper</strong>
+            <span>Record and edit in the software you already use. Kosmos sits next to it.</span>
+          </div>
+        </li>
+        <li>
+          <span class="n">02</span>
+          <div>
+            <strong>Not a performance coach</strong>
+            <span>It catches words that do not match the book. You still listen for acting, clicks, and room noise.</span>
+          </div>
+        </li>
+        <li>
+          <span class="n">03</span>
+          <div>
+            <strong>Not an AI narrator</strong>
+            <span>It will not read the book or clone a voice. This is for a human recording.</span>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <section class="section save">
+      <p class="figure"><strong class="zero">$0</strong><em>open source</em></p>
+      <p>Mac and Windows. Source on GitHub. The unpublished book stays on this computer.</p>
+      <div class="actions">
+        <a class="pill pill-cta" href="download.html"><span>Download</span></a>
+        <a class="ghost" href="https://github.com/Parafield-Official/kosmos">View on GitHub</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Kosmos is free and open source.</span>
+    <span><a href="https://github.com/Parafield-Official/kosmos">github.com/Parafield-Official/kosmos</a></span>
+  </footer>
+  <script src="nav.js"></script>
+</body>
+</html>
