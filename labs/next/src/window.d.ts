@@ -53,6 +53,9 @@ declare global {
       platform?: NodeJS.Platform;
       ready: (payload: { width: number; height: number; place: LabsPlace }) => void;
       resize: (size: { width: number; height: number }) => Promise<void>;
+      startWindowDrag?: (point: { screenX: number; screenY: number }) => void;
+      moveWindowDrag?: (point: { screenX: number; screenY: number }) => void;
+      endWindowDrag?: () => void;
       setPlace?: (place: LabsPlace) => Promise<void>;
       setMaterial?: (material: {
         vibrancy?: string;

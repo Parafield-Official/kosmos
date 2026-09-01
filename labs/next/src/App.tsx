@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   INTRO_CHAR_MS,
   INTRO_COPYRIGHT,
@@ -183,6 +183,45 @@ export function App() {
   const electron = Boolean(window.kosmosNext);
   const hosted = !electron;
   const windowChrome = useWindowChrome(hosted);
+  const windowDrag = useRef<{ pointerId: number; target: HTMLDivElement } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (windowDrag.current) {
+        window.kosmosNext?.endWindowDrag?.();
+        windowDrag.current = null;
+      }
+    };
+  }, []);
+
+  function startWindowDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!electron || event.button !== 0 || !window.kosmosNext?.startWindowDrag) {
+      return;
+    }
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    windowDrag.current = { pointerId: event.pointerId, target: event.currentTarget };
+    window.kosmosNext.startWindowDrag({ screenX: event.screenX, screenY: event.screenY });
+  }
+
+  function moveWindowDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (windowDrag.current?.pointerId !== event.pointerId || !window.kosmosNext?.moveWindowDrag) {
+      return;
+    }
+    event.preventDefault();
+    window.kosmosNext.moveWindowDrag({ screenX: event.screenX, screenY: event.screenY });
+  }
+
+  function endWindowDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (windowDrag.current?.pointerId !== event.pointerId) {
+      return;
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    windowDrag.current = null;
+    window.kosmosNext?.endWindowDrag?.();
+  }
 
   let body: ReactNode;
   if (place === "mark") {
@@ -223,8 +262,22 @@ export function App() {
       style={electron ? undefined : { width: size.width, height: size.height }}
     >
       <GlassMaterial animate={!isRoomPlace(place)} />
-      <div className="drag-strip drag-strip-start" aria-hidden="true" />
-      <div className="drag-strip drag-strip-end" aria-hidden="true" />
+      <div
+        className="drag-strip drag-strip-start"
+        aria-hidden="true"
+        onPointerDown={startWindowDrag}
+        onPointerMove={moveWindowDrag}
+        onPointerUp={endWindowDrag}
+        onPointerCancel={endWindowDrag}
+      />
+      <div
+        className="drag-strip drag-strip-end"
+        aria-hidden="true"
+        onPointerDown={startWindowDrag}
+        onPointerMove={moveWindowDrag}
+        onPointerUp={endWindowDrag}
+        onPointerCancel={endWindowDrag}
+      />
       <ClearGlassFilter />
       <div className="frame">{body}</div>
       {place === "app" ? <BrandMark /> : null}
@@ -362,4 +415,3 @@ function IntroducingKosmos({ onComplete }: { onComplete: () => void }) {
     </section>
   );
 }
-

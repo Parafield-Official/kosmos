@@ -133,12 +133,19 @@ select {
 .drag-strip {
   position: fixed;
   top: 0;
-  height: 52px;
+  height: 136px;
   z-index: 20;
-  /* Transparent windows skip fully empty nodes, so this must paint a pixel. */
+  /* Keep a painted hit target on transparent native windows. Pointer capture
+     in App.tsx carries the drag after the cursor leaves this strip. */
   background: rgba(255, 255, 255, 0.02);
-  -webkit-app-region: drag;
-  app-region: drag;
+  cursor: grab;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.drag-strip:active {
+  cursor: grabbing;
 }
 
 .drag-strip-start {

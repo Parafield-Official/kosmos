@@ -898,6 +898,8 @@ const GLASS_BLUR_MAX = 48;
 let labWindow = null;
 /** @type {import("electron").BrowserWindow | null} */
 let debugWindow = null;
+/** @type {{ startX: number, startY: number, originX: number, originY: number } | null} */
+let labWindowDrag = null;
 /** @type {number} */
 let labGlassId = -1;
 let nativeGlassTimer = null;
@@ -1411,7 +1413,10 @@ function openLab() {
     hasShadow: true,
     icon: path.join(__dirname, "..", "labs/next/public/brand/logo.png"),
     show: false,
-    titleBarStyle: FRAMED_PLATFORM ? "default" : "hiddenInset",
+    // Keep the macOS title bar hidden while retaining a native draggable
+    // title region behind the glass UI. `hiddenInset` can leave the custom
+    // app-region strips text-selectable instead of movable on macOS.
+    titleBarStyle: FRAMED_PLATFORM ? "default" : "hidden",
     trafficLightPosition: FRAMED_PLATFORM ? undefined : TRAFFIC_LIGHTS,
     webPreferences: {
       preload: path.join(__dirname, "labs-preload.cjs"),
@@ -1450,6 +1455,40 @@ function openLab() {
     applySize(labWindow, size, true);
   };
 
+  const onWindowDragStart = (event, point) => {
+    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id) {
+      return;
+    }
+    const startX = Number(point?.screenX);
+    const startY = Number(point?.screenY);
+    if (!Number.isFinite(startX) || !Number.isFinite(startY)) {
+      return;
+    }
+    const [originX, originY] = labWindow.getPosition();
+    labWindowDrag = { startX, startY, originX, originY };
+  };
+  const onWindowDragMove = (event, point) => {
+    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id || !labWindowDrag) {
+      return;
+    }
+    const screenX = Number(point?.screenX);
+    const screenY = Number(point?.screenY);
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+      return;
+    }
+    labWindow.setPosition(
+      Math.round(labWindowDrag.originX + screenX - labWindowDrag.startX),
+      Math.round(labWindowDrag.originY + screenY - labWindowDrag.startY),
+      false,
+    );
+  };
+  const onWindowDragEnd = (event) => {
+    if (labWindow && !labWindow.isDestroyed() && event.sender.id !== labWindow.webContents.id) {
+      return;
+    }
+    labWindowDrag = null;
+  };
+
   const onPushTuning = (_event, values) => {
     if (labWindow && !labWindow.isDestroyed()) {
       labWindow.webContents.send("labs:apply-tuning", values);
@@ -1458,6 +1497,9 @@ function openLab() {
 
   ipcMain.on("labs:ready", onReady);
   ipcMain.handle("labs:resize", onResize);
+  ipcMain.on("labs:window-drag-start", onWindowDragStart);
+  ipcMain.on("labs:window-drag-move", onWindowDragMove);
+  ipcMain.on("labs:window-drag-end", onWindowDragEnd);
   ipcMain.handle("labs:place", (_event, place) => {
     if (!JUMP_PLACES.has(place)) {
       return;
@@ -1482,10 +1524,14 @@ function openLab() {
   labWindow.on("closed", () => {
     ipcMain.removeListener("labs:ready", onReady);
     ipcMain.removeHandler("labs:resize");
+    ipcMain.removeListener("labs:window-drag-start", onWindowDragStart);
+    ipcMain.removeListener("labs:window-drag-move", onWindowDragMove);
+    ipcMain.removeListener("labs:window-drag-end", onWindowDragEnd);
     ipcMain.removeHandler("labs:place");
     ipcMain.removeHandler("labs:set-material");
     ipcMain.removeListener("labs:push-tuning", onPushTuning);
     labWindow = null;
+    labWindowDrag = null;
     labGlassId = -1;
     lastNativeKey = "";
     if (debugWindow && !debugWindow.isDestroyed()) {
