@@ -9,6 +9,14 @@ describe("packaged renderer configuration", () => {
     expect((viteConfig as { base?: string }).base).toBe("./");
   });
 
+  it("ships a restrictive renderer Content Security Policy", () => {
+    const html = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
+    expect(html).toContain("Content-Security-Policy");
+    expect(html).toContain("script-src 'self'");
+    expect(html).toContain("object-src 'none'");
+    expect(html).toContain("frame-src 'none'");
+  });
+
   it("packages the verified Whisper model and the live follow model for zero-setup speech checking", () => {
     expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
     expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
@@ -61,8 +69,9 @@ describe("packaged renderer configuration", () => {
   });
 
   it("publishes a GitHub updater feed so already-installed copies can keep current", () => {
-    expect(packageJson.dependencies["electron-updater"]).toBeTruthy();
+    expect(packageJson.dependencies["electron-updater"]).toBe("6.8.9");
     expect("electron-updater" in packageJson.devDependencies).toBe(false);
+    expect(packageJson.devDependencies.electron).toBe("44.1.1");
     expect(packageJson.build.publish).toMatchObject({
       provider: "github",
       owner: "Parafield-Official",
@@ -91,6 +100,15 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
   });
 
+  it("pins every GitHub Action to an immutable full commit SHA", () => {
+    const workflows = ["ci.yml", "release.yml"]
+      .map((name) => readFileSync(resolve(__dirname, `../../.github/workflows/${name}`), "utf8"))
+      .join("\n");
+    const actionRefs = [...workflows.matchAll(/uses:\s+[^\s@]+@([^\s#]+)/g)].map((match) => match[1]);
+    expect(actionRefs.length).toBeGreaterThan(0);
+    expect(actionRefs.every((ref) => /^[0-9a-f]{40}$/u.test(ref))).toBe(true);
+  });
+
   it("requires signed and notarized macOS releases for reliable in-app updates", () => {
     const mac = packageJson.build.mac as { notarize?: boolean };
     expect(mac.notarize).toBe(true);
@@ -111,6 +129,8 @@ describe("packaged renderer configuration", () => {
       "electron-liquid-glass": "^1.1.1",
     });
     expect(packageJson.build.files).toContain("dist/**/*");
+    expect(packageJson.build.files).toContain("!electron/**/*.test.cjs");
+    expect(packageJson.build.files).toContain("!electron/glass-test-preload.cjs");
     const labsMain = readFileSync(resolve(__dirname, "../../electron/labs.cjs"), "utf8");
     expect(labsMain).toMatch(/try\s*{[\s\S]+require\("electron-liquid-glass"\)[\s\S]+}\s*catch/);
   });

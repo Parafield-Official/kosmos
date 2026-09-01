@@ -3,6 +3,7 @@ const fsSync = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
+const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, dialog, ipcMain, protocol, session, shell, systemPreferences } = require("electron");
 const { findModel, findLiveModel, transcribeAudio } = require("./asr.cjs");
 const {
@@ -44,6 +45,7 @@ const { decodeLiveAudioPayload } = require("./live-audio.cjs");
 const { createLiveTape, normalizeLiveTapePcm } = require("./live-tape.cjs");
 const { assertRecorderPcmBounds } = require("./recording-wav.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
+const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
 const { normalizeChapterDocument } = require("./document.cjs");
 const { collectBookProof, applyPickupDecision, applyPickupUpdates } = require("./book-proof.cjs");
 const {
@@ -126,6 +128,9 @@ const DEFAULT_SEATS = {
 };
 
 function createWindow() {
+  const rendererUrl = isDevelopment
+    ? "http://127.0.0.1:5173/"
+    : pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).href;
   const window = new BrowserWindow({
     width: 1180,
     height: 760,
@@ -141,6 +146,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  secureRendererWindow(window, { allowedUrls: [rendererUrl] });
 
   window.once("ready-to-show", () => window.show());
   const releaseRendererWorkers = () => {
@@ -158,11 +164,7 @@ function createWindow() {
     }
   });
 
-  if (isDevelopment) {
-    void window.loadURL("http://127.0.0.1:5173");
-  } else {
-    void window.loadFile(path.join(__dirname, "..", "dist", "index.html"));
-  }
+  void window.loadURL(rendererUrl);
 }
 
 async function createProjectFolder() {
@@ -3942,11 +3944,11 @@ ipcMain.handle("app:open-release", () => shell.openExternal(RELEASE_PAGE));
 
 app.whenReady().then(async () => {
   protocol.handle("booth-audio", handleAudioStreamRequest);
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(isMicrophonePermission(permission));
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(isTrustedRenderer(webContents) && isMicrophonePermission(permission));
   });
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => (
-    isMicrophonePermission(permission) || permission !== "media"
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => (
+    isTrustedRenderer(webContents) && isMicrophonePermission(permission)
   ));
   await ensureMicrophoneAccess(systemPreferences);
   createWindow();
