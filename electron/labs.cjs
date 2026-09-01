@@ -818,6 +818,17 @@ const APP_ASPECT = APP_FRAME.width / APP_FRAME.height;
 const DEBUG_SIZE = { width: 176, height: 400 };
 const TRAFFIC_LIGHTS = { x: 20, y: 32 };
 const OFFSCREEN_LIGHTS = { x: -100, y: -100 };
+
+function trafficLightsForWindow(win) {
+  const size = typeof win.getContentSize === "function" ? win.getContentSize() : [APP_FRAME.width, APP_FRAME.height];
+  const width = size[0] || APP_FRAME.width;
+  const height = size[1] || APP_FRAME.height;
+  const scale = Math.min(width / APP_FRAME.width, height / APP_FRAME.height);
+  return {
+    x: Math.max(10, Math.round(TRAFFIC_LIGHTS.x * scale)),
+    y: Math.max(8, Math.round(TRAFFIC_LIGHTS.y * scale)),
+  };
+}
 const WINDOW_EDGE_SLOP = 4;
 const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "theme", "app"]);
 const ROOM_PLACES = new Set(["app"]);
@@ -986,7 +997,7 @@ function syncWindowChrome(place) {
   if (process.platform === "darwin") {
     labWindow.setWindowButtonVisibility(chrome.showTrafficChrome);
     if (typeof labWindow.setTrafficLightPosition === "function") {
-      labWindow.setTrafficLightPosition(chrome.showTrafficChrome ? TRAFFIC_LIGHTS : OFFSCREEN_LIGHTS);
+      labWindow.setTrafficLightPosition(chrome.showTrafficChrome ? trafficLightsForWindow(labWindow) : OFFSCREEN_LIGHTS);
     }
   } else {
     labWindow.setWindowButtonVisibility(false);

@@ -222,9 +222,9 @@ export function App() {
       <GlassMaterial animate={!isRoomPlace(place)} />
       <div className="drag-strip drag-strip-start" aria-hidden="true" />
       <div className="drag-strip drag-strip-end" aria-hidden="true" />
-      {place === "app" ? <BrandMark /> : null}
       <ClearGlassFilter />
       <div className="frame">{body}</div>
+      {place === "app" ? <BrandMark /> : null}
       <p className="shell-footer">{INTRO_COPYRIGHT}</p>
     </div>
     {import.meta.env.DEV && !electron ? <DebugDock place={place} onJump={jump} /> : null}

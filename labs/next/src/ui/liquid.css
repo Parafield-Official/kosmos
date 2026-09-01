@@ -654,6 +654,10 @@
   transition: padding 420ms var(--ease, cubic-bezier(0.22, 1, 0.32, 1));
 }
 
+.viewport[data-place="app"] .brand-mark-content {
+  padding: 0 1.2rem;
+}
+
 .brand-mark:focus,
 .brand-mark:focus-visible {
   outline: none;
@@ -720,10 +724,27 @@
 }
 
 .viewport[data-place="app"] .brand-mark {
-  top: 12px;
+  grid-area: 1 / 1;
+  justify-self: center;
+  align-self: start;
+  top: calc(var(--vault-bezel-t) * 0.165);
+  z-index: 30;
+  width: max-content;
+  min-width: max-content;
   height: 3.05rem;
   color: #fff;
-  transform: translateX(-50%);
+  transform: none;
+  left: auto;
+}
+
+.viewport[data-place="app"] .brand-mark-fill {
+  background: linear-gradient(
+    165deg,
+    rgba(92, 88, 94, 0.92) 0%,
+    rgba(36, 32, 38, 0.94) 100%
+  );
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
 }
 
 .viewport[data-place="app"] .brand-mark-logo {
