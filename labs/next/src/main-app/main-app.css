@@ -4444,9 +4444,9 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-record-embed {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(16.5rem, 0.68fr);
+  grid-template-columns: minmax(0, 1fr) minmax(22.5rem, 26rem);
   grid-template-rows: minmax(0, 1fr);
-  gap: 0.85rem;
+  gap: 1.35rem;
   min-height: 0;
   flex: 1;
   height: 100%;
@@ -4481,8 +4481,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 .ma-proof-stage {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(15rem, 0.72fr);
-  gap: 0.7rem;
+  grid-template-columns: minmax(0, 1fr) minmax(22.5rem, 26rem);
+  gap: 1.35rem;
   min-height: 0;
   flex: 1;
 }

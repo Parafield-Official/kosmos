@@ -62,6 +62,36 @@ export function workingChapterTranscript(manuscript: string, chapter: BookChapte
   return words;
 }
 
+/** Manuscript token whose tape span covers `time`, or the last word already reached. */
+export function tokenIndexAtTime(
+  aligned: Array<{ tokenIndex: number; start?: number; end?: number }>,
+  time: number,
+): number | null {
+  if (!Number.isFinite(time) || aligned.length === 0) {
+    return null;
+  }
+  let last = -1;
+  let firstTimed = -1;
+  for (const token of aligned) {
+    if (token.start === undefined) {
+      continue;
+    }
+    if (firstTimed < 0) {
+      firstTimed = token.tokenIndex;
+    }
+    if (token.end !== undefined && time >= token.start && time < token.end) {
+      return token.tokenIndex;
+    }
+    if (token.start <= time) {
+      last = token.tokenIndex;
+    }
+  }
+  if (last >= 0) {
+    return last;
+  }
+  return firstTimed >= 0 ? firstTimed : null;
+}
+
 export function tokenSpanFromSelection(root: HTMLElement): { from: number; to: number } | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {

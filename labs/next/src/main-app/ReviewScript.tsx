@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { tokenizeManuscript } from "../../../../src/core/proof/normalize";
 import { isSpokenChapterHeading } from "./booth";
 import {
+  alignedManuscriptTokens,
   buildNarrationRedoRanges,
   createNarratorRedoPickup,
   type NarrationRedoRange,
 } from "../../../../src/core/proof/selection";
 import type { TranscriptWord } from "../../../../src/core/proof/align";
 import { flagKindLabel } from "./flag-kind";
-import { tokenSpanFromSelection } from "./review-timing";
+import { tokenIndexAtTime, tokenSpanFromSelection } from "./review-timing";
 import type { ChapterPickup, PromptHighlightMode, PromptTheme } from "./store";
 
 /**
@@ -19,6 +20,9 @@ export function ReviewScript({
   chapterTitle,
   manuscript,
   transcript,
+  playTranscript,
+  playAt = null,
+  playKey = null,
   pickups = [],
   focusedPickupId = null,
   sourceKind,
@@ -32,6 +36,9 @@ export function ReviewScript({
   chapterTitle?: string;
   manuscript: string;
   transcript: TranscriptWord[];
+  playTranscript?: TranscriptWord[];
+  playAt?: number | null;
+  playKey?: string | null;
   pickups?: ChapterPickup[];
   focusedPickupId?: string | null;
   sourceKind: "live" | "take";
@@ -42,6 +49,11 @@ export function ReviewScript({
   onRedo: (pickup: ChapterPickup) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+  const autoScrollRef = useRef(false);
+  const nowTokenRef = useRef<number | null>(null);
+  const [lostPlace, setLostPlace] = useState(false);
+  const tape = playTranscript ?? transcript;
   const tokens = useMemo(() => tokenizeManuscript(manuscript), [manuscript]);
   const blocks = useMemo(() => scriptBlocks(manuscript, tokens), [manuscript, tokens]);
   const [range, setRange] = useState<{ from: number; to: number } | null>(null);
@@ -126,13 +138,134 @@ export function ReviewScript({
     }
   }, [focused, highlight, manuscript, transcript]);
 
+  const playAligned = useMemo(() => {
+    if (!playKey || tape.length === 0) {
+      return [];
+    }
+    return alignedManuscriptTokens(manuscript, tape);
+  }, [manuscript, playKey, tape]);
+
+  const playToken = useMemo(
+    () => (playAt == null ? null : tokenIndexAtTime(playAligned, playAt)),
+    [playAligned, playAt],
+  );
+
+  const playBand = useMemo(() => {
+    if (playToken == null) {
+      return null;
+    }
+    if (highlight === "word") {
+      return { from: playToken, to: playToken };
+    }
+    try {
+      const ranges = buildNarrationRedoRanges({
+        manuscript,
+        transcript: tape,
+        fromToken: playToken,
+        toToken: playToken,
+      });
+      const range = highlight === "paragraph" ? ranges.paragraph : ranges.sentence;
+      return { from: range.fromToken, to: range.toToken };
+    } catch {
+      return { from: playToken, to: playToken };
+    }
+  }, [highlight, manuscript, playToken, tape]);
+
+  const nowToken = playToken ?? (typeof focused?.manuscript_index === "number" ? focused.manuscript_index : null);
+  const nowBand = playBand ?? focusBand;
+  nowTokenRef.current = nowToken;
+
+  const tokenEl = useCallback((index: number | null) => {
+    if (index == null) {
+      return null;
+    }
+    return rootRef.current?.querySelector<HTMLElement>(`[data-token="${index}"]`) ?? null;
+  }, []);
+
+  const wordOffScreen = useCallback(
+    (index: number | null) => {
+      const root = rootRef.current;
+      const el = tokenEl(index);
+      if (!root || !el) {
+        return false;
+      }
+      const rootRect = root.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const pad = root.clientHeight * 0.2;
+      return elRect.bottom < rootRect.top + pad || elRect.top > rootRect.bottom - pad;
+    },
+    [tokenEl],
+  );
+
+  const scrollToToken = useCallback(
+    (index: number | null) => {
+      const root = rootRef.current;
+      const el = tokenEl(index);
+      if (!root || !el) {
+        return;
+      }
+      const rootRect = root.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const bandY = root.clientHeight * 0.42;
+      autoScrollRef.current = true;
+      root.scrollTop += elRect.top - rootRect.top - bandY + elRect.height / 2;
+      window.requestAnimationFrame(() => {
+        autoScrollRef.current = false;
+      });
+    },
+    [tokenEl],
+  );
+
+  const locatePlay = useCallback(() => {
+    followRef.current = true;
+    setLostPlace(false);
+    scrollToToken(nowTokenRef.current);
+  }, [scrollToToken]);
+
   useEffect(() => {
-    if (!focusedPickupId) {
+    if (!playKey) {
+      followRef.current = true;
+      setLostPlace(false);
       return;
     }
-    const el = rootRef.current?.querySelector(`[data-pickup="${focusedPickupId}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [focusedPickupId]);
+    followRef.current = true;
+    setLostPlace(false);
+  }, [playKey]);
+
+  useEffect(() => {
+    if (playKey && nowToken != null) {
+      if (!followRef.current) {
+        setLostPlace(wordOffScreen(nowToken));
+        return;
+      }
+      const frame = window.requestAnimationFrame(() => scrollToToken(nowToken));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (!playKey && focusedPickupId) {
+      const el = rootRef.current?.querySelector(`[data-pickup="${focusedPickupId}"]`);
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focusedPickupId, nowToken, playKey, scrollToToken, wordOffScreen]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !playKey) {
+      return;
+    }
+    function onScroll() {
+      if (autoScrollRef.current) {
+        return;
+      }
+      if (wordOffScreen(nowTokenRef.current)) {
+        followRef.current = false;
+        setLostPlace(true);
+      } else {
+        setLostPlace(false);
+      }
+    }
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => root.removeEventListener("scroll", onScroll);
+  }, [playKey, wordOffScreen]);
 
   if (tokens.length === 0) {
     return null;
@@ -202,8 +335,9 @@ export function ReviewScript({
                     pickupByToken.get(part.tokenIndex) &&
                       pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
                   )}
+                  isNow={nowToken === part.tokenIndex}
                   inBand={Boolean(
-                    focusBand && part.tokenIndex >= focusBand.from && part.tokenIndex <= focusBand.to,
+                    nowBand && part.tokenIndex >= nowBand.from && part.tokenIndex <= nowBand.to,
                   )}
                   onFlag={(pickup) => onRedo(pickup)}
                 />
@@ -212,6 +346,17 @@ export function ReviewScript({
           </p>
         ))}
       </div>
+      {lostPlace && playAt != null ? (
+        <button
+          type="button"
+          className="ma-locate-speak"
+          onClick={locatePlay}
+          title="Locate the word being played"
+          aria-label="Locate the word being played"
+        >
+          <LocateGlyph />
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -224,6 +369,7 @@ function FlagWord({
   selected,
   pickup,
   focused,
+  isNow,
   inBand,
   onFlag,
 }: {
@@ -232,6 +378,7 @@ function FlagWord({
   selected: boolean;
   pickup?: ChapterPickup;
   focused: boolean;
+  isNow: boolean;
   inBand: boolean;
   onFlag: (pickup: ChapterPickup) => void;
 }) {
@@ -240,8 +387,9 @@ function FlagWord({
     "ma-review-word",
     selected ? "is-selected" : "",
     pickup ? `is-flag is-flag-${pickup.kind}` : "",
-    focused ? "is-focused is-now" : "",
-    inBand && !focused ? "in-band" : "",
+    focused ? "is-focused" : "",
+    isNow ? "is-now" : "",
+    inBand && !isNow ? "in-band" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -294,4 +442,14 @@ function scriptBlocks(
     offset = end;
   }
   return blocks;
+}
+
+function LocateGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 2.2v1.7M8 12.1v1.7M2.2 8h1.7M12.1 8h1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="1.05" fill="currentColor" />
+    </svg>
+  );
 }

@@ -51,11 +51,9 @@ export function ChapterWorkspace({
   const [chapterText, setChapterText] = useState("");
   const [proofing, setProofing] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
-  const [masteringOut, setMasteringOut] = useState(false);
   const [startOverAsk, setStartOverAsk] = useState(false);
   const [roomOpen, setRoomOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
-  const [soundAboutOpen, setSoundAboutOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -99,19 +97,6 @@ export function ChapterWorkspace({
       setProofError(reason instanceof Error ? reason.message : "Proofread failed.");
     } finally {
       setProofing(false);
-    }
-  }
-
-  async function goMaster() {
-    setProofError(null);
-    setMasteringOut(true);
-    try {
-      onChange(await masterChapterWorking(project, chapterId));
-      onStep("mastering");
-    } catch (reason) {
-      setProofError(reason instanceof Error ? reason.message : "Mastering failed.");
-    } finally {
-      setMasteringOut(false);
     }
   }
 
@@ -189,8 +174,6 @@ export function ChapterWorkspace({
             onBack={onBack}
             onChange={onChange}
             onStartOver={() => setStartOverAsk(true)}
-            onContinueMaster={() => void goMaster()}
-            mastering={masteringOut}
           />
         ) : null}
 
@@ -200,7 +183,6 @@ export function ChapterWorkspace({
             chapterId={chapterId}
             onChange={onChange}
             onNextChapter={onNextChapter}
-            onAbout={() => setSoundAboutOpen(true)}
           />
         ) : null}
       </div>
@@ -214,15 +196,6 @@ export function ChapterWorkspace({
       {step === "recording" && guideOpen ? (
         <BoothSheet title="Pronunciation guide" onClose={() => setGuideOpen(false)}>
           <PronunciationCheatSheet entries={guides} project={project} />
-        </BoothSheet>
-      ) : null}
-
-      {step === "mastering" && soundAboutOpen ? (
-        <BoothSheet title="These files" onClose={() => setSoundAboutOpen(false)}>
-          <p className="booth-sheet-copy">
-            Original is the booth tape. Unmastered is the punch copy after proofreading. Mastered is the latest pipeline
-            output, ready to check against Audible.
-          </p>
         </BoothSheet>
       ) : null}
 
@@ -380,13 +353,11 @@ function MasteringStep({
   chapterId,
   onChange,
   onNextChapter,
-  onAbout,
 }: {
   project: BookProject;
   chapterId: string;
   onChange: (next: BookProject) => void;
   onNextChapter?: () => void;
-  onAbout: () => void;
 }) {
   const chapter = project.chapters.find((item) => item.id === chapterId);
   const [mastering, setMastering] = useState(false);
@@ -395,12 +366,23 @@ function MasteringStep({
   const [checkError, setCheckError] = useState<string | null>(null);
   const [acxReport, setAcxReport] = useState<AcxReport | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [listen, setListen] = useState<"original" | "working" | "mastered">("original");
   const [measureNonce, setMeasureNonce] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => () => {
     audioRef.current?.pause();
   }, []);
+
+  useEffect(() => {
+    if (chapter?.masteredFile) {
+      setListen("mastered");
+    } else if (chapter?.workingFile) {
+      setListen("working");
+    } else {
+      setListen("original");
+    }
+  }, [chapter?.masteredFile, chapter?.workingFile, chapter?.originalFile]);
 
   useEffect(() => {
     const file = chapter?.masteredFile;
@@ -427,6 +409,8 @@ function MasteringStep({
     return null;
   }
   const current = chapter;
+  const listenFile =
+    listen === "mastered" ? current.masteredFile : listen === "working" ? current.workingFile : current.originalFile;
 
   async function runMaster() {
     setMasterError(null);
@@ -521,68 +505,112 @@ function MasteringStep({
 
   return (
     <div className="quest-master">
-      <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
-        {Array.from({ length: 22 }, (_, index) => (
-          <i key={index} style={{ animationDelay: `${index * 42}ms`, animationDuration: `${0.7 + (index % 5) * 0.18}s` }} />
-        ))}
-      </div>
-      <div className="quest-master-slots">
-        <button
-          type="button"
-          className={`quest-slot${playing === "original" ? " is-on" : ""}`}
-          disabled={!chapter.originalFile}
-          onClick={() => void playSlot(chapter.originalFile, "original")}
-        >
-          <strong>Original</strong>
-          <span>{playing === "original" ? "Playing" : "Booth tape"}</span>
-        </button>
-        <button
-          type="button"
-          className={`quest-slot${playing === "working" ? " is-on" : ""}`}
-          disabled={!chapter.workingFile}
-          onClick={() => void playSlot(chapter.workingFile, "working")}
-        >
-          <strong>Unmastered</strong>
-          <span>{playing === "working" ? "Playing" : "Punch copy"}</span>
-        </button>
-        <button
-          type="button"
-          className={`quest-slot${playing === "mastered" ? " is-on" : ""}`}
-          disabled={!chapter.masteredFile}
-          onClick={() => void playSlot(chapter.masteredFile, "mastered")}
-        >
-          <strong>Mastered</strong>
-          <span>{playing === "mastered" ? "Playing" : "Pipeline"}</span>
-        </button>
-      </div>
-      <div className="quest-master-acts">
-        <button type="button" className="quest-act is-primary" onClick={() => void runMaster()} disabled={mastering}>
-          {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master chapter"}
-        </button>
-        <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
-          {checking ? "Measuring…" : "Check this audio"}
-        </button>
-        {onNextChapter ? (
-          <button type="button" className="quest-act" onClick={onNextChapter}>
-            Next chapter
+      <div className="quest-master-stage">
+        <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
+          {Array.from({ length: 28 }, (_, index) => (
+            <i key={index} style={{ animationDelay: `${index * 36}ms`, animationDuration: `${0.72 + (index % 5) * 0.16}s` }} />
+          ))}
+        </div>
+        <div className="quest-listen">
+          <button
+            type="button"
+            className="quest-listen-play"
+            disabled={!listenFile}
+            onClick={() => {
+              if (playing === listen) {
+                audioRef.current?.pause();
+                setPlaying(null);
+                return;
+              }
+              void playSlot(listenFile, listen);
+            }}
+            aria-label={playing === listen ? "Pause" : "Play"}
+          >
+            {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
           </button>
-        ) : null}
-        <button type="button" className="quest-act" onClick={onAbout}>
-          About
+          <div className="quest-listen-body">
+            <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
+              {(
+                [
+                  { id: "original" as const, label: "Original", file: chapter.originalFile },
+                  { id: "working" as const, label: "Unmastered", file: chapter.workingFile },
+                  { id: "mastered" as const, label: "Mastered", file: chapter.masteredFile },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={listen === item.id}
+                  className={listen === item.id ? "is-on" : undefined}
+                  disabled={!item.file}
+                  onClick={() => {
+                    setListen(item.id);
+                    if (playing) {
+                      void playSlot(item.file, item.id);
+                    }
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="quest-listen-hint">
+              {listen === "mastered"
+                ? "Ready for Audible"
+                : listen === "working"
+                  ? "After proofreading"
+                  : "The booth tape"}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="quest-act is-primary quest-master-go"
+          onClick={() => void runMaster()}
+          disabled={mastering}
+        >
+          {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master this chapter"}
         </button>
+        <div className="quest-master-acts">
+          <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
+            {checking ? "Measuring…" : "Check for Audible"}
+          </button>
+          {onNextChapter ? (
+            <button type="button" className="quest-act" onClick={onNextChapter}>
+              Next chapter
+            </button>
+          ) : null}
+        </div>
+        {chapter.acxTrafficLight && !acxReport ? (
+          <p className="quest-master-note">
+            Last check:{" "}
+            {chapter.acxTrafficLight === "green" ? "ready" : chapter.acxTrafficLight === "yellow" ? "close" : "needs a fix"}.
+          </p>
+        ) : null}
+        {acxReport ? (
+          <ChapterMeter report={acxReport} masteringPlan={!chapter.mastered} onListenQuiet={() => void listenQuiet()} />
+        ) : null}
+        {checkError ? <p className="ma-error">{checkError}</p> : null}
+        {masterError ? <p className="ma-error">{masterError}</p> : null}
       </div>
-      {chapter.acxTrafficLight && !acxReport ? (
-        <p className="quest-master-note">
-          Last check:{" "}
-          {chapter.acxTrafficLight === "green" ? "ready" : chapter.acxTrafficLight === "yellow" ? "close" : "needs a fix"}.
-        </p>
-      ) : null}
-      {acxReport ? (
-        <ChapterMeter report={acxReport} masteringPlan={!chapter.mastered} onListenQuiet={() => void listenQuiet()} />
-      ) : null}
-      {checkError ? <p className="ma-error">{checkError}</p> : null}
-      {masterError ? <p className="ma-error">{masterError}</p> : null}
     </div>
+  );
+}
+
+function PlayListenGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5.2 3.4 12.4 8 5.2 12.6V3.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseListenGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5 3.4h2v9.2H5zM9 3.4h2v9.2H9z" fill="currentColor" />
+    </svg>
   );
 }
 

@@ -16,7 +16,7 @@ import {
   writeBoothFontPx,
   writePromptTheme,
 } from "./reading-prefs";
-import { workingChapterTranscript } from "./review-timing";
+import { originalChapterTranscript, workingChapterTranscript } from "./review-timing";
 import { addSuppressedWord, suppressLabel } from "./suppress";
 import {
   applyChapterPickups,
@@ -38,8 +38,6 @@ export function ReviewScreen({
   onChange,
   embedded,
   onStartOver,
-  onContinueMaster,
-  mastering,
 }: {
   project: BookProject;
   chapterId: string;
@@ -47,8 +45,6 @@ export function ReviewScreen({
   onChange: (next: BookProject) => void;
   embedded?: boolean;
   onStartOver?: () => void;
-  onContinueMaster?: () => void;
-  mastering?: boolean;
 }) {
   const chapter = useMemo(
     () => project.chapters.find((item) => item.id === chapterId) ?? null,
@@ -62,6 +58,7 @@ export function ReviewScreen({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [playing, setPlaying] = useState<string | null>(null);
+  const [playAt, setPlayAt] = useState<number | null>(null);
   const [manuscript, setManuscript] = useState("");
   const [highlight, setHighlight] = useState<PromptHighlightMode>("word");
   const [theme, setTheme] = useState(readPromptTheme);
@@ -69,6 +66,7 @@ export function ReviewScreen({
   const [lineSpacing, setLineSpacing] = useState(1.55);
   const [readingOpen, setReadingOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [moreId, setMoreId] = useState<string | null>(null);
   const originalUrl = useRef<string | null>(null);
   const workingUrl = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -129,6 +127,10 @@ export function ReviewScreen({
     () => (chapter && manuscript ? workingChapterTranscript(manuscript, chapter) : []),
     [chapter, manuscript],
   );
+  const originalTranscript = useMemo(
+    () => (chapter && manuscript ? originalChapterTranscript(manuscript, chapter) : []),
+    [chapter, manuscript],
+  );
 
   if (!chapter) {
     return (
@@ -147,6 +149,7 @@ export function ReviewScreen({
   const open = (current.pickups ?? [])
     .filter((pickup) => pickup.status === "open" && markKindEnabled(pickup.kind))
     .sort((left, right) => (left.line_start ?? left.t_start) - (right.line_start ?? right.t_start));
+  const morePickup = open.find((item) => item.id === moreId) ?? null;
   const resolved = (current.pickups ?? []).filter((pickup) => pickup.status !== "open");
   const punches = (current.punches ?? []).filter((punch) => punch.edit_status !== "reverted");
   const focusedPickupId = playing?.includes("-") ? playing.slice(playing.indexOf("-") + 1) : null;
@@ -155,6 +158,7 @@ export function ReviewScreen({
     audioRef.current?.pause();
     audioRef.current = null;
     setPlaying(null);
+    setPlayAt(null);
   }
 
   function playRange(slot: "original" | "working", pickup: ChapterPickup) {
@@ -167,20 +171,30 @@ export function ReviewScreen({
     const pad = bounds.wordOnly ? 0.5 : 0.15;
     const audio = new Audio(url);
     audioRef.current = audio;
-    audio.currentTime = Math.max(0, bounds.start - pad);
+    const startAt = Math.max(0, bounds.start - pad);
+    audio.currentTime = startAt;
     const stopAt = bounds.end + pad;
     const key = `${slot}-${pickup.id}`;
     setPlaying(key);
+    setPlayAt(startAt);
     const onTime = () => {
+      setPlayAt(audio.currentTime);
       if (audio.currentTime >= stopAt) {
         audio.pause();
         audio.removeEventListener("timeupdate", onTime);
         setPlaying(null);
+        setPlayAt(null);
       }
     };
     audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("ended", () => setPlaying(null));
-    void audio.play().catch(() => setPlaying(null));
+    audio.addEventListener("ended", () => {
+      setPlaying(null);
+      setPlayAt(null);
+    });
+    void audio.play().catch(() => {
+      setPlaying(null);
+      setPlayAt(null);
+    });
   }
 
   function patchPickup(pickup: ChapterPickup, status: ChapterPickup["status"]) {
@@ -255,11 +269,6 @@ export function ReviewScreen({
               Start over
             </button>
           ) : null}
-          {onContinueMaster ? (
-            <button type="button" className="booth-tool" onClick={onContinueMaster} disabled={mastering}>
-              {mastering ? "Mastering…" : "Mastering"}
-            </button>
-          ) : null}
         </div>
       </header>
 
@@ -278,6 +287,9 @@ export function ReviewScreen({
             chapterTitle={chapter.title}
             manuscript={manuscript}
             transcript={transcript}
+            playTranscript={playing?.startsWith("original-") ? originalTranscript : transcript}
+            playAt={playAt}
+            playKey={playing}
             pickups={open}
             focusedPickupId={focusedPickupId}
             sourceKind={chapter.recordedWords?.length ? "live" : "take"}
@@ -309,12 +321,8 @@ export function ReviewScreen({
                 pickup={pickup}
                 playing={playing}
                 hasOriginal={Boolean(chapter.originalFile)}
-                hasWorking={Boolean(chapter.workingFile)}
                 onPlayOriginal={() => playRange("original", pickup)}
-                onPlayWorking={() => playRange("working", pickup)}
-                onKeep={() => patchPickup(pickup, "ignored")}
-                onFixed={() => patchPickup(pickup, "done")}
-                onNeverFlag={pickup.kind === "pause" ? undefined : () => neverFlag(pickup)}
+                onMore={() => setMoreId(pickup.id)}
                 onPunch={() => {
                   setSessionIds(null);
                   setPunching(pickup);
@@ -342,6 +350,64 @@ export function ReviewScreen({
             fontPx={fontPx}
             onFontPx={(value) => setFontPx(writeBoothFontPx(value))}
           />
+        </BoothSheet>
+      ) : null}
+
+      {morePickup ? (
+        <BoothSheet title={(morePickup.expected || morePickup.heard || "Flag").trim() || "Flag"} onClose={() => setMoreId(null)}>
+          {morePickup.heard && morePickup.heard !== morePickup.expected ? (
+            <p className="booth-sheet-copy">Heard “{morePickup.heard}”.</p>
+          ) : null}
+          <div className="ma-flag-sheet">
+            <button
+              type="button"
+              className="booth-tool"
+              disabled={!chapter.originalFile}
+              onClick={() => playRange("original", morePickup)}
+            >
+              {playing === `original-${morePickup.id}` ? "Pause original" : "Listen original"}
+            </button>
+            <button
+              type="button"
+              className="booth-tool"
+              disabled={!chapter.workingFile}
+              onClick={() => playRange("working", morePickup)}
+            >
+              {playing === `working-${morePickup.id}` ? "Pause updated" : "Listen updated"}
+            </button>
+            <button
+              type="button"
+              className="booth-tool"
+              onClick={() => {
+                patchPickup(morePickup, "ignored");
+                setMoreId(null);
+              }}
+            >
+              Keep this take
+            </button>
+            <button
+              type="button"
+              className="booth-tool"
+              onClick={() => {
+                patchPickup(morePickup, "done");
+                setMoreId(null);
+              }}
+            >
+              Mark resolved
+            </button>
+            {morePickup.kind !== "pause" && suppressLabel(morePickup) ? (
+              <button
+                type="button"
+                className="booth-tool"
+                onClick={() => {
+                  neverFlag(morePickup);
+                  setMoreId(null);
+                }}
+              >
+                Never flag “{suppressLabel(morePickup)}”
+              </button>
+            ) : null}
+          </div>
         </BoothSheet>
       ) : null}
 
@@ -455,29 +521,22 @@ function PickupRow({
   pickup,
   playing,
   hasOriginal,
-  hasWorking,
   onPlayOriginal,
-  onPlayWorking,
-  onKeep,
-  onFixed,
-  onNeverFlag,
+  onMore,
   onPunch,
 }: {
   pickup: ChapterPickup;
   playing: string | null;
   hasOriginal: boolean;
-  hasWorking: boolean;
   onPlayOriginal: () => void;
-  onPlayWorking: () => void;
-  onKeep: () => void;
-  onFixed: () => void;
-  onNeverFlag?: () => void;
+  onMore: () => void;
   onPunch: () => void;
 }) {
   const kind = pickupKindPresentation(pickup.kind);
   const bounds = pickupLineBounds(pickup);
   const word = (pickup.expected || pickup.heard || "").trim();
   const line = (pickup.line_text || "").trim();
+  const hearingOriginal = playing === `original-${pickup.id}`;
   return (
     <li className="ma-pickup-row ma-booth-panel">
       <div className="ma-pickup-head">
@@ -491,41 +550,73 @@ function PickupRow({
         <p className="ma-pickup-heard">Heard “{pickup.heard}”</p>
       ) : null}
       {line && line !== word ? <p className="ma-pickup-line">{line}</p> : null}
-      <div className="ma-flag-actions">
+      <div className="ma-flag-bar">
         <button
           type="button"
-          className="booth-tool"
+          className="booth-tool is-icon"
           disabled={!hasOriginal}
           onClick={onPlayOriginal}
-          aria-pressed={playing === `original-${pickup.id}`}
+          aria-pressed={hearingOriginal}
+          aria-label={hearingOriginal ? "Pause original" : "Listen to original"}
+          title={hearingOriginal ? "Pause" : "Listen"}
         >
-          {playing === `original-${pickup.id}` ? "Playing original" : "Listen original"}
+          {hearingOriginal ? <PauseGlyph /> : <PlayGlyph />}
         </button>
         <button
           type="button"
-          className="booth-tool"
-          disabled={!hasWorking}
-          onClick={onPlayWorking}
-          aria-pressed={playing === `working-${pickup.id}`}
+          className="booth-tool is-icon"
+          onClick={onPunch}
+          aria-label="Re-record this word"
+          title="Re-record"
         >
-          {playing === `working-${pickup.id}` ? "Playing newer" : "Listen updated"}
+          <MicGlyph />
         </button>
-        <button type="button" className="booth-tool" onClick={onKeep}>
-          Keep take
+        <button
+          type="button"
+          className="booth-tool is-icon"
+          onClick={onMore}
+          aria-label="More actions"
+          title="More"
+        >
+          <MoreGlyph />
         </button>
-        <button type="button" className="booth-tool" onClick={onFixed}>
-          Mark resolved
-        </button>
-        <button type="button" className="booth-tool is-wide" onClick={onPunch}>
-          Re-record
-        </button>
-        {onNeverFlag && suppressLabel(pickup) ? (
-          <button type="button" className="booth-tool is-wide" onClick={onNeverFlag}>
-            Never flag “{suppressLabel(pickup)}”
-          </button>
-        ) : null}
       </div>
     </li>
+  );
+}
+
+function PlayGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5.2 3.4 12.4 8 5.2 12.6V3.4Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M5 3.4h2v9.2H5zM9 3.4h2v9.2H9z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function MicGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.6" y="2.4" width="4.8" height="7.2" rx="2.4" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.8 8.2a4.2 4.2 0 0 0 8.4 0M8 12.4V13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MoreGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="3.6" cy="8" r="1.15" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.15" fill="currentColor" />
+      <circle cx="12.4" cy="8" r="1.15" fill="currentColor" />
+    </svg>
   );
 }
 
