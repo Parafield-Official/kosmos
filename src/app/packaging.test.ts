@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import viteConfig from "../../vite.config";
+import viteConfig from "../../labs/next/vite.config";
 import packageJson from "../../package.json";
 
 describe("packaged renderer configuration", () => {
@@ -10,7 +10,7 @@ describe("packaged renderer configuration", () => {
   });
 
   it("ships a restrictive renderer Content Security Policy", () => {
-    const html = readFileSync(resolve(__dirname, "../../index.html"), "utf8");
+    const html = readFileSync(resolve(__dirname, "../../labs/next/index.html"), "utf8");
     expect(html).toContain("Content-Security-Policy");
     expect(html).toContain("script-src 'self'");
     expect(html).toContain("object-src 'none'");

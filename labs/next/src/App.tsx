@@ -6,6 +6,7 @@ import {
   INTRO_PAUSE_MS,
   INTRO_STUDIO,
   INTRO_TAGLINE,
+  BRAND_LOGO,
   MARK_MS,
   STATEMENT_MS,
   isRoomPlace,
@@ -336,7 +337,7 @@ function IntroMark({ onComplete }: { onComplete: () => void }) {
     <section className="intro intro-mark" data-visible={visible ? "true" : "false"} aria-label="Kosmos">
       <img
         className="intro-logo intro-logo-alone"
-        src="/brand/logo.png"
+        src={BRAND_LOGO}
         alt=""
         width={400}
         height={289}

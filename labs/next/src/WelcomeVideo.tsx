@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { WELCOME_PLACEHOLDER_S, WELCOME_VIDEO, WELCOME_VIDEO_GAIN } from "./flow";
+import { BRAND_LOGO, WELCOME_PLACEHOLDER_S, WELCOME_VIDEO, WELCOME_VIDEO_GAIN } from "./flow";
 import "./welcome.css";
 
 export function WelcomeVideo({ onComplete }: { onComplete: () => void }) {
@@ -252,7 +252,7 @@ export function WelcomeVideo({ onComplete }: { onComplete: () => void }) {
           <div className="welcome-tv-screen" ref={screenRef}>
             {placeholder ? (
               <div className="welcome-placeholder" data-playing={playing ? "true" : "false"}>
-                <img src="/brand/logo.png" alt="" width={400} height={289} />
+                <img src={BRAND_LOGO} alt="" width={400} height={289} />
               </div>
             ) : null}
             <video

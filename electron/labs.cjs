@@ -29,6 +29,7 @@ const {
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
 const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
+const { lightboxPageUrl, shouldOpenLightboxDebug } = require("./lightbox-entry.cjs");
 
 const execFileAsync = promisify(execFile);
 
@@ -146,8 +147,10 @@ if (!gotSingleInstanceLock) {
   app.quit();
 }
 
-app.setName("Kosmos Labs");
-app.setPath("userData", path.join(app.getPath("appData"), "booth-desk-labs"));
+app.setName("Kosmos");
+if (!app.isPackaged) {
+  app.setPath("userData", path.join(app.getPath("appData"), "booth-desk-labs"));
+}
 
 /** Same cache Kosmos uses for proofreading speech models. */
 function mainUserDataPath() {
@@ -1354,6 +1357,9 @@ function placeDebugWindow() {
 }
 
 function openDebugWindow() {
+  if (!shouldOpenLightboxDebug({ isPackaged: app.isPackaged })) {
+    return;
+  }
   if (debugWindow && !debugWindow.isDestroyed()) {
     placeDebugWindow();
     debugWindow.show();
@@ -1383,7 +1389,12 @@ function openDebugWindow() {
       sandbox: true,
     },
   });
-  secureRendererWindow(debugWindow, { allowedUrls: ["http://127.0.0.1:5174/debug.html"] });
+  const debugUrl = lightboxPageUrl({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    page: "debug.html",
+  });
+  secureRendererWindow(debugWindow, { allowedUrls: [debugUrl] });
 
   debugWindow.setAlwaysOnTop(true, "floating");
   const revealDebug = () => {
@@ -1403,10 +1414,17 @@ function openDebugWindow() {
   debugWindow.on("closed", () => {
     debugWindow = null;
   });
-  void debugWindow.loadURL("http://127.0.0.1:5174/debug.html");
+  void debugWindow.loadURL(debugUrl);
 }
 
 function openLab() {
+  const rendererUrl = lightboxPageUrl({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+  });
+  const iconPath = app.isPackaged
+    ? path.join(app.getAppPath(), "dist", "brand", "logo.png")
+    : path.join(__dirname, "..", "labs/next/public/brand/logo.png");
   labWindow = new BrowserWindow({
     width: START_SIZE.width,
     height: START_SIZE.height,
@@ -1421,7 +1439,7 @@ function openLab() {
     backgroundColor: FRAMED_PLATFORM ? "#111111" : "#00000000",
     roundedCorners: !FRAMED_PLATFORM,
     hasShadow: true,
-    icon: path.join(__dirname, "..", "labs/next/public/brand/logo.png"),
+    icon: iconPath,
     show: false,
     // Keep the macOS title bar hidden while retaining a native draggable
     // title region behind the glass UI. `hiddenInset` can leave the custom
@@ -1435,7 +1453,7 @@ function openLab() {
       sandbox: true,
     },
   });
-  secureRendererWindow(labWindow, { allowedUrls: ["http://127.0.0.1:5174/"] });
+  secureRendererWindow(labWindow, { allowedUrls: [rendererUrl] });
 
   let revealed = false;
   const reveal = () => {
@@ -1613,7 +1631,7 @@ function openLab() {
     setTimeout(reveal, 400);
   });
 
-  void labWindow.loadURL("http://127.0.0.1:5174/");
+  void labWindow.loadURL(rendererUrl);
   labWindow.webContents.on("did-fail-load", (_event, code, desc, url) => {
     console.warn("[labs] failed to load", { code, desc, url });
   });
