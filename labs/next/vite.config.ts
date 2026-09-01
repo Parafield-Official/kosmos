@@ -25,6 +25,8 @@ function cmudictPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // Installed Electron builds load the Lightbox renderer through file://.
+  base: "./",
   plugins: [react(), wgslVitePlugin(), cmudictPlugin()],
   root,
   appType: "mpa",
@@ -34,6 +36,10 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
+    // The installer packages root dist/, so this replaces the legacy renderer
+    // with the Lightbox renderer for both macOS and Windows.
+    outDir: "../../dist",
+    emptyOutDir: true,
     rollupOptions: {
       input: {
         main: resolve(root, "index.html"),
