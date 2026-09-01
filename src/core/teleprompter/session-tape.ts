@@ -1,0 +1,362 @@
+import type { ChapterFile, Pickup } from "../project/types";
+import type { LiveExpectedWord, LiveWordConfirmation } from "./live";
+
+export const LIVE_CAUGHT_NOTE = "Caught while reading";
+export const MIN_LIVE_TAPE_SECONDS = 0.3;
+export const MAX_LIVE_TAPE_SECONDS = 2 * 60 * 60;
+
+export interface LiveTapeChapter {
+  audio_path?: string;
+  raw_audio_path?: string;
+  live_audio_path?: string;
+}
+
+export interface PickupAudioSource {
+  relativePath: string;
+  start: number;
+  end: number;
+  kind: "live" | "take";
+  /** True when the range is the flagged word alone, with no line recorded. */
+  wordOnly?: boolean;
+}
+
+/**
+ * Widen a pickup to the line it belongs to.
+ *
+ * A word's timestamps come from a speech model's word alignment, which is
+ * accurate to a few hundred milliseconds — most of a word, so a word-sized clip
+ * regularly plays the neighbour instead of the flagged word. The line recorded
+ * with the pickup is the range the narrator can actually judge, and hearing it
+ * is also the only way to tell a real slip from the model mishearing a clean
+ * read. Pickups filed before lines were recorded keep the word range.
+ */
+export function pickupLineBounds(
+  pickup: Pick<Pickup, "t_start" | "t_end" | "line_start" | "line_end">,
+): { start: number; end: number; wordOnly: boolean } {
+  const lineStart = pickup.line_start;
+  const lineEnd = pickup.line_end;
+  if (Number.isFinite(lineStart) && Number.isFinite(lineEnd) && (lineEnd as number) > (lineStart as number)) {
+    return { start: Math.max(0, lineStart as number), end: lineEnd as number, wordOnly: false };
+  }
+  return { start: Math.max(0, pickup.t_start), end: Math.max(0, pickup.t_end), wordOnly: true };
+}
+
+/** True when Review filed this row from Start narrating, not from Check chapter. */
+export function isLiveCaughtPickup(pickup: Pick<Pickup, "id" | "note">): boolean {
+  return pickup.note === LIVE_CAUGHT_NOTE || pickup.id.startsWith("live-");
+}
+
+/**
+ * Listen must use the clock that created the flag. A live flag's time is the
+ * booth tape. A proof flag's time is the attached take. The other file is the
+ * wrong recording even when both exist.
+ */
+export function audioSourceForPickup(
+  pickup: Pick<Pickup, "id" | "note" | "source_kind" | "t_start" | "t_end" | "line_start" | "line_end">,
+  chapter: LiveTapeChapter,
+): PickupAudioSource | null {
+  const range = pickupLineBounds(pickup);
+  if (pickup.source_kind === "live" || isLiveCaughtPickup(pickup)) {
+    if (!chapter.live_audio_path) {
+      return null;
+    }
+    return {
+      relativePath: chapter.live_audio_path,
+      start: range.start,
+      end: range.end,
+      kind: "live",
+      wordOnly: range.wordOnly,
+    };
+  }
+  if (pickup.source_kind === "take" && !chapter.audio_path) {
+    return null;
+  }
+  if (chapter.audio_path) {
+    return {
+      relativePath: chapter.audio_path,
+      start: range.start,
+      end: range.end,
+      kind: "take",
+      wordOnly: range.wordOnly,
+    };
+  }
+  // Check chapter can run against the booth tape. Those flags are timed on
+  // that file, so Listen has to play it — waiting for a later take would
+  // mute every Review card after Start narrating.
+  if (chapter.live_audio_path) {
+    return {
+      relativePath: chapter.live_audio_path,
+      start: range.start,
+      end: range.end,
+      kind: "live",
+      wordOnly: range.wordOnly,
+    };
+  }
+  return null;
+}
+
+export function listenDisabledReason(
+  pickup: Pick<Pickup, "id" | "note" | "source_kind" | "t_start" | "t_end" | "line_start" | "line_end">,
+  chapter: LiveTapeChapter,
+): string | null {
+  if (audioSourceForPickup(pickup, chapter)) {
+    return null;
+  }
+  return isLiveCaughtPickup(pickup)
+    ? "No booth tape of this read"
+    : "No chapter take attached";
+}
+
+/**
+ * Why this pickup cannot be punched yet, if it cannot.
+ *
+ * A live flag is timed on the booth tape, but a punch is spliced into the
+ * chapter take — two different recordings of the same words, so the flag's
+ * seconds point somewhere else entirely in the file being edited. Check chapter
+ * re-files these against the take, which is what gives them a position a splice
+ * can use.
+ */
+export function punchDisabledReason(
+  pickup: Pick<Pickup, "id" | "note" | "source_kind">,
+  chapter: LiveTapeChapter,
+): string | null {
+  if (pickup.source_kind === "live") {
+    if (!chapter.live_audio_path) {
+      return "No booth tape of this read";
+    }
+    if (chapter.audio_path && chapter.audio_path !== chapter.live_audio_path) {
+      return "The uploaded take is still the chapter edit. Use that recording, or make the booth tape the chapter take first";
+    }
+    return null;
+  }
+  if (pickup.source_kind === "take" && !chapter.audio_path) {
+    return "No uploaded chapter take attached";
+  }
+  if (isLiveCaughtPickup(pickup)) {
+    return chapter.audio_path
+      ? "Run Check chapter first, so this flag is timed on the take"
+      : "Attach the chapter take, then run Check chapter";
+  }
+  if (chapter.audio_path || chapter.live_audio_path) {
+    return null;
+  }
+  return "No chapter take attached";
+}
+
+/**
+ * A punch splices the chapter take. After a booth read there often is no
+ * take yet — only the tape Check chapter already timed against. Point the
+ * take at that same file so the splice uses the clock the flags already have.
+ */
+export function chapterWithBoothTapeAsTake<T extends LiveTapeChapter>(chapter: T): T {
+  if (chapter.audio_path || !chapter.live_audio_path) {
+    return chapter;
+  }
+  return {
+    ...chapter,
+    audio_path: chapter.live_audio_path,
+    raw_audio_path: chapter.raw_audio_path ?? chapter.live_audio_path,
+  };
+}
+
+/** Check chapter prefers the master take. The booth tape is enough when there is no take. */
+export function proofAudioSource(chapter: LiveTapeChapter): PickupAudioSource | null {
+  return resolveProofSource(chapter, null);
+}
+
+export type ProofSourceKind = "take" | "live";
+
+export function availableProofSources(chapter: LiveTapeChapter): {
+  take: PickupAudioSource | null;
+  live: PickupAudioSource | null;
+} {
+  return {
+    take: chapter.audio_path
+      ? { relativePath: chapter.audio_path, start: 0, end: 0, kind: "take" }
+      : null,
+    live: chapter.live_audio_path
+      ? { relativePath: chapter.live_audio_path, start: 0, end: 0, kind: "live" }
+      : null,
+  };
+}
+
+/** Honour an explicit booth-tape vs uploaded-take choice. Missing sides fall back. */
+export function resolveProofSource(
+  chapter: LiveTapeChapter,
+  preference: ProofSourceKind | null,
+): PickupAudioSource | null {
+  const sources = availableProofSources(chapter);
+  if (preference === "live" && sources.live) {
+    return sources.live;
+  }
+  if (preference === "take" && sources.take) {
+    return sources.take;
+  }
+  return sources.take ?? sources.live;
+}
+
+export function shouldKeepLiveTape(sampleCount: number, sampleRate: number): boolean {
+  if (!Number.isFinite(sampleCount) || !Number.isFinite(sampleRate) || sampleRate <= 0 || sampleCount <= 0) {
+    return false;
+  }
+  const seconds = sampleCount / sampleRate;
+  return seconds >= MIN_LIVE_TAPE_SECONDS && seconds <= MAX_LIVE_TAPE_SECONDS;
+}
+
+export function concatLiveTape(chunks: readonly Float32Array[]): Float32Array {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const samples = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    samples.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return samples;
+}
+
+export interface LivePunchRollPlan {
+  restartIndex: number;
+  punchAtSeconds: number;
+  cueFromSeconds: number;
+}
+
+/**
+ * Choose a clean sentence boundary already present on the live tape.
+ *
+ * Punch-and-roll cannot start from a manuscript word with no recording clock.
+ * If ASR missed the sentence's first word, use the first confirmed word inside
+ * that sentence rather than guessing an audio offset and cutting a syllable.
+ */
+export function planLivePunchRoll(
+  expected: readonly LiveExpectedWord[],
+  confirmations: readonly LiveWordConfirmation[],
+  cursor: number,
+  prerollSeconds: number,
+): LivePunchRollPlan | null {
+  if (expected.length === 0 || confirmations.length === 0) {
+    return null;
+  }
+  const at = Math.min(expected.length - 1, Math.max(0, Math.floor(cursor)));
+  let sentenceStart = at;
+  while (sentenceStart > 0 && expected[sentenceStart - 1]?.endsSentence !== true) {
+    sentenceStart -= 1;
+  }
+  const point = [...confirmations]
+    .filter((confirmation) => (
+      confirmation.expectedIndex >= sentenceStart
+      && confirmation.expectedIndex <= at
+      && Number.isFinite(confirmation.start)
+      && confirmation.start >= 0
+    ))
+    .sort((left, right) => left.expectedIndex - right.expectedIndex)[0];
+  if (!point) {
+    return null;
+  }
+  const punchAtSeconds = Math.max(0, point.start);
+  const safePreroll = Number.isFinite(prerollSeconds) ? Math.max(0, prerollSeconds) : 0;
+  return {
+    restartIndex: point.expectedIndex,
+    punchAtSeconds,
+    cueFromSeconds: Math.max(0, punchAtSeconds - safePreroll),
+  };
+}
+
+/** Copy a time range from chunked mono PCM without changing the live tape. */
+export function clipLiveTape(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  fromSeconds: number,
+  toSeconds: number,
+): Float32Array {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return new Float32Array(0);
+  }
+  const samples = concatLiveTape(chunks);
+  const from = Math.min(samples.length, Math.max(0, Math.round(fromSeconds * sampleRate)));
+  const to = Math.min(samples.length, Math.max(from, Math.round(toSeconds * sampleRate)));
+  return samples.slice(from, to);
+}
+
+export interface LivePunchCue {
+  samples: Float32Array;
+  kind: "recorded" | "count-in";
+}
+
+/**
+ * Prepare a restart cue that is always audible.
+ *
+ * A valid punch boundary can sit at the very beginning of this recording
+ * session—for example when the narrator starts halfway through a chapter. In
+ * that case the nominal pre-roll contains microphone startup silence, not the
+ * preceding sentence. Treating a non-empty silent buffer as useful playback
+ * made Restart appear to work while the narrator heard nothing. A short
+ * three-beat count-in is the honest fallback when no recorded voice exists.
+ */
+export function buildLivePunchCue(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  fromSeconds: number,
+  toSeconds: number,
+): LivePunchCue {
+  const recorded = clipLiveTape(chunks, sampleRate, fromSeconds, toSeconds);
+  if (hasAudibleWindow(recorded, sampleRate)) {
+    return { samples: recorded, kind: "recorded" };
+  }
+  return { samples: createPunchCountIn(sampleRate), kind: "count-in" };
+}
+
+function hasAudibleWindow(samples: Float32Array, sampleRate: number): boolean {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0 || samples.length === 0) {
+    return false;
+  }
+  const windowSize = Math.max(1, Math.round(sampleRate * 0.08));
+  for (let from = 0; from < samples.length; from += windowSize) {
+    const to = Math.min(samples.length, from + windowSize);
+    let sumSquares = 0;
+    for (let index = from; index < to; index += 1) {
+      const sample = samples[index] ?? 0;
+      sumSquares += sample * sample;
+    }
+    if (Math.sqrt(sumSquares / Math.max(1, to - from)) >= 0.008) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function createPunchCountIn(sampleRate: number): Float32Array {
+  const rate = Number.isFinite(sampleRate) && sampleRate > 0 ? Math.round(sampleRate) : 48_000;
+  const durationSeconds = 1.35;
+  const pulseSeconds = 0.09;
+  const fadeSeconds = 0.012;
+  const output = new Float32Array(Math.max(1, Math.round(rate * durationSeconds)));
+  [0.08, 0.53, 0.98].forEach((startSeconds, pulseIndex) => {
+    const start = Math.round(startSeconds * rate);
+    const length = Math.round(pulseSeconds * rate);
+    const fade = Math.max(1, Math.round(fadeSeconds * rate));
+    const frequency = pulseIndex === 2 ? 1_050 : 760;
+    for (let offset = 0; offset < length && start + offset < output.length; offset += 1) {
+      const envelope = Math.min(1, offset / fade, (length - offset) / fade);
+      output[start + offset] = Math.sin((2 * Math.PI * frequency * offset) / rate) * 0.24 * envelope;
+    }
+  });
+  return output;
+}
+
+/** Return a copy of a live tape ending at the requested punch boundary. */
+export function truncateLiveTape(
+  chunks: readonly Float32Array[],
+  sampleRate: number,
+  endSeconds: number,
+): Float32Array[] {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    return [];
+  }
+  const samples = concatLiveTape(chunks);
+  const end = Math.min(samples.length, Math.max(0, Math.round(endSeconds * sampleRate)));
+  return end > 0 ? [samples.slice(0, end)] : [];
+}
+
+export function liveTapePathHint(chapter: Pick<ChapterFile, "id">): string {
+  return `audio/live/${chapter.id}_session.wav`;
+}

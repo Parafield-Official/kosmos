@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+        background: transparent !important;
+      }
+    </style>
+    <title>Pure Glass Test</title>
+  </head>
+  <body>
+    <div id="root">
+      <div id="pane" aria-hidden="true"></div>
+      <div class="controls">
+        <strong>pure glass test</strong>
+        <p class="hint">Tint 0 + OS blur off = sharp desktop through the pane.</p>
+        <label>
+          black tint
+          <span id="tint-value">0.00</span>
+          <input id="tint" type="range" min="0" max="0.5" step="0.01" value="0" />
+        </label>
+        <label>
+          OS blur (popover)
+          <input id="os-blur" type="checkbox" />
+        </label>
+      </div>
+    </div>
+    <script type="module" src="/src/glass-test-main.ts"></script>
+  </body>
+</html>

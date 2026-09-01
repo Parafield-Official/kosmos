@@ -1,0 +1,395 @@
+.welcome {
+  position: relative;
+  height: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: stretch;
+  padding: 0.42rem 0.62rem 0.72rem;
+}
+
+.welcome-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.welcome-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 2, 6, 0.18);
+}
+
+.welcome-light {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  mix-blend-mode: screen;
+}
+
+.welcome-source {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5.1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: #fff6d2;
+  box-shadow:
+    0 0 14px 6px rgba(255, 236, 160, 1),
+    0 14px 36px 12px rgba(255, 196, 80, 0.44),
+    0 44px 90px 26px rgba(255, 176, 50, 0.2);
+  transform: translateX(-50%);
+}
+
+.welcome-tv {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto auto;
+  width: 100%;
+  align-self: center;
+  overflow: visible;
+  border-radius: 18px;
+  background: transparent;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.welcome-tv-rim {
+  padding: 0.3rem 0.46rem 0;
+}
+
+.welcome-tv-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #09090c;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 12px 28px rgba(0, 0, 0, 0.42);
+}
+
+.welcome-video,
+.welcome-placeholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #09090c;
+}
+
+.welcome-placeholder {
+  display: grid;
+  place-items: center;
+}
+
+.welcome-placeholder img {
+  width: 5.5rem;
+  opacity: 0.92;
+}
+
+.welcome-placeholder[data-playing="true"] img {
+  animation: welcome-pulse 2.4s ease-in-out infinite;
+}
+
+.welcome-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: end;
+  pointer-events: none;
+}
+
+.welcome-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.welcome-frame-btn {
+  color: #ffffff;
+}
+
+.btn.welcome-frame-btn {
+  position: absolute;
+  top: 0.55rem;
+  z-index: 3;
+}
+
+.btn.btn-circle.btn-clear.welcome-frame-btn > svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  filter:
+    drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.38))
+    drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.22));
+}
+
+/* Video sits behind these — skip the dark glyph scrim so icons stay white. */
+.btn.btn-circle.btn-clear.welcome-frame-btn::before {
+  opacity: 0;
+}
+
+.btn.btn-circle.btn-clear.welcome-frame-btn.welcome-continue.ready > svg {
+  filter: none;
+}
+
+.welcome-continue:not(.ready):disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  color: #ffffff;
+}
+
+.welcome-continue:not(.ready):disabled svg {
+  opacity: 0.9;
+}
+
+.welcome-rewatch {
+  left: 0.55rem;
+}
+
+.welcome-continue {
+  right: 0.55rem;
+}
+
+.welcome-continue.ready::before {
+  opacity: 0;
+}
+
+.welcome-continue.ready {
+  color: #111111;
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+.welcome-continue.ready:hover,
+.welcome-continue.ready:focus-visible {
+  color: var(--press);
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.16),
+    0 0 22px rgba(255, 255, 255, 0.42),
+    0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.welcome-continue.ready:active {
+  color: var(--press);
+  background: #f2f0ed;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.12),
+    0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.welcome-yt {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.7rem 0.55rem 0.48rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.72));
+  pointer-events: auto;
+}
+
+.welcome-yt-progress {
+  position: relative;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+  pointer-events: none;
+  transition: height 240ms cubic-bezier(0.34, 1.28, 0.64, 1);
+}
+
+.welcome-yt-progress.scrub {
+  height: 5px;
+  margin: 1px 0;
+  overflow: visible;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.welcome-yt-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #ffffff;
+  pointer-events: none;
+}
+
+.welcome-yt-thumb {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 220ms cubic-bezier(0.34, 1.28, 0.64, 1),
+    opacity 180ms ease-out;
+}
+
+.welcome-yt-progress.scrub:hover .welcome-yt-thumb,
+.welcome-yt-progress.scrub:active .welcome-yt-thumb {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+.welcome-yt-bar {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 1.8rem;
+}
+
+.welcome-yt-play,
+.welcome-yt-icon {
+  position: relative;
+  z-index: 0;
+  box-sizing: border-box;
+  width: 1.85rem;
+  height: 1.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.welcome-yt-play::before,
+.welcome-yt-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 50%;
+  background: transparent;
+  transform: scale(1);
+  transition:
+    transform 260ms cubic-bezier(0.34, 1.28, 0.64, 1),
+    background-color 180ms ease-out,
+    box-shadow 260ms cubic-bezier(0.34, 1.28, 0.64, 1),
+    backdrop-filter 180ms ease-out;
+}
+
+.welcome-yt-play svg,
+.welcome-yt-icon svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  pointer-events: none;
+  filter:
+    drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.38))
+    drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.22));
+}
+
+.welcome-yt-play:active::before,
+.welcome-yt-icon:active::before {
+  transform: scale(0.94);
+  transition-duration: 100ms;
+  transition-timing-function: ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .welcome-yt-progress.scrub:hover {
+    height: 6px;
+  }
+
+  .welcome-yt-play:hover::before,
+  .welcome-yt-icon:hover::before {
+    transform: scale(1.14);
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.42),
+      0 4px 12px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px) saturate(150%);
+    -webkit-backdrop-filter: blur(10px) saturate(150%);
+  }
+
+  .btn.welcome-frame-btn:not(:disabled):hover {
+    transform: scale(1.06);
+    transition: transform 260ms cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+
+  .btn.welcome-frame-btn:not(:disabled):active {
+    transform: scale(0.96);
+    transition-duration: 100ms;
+    transition-timing-function: ease-out;
+  }
+}
+
+.welcome-yt-time {
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.welcome-yt-spacer {
+  min-width: 0;
+}
+
+.welcome-tv-bezel {
+  min-height: 1.85rem;
+  padding: 0 0.75rem 0.45rem;
+  background: transparent;
+}
+
+@keyframes welcome-pulse {
+  50% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-light,
+  .welcome-source,
+  .welcome-placeholder[data-playing="true"] img {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .welcome-yt-play,
+  .welcome-yt-icon,
+  .welcome-yt-progress,
+  .welcome-yt-thumb,
+  .btn.welcome-frame-btn {
+    transition: none;
+  }
+
+  .welcome-yt-play:hover::before,
+  .welcome-yt-icon:hover::before,
+  .btn.welcome-frame-btn:hover {
+    transform: none;
+  }
+
+  .welcome-yt-progress.scrub:hover .welcome-yt-thumb,
+  .welcome-yt-progress.scrub:active .welcome-yt-thumb {
+    transform: translate(-50%, -50%);
+    opacity: 1;
+  }
+}

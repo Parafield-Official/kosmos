@@ -1,0 +1,12 @@
+{
+  "audio": "on_vs_in.wav",
+  "words": [
+    { "text": "the", "start": 0.00, "end": 0.19, "confidence": 0.98 },
+    { "text": "Fox", "start": 0.19, "end": 0.33, "confidence": 0.98 },
+    { "text": "jumped", "start": 0.40, "end": 0.68, "confidence": 0.98 },
+    { "text": "in", "start": 0.78, "end": 0.88, "confidence": 0.98 },
+    { "text": "the", "start": 0.88, "end": 1.07, "confidence": 0.98 },
+    { "text": "mat", "start": 1.07, "end": 1.24, "confidence": 0.98 }
+  ]
+}
+

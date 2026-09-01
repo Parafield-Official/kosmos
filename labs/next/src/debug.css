@@ -1,0 +1,174 @@
+:root {
+  color-scheme: light;
+  font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  background: #3a3840;
+  color: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #3a3840;
+  overflow: hidden;
+}
+
+.clear-glass-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.debug-palette {
+  height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  padding: 0.45rem;
+  border-radius: 22px;
+  background: #3a3840;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.debug-palette-drag {
+  margin: 0;
+  padding: 0.42rem 0.55rem;
+  color: #ffffff;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  cursor: grab;
+  text-shadow: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.debug-list {
+  display: grid;
+  gap: 0.22rem;
+  max-height: calc(100% - 2.1rem);
+  padding: 0;
+  border-radius: 10px;
+  background: transparent;
+  border: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.debug-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.debug-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.debug-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+}
+
+.debug-list button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background 280ms ease, box-shadow 280ms ease, border-color 280ms ease;
+}
+
+.debug-list button:hover,
+.debug-list button:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.debug-list button.on {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.debug-list button.on:hover,
+.debug-list button.on:focus-visible {
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.debug-dev {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem 0 0.15rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.debug-dev-action {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.48rem 0.65rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  text-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background 280ms ease, box-shadow 280ms ease;
+}
+
+.debug-dev-action:hover,
+.debug-dev-action:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .debug-palette {
+    background: rgba(48, 46, 54, 0.94);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

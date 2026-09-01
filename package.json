@@ -1,0 +1,147 @@
+{
+  "name": "booth-desk",
+  "version": "0.1.4",
+  "private": true,
+  "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Parafield-Official/kosmos.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "dev:next": "vite --config labs/next/vite.config.ts",
+    "dev:labs-windows": "wait-on http://127.0.0.1:5174 && electron electron/labs.cjs",
+    "dev:labs": "concurrently -k \"npm run dev:next\" \"npm run dev:labs-windows\"",
+    "predev": "npm run build:core",
+    "build": "npm run build:core && tsc --noEmit && vite build",
+    "build:core": "esbuild src/core/acx/master.ts --bundle --platform=node --format=cjs --outfile=dist-core/master.cjs && esbuild src/core/acx/export.ts --bundle --platform=node --format=cjs --outfile=dist-core/export.cjs && esbuild src/core/manuscript/index.ts --bundle --platform=node --format=cjs --outfile=dist-core/manuscript.cjs && esbuild src/core/glossary/index.ts --bundle --platform=node --format=cjs --outfile=dist-core/glossary.cjs && esbuild src/core/sharing/index.ts --bundle --platform=node --format=cjs --outfile=dist-core/sharing.cjs && esbuild src/core/markers/export.ts --bundle --platform=node --format=cjs --outfile=dist-core/markers.cjs && esbuild src/core/proof/report.ts --bundle --platform=node --format=cjs --outfile=dist-core/proof-report.cjs && esbuild src/core/proof/packet.ts --bundle --platform=node --format=cjs --outfile=dist-core/proof-packet.cjs && esbuild src/core/proof/silence.ts --bundle --platform=node --format=cjs --outfile=dist-core/proof-silence.cjs && esbuild src/core/duet/seats.ts --bundle --platform=node --format=cjs --outfile=dist-core/duet-seats.cjs && esbuild src/core/audio/wav.ts --bundle --platform=node --format=cjs --outfile=dist-core/audio.cjs && esbuild src/core/audio/splice.ts --bundle --platform=node --format=cjs --outfile=dist-core/splice.cjs && esbuild src/core/acx/room.ts --bundle --platform=node --format=cjs --outfile=dist-core/room.cjs && esbuild src/core/duet/mix.ts --bundle --platform=node --format=cjs --outfile=dist-core/duet-mix.cjs && esbuild src/core/duet/timeline.ts --bundle --platform=node --format=cjs --outfile=dist-core/duet-timeline.cjs && esbuild src/core/project/project.ts --bundle --platform=node --format=cjs --outfile=dist-core/project.cjs",
+    "start": "electron .",
+    "pretest": "npm run build:core",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "benchmark:line-follow": "jiti scripts/benchmark-line-follow.ts",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run build:core && npm run verify:acx && npm run verify:delivery && npm run verify:restoration && npm run verify:loudness && npm run verify:markers && npm run verify:packet && npm run verify:collab && npm run verify:proof && npm run verify:book",
+    "verify:acx": "node scripts/verify-acx.mjs",
+    "verify:delivery": "node scripts/verify-delivery.mjs",
+    "verify:restoration": "node scripts/verify-restoration.mjs",
+    "verify:loudness": "node scripts/verify-loudness.mjs",
+    "verify:markers": "node scripts/verify-markers.mjs",
+    "verify:packet": "node scripts/verify-packet.mjs",
+    "verify:collab": "node scripts/verify-collab.mjs",
+    "verify:proof": "jiti scripts/verify-proof.ts",
+    "verify:book": "jiti scripts/verify-book.ts",
+    "design": "vite --host 127.0.0.1",
+    "design:shots": "electron scripts/design-shots.cjs",
+    "audit:runtime": "node scripts/audit-runtime.cjs",
+    "prepare:model": "node scripts/prepare-model.cjs",
+    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac --publish never",
+    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.boothdesk.app",
+    "productName": "Kosmos",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "dist-core/**/*",
+      "electron/**/*",
+      "!electron/**/*.test.cjs",
+      "!electron/glass-test-preload.cjs",
+      "acx_spec.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "public/examples",
+        "to": "examples"
+      },
+      {
+        "from": "vendor/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/models",
+        "to": "models",
+        "filter": [
+          "ggml-small.en.bin",
+          "realtime_eou_120m-v1-f16.gguf"
+        ]
+      },
+      {
+        "from": "vendor/cmudict",
+        "to": "cmudict",
+        "filter": [
+          "cmudict.dict",
+          "README",
+          "SOURCE.md"
+        ]
+      }
+    ],
+    "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",
+    "publish": {
+      "provider": "github",
+      "owner": "Parafield-Official",
+      "repo": "kosmos"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Kosmos listens to the microphone to follow the page, check the room, and record a take. Audio stays on this computer."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "fflate": "0.8.2",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "three": "^0.182.0",
+    "vgpu": "^0.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.27",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@types/three": "^0.185.4",
+    "@vitejs/plugin-react": "^5.2.0",
+    "concurrently": "^10.0.4",
+    "electron": "44.1.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "jiti": "2.7.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6",
+    "vitest": "^4.1.4",
+    "wait-on": "^9.0.10"
+  },
+  "optionalDependencies": {
+    "electron-liquid-glass": "^1.1.1"
+  }
+}

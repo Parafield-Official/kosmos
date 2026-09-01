@@ -1,0 +1,8 @@
+{
+  "license": "LGPL-2.1-or-later",
+  "gplEnabled": false,
+  "nonfreeEnabled": false,
+  "configuration": "--prefix=/private/tmp/booth-ffmpeg-build/prefix --disable-gpl --disable-nonfree --disable-debug --disable-doc --disable-shared --enable-static --disable-avdevice --disable-indevs --disable-outdevs --disable-libxcb --disable-libxcb-shm --disable-libxcb-xfixes --disable-libxcb-shape --disable-xlib --disable-appkit --disable-audiotoolbox --disable-videotoolbox --enable-libmp3lame --extra-cflags=-I/opt/homebrew/opt/lame/include --extra-ldflags=-L/opt/homebrew/opt/lame/lib",
+  "ffmpegVersion": "ffmpeg version 8.1.1 Copyright (c) 2000-2026 the FFmpeg developers",
+  "ffprobeVersion": "ffprobe version 8.1.1 Copyright (c) 2007-2026 the FFmpeg developers"
+}

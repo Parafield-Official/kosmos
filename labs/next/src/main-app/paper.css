@@ -1,0 +1,369 @@
+/* Shared reading surfaces: digital screens and physical papers. */
+
+.ma-paper,
+.vault-read-page,
+.ma-teleprompter,
+.ma-review-prose,
+.ma-set-theme,
+.ma-booth-theme {
+  position: relative;
+  isolation: isolate;
+}
+
+.ma-paper.is-white,
+.vault-read-page.is-white,
+.ma-teleprompter.is-white,
+.ma-review-prose.is-white,
+.ma-set-theme.is-white,
+.ma-booth-theme.is-white {
+  background: #f6f6f4;
+  color: #161616;
+}
+
+.ma-paper.is-black,
+.ma-paper.is-dark,
+.vault-read-page.is-black,
+.vault-read-page.is-dark,
+.ma-teleprompter.is-black,
+.ma-teleprompter.is-dark,
+.ma-review-prose.is-black,
+.ma-review-prose.is-dark,
+.ma-set-theme.is-black,
+.ma-set-theme.is-dark,
+.ma-booth-theme.is-black,
+.ma-booth-theme.is-dark {
+  background: #121214;
+  color: rgba(255, 253, 246, 0.92);
+}
+
+.ma-paper.is-glass,
+.vault-read-page.is-glass,
+.ma-teleprompter.is-glass,
+.ma-review-prose.is-glass,
+.ma-set-theme.is-glass,
+.ma-booth-theme.is-glass {
+  background:
+    linear-gradient(165deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.1) 42%, rgba(18, 16, 20, 0.22) 100%);
+  color: #f7f2eb;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+.ma-paper.is-smoke,
+.vault-read-page.is-smoke,
+.ma-teleprompter.is-smoke,
+.ma-review-prose.is-smoke,
+.ma-set-theme.is-smoke,
+.ma-booth-theme.is-smoke {
+  background:
+    linear-gradient(165deg, rgba(40, 36, 42, 0.55) 0%, rgba(10, 8, 12, 0.72) 100%);
+  color: rgba(255, 253, 246, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+.ma-paper.is-cream,
+.vault-read-page.is-cream,
+.ma-teleprompter.is-cream,
+.ma-review-prose.is-cream,
+.ma-set-theme.is-cream,
+.ma-booth-theme.is-cream {
+  background: #f3eee6;
+  color: #1a1714;
+}
+
+.ma-paper.is-ivory,
+.vault-read-page.is-ivory,
+.ma-teleprompter.is-ivory,
+.ma-review-prose.is-ivory,
+.ma-set-theme.is-ivory,
+.ma-booth-theme.is-ivory {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 255, 255, 0.55), transparent 46%),
+    #f6ecd4;
+  color: #2a2218;
+}
+
+.ma-paper.is-sepia,
+.vault-read-page.is-sepia,
+.ma-teleprompter.is-sepia,
+.ma-review-prose.is-sepia,
+.ma-set-theme.is-sepia,
+.ma-booth-theme.is-sepia {
+  background: #cbb49a;
+  color: #3d2d22;
+}
+
+.ma-paper.is-newsprint,
+.vault-read-page.is-newsprint,
+.ma-teleprompter.is-newsprint,
+.ma-review-prose.is-newsprint,
+.ma-set-theme.is-newsprint,
+.ma-booth-theme.is-newsprint {
+  background:
+    repeating-linear-gradient(0deg, transparent 0 3px, rgba(40, 35, 28, 0.035) 3px 4px),
+    #d5ccb8;
+  color: #2c281f;
+}
+
+.ma-paper.is-laid,
+.vault-read-page.is-laid,
+.ma-teleprompter.is-laid,
+.ma-review-prose.is-laid,
+.ma-set-theme.is-laid,
+.ma-booth-theme.is-laid {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 17px, rgba(90, 70, 40, 0.06) 17px 18px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 8px),
+    #efe4ce;
+  color: #2a2318;
+}
+
+.ma-paper.is-kraft,
+.vault-read-page.is-kraft,
+.ma-teleprompter.is-kraft,
+.ma-review-prose.is-kraft,
+.ma-set-theme.is-kraft,
+.ma-booth-theme.is-kraft {
+  background:
+    radial-gradient(circle at 28% 18%, rgba(255, 214, 160, 0.28), transparent 42%),
+    #c49a62;
+  color: #2c1c0e;
+}
+
+.ma-teleprompter.is-cream,
+.ma-teleprompter.is-ivory,
+.ma-teleprompter.is-sepia,
+.ma-teleprompter.is-newsprint,
+.ma-teleprompter.is-laid,
+.ma-teleprompter.is-kraft,
+.ma-review-prose.is-cream,
+.ma-review-prose.is-ivory,
+.ma-review-prose.is-sepia,
+.ma-review-prose.is-newsprint,
+.ma-review-prose.is-laid,
+.ma-review-prose.is-kraft {
+  overflow: hidden;
+}
+
+.vault-read-page.is-cream::before,
+.vault-read-page.is-ivory::before,
+.vault-read-page.is-sepia::before,
+.vault-read-page.is-newsprint::before,
+.vault-read-page.is-laid::before,
+.vault-read-page.is-kraft::before,
+.ma-paper.is-cream::before,
+.ma-paper.is-ivory::before,
+.ma-paper.is-sepia::before,
+.ma-paper.is-newsprint::before,
+.ma-paper.is-laid::before,
+.ma-paper.is-kraft::before,
+.ma-teleprompter.is-cream::before,
+.ma-teleprompter.is-ivory::before,
+.ma-teleprompter.is-sepia::before,
+.ma-teleprompter.is-newsprint::before,
+.ma-teleprompter.is-laid::before,
+.ma-teleprompter.is-kraft::before,
+.ma-review-prose.is-cream::before,
+.ma-review-prose.is-ivory::before,
+.ma-review-prose.is-sepia::before,
+.ma-review-prose.is-newsprint::before,
+.ma-review-prose.is-laid::before,
+.ma-review-prose.is-kraft::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+}
+
+.vault-read-page.is-white .vault-read-prose,
+.vault-read-page.is-cream .vault-read-prose,
+.vault-read-page.is-ivory .vault-read-prose,
+.vault-read-page.is-sepia .vault-read-prose,
+.vault-read-page.is-newsprint .vault-read-prose,
+.vault-read-page.is-laid .vault-read-prose,
+.vault-read-page.is-kraft .vault-read-prose,
+.ma-teleprompter.is-white .ma-teleprompter-inner,
+.ma-teleprompter.is-cream .ma-teleprompter-inner,
+.ma-teleprompter.is-ivory .ma-teleprompter-inner,
+.ma-teleprompter.is-sepia .ma-teleprompter-inner,
+.ma-teleprompter.is-newsprint .ma-teleprompter-inner,
+.ma-teleprompter.is-laid .ma-teleprompter-inner,
+.ma-teleprompter.is-kraft .ma-teleprompter-inner {
+  color: inherit;
+}
+
+.vault-read-page.is-black .vault-read-prose,
+.vault-read-page.is-dark .vault-read-prose,
+.vault-read-page.is-glass .vault-read-prose,
+.vault-read-page.is-smoke .vault-read-prose {
+  color: inherit;
+}
+
+.vault-read-page > *,
+.ma-paper > *,
+.ma-teleprompter-inner,
+.ma-review-prose > *:not(.ma-teleprompter-guide) {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+  Ten papers, ten marks. Paper, ink, and the playhead each keep their own
+  hue family so the bar is not a gold wash on every page. The bar sits
+  under the type; --tp-now stays the page ink and does not glow over it.
+*/
+.ma-teleprompter,
+.ma-review-prose,
+.ma-review-prompt-wrap {
+  --tp-rail: rgba(143, 160, 180, 0.34);
+  --tp-rail-soft: rgba(143, 160, 180, 0.12);
+  --tp-word: rgba(143, 160, 180, 0.56);
+  --tp-word-soft: rgba(143, 160, 180, 0.22);
+  --tp-caret: #7a8ca0;
+  --tp-now: inherit;
+  --tp-now-glow: transparent;
+  --tp-heading: color-mix(in srgb, currentColor 72%, transparent);
+}
+
+/* White #f6f6f4 — cool slate, digital gray. */
+.ma-teleprompter.is-white,
+.ma-review-prose.is-white,
+.ma-review-prompt-wrap.is-white {
+  --tp-rail: rgba(143, 160, 180, 0.36);
+  --tp-rail-soft: rgba(143, 160, 180, 0.14);
+  --tp-word: rgba(143, 160, 180, 0.58);
+  --tp-word-soft: rgba(143, 160, 180, 0.24);
+  --tp-caret: #6e8296;
+  --tp-now: #161616;
+  --tp-heading: color-mix(in srgb, #161616 88%, transparent);
+}
+
+/* Black #121214 — moonlight silver. */
+.ma-teleprompter.is-black,
+.ma-teleprompter.is-dark,
+.ma-review-prose.is-black,
+.ma-review-prose.is-dark,
+.ma-review-prompt-wrap.is-black,
+.ma-review-prompt-wrap.is-dark {
+  --tp-rail: rgba(197, 208, 222, 0.34);
+  --tp-rail-soft: rgba(197, 208, 222, 0.12);
+  --tp-word: rgba(197, 208, 222, 0.56);
+  --tp-word-soft: rgba(197, 208, 222, 0.22);
+  --tp-caret: #c5d0de;
+  --tp-now: #fffdf6;
+  --tp-heading: color-mix(in srgb, #fffdf6 70%, transparent);
+}
+
+/* Glass — ice cyan. */
+.ma-teleprompter.is-glass,
+.ma-review-prose.is-glass,
+.ma-review-prompt-wrap.is-glass {
+  --tp-rail: rgba(126, 184, 212, 0.36);
+  --tp-rail-soft: rgba(126, 184, 212, 0.14);
+  --tp-word: rgba(126, 184, 212, 0.58);
+  --tp-word-soft: rgba(126, 184, 212, 0.24);
+  --tp-caret: #7eb8d4;
+  --tp-now: #f7f2eb;
+  --tp-heading: color-mix(in srgb, #f7f2eb 70%, transparent);
+}
+
+/* Smoke — dusty mauve. */
+.ma-teleprompter.is-smoke,
+.ma-review-prose.is-smoke,
+.ma-review-prompt-wrap.is-smoke {
+  --tp-rail: rgba(196, 154, 168, 0.36);
+  --tp-rail-soft: rgba(196, 154, 168, 0.14);
+  --tp-word: rgba(196, 154, 168, 0.58);
+  --tp-word-soft: rgba(196, 154, 168, 0.24);
+  --tp-caret: #c49aa8;
+  --tp-now: #fff6e8;
+  --tp-heading: color-mix(in srgb, #fff6e8 70%, transparent);
+}
+
+/* Cream #f3eee6 — linen taupe. */
+.ma-teleprompter.is-cream,
+.ma-review-prose.is-cream,
+.ma-review-prompt-wrap.is-cream {
+  --tp-rail: rgba(200, 184, 160, 0.4);
+  --tp-rail-soft: rgba(200, 184, 160, 0.16);
+  --tp-word: rgba(200, 184, 160, 0.62);
+  --tp-word-soft: rgba(200, 184, 160, 0.26);
+  --tp-caret: #a89478;
+  --tp-now: #1a1714;
+  --tp-heading: color-mix(in srgb, #1a1714 86%, transparent);
+}
+
+/* Ivory #f6ecd4 — wheat. */
+.ma-teleprompter.is-ivory,
+.ma-review-prose.is-ivory,
+.ma-review-prompt-wrap.is-ivory {
+  --tp-rail: rgba(212, 188, 132, 0.42);
+  --tp-rail-soft: rgba(212, 188, 132, 0.16);
+  --tp-word: rgba(212, 188, 132, 0.64);
+  --tp-word-soft: rgba(212, 188, 132, 0.26);
+  --tp-caret: #b89a58;
+  --tp-now: #2a2218;
+  --tp-heading: color-mix(in srgb, #2a2218 86%, transparent);
+}
+
+/* Sepia #cbb49a — russet. */
+.ma-teleprompter.is-sepia,
+.ma-review-prose.is-sepia,
+.ma-review-prompt-wrap.is-sepia {
+  --tp-rail: rgba(160, 112, 72, 0.36);
+  --tp-rail-soft: rgba(160, 112, 72, 0.14);
+  --tp-word: rgba(160, 112, 72, 0.56);
+  --tp-word-soft: rgba(160, 112, 72, 0.22);
+  --tp-caret: #8a5a38;
+  --tp-now: #3d2d22;
+  --tp-heading: color-mix(in srgb, #3d2d22 88%, transparent);
+}
+
+/* Newsprint #d5ccb8 — pencil blue-gray. */
+.ma-teleprompter.is-newsprint,
+.ma-review-prose.is-newsprint,
+.ma-review-prompt-wrap.is-newsprint {
+  --tp-rail: rgba(124, 136, 148, 0.36);
+  --tp-rail-soft: rgba(124, 136, 148, 0.14);
+  --tp-word: rgba(124, 136, 148, 0.58);
+  --tp-word-soft: rgba(124, 136, 148, 0.24);
+  --tp-caret: #6a7682;
+  --tp-now: #2c281f;
+  --tp-heading: color-mix(in srgb, #2c281f 86%, transparent);
+}
+
+/* Laid #efe4ce — sage. */
+.ma-teleprompter.is-laid,
+.ma-review-prose.is-laid,
+.ma-review-prompt-wrap.is-laid {
+  --tp-rail: rgba(138, 152, 112, 0.36);
+  --tp-rail-soft: rgba(138, 152, 112, 0.14);
+  --tp-word: rgba(138, 152, 112, 0.58);
+  --tp-word-soft: rgba(138, 152, 112, 0.24);
+  --tp-caret: #6e7a54;
+  --tp-now: #2a2318;
+  --tp-heading: color-mix(in srgb, #2a2318 86%, transparent);
+}
+
+/* Kraft #c49a62 — sand. */
+.ma-teleprompter.is-kraft,
+.ma-review-prose.is-kraft,
+.ma-review-prompt-wrap.is-kraft {
+  --tp-rail: rgba(224, 184, 120, 0.42);
+  --tp-rail-soft: rgba(224, 184, 120, 0.16);
+  --tp-word: rgba(224, 184, 120, 0.64);
+  --tp-word-soft: rgba(224, 184, 120, 0.26);
+  --tp-caret: #c49a62;
+  --tp-now: #2c1c0e;
+  --tp-heading: color-mix(in srgb, #2c1c0e 90%, transparent);
+}
