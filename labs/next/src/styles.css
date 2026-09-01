@@ -133,7 +133,7 @@ select {
 .drag-strip {
   position: fixed;
   top: 0;
-  height: 136px;
+  height: 100px;
   z-index: 20;
   /* Keep a painted hit target on transparent native windows. Pointer capture
      in App.tsx carries the drag after the cursor leaves this strip. */
