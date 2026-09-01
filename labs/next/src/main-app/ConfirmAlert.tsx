@@ -1,7 +1,7 @@
 import { useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 
-/** Shared warning dialog. Matches the Delete book popup: short title, one line, Cancel | verb. */
+/** Shared warning dialog. Lit cream card, short title, one line, Cancel | verb. */
 export function ConfirmAlert({
   title,
   body,

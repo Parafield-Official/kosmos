@@ -217,10 +217,13 @@ export function ReviewScript({
   );
 
   const locatePlay = useCallback(() => {
+    if (!playKey) {
+      return;
+    }
     followRef.current = true;
     setLostPlace(false);
     scrollToToken(nowTokenRef.current);
-  }, [scrollToToken]);
+  }, [playKey, scrollToToken]);
 
   useEffect(() => {
     if (!playKey) {
@@ -346,17 +349,16 @@ export function ReviewScript({
           </p>
         ))}
       </div>
-      {playKey ? (
-        <button
-          type="button"
-          className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
-          onClick={locatePlay}
-          title="Locate the word being played"
-          aria-label="Locate the word being played"
-        >
-          <LocateGlyph />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
+        onClick={locatePlay}
+        aria-disabled={!playKey}
+        title="Locate the word being played"
+        aria-label="Locate the word being played"
+      >
+        <LocateGlyph />
+      </button>
     </section>
   );
 }

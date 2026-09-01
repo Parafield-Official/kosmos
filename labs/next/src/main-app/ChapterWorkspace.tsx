@@ -28,6 +28,8 @@ const STEPS: Array<{ id: ChapterStep; label: string; hint: string }> = [
   { id: "mastering", label: "Sound", hint: "Master" },
 ];
 
+const SOUND_WAVE = [22, 22, 22, 24, 28, 36, 48, 64, 78, 92, 78, 64, 48, 36, 28, 24, 22, 22, 22];
+
 export function ChapterWorkspace({
   project,
   chapterId,
@@ -362,6 +364,8 @@ function MasteringStep({
 }) {
   const chapter = project.chapters.find((item) => item.id === chapterId);
   const [mastering, setMastering] = useState(false);
+  const [casting, setCasting] = useState(false);
+  const castTimer = useRef<number>(0);
   const [masterError, setMasterError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -386,7 +390,17 @@ function MasteringStep({
 
   useEffect(() => () => {
     releaseAudio();
+    window.clearTimeout(castTimer.current);
   }, []);
+
+  function castMaster() {
+    if (mastering) {
+      return;
+    }
+    window.clearTimeout(castTimer.current);
+    setCasting(true);
+    castTimer.current = window.setTimeout(() => setCasting(false), 720);
+  }
 
   useEffect(() => {
     if (chapter?.masteredFile) {
@@ -559,22 +573,55 @@ function MasteringStep({
   return (
     <div className="quest-master">
       <div className="quest-master-desk">
-        <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
-          {Array.from({ length: 72 }, (_, index) => (
-            <i key={index} style={{ animationDelay: `${index * 22}ms`, animationDuration: `${0.5 + (index % 5) * 0.11}s` }} />
-          ))}
-        </div>
-        <div className="quest-player">
-          <div className="quest-player-row">
-            <button
-              type="button"
-              className="quest-listen-play"
-              disabled={!listenFile}
-              onClick={toggleListen}
-              aria-label={playing === listen ? "Pause" : "Play"}
-            >
-              {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
-            </button>
+        <section className="quest-master-listen">
+          <p className="quest-master-kicker">Listen</p>
+          <div className={`quest-waves${playing ? " is-live" : ""}`} aria-hidden="true">
+            {SOUND_WAVE.map((height, index) => (
+              <i
+                key={index}
+                style={{
+                  height: `${height}%`,
+                  animationDelay: `${index * 40}ms`,
+                  animationDuration: `${0.55 + (index % 4) * 0.12}s`,
+                }}
+              />
+            ))}
+          </div>
+          <div className="quest-player">
+            <div className="quest-player-transport">
+              <button
+                type="button"
+                className="quest-listen-play"
+                disabled={!listenFile}
+                onClick={toggleListen}
+                aria-label={playing === listen ? "Pause" : "Play"}
+              >
+                {playing === listen ? <PauseListenGlyph /> : <PlayListenGlyph />}
+              </button>
+              <div
+                className="quest-player-seek"
+                role="slider"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(clock.duration)}
+                aria-valuenow={Math.round(clock.current)}
+                aria-label="Take position"
+                style={{ ["--tape-pct" as string]: `${listenPct}%` }}
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  seekListen(event);
+                }}
+                onPointerMove={(event) => {
+                  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                    seekListen(event);
+                  }
+                }}
+              >
+                <i style={{ width: `${listenPct}%` }} />
+              </div>
+              <span className="quest-player-time">
+                {formatTapeTime(clock.current)} / {formatTapeTime(clock.duration)}
+              </span>
+            </div>
             <div className="quest-listen-sources" role="tablist" aria-label="Which take to hear">
               {(
                 [
@@ -601,34 +648,21 @@ function MasteringStep({
                 </button>
               ))}
             </div>
-            <span className="quest-player-time">
-              {formatTapeTime(clock.current)} / {formatTapeTime(clock.duration)}
-            </span>
           </div>
-          <div
-            className="quest-player-seek"
-            role="slider"
-            aria-valuemin={0}
-            aria-valuemax={Math.round(clock.duration)}
-            aria-valuenow={Math.round(clock.current)}
-            aria-label="Take position"
-            style={{ ["--tape-pct" as string]: `${listenPct}%` }}
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              seekListen(event);
-            }}
-            onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                seekListen(event);
-              }
-            }}
+        </section>
+        <section className="quest-master-action">
+          <p className="quest-master-kicker">Master</p>
+          <button
+            type="button"
+            className={`quest-master-orb${mastering ? " is-busy" : ""}${casting ? " is-cast" : ""}`}
+            onPointerDown={castMaster}
+            onClick={() => void runMaster()}
+            disabled={mastering}
+            aria-label={mastering ? "Mastering" : chapter.mastered ? "Master again" : "Master this chapter"}
           >
-            <i style={{ width: `${listenPct}%` }} />
-          </div>
-        </div>
-        <div className="quest-master-foot">
-          <button type="button" className="quest-act is-primary" onClick={() => void runMaster()} disabled={mastering}>
-            {mastering ? "Mastering…" : chapter.mastered ? "Master again" : "Master"}
+            <span className="quest-master-orb-ring" aria-hidden="true" />
+            <span className="quest-master-orb-ring is-late" aria-hidden="true" />
+            <span className="quest-master-orb-face">{mastering ? "…" : chapter.mastered ? "Again" : "Master"}</span>
           </button>
           <div className="quest-master-more">
             <button type="button" className="quest-act" onClick={() => void checkFile()} disabled={checking}>
@@ -640,7 +674,7 @@ function MasteringStep({
               </button>
             ) : null}
           </div>
-        </div>
+        </section>
         {chapter.acxTrafficLight && !acxReport ? (
           <p className="quest-master-note">
             Last check:{" "}
@@ -648,7 +682,9 @@ function MasteringStep({
           </p>
         ) : null}
         {acxReport ? (
-          <ChapterMeter report={acxReport} masteringPlan={!chapter.mastered} onListenQuiet={() => void listenQuiet()} />
+          <div className="quest-master-report">
+            <ChapterMeter report={acxReport} masteringPlan={!chapter.mastered} onListenQuiet={() => void listenQuiet()} />
+          </div>
         ) : null}
         {checkError ? <p className="ma-error">{checkError}</p> : null}
         {masterError ? <p className="ma-error">{masterError}</p> : null}

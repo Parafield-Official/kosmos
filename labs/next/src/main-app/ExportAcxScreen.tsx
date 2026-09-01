@@ -81,7 +81,6 @@ export function ExportAcxScreen({
   return (
     <section className="ma-screen ma-export" aria-label="Export ACX">
       <header className="ma-export-head">
-        <p className="ma-export-kicker">ACX</p>
         <h1 className="ma-title">Export ACX</h1>
         <p className="ma-set-sub">
           Pack the finished book for Audible, or hand off whatever tape exists so someone else can finish.
@@ -126,9 +125,11 @@ export function ExportAcxScreen({
         </article>
 
         <article className="ma-export-card ma-export-pack">
-          <p className="ma-export-kicker">Pack</p>
-          <h2>Delivery</h2>
-          <p className="ma-set-sub">{presetHint}</p>
+          <header className="ma-export-pack-head">
+            <p className="ma-export-kicker">Pack</p>
+            <h2>Delivery</h2>
+            <p className="ma-set-sub">{presetHint}</p>
+          </header>
           <div className="ma-seg" role="radiogroup" aria-label="Delivery target">
             {SPEC_PRESET_OPTIONS.map((option) => (
               <button
