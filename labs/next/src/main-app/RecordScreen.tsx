@@ -11,12 +11,10 @@ import {
 import {
   LIVE_HALT_RUN_WORDS,
   LIVE_STREAM_HOP_SECONDS,
-  liveBackFlag,
   liveHaltCopy,
   matchLiveWindow,
   manualLivePickup,
   mergeLivePickup,
-  pickupFromLiveFlag,
   type LiveExpectedWord,
   type LiveMatchState,
   type LiveMismatch,
@@ -67,8 +65,6 @@ import {
 
 const HIGHLIGHT_KEY = "kosmos-booth-highlight";
 const SPACING_KEY = "kosmos-booth-spacing";
-const CHECK_KEY = "kosmos-booth-check";
-const HALT_KEY = "kosmos-booth-halt";
 const MIC_KEY = "kosmos-booth-mic";
 const TARGET_RATE = 16_000;
 const WHISPER_WINDOW_SECONDS = 1.6;
@@ -87,21 +83,6 @@ function readStored<T extends string>(key: string, allowed: readonly T[], fallba
 
 function readHighlight(): PromptHighlightMode {
   return readStored(HIGHLIGHT_KEY, ["word", "line", "paragraph"] as const, "line");
-}
-
-function readFlag(key: string, fallback: boolean): boolean {
-  try {
-    const value = window.localStorage.getItem(key);
-    if (value === "1") {
-      return true;
-    }
-    if (value === "0") {
-      return false;
-    }
-  } catch {
-    // Keep the original default.
-  }
-  return fallback;
 }
 
 function readSpacing(): number {
@@ -183,8 +164,6 @@ export function RecordScreen({
   const [theme, setTheme] = useState(readPromptTheme);
   const [boothFontPx, setBoothFontPx] = useState(readBoothFontPx);
   const [lineSpacing, setLineSpacing] = useState(readSpacing);
-  const [checkReading] = useState(() => readFlag(CHECK_KEY, false));
-  const [stopOnMismatch, setStopOnMismatch] = useState(() => readFlag(HALT_KEY, false));
   const [inputId, setInputId] = useState(() => {
     try {
       return window.localStorage.getItem(MIC_KEY) ?? "";
@@ -238,8 +217,6 @@ export function RecordScreen({
   const speechAtRef = useRef(0);
   const haltRef = useRef<LiveMismatch | null>(null);
   const haltResumeRef = useRef<number | undefined>(undefined);
-  const checkReadingRef = useRef(false);
-  const stopOnMismatchRef = useRef(true);
   const punchBusyRef = useRef(false);
   const pickupsRef = useRef<ChapterPickup[]>([]);
   const dismissedRef = useRef<string[]>([]);
@@ -253,8 +230,8 @@ export function RecordScreen({
   chapterRef.current = chapter;
   projectRef.current = project;
   expectedRef.current = script.expected;
-  checkReadingRef.current = checkReading;
-  stopOnMismatchRef.current = stopOnMismatch;
+  // Live follow is deliberately navigation-only. Final proofing below runs
+  // WhisperX against the saved tape and owns all mismatch/pause flags.
   pickupsRef.current = chapter?.pickups ?? [];
 
   useEffect(() => {
@@ -460,8 +437,8 @@ export function RecordScreen({
       expected: expectedRef.current,
       transcript: shifted,
       state: matchRef.current,
-      flagsEnabled: checkReadingRef.current,
-      haltOnMismatch: stopOnMismatchRef.current,
+      flagsEnabled: false,
+      haltOnMismatch: false,
       haltRunWords: LIVE_HALT_RUN_WORDS,
       haltResumeIndex: haltResumeRef.current,
       dismissedIds: dismissedRef.current,
@@ -476,16 +453,6 @@ export function RecordScreen({
       if (!haltRef.current) {
         leadRef.current = leadOnConfirm(leadRef.current, confirmation.expectedIndex + 1, performance.now());
       }
-    }
-    if (result.flag && checkReadingRef.current) {
-      const pickup = pickupFromLiveFlag(result.flag, chapterId);
-      filePickup({
-        ...pickup,
-        t_start: tapeBaseRef.current + pickup.t_start,
-        t_end: tapeBaseRef.current + pickup.t_end,
-        line_start: pickup.line_start != null ? tapeBaseRef.current + pickup.line_start : undefined,
-        line_end: pickup.line_end != null ? tapeBaseRef.current + pickup.line_end : undefined,
-      });
     }
     if (result.halt) {
       haltRef.current = result.halt;
@@ -586,31 +553,6 @@ export function RecordScreen({
       const result = await window.kosmosNext.transcribeHop({ wavBase64: base64 });
       if (result.words?.length) {
         applyHeard(result.words);
-        if (checkReadingRef.current) {
-          const flag = liveBackFlag({
-            chapterId,
-            expected: expectedRef.current,
-            transcript: result.words.map((word) => ({
-              ...word,
-              start: word.start + clockOffsetRef.current,
-              end: word.end + clockOffsetRef.current,
-            })),
-            state: matchRef.current,
-            flagsEnabled: true,
-            goldCursor: cursorRef.current,
-            dismissedIds: dismissedRef.current,
-          });
-          if (flag) {
-            const pickup = pickupFromLiveFlag(flag, chapterId);
-            filePickup({
-              ...pickup,
-              t_start: tapeBaseRef.current + pickup.t_start,
-              t_end: tapeBaseRef.current + pickup.t_end,
-              line_start: pickup.line_start != null ? tapeBaseRef.current + pickup.line_start : undefined,
-              line_end: pickup.line_end != null ? tapeBaseRef.current + pickup.line_end : undefined,
-            });
-          }
-        }
       }
     } catch {
       // Follow stays on the last confirmed word.

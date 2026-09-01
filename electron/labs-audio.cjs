@@ -24,6 +24,7 @@ const MAX_AUDIO_SECONDS = 2 * 60 * 60;
 const MAX_PCM_OUTPUT_BYTES = 1_500_000_000;
 const MAX_RECORDER_WAV_BYTES = 1_500_000_000;
 const FFMPEG_TIMEOUT_MS = 60 * 60 * 1000;
+const SILENCE_SAMPLE_RATE = 8000;
 
 function loadCoreModule(name) {
   const candidates = [
@@ -861,12 +862,30 @@ async function measureChapterAudio(payload) {
   }
 }
 
+/** Measure quiet stretches from the recording itself for final proofing. */
+async function measureSilences(audioPath, options = {}) {
+  const pcm = await runFfmpeg([
+    "-v", "error", "-i", audioPath,
+    "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", String(SILENCE_SAMPLE_RATE), "pipe:1",
+  ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
+  if (pcm.length === 0 || pcm.length % 4 !== 0) {
+    return [];
+  }
+  return loadCoreModule("proof-silence").findSilences(
+    float32View(pcm),
+    SILENCE_SAMPLE_RATE,
+    1,
+    { minSeconds: options.minSeconds },
+  );
+}
+
 module.exports = {
   applyPunch,
   previewPunch,
   undoLatestPunch,
   masterWorkingFile,
   measureChapterAudio,
+  measureSilences,
   exportDeliveryPack,
   transcodeToWav,
   isWavBuffer,

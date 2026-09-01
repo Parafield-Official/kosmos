@@ -85,18 +85,29 @@ declare global {
       getMicrophoneAccess?: () => Promise<{ granted: boolean; status?: string }>;
       requestFolderAccess?: () => Promise<{ granted: boolean; path?: string }>;
       getFolderAccess?: () => Promise<{ granted: boolean; path?: string }>;
-      getSpeechModelAccess?: () => Promise<{ granted: boolean; bytes?: number; bundled?: boolean }>;
-      downloadSpeechModel?: () => Promise<{ granted: boolean; bytes?: number }>;
+      getSpeechModelAccess?: () => Promise<{
+        granted: boolean;
+        bytes?: number;
+        bundled?: boolean;
+        proofReady?: boolean;
+        liveReady?: boolean;
+      }>;
+      downloadSpeechModel?: () => Promise<{
+        granted: boolean;
+        bytes?: number;
+        proofReady?: boolean;
+        liveReady?: boolean;
+      }>;
       onSpeechModelProgress?: (callback: (progress: { received: number; total: number; fraction: number }) => void) => (() => void) | void;
       resetAccess?: () => Promise<{
         mic: { granted: boolean; status?: string };
         folder: { granted: boolean; path?: string };
-        speechModel: { granted: boolean; bytes?: number; bundled?: boolean };
+        speechModel: { granted: boolean; bytes?: number; bundled?: boolean; proofReady?: boolean; liveReady?: boolean };
       }>;
       onAccessReset?: (callback: (snapshot: {
         mic: { granted: boolean; status?: string };
         folder: { granted: boolean; path?: string };
-        speechModel: { granted: boolean; bytes?: number; bundled?: boolean };
+        speechModel: { granted: boolean; bytes?: number; bundled?: boolean; proofReady?: boolean; liveReady?: boolean };
       }) => void) => (() => void) | void;
       openMicrophoneSettings?: () => Promise<{ ok: boolean }>;
       getAppInfo?: () => Promise<{ version: string; update: AppUpdateStatus }>;
@@ -137,6 +148,9 @@ declare global {
       transcribeChapter?: (payload: { folder: string; file: string }) => Promise<{
         ok: boolean;
         words?: Array<{ text: string; start: number; end: number; confidence?: number }>;
+        silences?: Array<{ start: number; end: number }>;
+        timingEngine?: string;
+        alignmentFallback?: boolean;
         reason?: string;
       }>;
       copyToWorking?: (payload: { folder: string; chapterId: string; file: string }) => Promise<{ ok: boolean; file?: string }>;

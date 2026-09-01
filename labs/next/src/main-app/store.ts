@@ -104,6 +104,8 @@ export interface BookChapter {
   recordedWords?: RecordedWord[];
   /** Whisper or booth word timings on the original tape, used to highlight-redo. */
   proofTranscript?: RecordedWordTiming[];
+  /** Engine used for the last final proof run; legacy proofs are re-run once. */
+  proofTimingEngine?: "whisperx" | "whisper.cpp";
   /** Last ACX check on the working file. */
   acxTrafficLight?: "green" | "yellow" | "red";
   /** Live and proof flags on this chapter. */
@@ -347,6 +349,10 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
           )
         : undefined;
       const proofTranscript = normalizeProofTranscript(chapter?.proofTranscript);
+      const proofTimingEngine =
+        chapter?.proofTimingEngine === "whisperx" || chapter?.proofTimingEngine === "whisper.cpp"
+          ? chapter.proofTimingEngine
+          : undefined;
       const light = chapter?.acxTrafficLight;
       return {
         id: typeof chapter?.id === "string" ? chapter.id : uid("ch"),
@@ -367,6 +373,7 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
         resumeWordIndex: typeof chapter?.resumeWordIndex === "number" ? chapter.resumeWordIndex : 0,
         recordedWords,
         proofTranscript,
+        proofTimingEngine,
         acxTrafficLight: light === "green" || light === "yellow" || light === "red" ? light : undefined,
         pickups: normalizePickups(chapter?.pickups, typeof chapter?.id === "string" ? chapter.id : ""),
         punches: normalizePunches(chapter?.punches, typeof chapter?.id === "string" ? chapter.id : ""),
@@ -1022,6 +1029,7 @@ export function applyOriginalTape(
         resumeWordIndex: Math.max(0, patch.resumeWordIndex),
         recordedWords: patch.recordedWords ?? chapter.recordedWords,
         proofTranscript: reset || patch.recordedWords ? undefined : chapter.proofTranscript,
+        proofTimingEngine: reset || patch.recordedWords ? undefined : chapter.proofTimingEngine,
         acxTrafficLight: reset ? undefined : chapter.acxTrafficLight,
         pickups: reset ? [] : chapter.pickups,
         punches: reset ? [] : chapter.punches,
@@ -1056,6 +1064,7 @@ export function clearOriginalTape(project: BookProject, chapterId: string): Book
         resumeWordIndex: 0,
         recordedWords: undefined,
         proofTranscript: undefined,
+        proofTimingEngine: undefined,
         acxTrafficLight: undefined,
         pickups: [],
         punches: [],

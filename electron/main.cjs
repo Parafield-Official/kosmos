@@ -12,7 +12,7 @@ const {
 const { PersistentWhisperServer } = require("./asr-server.cjs");
 const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
-const { MODEL, downloadModel, downloadProofModel, proofModelStatus } = require("./model.cjs");
+const { MODEL, downloadModel, proofModelStatus } = require("./model.cjs");
 const { zipProjectFolder } = require("./share.cjs");
 const { strToU8, zipSync } = require("fflate");
 const { extractArchive } = require("./unzip.cjs");
@@ -3794,7 +3794,7 @@ ipcMain.handle("proof:model-status", async () => proofModelStatus({
   cwd: process.cwd(),
 }));
 ipcMain.handle("proof:download-model", async (event) => {
-  return downloadProofModel(app.getPath("userData"), (progress) => {
+  return downloadModel(app.getPath("userData"), (progress) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send("proof:model-progress", progress);
     }

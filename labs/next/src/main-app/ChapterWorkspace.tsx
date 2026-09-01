@@ -87,7 +87,7 @@ export function ChapterWorkspace({
 
   async function goProof() {
     setProofError(null);
-    if (current.proofed) {
+    if (current.proofed && current.proofTimingEngine) {
       onStep("proofreading");
       return;
     }

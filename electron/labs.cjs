@@ -6,7 +6,12 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, dialog, ipcMain, screen, session, shell, systemPreferences } = require("electron");
 const { isMicrophonePermission, ensureMicrophoneAccess } = require("./media-access.cjs");
-const { MODEL, downloadProofModel, proofModelStatus } = require("./model.cjs");
+const { downloadModel, proofModelStatus } = require("./model.cjs");
+const {
+  alignImportedAudioWithWhisperX,
+  transcribeImportedAudio,
+} = require("./whisperx.cjs");
+const { PersistentParakeetServer } = require("./parakeet-server.cjs");
 const { PersistentParakeetLive } = require("./parakeet-live.cjs");
 const { transcribeAudio, findLiveModel } = require("./asr.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
@@ -16,6 +21,7 @@ const {
   undoLatestPunch,
   masterWorkingFile,
   measureChapterAudio,
+  measureSilences,
   exportDeliveryPack,
   transcodeToWav,
   isWavBuffer,
@@ -542,14 +548,35 @@ async function transcribeChapterAudio(folder, file) {
   }
   const audioPath = path.join(folder, "audio", path.basename(file));
   try {
-    const result = await transcribeAudio({
-      audioPath,
-      userDataPath: mainUserDataPath(),
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-      language: "en",
+    const transcription = await transcribeImportedAudio({
+      alignWithWhisperX: () => alignImportedAudioWithWhisperX({
+        audioPath,
+        userDataPath: mainUserDataPath(),
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        language: "en",
+      }),
+      transcribeWithWhisper: () => transcribeAudio({
+        audioPath,
+        userDataPath: mainUserDataPath(),
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        language: "en",
+        requireBundled: app.isPackaged,
+      }),
+      onFallback: (error) => {
+        console.warn(`[labs] WhisperX alignment unavailable; using Whisper timestamps: ${error?.message ?? error}`);
+      },
     });
-    return { ok: true, words: result.words ?? [] };
+    let silences = [];
+    try {
+      silences = await measureSilences(audioPath);
+    } catch (error) {
+      // Word proofing still works when silence measurement is unavailable;
+      // long-pause detection then falls back to recognizer timings.
+      console.warn(`[labs] silence measurement skipped: ${error?.message ?? error}`);
+    }
+    return { ok: true, ...transcription, words: transcription.words ?? [], silences };
   } catch (error) {
     console.warn(`[labs] proof transcribe failed: ${error?.message ?? error}`);
     return { ok: false, words: [], reason: String(error?.message ?? error) };
@@ -714,26 +741,33 @@ async function importManuscriptFile(folder) {
 }
 
 async function getSpeechModelAccess() {
-  const status = await proofModelStatus({
+  const proof = await proofModelStatus({
     userDataPath: mainUserDataPath(),
     resourcesPath: process.resourcesPath,
     appPath: app.getAppPath(),
     cwd: process.cwd(),
   });
+  const liveModelPath = await findLiveModel({
+    userDataPath: mainUserDataPath(),
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
   return {
-    granted: Boolean(status.available),
-    bytes: status.bytes,
-    bundled: Boolean(status.bundled),
+    granted: Boolean(proof.available && liveModelPath),
+    bytes: proof.bytes,
+    bundled: Boolean(proof.bundled),
+    proofReady: Boolean(proof.available),
+    liveReady: Boolean(liveModelPath),
   };
 }
 
 async function downloadSpeechModel(event) {
-  const status = await downloadProofModel(mainUserDataPath(), (progress) => {
+  await downloadModel(mainUserDataPath(), (progress) => {
     if (!event.sender.isDestroyed()) {
       event.sender.send("labs:speech-model-progress", progress);
     }
   });
-  return { granted: Boolean(status?.available), bytes: status?.bytes ?? 0 };
+  return getSpeechModelAccess();
 }
 
 async function resetAccessState() {
@@ -872,7 +906,11 @@ let lastNativeKey = "";
 let labPlace = "mark";
 
 const liveFollowStream = new PersistentParakeetLive();
+const liveFollowServer = new PersistentParakeetServer();
 let liveWordsUnsub = null;
+let liveFollowServerReady = false;
+let liveFollowModelPath = null;
+let liveFollowServerPath = null;
 
 function emitLiveWords(words) {
   if (labWindow && !labWindow.isDestroyed()) {
@@ -881,15 +919,16 @@ function emitLiveWords(words) {
 }
 
 async function startLiveFollow() {
+  const modelPath = await findLiveModel({
+    userDataPath: mainUserDataPath(),
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  });
+  if (!modelPath) {
+    return { ok: true, streaming: false, engine: "whisper.cpp", reason: "no-live-model" };
+  }
+  liveFollowModelPath = modelPath;
   try {
-    const modelPath = await findLiveModel({
-      userDataPath: mainUserDataPath(),
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-    });
-    if (!modelPath) {
-      return { ok: false, reason: "no-live-model" };
-    }
     const serverPath = resolveRuntimeBinary({
       name: "parakeet-live",
       envVar: "PARAKEET_LIVE_PATH",
@@ -903,8 +942,27 @@ async function startLiveFollow() {
     }
     return { ok: true, streaming: true, engine: "parakeet-live" };
   } catch (error) {
-    console.warn(`[labs] live follow start failed: ${error?.message ?? error}`);
-    return { ok: false, reason: String(error?.message ?? error) };
+    console.warn(`[labs] Parakeet live stream unavailable; using clip server: ${error?.message ?? error}`);
+  }
+
+  try {
+    liveFollowServerPath = resolveRuntimeBinary({
+      name: "parakeet-server",
+      envVar: "PARAKEET_SERVER_PATH",
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      requireBundled: false,
+    });
+    const warmed = await liveFollowServer.warm({
+      serverPath: liveFollowServerPath,
+      modelPath,
+    });
+    liveFollowServerReady = true;
+    return { ok: true, streaming: false, engine: warmed.engine };
+  } catch (error) {
+    liveFollowServerReady = false;
+    console.warn(`[labs] Parakeet clip server unavailable; using Whisper windows: ${error?.message ?? error}`);
+    return { ok: true, streaming: false, engine: "whisper.cpp", reason: String(error?.message ?? error) };
   }
 }
 
@@ -927,6 +985,10 @@ function stopLiveFollow() {
   } catch {
     // Already stopped.
   }
+  liveFollowServer.stop();
+  liveFollowServerReady = false;
+  liveFollowModelPath = null;
+  liveFollowServerPath = null;
   return { ok: true };
 }
 
@@ -945,10 +1007,25 @@ async function transcribeHop(payload) {
   if (typeof payload?.wavBase64 !== "string") {
     return { ok: false, words: [] };
   }
+  const wavBytes = Buffer.from(payload.wavBase64, "base64");
+  if (liveFollowServerReady && liveFollowModelPath && liveFollowServerPath) {
+    try {
+      const result = await liveFollowServer.transcribe({
+        serverPath: liveFollowServerPath,
+        modelPath: liveFollowModelPath,
+        wavBytes,
+      });
+      return { ok: true, words: result.words ?? [], engine: result.engine };
+    } catch (error) {
+      liveFollowServerReady = false;
+      liveFollowServer.stop();
+      console.warn(`[labs] Parakeet clip transcription failed; using Whisper: ${error?.message ?? error}`);
+    }
+  }
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "labs-live-"));
   const inputPath = path.join(temporaryRoot, "window.wav");
   try {
-    await fs.writeFile(inputPath, Buffer.from(payload.wavBase64, "base64"));
+    await fs.writeFile(inputPath, wavBytes);
     const result = await transcribeAudio({
       audioPath: inputPath,
       userDataPath: mainUserDataPath(),
