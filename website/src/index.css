@@ -62,18 +62,72 @@ button { font: inherit; }
   left: 50%;
   top: 0;
   transform: translateX(-50%);
-  display: grid;
-  width: 82px;
+  display: block;
   height: 52px;
-  place-items: center;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,.52);
   border-radius: 999px;
   background: linear-gradient(160deg, rgba(100,96,102,.98), rgba(29,26,32,.98));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 8px 26px rgba(0,0,0,.3);
   pointer-events: auto;
+  transition: border-color .42s cubic-bezier(.22,1,.32,1), background .42s cubic-bezier(.22,1,.32,1), box-shadow .42s cubic-bezier(.22,1,.32,1);
 }
-.brand-mark img { width: 45px; height: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.brand-mark-content {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  padding: 0 18px;
+  white-space: nowrap;
+  transition: padding .42s cubic-bezier(.22,1,.32,1);
+}
+.brand-mark-logo {
+  width: 45px;
+  height: auto;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.35));
+}
+.brand-mark-name {
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 19px;
+  font-weight: 400;
+  letter-spacing: -.01em;
+  color: rgba(255,255,255,.94);
+  transition: max-width .42s cubic-bezier(.22,1,.32,1), margin-left .42s cubic-bezier(.22,1,.32,1), opacity .24s ease, clip-path .42s cubic-bezier(.22,1,.32,1);
+}
+.brand-mark:focus-visible {
+  outline: 2px solid #8fc6ff;
+  outline-offset: 4px;
+  border-color: rgba(255,255,255,.78);
+  background: linear-gradient(160deg, rgba(117,112,120,.98), rgba(35,31,38,.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.84), 0 10px 32px rgba(0,0,0,.38);
+}
+.brand-mark:focus-visible .brand-mark-content { padding: 0 20px 0 16px; }
+.brand-mark:focus-visible .brand-mark-name {
+  max-width: 5.4rem;
+  margin-left: 10px;
+  opacity: 1;
+  clip-path: inset(0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .brand-mark:hover {
+    border-color: rgba(255,255,255,.78);
+    background: linear-gradient(160deg, rgba(117,112,120,.98), rgba(35,31,38,.98));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.84), 0 10px 32px rgba(0,0,0,.38);
+  }
+  .brand-mark:hover .brand-mark-content { padding: 0 20px 0 16px; }
+  .brand-mark:hover .brand-mark-name {
+    max-width: 5.4rem;
+    margin-left: 10px;
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
 
 .light-button, .glass-button {
   position: relative;

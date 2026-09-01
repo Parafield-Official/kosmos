@@ -37,7 +37,14 @@ function Button({ href, children, dark = false, className = "", external = false
 }
 
 function BrandMark() {
-  return <a className="brand-mark" href={route("home")} aria-label="Kosmos home"><img src={asset("kosmos-mark.png")} alt="" /></a>;
+  return (
+    <a className="brand-mark" href={route("home")} aria-label="Kosmos home">
+      <span className="brand-mark-content">
+        <img className="brand-mark-logo" src={asset("kosmos-mark.png")} alt="" />
+        <span className="brand-mark-name">Kosmos</span>
+      </span>
+    </a>
+  );
 }
 
 function Navbar() {
