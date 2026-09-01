@@ -241,9 +241,9 @@ export function ReviewScreen({
           </button>
         )}
         <div className={embedded ? "booth-chrome-tools" : "ma-chapter-head-actions"}>
-          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
+          <button type="button" className="booth-tool is-primary" onClick={() => setReadingOpen(true)} title="Teleprompter settings">
             <TypeGlyph />
-            <span>Page</span>
+            <span>Settings</span>
           </button>
           {resolved.length > 0 || punches.length > 0 ? (
             <button type="button" className="booth-tool" onClick={() => setHistoryOpen(true)}>

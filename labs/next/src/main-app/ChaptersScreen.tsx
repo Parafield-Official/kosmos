@@ -112,8 +112,8 @@ export function ChaptersScreen({
         <div
           ref={mapRef}
           className={`quest-map is-${even ? "even" : "odd"}${allDone ? " is-complete" : ""}`}
-          style={{ minHeight: layout.viewH }}
         >
+          <div className="quest-map-space" style={{ height: layout.viewH }} aria-hidden="true" />
           {layout.path ? (
             <svg
               className="quest-vine"
@@ -256,9 +256,7 @@ function questLayout(count: number, even: boolean, width: number) {
   const step = 268;
   const nodes = Array.from({ length: count }, (_, index) => questStop(index, even, midX, amp, startY, step));
   const last = nodes[nodes.length - 1] ?? null;
-  const finish = last
-    ? { x: last.x, y: last.y + 188, side: last.side }
-    : null;
+  const finish = count > 0 ? questStop(count, even, midX, amp, startY, step) : null;
   const stops = finish ? [...nodes, finish] : nodes;
   const segments: string[] = [];
   for (let index = 1; index < stops.length; index += 1) {

@@ -207,9 +207,12 @@ export function RecordScreen({
   const [workingUrl, setWorkingUrl] = useState<string | null>(null);
   const [band, setBand] = useState<{ from: number; to: number } | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
+  const [lostPlace, setLostPlace] = useState(false);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
+  const followLiveRef = useRef(true);
+  const autoScrollRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -339,6 +342,18 @@ export function RecordScreen({
     };
   }, []);
 
+  const wordOffScreen = useCallback((index: number) => {
+    const root = promptRef.current;
+    const el = wordRefs.current.get(index) ?? wordRefs.current.get(Math.max(0, index - 1));
+    if (!root || !el) {
+      return false;
+    }
+    const rootRect = root.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const pad = root.clientHeight * 0.2;
+    return elRect.bottom < rootRect.top + pad || elRect.top > rootRect.bottom - pad;
+  }, []);
+
   const scrollToCursor = useCallback((index: number) => {
     const root = promptRef.current;
     const el = wordRefs.current.get(index) ?? wordRefs.current.get(Math.max(0, index - 1));
@@ -348,8 +363,18 @@ export function RecordScreen({
     const rootRect = root.getBoundingClientRect();
     const elRect = el.getBoundingClientRect();
     const bandY = root.clientHeight * 0.42;
+    autoScrollRef.current = true;
     root.scrollTop += elRect.top - rootRect.top - bandY + elRect.height / 2;
+    window.requestAnimationFrame(() => {
+      autoScrollRef.current = false;
+    });
   }, []);
+
+  const locateSpeak = useCallback(() => {
+    followLiveRef.current = true;
+    setLostPlace(false);
+    scrollToCursor(cursorRef.current);
+  }, [scrollToCursor]);
 
   const updateBand = useCallback(
     (wordIndex: number) => {
@@ -371,9 +396,42 @@ export function RecordScreen({
 
   useEffect(() => {
     updateBand(cursor);
+    if (!followLiveRef.current) {
+      setLostPlace(wordOffScreen(cursor));
+      return;
+    }
     const frame = window.requestAnimationFrame(() => scrollToCursor(cursor));
     return () => window.cancelAnimationFrame(frame);
-  }, [cursor, highlight, chapterHtml, recording, paused, scrollToCursor, updateBand]);
+  }, [cursor, highlight, chapterHtml, recording, paused, scrollToCursor, updateBand, wordOffScreen]);
+
+  useEffect(() => {
+    const root = promptRef.current;
+    if (!root) {
+      return;
+    }
+    function onScroll() {
+      if (autoScrollRef.current) {
+        return;
+      }
+      if (wordOffScreen(cursorRef.current)) {
+        followLiveRef.current = false;
+        setLostPlace(true);
+      } else {
+        setLostPlace(false);
+      }
+    }
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => root.removeEventListener("scroll", onScroll);
+  }, [chapterHtml, wordOffScreen]);
+
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    followLiveRef.current = true;
+    setLostPlace(false);
+    scrollToCursor(cursorRef.current);
+  }, [recording, scrollToCursor]);
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
@@ -894,6 +952,8 @@ export function RecordScreen({
         }),
       );
     }
+    followLiveRef.current = true;
+    setLostPlace(false);
     scrollToCursor(index);
     setFollowHint("Continue will record from this word onto the original tape.");
   }
@@ -1006,9 +1066,9 @@ export function RecordScreen({
         </header>
       ) : (
         <div className="booth-chrome">
-          <button type="button" className="booth-tool" onClick={() => setReadingOpen(true)} title="Teleprompter">
+          <button type="button" className="booth-tool is-primary" onClick={() => setReadingOpen(true)} title="Teleprompter settings">
             <TypeGlyph />
-            <span>Page</span>
+            <span>Settings</span>
           </button>
         </div>
       )}
@@ -1085,6 +1145,17 @@ export function RecordScreen({
             <span className="ma-teleprompter-caret" />
             <span className="ma-teleprompter-caret is-right" />
           </div>
+          {lostPlace ? (
+            <button
+              type="button"
+              className="ma-locate-speak"
+              onClick={locateSpeak}
+              title="Locate the word to speak"
+              aria-label="Locate the word to speak"
+            >
+              <LocateGlyph />
+            </button>
+          ) : null}
         </div>
       </section>
 
@@ -1187,12 +1258,12 @@ export function RecordScreen({
 
           <div className="ma-booth-panel ma-booth-place">
             <p className="ma-booth-kicker">Place</p>
-            <div className="ma-booth-place-meter" aria-label={`${shownPct} percent of the page`}>
+            <div className="ma-booth-place-meter" aria-label={`${shownPct} percent of the script`}>
               <span className="ma-dash-meter-track">
                 <i style={{ width: `${shownPct}%` }} />
               </span>
             </div>
-            <p className="ma-booth-place-label">{shownPct}% of the page</p>
+            <p className="ma-booth-place-label">{shownPct}% of the script</p>
             <p className="ma-booth-place-copy">
               Word {Math.min(script.expected.length, cursor + 1)} of {script.expected.length || 0}
             </p>
@@ -1221,6 +1292,7 @@ export function RecordScreen({
                   </option>
                 ))}
               </select>
+              <ChevronDownGlyph />
             </label>
             <div className="booth-tool-row">
               {boothTools}
@@ -1326,6 +1398,24 @@ function MicInputGlyph() {
     <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="5.2" y="2.2" width="5.6" height="8" rx="2.8" stroke="currentColor" strokeWidth="1.4" />
       <path d="M3.6 8.2a4.4 4.4 0 0 0 8.8 0M8 12.6V14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ChevronDownGlyph() {
+  return (
+    <svg className="ma-booth-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4.2 6.2 8 10l3.8-3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function LocateGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="3.1" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M8 2.2v1.7M8 12.1v1.7M2.2 8h1.7M12.1 8h1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8" cy="8" r="1.05" fill="currentColor" />
     </svg>
   );
 }

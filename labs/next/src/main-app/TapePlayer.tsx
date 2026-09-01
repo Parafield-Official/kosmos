@@ -71,29 +71,31 @@ export function TapePlayer({ src, label }: { src: string; label: string }) {
         <button type="button" className="ma-tape-play" onClick={toggle} aria-label={playing ? "Pause" : "Play"}>
           {playing ? <PauseMark /> : <PlayMark />}
         </button>
-        <div
-          className="ma-tape-seek"
-          role="slider"
-          aria-valuemin={0}
-          aria-valuemax={Math.round(duration)}
-          aria-valuenow={Math.round(current)}
-          aria-label={`${label} position`}
-          style={{ ["--tape-pct" as string]: `${pct}%` }}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            seek(event);
-          }}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        <div className="ma-tape-track">
+          <div
+            className="ma-tape-seek"
+            role="slider"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(duration)}
+            aria-valuenow={Math.round(current)}
+            aria-label={`${label} position`}
+            style={{ ["--tape-pct" as string]: `${pct}%` }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId);
               seek(event);
-            }
-          }}
-        >
-          <i style={{ width: `${pct}%` }} />
+            }}
+            onPointerMove={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                seek(event);
+              }
+            }}
+          >
+            <i style={{ width: `${pct}%` }} />
+          </div>
+          <span className="ma-tape-time">
+            {formatTapeTime(current)} / {formatTapeTime(duration)}
+          </span>
         </div>
-        <span className="ma-tape-time">
-          {formatTapeTime(current)} / {formatTapeTime(duration)}
-        </span>
       </div>
     </div>
   );
