@@ -159,11 +159,11 @@ function QuoteSection() {
       <img ref={leftRef} className="cloud cloud-left pointer-events-none absolute bottom-[8%] left-0 z-10 hidden w-[500px] opacity-0 will-change-transform sm:block md:w-[650px]" src={CLOUD} alt="" />
       <img ref={rightRef} className="cloud cloud-right pointer-events-none absolute bottom-[14%] right-0 z-10 hidden w-[500px] opacity-0 will-change-transform sm:block md:w-[650px]" src={CLOUD} alt="" />
       <div className="relative z-20 max-w-4xl text-center">
-        <p className="eyebrow mb-8 text-white/65">The Lightbox workflow</p>
-        <blockquote className="font-instrument text-2xl leading-[1.45] text-white sm:text-3xl md:text-4xl md:leading-[1.5] lg:text-[42px]">
-          “Every chapter follows the same clear path: Record → Proofread → Sound. Read from a teleprompter that follows your voice, review every flagged line with its audio, then master for ACX or EBU.”
-        </blockquote>
-        <p className="mt-8 text-sm tracking-wide text-white/75 md:text-base">Kosmos · Human narration, finished locally</p>
+        <p className="eyebrow mb-8 text-white/65">From manuscript to audiobook</p>
+        <h2 className="font-instrument text-2xl font-normal leading-[1.45] text-white sm:text-3xl md:text-4xl md:leading-[1.5] lg:text-[42px]">
+          Every story deserves to be heard exactly as you imagined it. Record with confidence, catch mistakes before listeners do, polish every chapter, and turn your manuscript into an audiobook you’re proud to share.
+        </h2>
+        <p className="mt-8 text-sm tracking-wide text-white/75 md:text-base">Kosmos · Your story, ready to be heard</p>
       </div>
     </section>
   );
