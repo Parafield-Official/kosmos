@@ -16,10 +16,10 @@ Then visit `http://127.0.0.1:4173/`.
 |---|---|
 | `index.html` | First viewport — cinematic landing |
 | `about.html` | What Kosmos is, and is not |
-| `features.html` | Narrator and author jobs |
-| `compare.html` | PromptVO / Pozotron / chapterpass / Hindenburg |
+| `features.html` | Record, Proofread, and Sound features |
+| `compare.html` | One-project workflow versus separate tools |
 | `faq.html` | Honest limits |
-| `download.html` | Mac `.dmg`, Windows `.exe`, GitHub |
+| `download.html` | Mac and Windows downloads, GitHub source |
 
 Downloads point at the current GitHub Release. People on the first public installer should download once; later versions then install in the app. Source: <https://github.com/Parafield-Official/kosmos>.
 
