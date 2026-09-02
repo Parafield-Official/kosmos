@@ -183,7 +183,7 @@ describe("desktop auto-update", () => {
       provider: "generic",
       url: "https://parafield-official.github.io/kosmos/updates/",
     });
-    expect(RELEASE_PAGE).toBe("https://parafield-official.github.io/kosmos/download.html");
+    expect(RELEASE_PAGE).toBe("https://parafield-official.github.io/kosmos/download/");
   });
 
   it("packages the same Pages feed without embedding a private GitHub credential", () => {

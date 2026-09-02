@@ -1,0 +1,26 @@
+{
+  "name": "kosmos-website",
+  "private": true,
+  "version": "0.1.7",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "2.1.10",
+    "@vitejs/plugin-react": "5.2.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "typescript": "5.9.3",
+    "vite": "7.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.27",
+    "@types/react": "19.2.13",
+    "@types/react-dom": "19.2.3",
+    "autoprefixer": "10.4.21",
+    "postcss": "8.5.26",
+    "tailwindcss": "3.4.17"
+  }
+}
