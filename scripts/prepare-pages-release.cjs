@@ -64,6 +64,18 @@ function exactlyOne(files, pattern, label) {
   return matches[0];
 }
 
+function metadataAssetNames(info, label) {
+  if (!info || typeof info !== "object" || !Array.isArray(info.files)) {
+    throw new Error(`Expected ${label} update metadata with release files.`);
+  }
+  return info.files.map((file) => {
+    if (!file || typeof file.url !== "string") {
+      throw new Error(`Every ${label} update file must have a URL.`);
+    }
+    return assetName(file.url);
+  });
+}
+
 function preparePagesRelease({ artifacts, output, tag }) {
   assertReleaseTag(tag);
   const files = fs.readdirSync(artifacts).sort();
@@ -74,13 +86,26 @@ function preparePagesRelease({ artifacts, output, tag }) {
 
   const updates = path.join(output, "updates");
   fs.mkdirSync(updates, { recursive: true });
+  const metadata = new Map();
   for (const file of metadataFiles) {
     const source = fs.readFileSync(path.join(artifacts, file), "utf8");
+    metadata.set(file, yaml.load(source));
     fs.writeFileSync(path.join(updates, file), rewriteUpdateMetadata(source, tag));
   }
 
-  const windowsAsset = exactlyOne(files, /^Kosmos-.+-win-x64\.exe$/, "Windows installer");
-  const macAsset = exactlyOne(files, /^Kosmos-.+-mac-arm64\.dmg$/, "macOS disk image");
+  // The Pages job receives only the tiny updater metadata artifact. Derive
+  // the public download names from checksummed electron-builder metadata so
+  // it never downloads the multi-gigabyte installers a second time.
+  const windowsAsset = exactlyOne(
+    metadataAssetNames(metadata.get("latest.yml"), "Windows"),
+    /^Kosmos-.+-win-x64\.exe$/,
+    "Windows installer",
+  );
+  const macAsset = exactlyOne(
+    metadataAssetNames(metadata.get("latest-mac.yml"), "macOS"),
+    /^Kosmos-.+-mac-arm64\.dmg$/,
+    "macOS disk image",
+  );
   const downloads = {
     version: tag.slice(1),
     mac: releaseAssetUrl(tag, macAsset),
