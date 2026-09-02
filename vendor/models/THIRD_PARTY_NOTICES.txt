@@ -1,0 +1,16 @@
+KOSMOS SPEECH MODEL NOTICES
+
+ggml-small.en.bin
+Source: https://huggingface.co/ggerganov/whisper.cpp
+License: MIT
+Kosmos verifies the published SHA-1 before packaging this file.
+
+realtime_eou_120m-v1-f16.gguf
+Source: https://huggingface.co/mudler/parakeet-cpp-gguf
+Base model: NVIDIA NeMo Parakeet Realtime EOU 120M v1
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+License text: https://creativecommons.org/licenses/by/4.0/
+
+The GGUF weights are derived from NVIDIA NeMo Parakeet checkpoints. Kosmos
+distributes the unmodified F16 GGUF file above and retains this attribution
+and license link in the installed application.

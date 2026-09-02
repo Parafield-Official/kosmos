@@ -19,4 +19,4 @@ Then visit `http://127.0.0.1:4173/`.
 | `faq.html` | Honest limits |
 | `download.html` | Mac `.dmg`, Windows `.exe`, GitHub |
 
-Downloads point at the current GitHub Release. People on the first public installer should download once; later versions then install in the app. Source: <https://github.com/Parafield-Official/kosmos>.
+GitHub Pages serves the website and the small, checksummed update feed. Download buttons and installed copies use that feed to retrieve the current installers from GitHub Release assets. The source repository can remain private during development; downloads become public when the repository is opened for launch. Source: <https://github.com/Parafield-Official/kosmos>.

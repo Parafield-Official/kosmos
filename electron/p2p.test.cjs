@@ -141,10 +141,36 @@ async function temporaryFolder(label) {
   return fs.mkdtemp(path.join(os.tmpdir(), `kosmos-p2p-${label}-`));
 }
 
-/** Deliver frames fully in order, like a real backpressured channel. */
+/** Deliver frames fully in order and let a test await the complete exchange. */
 function linkSessions(sender, receiver) {
-  sender.host.send = (text) => receiver.handleMessage(text);
-  receiver.host.send = (text) => sender.handleMessage(text);
+  const deliveries = new Set();
+  const deliver = (target, text) => {
+    const delivery = target.handleMessage(text);
+    deliveries.add(delivery);
+    // Keep cleanup from becoming an unhandled rejection; `drain` observes the
+    // original promise so a real transport failure still fails the test.
+    void delivery.finally(() => deliveries.delete(delivery)).catch(() => undefined);
+    return delivery;
+  };
+  sender.host.send = (text) => deliver(receiver, text);
+  receiver.host.send = (text) => deliver(sender, text);
+
+  return async function drainDeliveries() {
+    for (let turn = 0; turn < 100; turn += 1) {
+      const pending = [...deliveries];
+      if (pending.length === 0) {
+        // A frame may enqueue its response in a microtask after the previous
+        // delivery settles. Yield once before declaring the exchange drained.
+        await new Promise((resolve) => setImmediate(resolve));
+        if (deliveries.size === 0) {
+          return;
+        }
+        continue;
+      }
+      await Promise.all(pending);
+    }
+    throw new Error("Peer delivery did not settle.");
+  };
 }
 
 describe("live collaboration invites", () => {
@@ -197,11 +223,10 @@ describe("live collaboration sessions", () => {
       host: hostB,
       identity: { name: "Sam", role: "narrator" },
     });
-    linkSessions(sessionA, sessionB);
+    const drainDeliveries = linkSessions(sessionA, sessionB);
 
     await sessionA.start();
-    // Drain the applied/ack frames.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drainDeliveries();
 
     const localFiles = new Set((await collectSnapshotFiles(localFolder)).map((entry) => entry.path));
     const remoteFiles = new Set((await collectSnapshotFiles(remoteFolder)).map((entry) => entry.path));
@@ -233,10 +258,10 @@ describe("live collaboration sessions", () => {
       host: hostB,
       identity: { name: "Sam", role: "narrator" },
     });
-    linkSessions(sessionB, sessionA);
+    const drainDeliveries = linkSessions(sessionB, sessionA);
 
     await sessionB.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drainDeliveries();
 
     expect(sessionA.lastReview).toBeTruthy();
     expect(sessionA.lastReview.plan.decisions).toHaveLength(1);
@@ -268,10 +293,10 @@ describe("live collaboration sessions", () => {
       host: hostB,
       identity: { name: "Sam", role: "narrator" },
     });
-    linkSessions(sessionB, sessionA);
+    const drainDeliveries = linkSessions(sessionB, sessionA);
 
     await sessionB.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await drainDeliveries();
 
     const conflicts = sessionA.lastReview.plan.conflicts;
     expect(conflicts).toHaveLength(1);
@@ -311,10 +336,10 @@ describe("live collaboration sessions", () => {
       host: hostB,
       identity: { name: "Sam", role: "narrator" },
     });
-    linkSessions(sessionB, sessionA);
+    const drainDeliveries = linkSessions(sessionB, sessionA);
 
     await sessionB.start();
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await drainDeliveries();
 
     // The take itself arrived byte-for-byte.
     const received = await fs.readFile(path.join(localFolder, "audio", "ch01.wav"));

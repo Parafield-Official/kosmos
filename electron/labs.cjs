@@ -29,12 +29,24 @@ const {
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
 const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
+const { assertTrustedWindowEvent, isTrustedWindowEvent } = require("./ipc-security.cjs");
+const {
+  assertProjectFolder,
+  ensureProjectDirectory,
+  projectAssetPath,
+} = require("./project-path.cjs");
 const { lightboxPageUrl, shouldOpenLightboxDebug } = require("./lightbox-entry.cjs");
+
+const THIRD_PARTY_NOTICES_URL = "https://github.com/Parafield-Official/kosmos/blob/main/THIRD_PARTY_NOTICES.md";
 
 const execFileAsync = promisify(execFile);
 
 /** Shared GitHub Releases updater; reuses the same feed as the original app. */
 let labsAppUpdater = null;
+
+function isTrustedLabEvent(event) {
+  return isTrustedWindowEvent(event, labWindow, isTrustedRenderer);
+}
 
 function bindHandle(channel, listener) {
   try {
@@ -42,7 +54,10 @@ function bindHandle(channel, listener) {
   } catch {
     // First registration in this process.
   }
-  ipcMain.handle(channel, listener);
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedWindowEvent(event, labWindow, isTrustedRenderer);
+    return listener(event, ...args);
+  });
 }
 
 function bindChapterDelete() {
@@ -282,7 +297,8 @@ async function uniqueProjectDir(workspace, base) {
 
 async function readProjectMarker(dir) {
   try {
-    const raw = await fs.readFile(path.join(dir, PROJECT_MARKER), "utf8");
+    const root = await assertProjectFolder(dir);
+    const raw = await fs.readFile(projectAssetPath(root, PROJECT_MARKER), "utf8");
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.chapters)) {
       return parsed;
@@ -387,23 +403,24 @@ async function moveProjectIntoWorkspace(folder) {
   if (!grantedFolderPath || typeof folder !== "string") {
     return { ok: false };
   }
-  const marker = await readProjectMarker(folder);
+  const sourceRoot = await assertProjectFolder(folder);
+  const marker = await readProjectMarker(sourceRoot);
   if (!marker) {
     return { ok: false, invalid: true };
   }
-  if (isInsideWorkspace(folder)) {
-    return { ok: true, project: { ...marker, folder, external: false } };
+  if (isInsideWorkspace(sourceRoot)) {
+    return { ok: true, project: { ...marker, folder: sourceRoot, external: false } };
   }
-  const dest = await uniqueProjectDir(grantedFolderPath, safeFolderName(marker.title || path.basename(folder)));
+  const dest = await uniqueProjectDir(grantedFolderPath, safeFolderName(marker.title || path.basename(sourceRoot)));
   try {
-    await fs.rename(folder, dest);
+    await fs.rename(sourceRoot, dest);
   } catch {
     // Different volume: copy then remove.
-    await fs.cp(folder, dest, { recursive: true });
-    await fs.rm(folder, { recursive: true, force: true });
+    await fs.cp(sourceRoot, dest, { recursive: true, dereference: false });
+    await fs.rm(sourceRoot, { recursive: true, force: true });
   }
   const external = await readExternalPaths();
-  const next = external.filter((entry) => path.resolve(entry) !== path.resolve(folder));
+  const next = external.filter((entry) => path.resolve(entry) !== sourceRoot);
   if (next.length !== external.length) {
     await writeExternalPaths(next);
   }
@@ -415,46 +432,69 @@ async function registerExternalProject(folder) {
   if (typeof folder !== "string") {
     return { ok: false };
   }
-  const marker = await readProjectMarker(folder);
+  const root = await assertProjectFolder(folder);
+  const marker = await readProjectMarker(root);
   if (!marker) {
     return { ok: false, invalid: true };
   }
-  if (isInsideWorkspace(folder)) {
-    return { ok: true, project: { ...marker, folder, external: false } };
+  if (isInsideWorkspace(root)) {
+    return { ok: true, project: { ...marker, folder: root, external: false } };
   }
   const external = await readExternalPaths();
-  if (!external.some((entry) => path.resolve(entry) === path.resolve(folder))) {
-    external.push(folder);
+  if (!external.some((entry) => path.resolve(entry) === root)) {
+    external.push(root);
     await writeExternalPaths(external);
   }
-  return { ok: true, project: { ...marker, folder, external: true } };
+  return { ok: true, project: { ...marker, folder: root, external: true } };
+}
+
+function chapterFileName(chapterId) {
+  if (typeof chapterId !== "string" || !/^[a-z0-9][a-z0-9_-]{0,127}$/iu.test(chapterId)) {
+    throw new Error("Chapter IDs must contain only letters, numbers, underscores, and hyphens.");
+  }
+  return `${chapterId}.html`;
+}
+
+function safeProjectFileName(file, label = "File") {
+  if (
+    typeof file !== "string"
+    || file.length === 0
+    || path.basename(file) !== file
+    || file.includes("\\")
+    || file === "."
+    || file === ".."
+  ) {
+    throw new Error(`${label} must be a single file name.`);
+  }
+  return file;
 }
 
 async function writeProjectManuscript(folder, name, base64) {
   if (typeof folder !== "string" || typeof name !== "string" || typeof base64 !== "string") {
     return { ok: false };
   }
-  const dir = path.join(folder, "manuscript");
-  await fs.mkdir(dir, { recursive: true });
-  const safe = path.basename(name) || "manuscript.txt";
-  await fs.writeFile(path.join(dir, safe), Buffer.from(base64, "base64"));
+  const root = await assertProjectFolder(folder);
+  await ensureProjectDirectory(root, "manuscript");
+  const safe = safeProjectFileName(name, "Manuscript file");
+  await fs.writeFile(projectAssetPath(root, `manuscript/${safe}`), Buffer.from(base64, "base64"));
   return { ok: true, manuscript: safe };
 }
 
-function chaptersDir(folder) {
-  return path.join(folder, "manuscript", "chapters");
+async function chaptersDir(folder) {
+  const root = await assertProjectFolder(folder);
+  await ensureProjectDirectory(root, "manuscript/chapters");
+  return root;
 }
 
 async function writeChapterContents(folder, chapters) {
   if (typeof folder !== "string" || !Array.isArray(chapters)) {
     return { ok: false };
   }
-  const dir = chaptersDir(folder);
-  await fs.mkdir(dir, { recursive: true });
+  const root = await chaptersDir(folder);
   await Promise.all(
     chapters.map((chapter) =>
       chapter && typeof chapter.id === "string" && typeof chapter.html === "string"
-        ? fs.writeFile(path.join(dir, `${chapter.id}.html`), chapter.html, "utf8")
+        ? fs.writeFile(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapter.id)}`), chapter.html, "utf8")
         : Promise.resolve(),
     ),
   );
@@ -465,9 +505,8 @@ async function writeChapterContent(folder, chapterId, html) {
   if (typeof folder !== "string" || typeof chapterId !== "string" || typeof html !== "string") {
     return { ok: false };
   }
-  const dir = chaptersDir(folder);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, `${path.basename(chapterId)}.html`), html, "utf8");
+  const root = await chaptersDir(folder);
+  await fs.writeFile(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapterId)}`), html, "utf8");
   return { ok: true };
 }
 
@@ -475,13 +514,11 @@ async function deleteChapterFiles(folder, chapterId) {
   if (typeof folder !== "string" || typeof chapterId !== "string") {
     return { ok: false };
   }
-  const id = path.basename(chapterId);
-  if (!id) {
-    return { ok: false };
-  }
-  await fs.rm(path.join(chaptersDir(folder), `${id}.html`), { force: true });
-  const audioRoot = path.join(folder, "audio");
-  const pickupRoot = path.join(audioRoot, "pickups");
+  const root = await assertProjectFolder(folder);
+  const id = chapterFileName(chapterId).slice(0, -5);
+  await fs.rm(projectAssetPath(root, `manuscript/chapters/${chapterFileName(id)}`), { force: true });
+  const audioRoot = projectAssetPath(root, "audio");
+  const pickupRoot = projectAssetPath(root, "audio/pickups");
   for (const dir of [audioRoot, pickupRoot]) {
     let names = [];
     try {
@@ -505,7 +542,8 @@ async function readChapterContent(folder, chapterId) {
     return { ok: false, html: "" };
   }
   try {
-    const html = await fs.readFile(path.join(chaptersDir(folder), `${path.basename(chapterId)}.html`), "utf8");
+    const root = await assertProjectFolder(folder);
+    const html = await fs.readFile(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapterId)}`), "utf8");
     return { ok: true, html };
   } catch {
     return { ok: true, html: "" };
@@ -516,18 +554,18 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   if (typeof folder !== "string" || typeof chapterId !== "string" || typeof base64 !== "string") {
     return { ok: false };
   }
+  const root = await assertProjectFolder(folder);
   const kind = slot === "working" || slot === "mastered" ? slot : "original";
-  const dir = path.join(folder, "audio");
-  await fs.mkdir(dir, { recursive: true });
+  await ensureProjectDirectory(root, "audio");
   // The chapter tape model is original + working (punches) + mastered (pipeline).
   // Booth takes already arrive as WAV; imported mp3/m4a/ogg/webm takes are normalized
   // to WAV so the slot is an honest `.wav` file rather than mislabeled bytes.
   const bytes = Buffer.from(base64, "base64");
-  const file = `${path.basename(chapterId)}-${kind}.wav`;
+  const file = `${chapterFileName(chapterId).slice(0, -5)}-${kind}.wav`;
   const alreadyWav = isWavBuffer(bytes) || (typeof mime === "string" && mime.includes("wav"));
   try {
     const wav = alreadyWav ? bytes : await transcodeToWav(bytes);
-    await fs.writeFile(path.join(dir, file), wav);
+    await fs.writeFile(projectAssetPath(root, `audio/${file}`), wav);
     return { ok: true, file };
   } catch (error) {
     console.warn(`[labs] write chapter audio failed: ${error?.message ?? error}`);
@@ -540,7 +578,9 @@ async function readChapterAudio(folder, file) {
     return { ok: false };
   }
   try {
-    const bytes = await fs.readFile(path.join(folder, "audio", path.basename(file)));
+    const root = await assertProjectFolder(folder);
+    const name = safeProjectFileName(file, "Audio file");
+    const bytes = await fs.readFile(projectAssetPath(root, `audio/${name}`));
     return { ok: true, base64: bytes.toString("base64") };
   } catch {
     return { ok: false };
@@ -551,7 +591,9 @@ async function transcribeChapterAudio(folder, file) {
   if (typeof folder !== "string" || typeof file !== "string") {
     return { ok: false, words: [] };
   }
-  const audioPath = path.join(folder, "audio", path.basename(file));
+  const root = await assertProjectFolder(folder);
+  const name = safeProjectFileName(file, "Audio file");
+  const audioPath = projectAssetPath(root, `audio/${name}`);
   try {
     const transcription = await transcribeImportedAudio({
       alignWithWhisperX: () => alignImportedAudioWithWhisperX({
@@ -592,12 +634,13 @@ async function copyToWorking(folder, chapterId, file) {
   if (typeof folder !== "string" || typeof chapterId !== "string" || typeof file !== "string") {
     return { ok: false };
   }
-  const dir = path.join(folder, "audio");
-  const src = path.join(dir, path.basename(file));
-  const ext = path.extname(file) || ".wav";
-  const destName = `${path.basename(chapterId)}-working${ext}`;
+  const root = await assertProjectFolder(folder);
+  const name = safeProjectFileName(file, "Audio file");
+  const src = projectAssetPath(root, `audio/${name}`);
+  const ext = path.extname(name) || ".wav";
+  const destName = `${chapterFileName(chapterId).slice(0, -5)}-working${ext}`;
   try {
-    await fs.copyFile(src, path.join(dir, destName));
+    await fs.copyFile(src, projectAssetPath(root, `audio/${destName}`));
     return { ok: true, file: destName };
   } catch (error) {
     console.warn(`[labs] copy working failed: ${error?.message ?? error}`);
@@ -609,13 +652,16 @@ async function readProjectManuscriptFile(folder, name) {
   if (typeof folder !== "string") {
     return { ok: false };
   }
-  const dir = path.join(folder, "manuscript");
-  let target = typeof name === "string" && name ? path.join(dir, path.basename(name)) : null;
+  const root = await assertProjectFolder(folder);
+  const dir = projectAssetPath(root, "manuscript");
+  let target = typeof name === "string" && name
+    ? projectAssetPath(root, `manuscript/${safeProjectFileName(name, "Manuscript file")}`)
+    : null;
   if (!target) {
     try {
       const entries = await fs.readdir(dir);
       const found = entries.find((entry) => /\.(txt|md|markdown|docx|epub|pdf)$/i.test(entry));
-      target = found ? path.join(dir, found) : null;
+      target = found ? projectAssetPath(root, `manuscript/${safeProjectFileName(found, "Manuscript file")}`) : null;
     } catch {
       target = null;
     }
@@ -667,9 +713,10 @@ async function saveWorkspaceProject(project) {
     throw new Error("Missing project folder.");
   }
   const { folder, ...rest } = project;
+  const root = await assertProjectFolder(folder);
   const next = { ...rest, updatedAt: new Date().toISOString() };
-  await fs.writeFile(path.join(folder, PROJECT_MARKER), JSON.stringify(next), "utf8");
-  return { ...next, folder };
+  await fs.writeFile(projectAssetPath(root, PROJECT_MARKER), JSON.stringify(next), "utf8");
+  return { ...next, folder: root };
 }
 
 async function pickProjectParent() {
@@ -702,11 +749,17 @@ async function openWorkspaceProject() {
     return { ok: false, canceled: true };
   }
   const dir = result.filePaths[0];
-  const marker = await readProjectMarker(dir);
-  if (!marker) {
+  let root;
+  try {
+    root = await assertProjectFolder(dir);
+  } catch {
     return { ok: false, invalid: true, folder: dir };
   }
-  return { ok: true, project: { ...marker, folder: dir }, external: !isInsideWorkspace(dir) };
+  const marker = await readProjectMarker(root);
+  if (!marker) {
+    return { ok: false, invalid: true, folder: root };
+  }
+  return { ok: true, project: { ...marker, folder: root }, external: !isInsideWorkspace(root) };
 }
 
 async function deleteWorkspaceProject(folder) {
@@ -718,7 +771,9 @@ async function deleteWorkspaceProject(folder) {
   if (!resolved.startsWith(path.resolve(grantedFolderPath) + path.sep)) {
     return { ok: false };
   }
-  if (!(await readProjectMarker(resolved))) {
+  try {
+    await assertProjectFolder(resolved);
+  } catch {
     return { ok: false };
   }
   await fs.rm(resolved, { recursive: true, force: true });
@@ -737,10 +792,11 @@ async function importManuscriptFile(folder) {
   if (result.canceled || result.filePaths.length === 0) {
     return { ok: false, canceled: true };
   }
+  const root = await assertProjectFolder(folder);
   const source = result.filePaths[0];
-  const base = path.basename(source);
-  const dest = path.join(folder, "manuscript", base);
-  await fs.mkdir(path.join(folder, "manuscript"), { recursive: true });
+  const base = safeProjectFileName(path.basename(source), "Manuscript file");
+  await ensureProjectDirectory(root, "manuscript");
+  const dest = projectAssetPath(root, `manuscript/${base}`);
   await fs.copyFile(source, dest);
   return { ok: true, manuscript: base };
 }
@@ -1465,7 +1521,7 @@ function openLab() {
   };
 
   const onReady = (event, payload) => {
-    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id) {
+    if (!isTrustedLabEvent(event)) {
       return;
     }
     const size = payload?.width && payload?.height ? payload : START_SIZE;
@@ -1478,14 +1534,14 @@ function openLab() {
     reveal();
   };
   const onResize = (event, size) => {
-    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id) {
+    if (!isTrustedLabEvent(event)) {
       return;
     }
     applySize(labWindow, size, true);
   };
 
   const onWindowDragStart = (event, point) => {
-    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id) {
+    if (!isTrustedLabEvent(event)) {
       return;
     }
     const startX = Number(point?.screenX);
@@ -1497,7 +1553,7 @@ function openLab() {
     labWindowDrag = { startX, startY, originX, originY };
   };
   const onWindowDragMove = (event, point) => {
-    if (!labWindow || labWindow.isDestroyed() || event.sender.id !== labWindow.webContents.id || !labWindowDrag) {
+    if (!isTrustedLabEvent(event) || !labWindowDrag) {
       return;
     }
     const screenX = Number(point?.screenX);
@@ -1512,24 +1568,24 @@ function openLab() {
     );
   };
   const onWindowDragEnd = (event) => {
-    if (labWindow && !labWindow.isDestroyed() && event.sender.id !== labWindow.webContents.id) {
+    if (!isTrustedLabEvent(event)) {
       return;
     }
     labWindowDrag = null;
   };
 
-  const onPushTuning = (_event, values) => {
-    if (labWindow && !labWindow.isDestroyed()) {
+  const onPushTuning = (event, values) => {
+    if (isTrustedLabEvent(event) && labWindow && !labWindow.isDestroyed()) {
       labWindow.webContents.send("labs:apply-tuning", values);
     }
   };
 
   ipcMain.on("labs:ready", onReady);
-  ipcMain.handle("labs:resize", onResize);
+  bindHandle("labs:resize", onResize);
   ipcMain.on("labs:window-drag-start", onWindowDragStart);
   ipcMain.on("labs:window-drag-move", onWindowDragMove);
   ipcMain.on("labs:window-drag-end", onWindowDragEnd);
-  ipcMain.handle("labs:place", (_event, place) => {
+  bindHandle("labs:place", (_event, place) => {
     if (!JUMP_PLACES.has(place)) {
       return;
     }
@@ -1542,7 +1598,7 @@ function openLab() {
     }
     notifyDebugPlace(place);
   });
-  ipcMain.handle("labs:set-material", (_event, material) => {
+  bindHandle("labs:set-material", (_event, material) => {
     if (labWindow && !labWindow.isDestroyed()) {
       scheduleNativeGlass(labWindow, material);
     }
@@ -1658,75 +1714,80 @@ app.whenReady().then(async () => {
     isTrustedRenderer(webContents) && isMicrophonePermission(permission)
   ));
 
-  ipcMain.handle("labs:access-microphone", () => requestMicrophoneAccess());
-  ipcMain.handle("labs:access-microphone-status", () => getMicrophoneAccess());
-  ipcMain.handle("labs:access-folder", () => requestFolderAccess());
-  ipcMain.handle("labs:access-folder-status", () => getFolderAccess());
-  ipcMain.handle("labs:speech-model-status", () => getSpeechModelAccess());
-  ipcMain.handle("labs:download-speech-model", (event) => downloadSpeechModel(event));
-  ipcMain.handle("labs:reset-access", () => resetAccessState());
-  ipcMain.handle("labs:open-microphone-settings", () => openMicrophoneSettings());
-  ipcMain.handle("labs:open-discord", () => openDiscordInvite());
-  ipcMain.handle("labs:app-info", () => ({
+  bindHandle("labs:access-microphone", () => requestMicrophoneAccess());
+  bindHandle("labs:access-microphone-status", () => getMicrophoneAccess());
+  bindHandle("labs:access-folder", () => requestFolderAccess());
+  bindHandle("labs:access-folder-status", () => getFolderAccess());
+  bindHandle("labs:speech-model-status", () => getSpeechModelAccess());
+  bindHandle("labs:download-speech-model", (event) => downloadSpeechModel(event));
+  bindHandle("labs:reset-access", () => resetAccessState());
+  bindHandle("labs:open-microphone-settings", () => openMicrophoneSettings());
+  bindHandle("labs:open-discord", () => openDiscordInvite());
+  bindHandle("labs:app-info", () => ({
     version: app.getVersion(),
     update: labsAppUpdater?.getStatus() ?? idleUpdateStatus(),
   }));
-  ipcMain.handle("labs:update-check", () => (labsAppUpdater ? labsAppUpdater.check() : idleUpdateStatus()));
-  ipcMain.handle("labs:update-install", () => (labsAppUpdater ? labsAppUpdater.install() : { installed: false }));
-  ipcMain.handle("labs:open-release", () => shell.openExternal(RELEASE_PAGE));
-  ipcMain.handle("labs:workspace-get", () => getWorkspace());
-  ipcMain.handle("labs:projects-list", () => listWorkspaceProjects());
-  ipcMain.handle("labs:project-create", (_event, input) => createWorkspaceProject(input));
-  ipcMain.handle("labs:project-pick-parent", () => pickProjectParent());
-  ipcMain.handle("labs:project-save", (_event, project) => saveWorkspaceProject(project));
-  ipcMain.handle("labs:project-open", () => openWorkspaceProject());
-  ipcMain.handle("labs:project-delete", (_event, folder) => deleteWorkspaceProject(folder));
-  ipcMain.handle("labs:project-import-manuscript", (_event, folder) => importManuscriptFile(folder));
-  ipcMain.handle("labs:project-move-in", (_event, folder) => moveProjectIntoWorkspace(folder));
-  ipcMain.handle("labs:project-link-external", (_event, folder) => registerExternalProject(folder));
-  ipcMain.handle("labs:project-write-manuscript", (_event, payload) =>
+  bindHandle("labs:update-check", () => (labsAppUpdater ? labsAppUpdater.check() : idleUpdateStatus()));
+  bindHandle("labs:update-install", () => (labsAppUpdater ? labsAppUpdater.install() : { installed: false }));
+  bindHandle("labs:open-release", () => shell.openExternal(RELEASE_PAGE));
+  bindHandle("labs:open-third-party-notices", () => shell.openExternal(THIRD_PARTY_NOTICES_URL));
+  bindHandle("labs:workspace-get", () => getWorkspace());
+  bindHandle("labs:projects-list", () => listWorkspaceProjects());
+  bindHandle("labs:project-create", (_event, input) => createWorkspaceProject(input));
+  bindHandle("labs:project-pick-parent", () => pickProjectParent());
+  bindHandle("labs:project-save", (_event, project) => saveWorkspaceProject(project));
+  bindHandle("labs:project-open", () => openWorkspaceProject());
+  bindHandle("labs:project-delete", (_event, folder) => deleteWorkspaceProject(folder));
+  bindHandle("labs:project-import-manuscript", (_event, folder) => importManuscriptFile(folder));
+  bindHandle("labs:project-move-in", (_event, folder) => moveProjectIntoWorkspace(folder));
+  bindHandle("labs:project-link-external", (_event, folder) => registerExternalProject(folder));
+  bindHandle("labs:project-write-manuscript", (_event, payload) =>
     writeProjectManuscript(payload?.folder, payload?.name, payload?.base64),
   );
-  ipcMain.handle("labs:project-read-manuscript", (_event, payload) =>
+  bindHandle("labs:project-read-manuscript", (_event, payload) =>
     readProjectManuscriptFile(payload?.folder, payload?.name),
   );
-  ipcMain.handle("labs:chapter-write-many", (_event, payload) =>
+  bindHandle("labs:chapter-write-many", (_event, payload) =>
     writeChapterContents(payload?.folder, payload?.chapters),
   );
-  ipcMain.handle("labs:chapter-write", (_event, payload) =>
+  bindHandle("labs:chapter-write", (_event, payload) =>
     writeChapterContent(payload?.folder, payload?.chapterId, payload?.html),
   );
   bindChapterDelete();
-  ipcMain.handle("labs:chapter-read", (_event, payload) =>
+  bindHandle("labs:chapter-read", (_event, payload) =>
     readChapterContent(payload?.folder, payload?.chapterId),
   );
-  ipcMain.handle("labs:chapter-write-audio", (_event, payload) =>
+  bindHandle("labs:chapter-write-audio", (_event, payload) =>
     writeChapterAudio(payload?.folder, payload?.chapterId, payload?.base64, payload?.mime, payload?.slot),
   );
-  ipcMain.handle("labs:chapter-read-audio", (_event, payload) =>
+  bindHandle("labs:chapter-read-audio", (_event, payload) =>
     readChapterAudio(payload?.folder, payload?.file),
   );
-  ipcMain.handle("labs:proof-transcribe", (_event, payload) =>
+  bindHandle("labs:proof-transcribe", (_event, payload) =>
     transcribeChapterAudio(payload?.folder, payload?.file),
   );
-  ipcMain.handle("labs:copy-working", (_event, payload) =>
+  bindHandle("labs:copy-working", (_event, payload) =>
     copyToWorking(payload?.folder, payload?.chapterId, payload?.file),
   );
-  ipcMain.handle("labs:apply-punch", (_event, payload) => applyPunch(payload));
-  ipcMain.handle("labs:preview-punch", (_event, payload) => previewPunch(payload));
-  ipcMain.handle("labs:undo-punch", (_event, payload) => undoLatestPunch(payload));
-  ipcMain.handle("labs:chapter-master", (_event, payload) => masterWorkingFile(payload));
-  ipcMain.handle("labs:chapter-measure", (_event, payload) => measureChapterAudio(payload));
-  ipcMain.handle("labs:delivery-export", (_event, payload) => exportDeliveryPack(payload));
-  ipcMain.handle("labs:live-start", () => startLiveFollow());
-  ipcMain.handle("labs:live-stop", () => stopLiveFollow());
-  ipcMain.handle("labs:live-restart", (_event, payload) => restartLiveFollow(payload));
-  ipcMain.on("labs:live-pcm", (_event, payload) => sendLivePcm(payload));
-  ipcMain.handle("labs:live-transcribe-hop", (_event, payload) => transcribeHop(payload));
-  ipcMain.handle("labs:window-chrome", () => windowChromeState());
-  ipcMain.handle("labs:jump", (_event, place) => jumpLab(place));
-  ipcMain.on("labs:report-place", (_event, place) => {
-    if (typeof place === "string" && JUMP_PLACES.has(place)) {
+  bindHandle("labs:apply-punch", (_event, payload) => applyPunch(payload));
+  bindHandle("labs:preview-punch", (_event, payload) => previewPunch(payload));
+  bindHandle("labs:undo-punch", (_event, payload) => undoLatestPunch(payload));
+  bindHandle("labs:chapter-master", (_event, payload) => masterWorkingFile(payload));
+  bindHandle("labs:chapter-measure", (_event, payload) => measureChapterAudio(payload));
+  bindHandle("labs:delivery-export", (_event, payload) => exportDeliveryPack(payload));
+  bindHandle("labs:live-start", () => startLiveFollow());
+  bindHandle("labs:live-stop", () => stopLiveFollow());
+  bindHandle("labs:live-restart", (_event, payload) => restartLiveFollow(payload));
+  ipcMain.on("labs:live-pcm", (event, payload) => {
+    if (isTrustedLabEvent(event)) {
+      sendLivePcm(payload);
+    }
+  });
+  bindHandle("labs:live-transcribe-hop", (_event, payload) => transcribeHop(payload));
+  bindHandle("labs:window-chrome", () => windowChromeState());
+  bindHandle("labs:jump", (_event, place) => jumpLab(place));
+  ipcMain.on("labs:report-place", (event, place) => {
+    if (isTrustedLabEvent(event) && typeof place === "string" && JUMP_PLACES.has(place)) {
       notifyDebugPlace(place);
     }
   });

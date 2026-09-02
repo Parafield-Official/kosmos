@@ -27,7 +27,7 @@ function fakeAutoUpdater() {
 }
 
 describe("desktop auto-update", () => {
-  it("does not phone GitHub from an unpackaged development copy", async () => {
+  it("does not contact the update service from an unpackaged development copy", async () => {
     const autoUpdater = fakeAutoUpdater();
     const send = vi.fn();
     const updater = createAppUpdater({
@@ -48,7 +48,7 @@ describe("desktop auto-update", () => {
     });
   });
 
-  it("checks the public Kosmos GitHub feed when the app is installed", async () => {
+  it("checks the public Kosmos GitHub Pages feed when the app is installed", async () => {
     const autoUpdater = fakeAutoUpdater();
     autoUpdater.checkForUpdates.mockImplementation(async () => {
       autoUpdater.emit("checking-for-update");
@@ -132,9 +132,9 @@ describe("desktop auto-update", () => {
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it("keeps the booth usable if GitHub cannot be reached", async () => {
+  it("keeps the booth usable if GitHub Pages cannot be reached", async () => {
     const autoUpdater = fakeAutoUpdater();
-    autoUpdater.checkForUpdates.mockRejectedValue(new Error("ENOTFOUND github.com"));
+    autoUpdater.checkForUpdates.mockRejectedValue(new Error("ENOTFOUND parafield-official.github.io"));
     const updater = createAppUpdater({
       autoUpdater,
       isPackaged: true,
@@ -153,7 +153,7 @@ describe("desktop auto-update", () => {
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it("asks GitHub again later so a copy left open still catches a new release", async () => {
+  it("checks Pages again later so a copy left open still catches a new release", async () => {
     const autoUpdater = fakeAutoUpdater();
     const timers = [];
     const updater = createAppUpdater({
@@ -178,12 +178,22 @@ describe("desktop auto-update", () => {
     updater.dispose();
   });
 
-  it("points already-installed copies at the public Kosmos GitHub releases", () => {
+  it("points installed copies at the public Kosmos GitHub Pages channel", () => {
     expect(UPDATE_FEED).toEqual({
-      provider: "github",
-      owner: "Parafield-Official",
-      repo: "kosmos",
+      provider: "generic",
+      url: "https://parafield-official.github.io/kosmos/updates/",
     });
-    expect(RELEASE_PAGE).toBe("https://github.com/Parafield-Official/kosmos/releases/latest");
+    expect(RELEASE_PAGE).toBe("https://parafield-official.github.io/kosmos/download.html");
+  });
+
+  it("packages the same Pages feed without embedding a private GitHub credential", () => {
+    const build = require("../package.json").build;
+
+    expect(build.publish).toEqual({
+      provider: "generic",
+      url: "https://parafield-official.github.io/kosmos/updates/",
+    });
+    expect(JSON.stringify(build)).not.toMatch(/github[_-]?token|gh_token|authorization/i);
+    expect(build.win.verifyUpdateCodeSignature).toBe(false);
   });
 });

@@ -73,8 +73,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade \
             'markitdown[docx,pdf]==0.1.6' \
-            'pyinstaller==6.22.2'
+            'pyinstaller==6.22.2' \
+            'pip-licenses==5.5.1'
           mkdir -p vendor/bin
+          python -m piplicenses \
+            --from=mixed \
+            --format=plain-vertical \
+            --with-license-file \
+            --with-notice-file \
+            --no-license-path \
+            --output-file vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
+          test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
           PYINSTALLER_CONFIG_DIR="$RUNNER_TEMP/pyinstaller" \
             pyinstaller \
               --noconfirm \
@@ -170,8 +179,12 @@ jobs:
           printf '%s\n' \
             "FFmpeg ${ffmpeg_version}, built from https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz" \
             'License: LGPL-2.1-or-later; configure flags disable GPL and non-free components.' \
+            'The matching FFmpeg source archive is attached to this GitHub Release.' \
             'LAME and mpg123: LGPL-compatible dynamic dependencies bundled beside the executables.' \
+            'Sources: https://lame.sourceforge.io/ and https://www.mpg123.de/.' \
             > vendor/bin/FFMPEG_LICENSE.txt
+          cp "$ffmpeg_source/COPYING.LGPLv2.1" vendor/bin/LGPL-2.1.txt
+          test -s vendor/bin/LGPL-2.1.txt
 
           whisper_source="$RUNNER_TEMP/whisper.cpp"
           git init "$whisper_source"
@@ -192,8 +205,9 @@ jobs:
           cp "$whisper_server" vendor/bin/whisper-server
           chmod +x vendor/bin/*
           printf '%s\n' \
-            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            "FFmpeg ${ffmpeg_version}: LGPL-2.1-or-later; source archive attached to this GitHub Release." \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
       - name: Prepare Windows runtime assets
@@ -209,15 +223,15 @@ jobs:
           mkdir -p "$runtime_dir"
           echo "Windows runtime staging at $runtime_dir"
 
-          ffmpeg_archive='ffmpeg-n8.1-latest-win64-lgpl-8.1.zip'
+          ffmpeg_release='autobuild-2026-09-01-13-13'
+          ffmpeg_archive='ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip'
+          ffmpeg_sha='4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6'
           echo "Downloading $ffmpeg_archive"
-          curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
-          expected_sha="$(curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256 | awk -v asset="$ffmpeg_archive" '$2 == asset {print $1}')"
-          test -n "$expected_sha"
+          curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/${ffmpeg_release}/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
           actual_sha="$(cd "$runtime_dir" && sha256sum "$ffmpeg_archive" | awk '{print $1}')"
           actual_sha="${actual_sha#\\}"
-          echo "ffmpeg sha256 expected=$expected_sha actual=$actual_sha"
-          test "$expected_sha" = "$actual_sha"
+          echo "ffmpeg sha256 expected=$ffmpeg_sha actual=$actual_sha"
+          test "$ffmpeg_sha" = "$actual_sha"
           unzip -q "$runtime_dir/${ffmpeg_archive}" -d "$runtime_dir/ffmpeg-unpacked"
           ffmpeg_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffmpeg.exe | head -n 1)"
           ffprobe_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffprobe.exe | head -n 1)"
@@ -227,8 +241,10 @@ jobs:
           cp "$ffprobe_path" vendor/bin/ffprobe.exe
           find "$(dirname "$ffmpeg_path")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
-            "FFmpeg ${ffmpeg_archive}, verified against BtbN checksums.sha256." \
+            "FFmpeg ${ffmpeg_archive}, pinned to BtbN ${ffmpeg_release}." \
+            "SHA-256: ${ffmpeg_sha}" \
             'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
+            'Corresponding FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/c27482a18d' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_archive='whisper-bin-x64.zip'
@@ -250,8 +266,9 @@ jobs:
           # Official Windows zip is shared; the exe will not start without these DLLs.
           find "$(dirname "$whisper_cli")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
-            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            "FFmpeg ${ffmpeg_archive}: LGPL-2.1-or-later; source link in FFMPEG_LICENSE.txt." \
             'whisper.cpp v1.9.2 official Windows x64 binaries, MIT, https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.2' \
+            'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
       - name: Verify staged native runtime
@@ -285,6 +302,9 @@ jobs:
             vendor/bin/markitdown.exe --help >/dev/null
           fi
           test -s vendor/bin/MARKITDOWN_LICENSE.txt
+          test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
+          test -s vendor/bin/FFMPEG_LICENSE.txt
+          test -s vendor/bin/THIRD_PARTY_NOTICES.txt
           npm run audit:runtime
 
       - name: Prepare verified Whisper model
@@ -337,36 +357,24 @@ jobs:
           dmg_files=(dist/Kosmos-*-mac-${{ matrix.arch }}.dmg)
           test "${#dmg_files[@]}" -eq 1
 
+      - name: Stage matching macOS FFmpeg source
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_archive="$RUNNER_TEMP/ffmpeg.tar.xz"
+          test -s "$source_archive"
+          cp "$source_archive" dist/FFmpeg-8.1.1-source.tar.xz
+          sha256sum dist/FFmpeg-8.1.1-source.tar.xz > dist/FFmpeg-8.1.1-source.tar.xz.sha256
+
       - name: Package Windows installer
         if: runner.os == 'Windows'
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # The free direct-download channel is intentionally unsigned for
+          # now. electron-updater still enforces the SHA-512 in latest.yml.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npx electron-builder --win --${{ matrix.arch }} --publish never
-
-      - name: Verify Windows Authenticode signatures
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $installers = @(Get-ChildItem -Path dist -Filter 'Kosmos-*-win-*.exe' -File)
-          if ($installers.Count -ne 1) {
-            throw "Expected exactly one Windows installer, found $($installers.Count)."
-          }
-          $targets = @(
-            (Join-Path $PWD 'dist/win-unpacked/Kosmos.exe'),
-            $installers[0].FullName
-          )
-          foreach ($target in $targets) {
-            if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-              throw "Missing Windows signing target: $target"
-            }
-            $signature = Get-AuthenticodeSignature -LiteralPath $target
-            if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-              throw "Windows release is not trusted: $target has Authenticode status $($signature.Status)."
-            }
-          }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -376,6 +384,8 @@ jobs:
             dist/Kosmos-*
             dist/*.blockmap
             dist/latest*.yml
+            dist/FFmpeg-*.tar.xz
+            dist/FFmpeg-*.tar.xz.sha256
           if-no-files-found: error
 
   publish:
@@ -404,3 +414,59 @@ jobs:
           make_latest: true
           generate_release_notes: true
           files: release-artifacts/*
+
+  pages:
+    name: Publish website and update feed
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download installer metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Prepare public Pages artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pages-site
+          cp -R site/. pages-site/
+          touch pages-site/.nojekyll
+          node scripts/prepare-pages-release.cjs \
+            release-artifacts \
+            pages-site \
+            "$GITHUB_REF_NAME"
+          test -s pages-site/updates/latest.yml
+          test -s pages-site/updates/latest-mac.yml
+          test -s pages-site/updates/downloads.json
+          if find pages-site -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \) -print -quit | grep -q .; then
+            echo 'Installers must remain GitHub Release assets, not Pages files.' >&2
+            exit 1
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: pages-site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

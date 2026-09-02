@@ -1,6 +1,6 @@
 # Kosmos
 
-[Download for Mac](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.4/Kosmos-0.1.4-mac-arm64.dmg) · [Download for Windows](https://github.com/Parafield-Official/kosmos/releases/download/v0.1.4/Kosmos-0.1.4-win-x64.exe)
+[Download Kosmos for Mac or Windows](https://parafield-official.github.io/kosmos/download.html)
 
 Kosmos is a free desktop studio for human-made audiobooks. Import a manuscript,
 record each chapter or bring audio from another editor, proofread the take
@@ -33,17 +33,17 @@ Kosmos includes an audiobook-focused recorder, but it is not a general-purpose
 multitrack music workstation. Narrators can record and punch directly in Kosmos
 or continue using Reaper, Audition, or another editor and import the result.
 
-This is a pre-release development build. Release packaging includes the audited
-FFmpeg/ffprobe and whisper.cpp runtimes plus checksum-verified local speech
-models. Rich manuscript imports use Microsoft's offline
+Release packaging includes the audited FFmpeg/ffprobe and whisper.cpp runtimes,
+checksum-verified local speech models, and Microsoft's offline
 [MarkItDown](https://github.com/microsoft/markitdown) helper with a built-in
-fallback.
+fallback. See [third-party notices](THIRD_PARTY_NOTICES.md) for the bundled
+model/runtime licenses and attributions.
 
 ## Install
 
-1. Choose the Mac or Windows download from the latest GitHub Release.
-2. On macOS, open the download and drag Kosmos to Applications. If Gatekeeper
-   blocks an unsigned pre-release, right-click the app and choose **Open**.
+1. Choose the Mac or Windows download from the Kosmos download page above.
+2. On macOS, open the download and drag Kosmos to Applications. Release builds
+   are Developer ID signed and notarized by Apple.
 3. On Windows, run the installer. If SmartScreen appears, choose **More info →
    Run anyway**.
 4. On first launch, allow microphone access, choose where project folders live,
@@ -178,7 +178,8 @@ npm run package:win   # on Windows
 The packaging commands fetch and verify the pinned official Whisper model as a
 build asset before creating the installer. Release CI also bundles MarkItDown
 and its DOCX/PDF conversion dependencies; end users do not run either setup
-step.
+step. It records native-runtime checksums and attaches the matching macOS
+FFmpeg source archive to each GitHub Release.
 
 ## License
 

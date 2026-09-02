@@ -1,7 +1,12 @@
-FFmpeg runtime license notice:
+FFmpeg runtime license notice
 
-The staged FFmpeg build must be LGPL-2.1-or-later compatible. It must be
-built with GPL and non-free components disabled, and its version output must
-be checked by `npm run audit:runtime` before distribution. Any dynamic LGPL
-dependencies (such as LAME) must travel beside the executables and be listed
-here with their source/version and license.
+Release builds replace this file with the exact FFmpeg version, checksum,
+source location, and platform-specific dependency details. Kosmos only ships
+LGPL-compatible FFmpeg builds; GPL and non-free components are disabled on
+macOS, and Windows uses a pinned BtbN LGPL shared build.
+
+FFmpeg license: LGPL-2.1-or-later
+Source: https://ffmpeg.org/download.html
+
+macOS release assets include the matching FFmpeg source archive. Windows
+release assets identify the exact FFmpeg source commit in this file.

@@ -483,6 +483,32 @@
   line-height: 1.2;
 }
 
+.ma-third-party-notice {
+  margin: 0;
+  padding: 0.65rem 1.35rem 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--mute);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.ma-third-party-notice button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+  cursor: pointer;
+}
+
+.ma-third-party-notice button:hover,
+.ma-third-party-notice button:focus-visible {
+  color: var(--ink-soft);
+}
+
 .ma-settings .ma-seg-btn.ma-set-theme.is-on {
   background: inherit;
   color: inherit;
