@@ -25,10 +25,10 @@ const BOOK_H: f32 = 0.909;
 const NICHE_DEPTH: f32 = 0.055;
 const WARM: vec3f = vec3f(1.0, 0.94, 0.86);
 const VOLUME_STEPS: i32 = 16;
-const AIM_Y: f32 = 0.72;
-const AIM_Z: f32 = 0.92;
+const AIM_Y: f32 = 0.7;
+const AIM_Z: f32 = 0.9;
 const AIM_SPLAY: f32 = 0.0;
-const VOLUME_DENSITY: f32 = 0.2;
+const VOLUME_DENSITY: f32 = 0.28;
 const PLASTER_ALBEDO: f32 = 0.62;
 
 struct Hit {
@@ -240,28 +240,28 @@ fn hitAlcove(uv: vec2f) -> Hit {
     if (lu < iL) {
       let t = saturate(lu / max(iL, 0.0001));
       hit.p = vec3f(mix(nicheX0, nicheX0 + 0.004, t), mix(nicheY1, nicheY0, lv), mix(-D, -D - NICHE_DEPTH, t));
-      hit.n = vec3f(1.0, 0.0, 0.12);
+      hit.n = normalize(mix(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.12), smoothstep(0.0, 0.42, t)));
       hit.spec = 0.06;
       return hit;
     }
     if (lu > 1.0 - iR) {
       let t = saturate((1.0 - lu) / max(iR, 0.0001));
       hit.p = vec3f(mix(nicheX1, nicheX1 - 0.004, t), mix(nicheY1, nicheY0, lv), mix(-D, -D - NICHE_DEPTH, t));
-      hit.n = vec3f(-1.0, 0.0, 0.12);
+      hit.n = normalize(mix(vec3f(0.0, 0.0, 1.0), vec3f(-1.0, 0.0, 0.12), smoothstep(0.0, 0.42, t)));
       hit.spec = 0.06;
       return hit;
     }
     if (lv < iT) {
       let t = saturate(lv / max(iT, 0.0001));
       hit.p = vec3f(mix(nicheX0, nicheX1, lu), mix(nicheY1, nicheY1 - 0.004, t), mix(-D, -D - NICHE_DEPTH, t));
-      hit.n = vec3f(0.0, -1.0, 0.1);
+      hit.n = normalize(mix(vec3f(0.0, 0.0, 1.0), vec3f(0.0, -1.0, 0.1), smoothstep(0.0, 0.42, t)));
       hit.spec = 0.05;
       return hit;
     }
     if (lv > 1.0 - iB) {
       let t = saturate((1.0 - lv) / max(iB, 0.0001));
       hit.p = vec3f(mix(nicheX0, nicheX1, lu), mix(nicheY0, nicheY0 + 0.004, t), mix(-D, -D - NICHE_DEPTH, t));
-      hit.n = vec3f(0.0, 1.0, 0.08);
+      hit.n = normalize(mix(vec3f(0.0, 0.0, 1.0), vec3f(0.0, 1.0, 0.08), smoothstep(0.0, 0.42, t)));
       hit.spec = 0.14;
       hit.gloss = 22.0;
       return hit;
@@ -297,17 +297,39 @@ fn fixtureGlow(p: vec3f, i: i32) -> f32 {
   return params.intensity * attenuation(dist, params.falloff.z * 0.42, params.extra.y * 0.5);
 }
 
+/** Spot energy along the beam axis so shafts travel from the can, not as a 2D wash. */
+fn beamEnergy(p: vec3f, i: i32) -> f32 {
+  if (!lampOn(i)) { return 0.0; }
+  let pos = lightPosAt(i);
+  let travel = lightTravelAt(i);
+  let toP = p - pos;
+  let dist = length(toP);
+  if (dist < 0.0001) {
+    return params.intensity * 4.0;
+  }
+  let along = dot(toP, travel);
+  let radial = length(toP - travel * along);
+  let cosTheta = along / dist;
+  let cone = spotCone(cosTheta, params.falloff.x, params.falloff.y);
+  let energy = params.intensity * cone * attenuation(dist, params.falloff.z, params.extra.y);
+  let axis = exp(-radial * 11.0);
+  return energy * (0.48 + axis * 1.15);
+}
+
 fn inScatter(p: vec3f, rd: vec3f) -> vec3f {
   var glow = vec3f(0.0);
   let lightColor = srgbToLinear3(WARM);
   for (var i = 0; i < LIGHT_COUNT; i++) {
     let pos = lightPosAt(i);
-    let energy = sampleLight(p, i);
     let travel = lightTravelAt(i);
-    let along = pow(max(dot(-rd, travel), 0.0), 5.0);
-    let phase = mix(0.85, 1.85, along);
-    let near = exp(-length(p - pos) * 18.0);
-    glow += lightColor * (energy * VOLUME_DENSITY * phase * (1.0 + near * 1.6) + fixtureGlow(p, i) * near * 0.5);
+    let energy = beamEnergy(p, i);
+    let toLight = pos - p;
+    let dist = length(toLight);
+    let toward = pow(max(dot(-rd, toLight / max(dist, 0.0001)), 0.0), 2.5);
+    let along = pow(max(dot(-rd, travel), 0.0), 4.0);
+    let phase = mix(0.78, 1.65, max(toward, along));
+    let near = exp(-dist * 5.5);
+    glow += lightColor * (energy * VOLUME_DENSITY * phase * (1.0 + near * 0.85) + fixtureGlow(p, i) * near * 0.45);
   }
   return glow;
 }
@@ -348,31 +370,59 @@ fn shadeSurface(hit: Hit) -> vec3f {
       ceilingKiss += exp(-d * 14.0) * fixtureGlow(hit.p, i);
     }
   }
+
+  var bounceLight = vec3f(0.0);
+  for (var i = 0; i < LIGHT_COUNT; i++) {
+    if (!lampOn(i)) { continue; }
+    let pos = lightPosAt(i);
+    let floorP = vec3f(pos.x, 0.012, mix(pos.z, -params.depth.w * 0.7, 0.35));
+    let toP = hit.p - floorP;
+    let bounceE = params.intensity * 0.34 * attenuation(length(toP), params.falloff.z, params.extra.y * 1.6);
+    bounceLight += lambert(N, toP, lightColor, bounceE);
+  }
+
+  var entered = 0.0;
+  if (hit.well > 0.5) {
+    let opening = vec3f(hit.p.x, hit.p.y, -params.depth.w);
+    for (var i = 0; i < LIGHT_COUNT; i++) {
+      entered += sampleLight(opening, i);
+    }
+    let recess = saturate((-hit.p.z - params.depth.w) / NICHE_DEPTH);
+    entered *= mix(0.42, 0.2, recess);
+  }
+
   var bounce = 0.0;
   if (abs(N.x) > 0.55) {
-    bounce = 0.16;
-  } else if (N.z > 0.5) {
-    bounce = 0.12;
-  } else if (N.y > 0.5) {
-    bounce = 0.28;
-  } else if (N.y < -0.4) {
-    bounce = 0.1;
-  } else {
     bounce = 0.18;
+  } else if (N.z > 0.5) {
+    bounce = 0.16;
+  } else if (N.y > 0.5) {
+    bounce = 0.32;
+  } else if (N.y < -0.4) {
+    bounce = 0.14;
+  } else {
+    bounce = 0.2;
   }
-  if (hit.well > 0.5 && N.z > 0.5) {
-    direct *= 0.42;
-    bounce *= 0.55;
-  } else if (hit.well > 0.5) {
+
+  var well = 1.0;
+  if (hit.well > 0.5) {
     let D = params.depth.w;
-    let lip = saturate(1.0 - abs(hit.p.z + D) / (NICHE_DEPTH * 0.7));
+    let recess = saturate((-hit.p.z - D) / NICHE_DEPTH);
+    well = mix(1.0, 0.82, recess);
     if (N.y < -0.3) {
-      direct *= 0.88 * lip;
+      well = mix(0.78, 0.46, recess);
+      bounce += 0.14;
+    } else if (N.y > 0.35) {
+      well = mix(1.0, 0.72, recess);
     } else if (abs(N.x) > 0.4) {
-      direct *= 0.52 * lip;
+      well = mix(0.9, 0.58, recess);
     }
   }
-  return direct * (0.42 + bounce) * PLASTER_ALBEDO + lightColor * ceilingKiss * 0.62;
+
+  let up = saturate(hit.p.y / max(H, 0.0001));
+  let ambient = 0.06 + 0.08 * up + 0.055 * (1.0 - up);
+  return (direct * well + bounceLight) * (0.46 + bounce) * PLASTER_ALBEDO
+    + lightColor * (ceilingKiss * 0.55 + ambient * 0.14 + entered * 0.045);
 }
 
 @fragment fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
@@ -385,11 +435,7 @@ fn shadeSurface(hit: Hit) -> vec3f {
     return vec4f(vec3f(0.32), 1.0);
   }
   let strength = mix(0.0, 1.0, saturate(params.lit));
-  let N = hit.n;
-  let soffit = hit.well < 0.5 && N.y < -0.35;
-  let floor = hit.well < 0.5 && N.y > 0.35;
-  let alcoveSide = hit.well < 0.5 && abs(N.x) > 0.55;
-  let nicheLip = hit.well > 0.5 && (N.y < -0.35 || abs(N.x) > 0.4);
+  let soffit = hit.well < 0.5 && hit.n.y < -0.35;
   let H = worldH();
   let cam = vec3f(0.5, 0.42 * H, 0.62);
   let toHit = hit.p - cam;
@@ -399,12 +445,8 @@ fn shadeSurface(hit: Hit) -> vec3f {
   if (!soffit) {
     lit += raymarchVolume(cam, rd, dist);
   }
-  if (soffit || floor || alcoveSide || nicheLip) {
-    lit += shadeSurface(hit);
-  } else if (hit.well > 0.5 && N.z > 0.7) {
-    lit += vec3f(-0.04);
-  }
-  var rgb = identity + (lit - vec3f(0.11)) * 0.72 * strength;
-  rgb = clamp(rgb, vec3f(0.22), vec3f(0.78));
+  lit += shadeSurface(hit);
+  var rgb = identity + (lit - vec3f(0.07)) * 0.7 * strength;
+  rgb = clamp(rgb, vec3f(0.48), vec3f(0.84));
   return vec4f(rgb, 1.0);
 }
