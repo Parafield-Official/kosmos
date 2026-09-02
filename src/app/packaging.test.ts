@@ -56,32 +56,31 @@ describe("packaged renderer configuration", () => {
     expect(step).not.toContain("Visual Studio 17 2022");
   });
 
-  it("points README download buttons at the tagged installers, not /releases/latest", () => {
+  it("points the README download button at the stable Kosmos Pages site", () => {
     const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
-    const version = packageJson.version;
     expect(readme).not.toContain("releases/latest");
-    expect(readme).toContain(
-      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-mac-arm64.dmg`,
-    );
-    expect(readme).toContain(
-      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
-    );
+    expect(readme).toContain("https://parafield-official.github.io/kosmos/download.html");
   });
 
-  it("publishes a GitHub updater feed so already-installed copies can keep current", () => {
+  it("publishes a GitHub Pages updater feed so installed copies can keep current", () => {
     expect(packageJson.dependencies["electron-updater"]).toBe("6.8.9");
     expect("electron-updater" in packageJson.devDependencies).toBe(false);
     expect(packageJson.devDependencies.electron).toBe("44.1.1");
     expect(packageJson.build.publish).toMatchObject({
-      provider: "github",
-      owner: "Parafield-Official",
-      repo: "kosmos",
+      provider: "generic",
+      url: "https://parafield-official.github.io/kosmos/updates/",
     });
     const macTargets = packageJson.build.mac.target;
     expect(macTargets).toEqual(expect.arrayContaining(["dmg", "zip"]));
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("dist/latest*.yml");
     expect(yaml).toMatch(/prerelease:\s*false/);
+    expect(yaml).toContain("actions/configure-pages@");
+    expect(yaml).toContain("actions/upload-pages-artifact@");
+    expect(yaml).toContain("actions/deploy-pages@");
+    expect(yaml).toContain("pages: write");
+    expect(yaml).toContain("id-token: write");
+    expect(yaml).toContain("scripts/prepare-pages-release.cjs");
   });
 
   it("only releases tags whose commits were merged into main", () => {
@@ -126,11 +125,13 @@ describe("packaged renderer configuration", () => {
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
   });
 
-  it("blocks unsigned Windows installers from reaching a release", () => {
+  it("makes the temporary unsigned Windows channel explicit without embedding signing secrets", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
-    expect(yaml).toContain("Get-AuthenticodeSignature");
-    expect(yaml).toContain("SignatureStatus]::Valid");
-    expect(yaml).toContain("WIN_CSC_LINK");
+    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false);
+    expect(yaml).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'");
+    expect(yaml).not.toContain("Get-AuthenticodeSignature");
+    expect(yaml).not.toContain("WIN_CSC_LINK");
+    expect(yaml).not.toContain("WIN_CSC_KEY_PASSWORD");
     expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
     expect(yaml).toMatch(/publish:[\s\S]*?permissions:\n\s+contents:\s+write/);
   });
