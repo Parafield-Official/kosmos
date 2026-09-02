@@ -120,6 +120,7 @@ declare global {
       openThirdPartyNotices?: () => Promise<unknown>;
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
+      openMail?: () => Promise<{ ok: boolean } | unknown>;
       getWorkspace?: () => Promise<{ workspace: string | null }>;
       listProjects?: () => Promise<{ workspace: string | null; projects: StoredProjectFile[] }>;
       createProject?: (input: {

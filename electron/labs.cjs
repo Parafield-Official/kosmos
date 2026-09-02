@@ -862,6 +862,7 @@ function openMicrophoneSettings() {
 
 const DISCORD_INVITE_APP = "discord://-/invite/g4aVz59mQ9";
 const DISCORD_INVITE_WEB = "https://discord.gg/g4aVz59mQ9";
+const CONTACT_MAILTO = "mailto:justin@parafield.ai";
 
 async function openDiscordInvite() {
   if (process.platform === "darwin") {
@@ -1723,6 +1724,7 @@ app.whenReady().then(async () => {
   bindHandle("labs:reset-access", () => resetAccessState());
   bindHandle("labs:open-microphone-settings", () => openMicrophoneSettings());
   bindHandle("labs:open-discord", () => openDiscordInvite());
+  bindHandle("labs:open-mail", () => shell.openExternal(CONTACT_MAILTO));
   bindHandle("labs:app-info", () => ({
     version: app.getVersion(),
     update: labsAppUpdater?.getStatus() ?? idleUpdateStatus(),
