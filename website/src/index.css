@@ -307,7 +307,6 @@ html[data-page="download"] .site-page { --page-glow: 104, 181, 208; --page-accen
 .editorial-intro strong { color: #fff; font-weight: 500; }
 .stage-stack { display: grid; gap: 14px; }
 .stage-card { display: grid; grid-template-columns: minmax(0,1fr) 46px; gap: 22px; align-items: center; padding: 28px 28px 28px 30px; transition: border-color .35s ease, background .35s ease, transform .35s cubic-bezier(.22,1,.36,1); }
-.card-number { align-self: start; padding-top: 4px; font-size: 10px; font-weight: 600; letter-spacing: .2em; color: rgba(255,255,255,.42); }
 .stage-copy { align-self: start; }
 .stage-mark { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid rgba(217,237,247,.2); border-radius: 50%; color: rgba(245,250,252,.86); background: rgba(255,255,255,.035); }
 .stage-mark svg { width: 21px; height: 21px; }
@@ -355,11 +354,12 @@ html[data-page="download"] .site-page { --page-glow: 104, 181, 208; --page-accen
 .faq-item > p { max-width: 800px; padding: 0 42px 26px 0; color: rgba(255,255,255,.56); line-height: 1.7; }
 
 .download-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.download-card { scroll-margin-top: 120px; padding: clamp(32px, 5vw, 54px); }
+.download-card { display: flex; flex-direction: column; scroll-margin-top: 120px; padding: clamp(32px, 5vw, 54px); }
 .platform-mark { display: grid; width: 58px; height: 58px; margin-bottom: 54px; place-items: center; border: 1px solid rgba(255,255,255,.16); border-radius: 50%; background: rgba(255,255,255,.05); }
 .platform-mark svg { width: 25px; height: 25px; fill: #fff; }
 .download-card h2 { margin: 14px 0 18px; font-size: clamp(40px, 4.5vw, 62px); font-weight: 300; line-height: 1; letter-spacing: -.035em; }
 .download-card > p:not(.eyebrow) { min-height: 118px; margin-bottom: 30px; color: rgba(255,255,255,.57); line-height: 1.7; }
+.download-card > .light-button { margin-top: auto; }
 .source-panel { display: flex; align-items: center; justify-content: space-between; gap: 40px; margin-top: 20px; padding: clamp(32px, 5vw, 52px); }
 .source-panel h2 { margin: 12px 0; font-size: clamp(34px, 4vw, 52px); font-weight: 300; }
 .source-panel p:last-child { max-width: 690px; color: rgba(255,255,255,.55); line-height: 1.7; }
