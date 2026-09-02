@@ -5,9 +5,11 @@ import {
   linkExternal,
   loadProjects,
   moveIntoWorkspace,
+  notifyProjectsChanged,
   openBook,
   persistBook,
   saveProject,
+  shelfIdentity,
   writeManuscript,
   type BookProject,
 } from "./store";
@@ -39,18 +41,36 @@ export function LibraryScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [externalPrompt, setExternalPrompt] = useState<BookProject | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const identityRef = useRef("");
+  const paneRef = useRef(pane);
+  const refreshGen = useRef(0);
   const hasBridge = Boolean(window.kosmosNext?.listProjects);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    const gen = ++refreshGen.current;
+    if (!opts?.silent) {
+      setLoading(true);
+    }
     try {
       const [list, ws] = await Promise.all([loadProjects(), getWorkspacePath()]);
-      setProjects(list);
-      setWorkspace(ws);
+      if (gen !== refreshGen.current) {
+        return;
+      }
+      const nextIdentity = shelfIdentity(list, ws);
+      if (nextIdentity !== identityRef.current) {
+        identityRef.current = nextIdentity;
+        setProjects(list);
+        setWorkspace(ws);
+      }
     } catch (error) {
+      if (gen !== refreshGen.current) {
+        return;
+      }
       setNotice(error instanceof Error ? error.message : "Could not read your workspace.");
     } finally {
-      setLoading(false);
+      if (gen === refreshGen.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -60,11 +80,23 @@ export function LibraryScreen({
 
   useEffect(() => {
     function onWorkspaceChanged() {
-      void refresh();
+      void refresh({ silent: true });
     }
     window.addEventListener("kosmos-workspace-changed", onWorkspaceChanged);
-    return () => window.removeEventListener("kosmos-workspace-changed", onWorkspaceChanged);
+    const stop = window.kosmosNext?.onProjectsChanged?.(onWorkspaceChanged);
+    return () => {
+      window.removeEventListener("kosmos-workspace-changed", onWorkspaceChanged);
+      stop?.();
+    };
   }, [refresh]);
+
+  useEffect(() => {
+    const previous = paneRef.current;
+    paneRef.current = pane;
+    if (previous !== "home" && pane === "home") {
+      void refresh({ silent: true });
+    }
+  }, [pane, refresh]);
 
   /** Make sure a workspace folder exists before creating a book. */
   async function ensureWorkspace(): Promise<boolean> {
@@ -159,6 +191,7 @@ export function LibraryScreen({
                       project = await persistBook({ ...project, manuscript: name });
                     }
                   }
+                  notifyProjectsChanged();
                   onCreated(project, input.manuscript);
                 } catch (error) {
                   setNotice(error instanceof Error ? error.message : "Could not create the book.");

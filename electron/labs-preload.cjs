@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const speechModelProgressListeners = new Set();
 ipcRenderer.on("labs:speech-model-progress", (_event, progress) => {
@@ -84,6 +84,22 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   },
   openDiscord: (payload) => ipcRenderer.invoke("labs:open-discord", payload),
   openMail: () => ipcRenderer.invoke("labs:open-mail"),
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return "";
+    }
+  },
+  onProjectsChanged: (callback) => {
+    const listener = () => {
+      callback();
+    };
+    ipcRenderer.on("labs:projects-changed", listener);
+    return () => {
+      ipcRenderer.removeListener("labs:projects-changed", listener);
+    };
+  },
   getWorkspace: () => ipcRenderer.invoke("labs:workspace-get"),
   listProjects: () => ipcRenderer.invoke("labs:projects-list"),
   createProject: (input) => ipcRenderer.invoke("labs:project-create", input),
