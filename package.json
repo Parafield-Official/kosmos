@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
@@ -100,6 +100,7 @@
       "url": "https://parafield-official.github.io/kosmos/updates/"
     },
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg",
         "zip"
@@ -114,6 +115,7 @@
       }
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis"
       ],
