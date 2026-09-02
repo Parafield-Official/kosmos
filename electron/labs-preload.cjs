@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   checkForUpdates: () => ipcRenderer.invoke("labs:update-check"),
   installAppUpdate: () => ipcRenderer.invoke("labs:update-install"),
   openReleasePage: () => ipcRenderer.invoke("labs:open-release"),
+  openThirdPartyNotices: () => ipcRenderer.invoke("labs:open-third-party-notices"),
   onAppUpdate: (callback) => {
     const listener = (_event, status) => {
       callback(status);

@@ -73,8 +73,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install --upgrade \
             'markitdown[docx,pdf]==0.1.6' \
-            'pyinstaller==6.22.2'
+            'pyinstaller==6.22.2' \
+            'pip-licenses==5.5.1'
           mkdir -p vendor/bin
+          python -m piplicenses \
+            --from=mixed \
+            --format=plain-vertical \
+            --with-license-file \
+            --with-notice-file \
+            --no-license-path \
+            --output-file vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
+          test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
           PYINSTALLER_CONFIG_DIR="$RUNNER_TEMP/pyinstaller" \
             pyinstaller \
               --noconfirm \
@@ -170,8 +179,12 @@ jobs:
           printf '%s\n' \
             "FFmpeg ${ffmpeg_version}, built from https://ffmpeg.org/releases/ffmpeg-${ffmpeg_version}.tar.xz" \
             'License: LGPL-2.1-or-later; configure flags disable GPL and non-free components.' \
+            'The matching FFmpeg source archive is attached to this GitHub Release.' \
             'LAME and mpg123: LGPL-compatible dynamic dependencies bundled beside the executables.' \
+            'Sources: https://lame.sourceforge.io/ and https://www.mpg123.de/.' \
             > vendor/bin/FFMPEG_LICENSE.txt
+          cp "$ffmpeg_source/COPYING.LGPLv2.1" vendor/bin/LGPL-2.1.txt
+          test -s vendor/bin/LGPL-2.1.txt
 
           whisper_source="$RUNNER_TEMP/whisper.cpp"
           git init "$whisper_source"
@@ -192,8 +205,9 @@ jobs:
           cp "$whisper_server" vendor/bin/whisper-server
           chmod +x vendor/bin/*
           printf '%s\n' \
-            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            "FFmpeg ${ffmpeg_version}: LGPL-2.1-or-later; source archive attached to this GitHub Release." \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
       - name: Prepare Windows runtime assets
@@ -209,15 +223,15 @@ jobs:
           mkdir -p "$runtime_dir"
           echo "Windows runtime staging at $runtime_dir"
 
-          ffmpeg_archive='ffmpeg-n8.1-latest-win64-lgpl-8.1.zip'
+          ffmpeg_release='autobuild-2026-09-01-13-13'
+          ffmpeg_archive='ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip'
+          ffmpeg_sha='4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6'
           echo "Downloading $ffmpeg_archive"
-          curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
-          expected_sha="$(curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/checksums.sha256 | awk -v asset="$ffmpeg_archive" '$2 == asset {print $1}')"
-          test -n "$expected_sha"
+          curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/${ffmpeg_release}/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
           actual_sha="$(cd "$runtime_dir" && sha256sum "$ffmpeg_archive" | awk '{print $1}')"
           actual_sha="${actual_sha#\\}"
-          echo "ffmpeg sha256 expected=$expected_sha actual=$actual_sha"
-          test "$expected_sha" = "$actual_sha"
+          echo "ffmpeg sha256 expected=$ffmpeg_sha actual=$actual_sha"
+          test "$ffmpeg_sha" = "$actual_sha"
           unzip -q "$runtime_dir/${ffmpeg_archive}" -d "$runtime_dir/ffmpeg-unpacked"
           ffmpeg_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffmpeg.exe | head -n 1)"
           ffprobe_path="$(find "$runtime_dir/ffmpeg-unpacked" -type f -iname ffprobe.exe | head -n 1)"
@@ -227,8 +241,10 @@ jobs:
           cp "$ffprobe_path" vendor/bin/ffprobe.exe
           find "$(dirname "$ffmpeg_path")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
-            "FFmpeg ${ffmpeg_archive}, verified against BtbN checksums.sha256." \
+            "FFmpeg ${ffmpeg_archive}, pinned to BtbN ${ffmpeg_release}." \
+            "SHA-256: ${ffmpeg_sha}" \
             'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
+            'Corresponding FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/c27482a18d' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_archive='whisper-bin-x64.zip'
@@ -250,8 +266,9 @@ jobs:
           # Official Windows zip is shared; the exe will not start without these DLLs.
           find "$(dirname "$whisper_cli")" -maxdepth 1 -type f -iname '*.dll' -exec cp {} vendor/bin/ \;
           printf '%s\r\n' \
-            'FFmpeg: audit the bundled build license and dynamic dependencies before publishing.' \
+            "FFmpeg ${ffmpeg_archive}: LGPL-2.1-or-later; source link in FFMPEG_LICENSE.txt." \
             'whisper.cpp v1.9.2 official Windows x64 binaries, MIT, https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.2' \
+            'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
       - name: Verify staged native runtime
@@ -285,6 +302,9 @@ jobs:
             vendor/bin/markitdown.exe --help >/dev/null
           fi
           test -s vendor/bin/MARKITDOWN_LICENSE.txt
+          test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
+          test -s vendor/bin/FFMPEG_LICENSE.txt
+          test -s vendor/bin/THIRD_PARTY_NOTICES.txt
           npm run audit:runtime
 
       - name: Prepare verified Whisper model
@@ -337,6 +357,16 @@ jobs:
           dmg_files=(dist/Kosmos-*-mac-${{ matrix.arch }}.dmg)
           test "${#dmg_files[@]}" -eq 1
 
+      - name: Stage matching macOS FFmpeg source
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_archive="$RUNNER_TEMP/ffmpeg.tar.xz"
+          test -s "$source_archive"
+          cp "$source_archive" dist/FFmpeg-8.1.1-source.tar.xz
+          sha256sum dist/FFmpeg-8.1.1-source.tar.xz > dist/FFmpeg-8.1.1-source.tar.xz.sha256
+
       - name: Package Windows installer
         if: runner.os == 'Windows'
         shell: bash
@@ -354,6 +384,8 @@ jobs:
             dist/Kosmos-*
             dist/*.blockmap
             dist/latest*.yml
+            dist/FFmpeg-*.tar.xz
+            dist/FFmpeg-*.tar.xz.sha256
           if-no-files-found: error
 
   publish:

@@ -17,14 +17,18 @@ describe("packaged renderer configuration", () => {
     expect(html).toContain("frame-src 'none'");
   });
 
-  it("packages the verified Whisper model and the live follow model for zero-setup speech checking", () => {
+  it("packages verified speech models and their attribution for zero-setup speech checking", () => {
     expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
     expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
     expect(packageJson.scripts.pretest).toBe("npm run build:core");
     expect(packageJson.build.extraResources).toContainEqual({
       from: "vendor/models",
       to: "models",
-      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf"],
+      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf", "THIRD_PARTY_NOTICES.txt"],
+    });
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "THIRD_PARTY_NOTICES.md",
+      to: "THIRD_PARTY_NOTICES.md",
     });
   });
 
@@ -41,7 +45,7 @@ describe("packaged renderer configuration", () => {
     expect(plist).toContain("com.apple.security.device.audio-input");
   });
 
-  it("stages Windows ffmpeg and whisper under GITHUB_WORKSPACE, not RUNNER_TEMP", () => {
+  it("stages pinned Windows FFmpeg and Whisper under GITHUB_WORKSPACE, not RUNNER_TEMP", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     const start = yaml.indexOf("- name: Prepare Windows runtime assets");
     expect(start).toBeGreaterThan(-1);
@@ -49,7 +53,10 @@ describe("packaged renderer configuration", () => {
     const step = yaml.slice(start, next === -1 ? undefined : next);
     expect(step).toContain("GITHUB_WORKSPACE");
     expect(step).not.toMatch(/\$RUNNER_TEMP/);
-    expect(step).toContain("ffmpeg-n8.1-latest-win64-lgpl-8.1.zip");
+    expect(step).toContain("autobuild-2026-09-01-13-13");
+    expect(step).toContain("ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip");
+    expect(step).toContain("4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6");
+    expect(step).not.toContain("releases/download/latest");
     expect(step).toContain('sha256sum "$ffmpeg_archive"');
     expect(step).toContain("whisper-bin-x64.zip");
     expect(step).toContain("49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a");

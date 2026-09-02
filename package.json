@@ -76,7 +76,8 @@
         "to": "models",
         "filter": [
           "ggml-small.en.bin",
-          "realtime_eou_120m-v1-f16.gguf"
+          "realtime_eou_120m-v1-f16.gguf",
+          "THIRD_PARTY_NOTICES.txt"
         ]
       },
       {
@@ -87,6 +88,10 @@
           "README",
           "SOURCE.md"
         ]
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
       }
     ],
     "artifactName": "Kosmos-${version}-${os}-${arch}.${ext}",

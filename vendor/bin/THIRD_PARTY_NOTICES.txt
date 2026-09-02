@@ -1,0 +1,17 @@
+KOSMOS NATIVE RUNTIME NOTICES
+
+Release CI replaces this development copy with platform-specific versions,
+checksums, license/source references, and the bundled MarkItDown dependency
+inventory.
+
+FFmpeg / FFprobe
+License: LGPL-2.1-or-later
+Source: https://ffmpeg.org/download.html
+
+whisper.cpp
+License: MIT
+Source: https://github.com/ggml-org/whisper.cpp
+
+Microsoft MarkItDown
+License: MIT
+Source: https://github.com/microsoft/markitdown
