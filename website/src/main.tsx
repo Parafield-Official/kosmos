@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { FadersIcon } from "@phosphor-icons/react/dist/csr/Faders";
 import { FileAudioIcon } from "@phosphor-icons/react/dist/csr/FileAudio";
 import { FileTextIcon } from "@phosphor-icons/react/dist/csr/FileText";
+import { GithubLogoIcon } from "@phosphor-icons/react/dist/csr/GithubLogo";
 import "./index.css";
 
 type Page = "home" | "about" | "features" | "workflow" | "faq" | "download";
@@ -136,6 +137,10 @@ function Hero() {
           <Button href={route("download", "#mac")} className="flex-1"><AppleIcon /><span>Mac</span></Button>
           <Button href={route("download", "#windows")} dark className="flex-1"><WindowsIcon /><span>Windows</span></Button>
         </div>
+        <Button href={REPO} dark external className="github-button mt-3">
+          <GithubLogoIcon weight="fill" aria-hidden="true" />
+          <span>View Kosmos on GitHub</span>
+        </Button>
       </div>
       <div className="absolute bottom-8 right-8 hidden gap-8 text-xs uppercase tracking-[0.18em] text-white/50 md:flex"><span>Local</span><span>Open source</span><span>$0</span></div>
     </section>
