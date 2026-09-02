@@ -100,39 +100,45 @@
 }
 
 .ma-community-banner {
+  position: relative;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
+  gap: 0.95rem;
   margin: 0 0 1.35rem;
-  padding: 1.15rem 1.2rem 1.2rem;
+  padding: 1.05rem 1.15rem 1.1rem;
   border-radius: 26px;
-  color: #3a2710;
+  color: var(--ink);
   background:
-    linear-gradient(155deg, #ffe7b4 0%, #e8c47a 58%, #d4a44e 100%);
-  border: 1px solid rgba(255, 236, 190, 0.95);
+    linear-gradient(180deg, rgba(255, 246, 230, 0.18), rgba(255, 255, 255, 0) 42%),
+    rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 16px 34px rgba(120, 82, 24, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 18px 40px rgba(var(--ma-accent-rgb), 0.08);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .ma-community-copy {
+  position: relative;
   min-width: 0;
 }
 
 .ma-community-kicker {
-  margin: 0 0 0.35rem;
-  color: rgba(58, 39, 16, 0.68);
+  margin: 0 0 0.3rem;
+  color: rgba(156, 128, 82, 0.7);
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
 .ma-community-copy h2 {
-  margin: 0 0 0.35rem;
-  color: #2b1c0a;
-  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
-  font-weight: 640;
+  margin: 0 0 0.3rem;
+  color: var(--ink);
+  font-size: clamp(1.08rem, 2vw, 1.28rem);
+  font-weight: 560;
   letter-spacing: -0.034em;
   line-height: 1.15;
 }
@@ -140,16 +146,17 @@
 .ma-community-copy p:last-child {
   margin: 0;
   max-width: 34rem;
-  color: rgba(43, 28, 10, 0.78);
-  font-size: 0.92rem;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
   line-height: 1.4;
 }
 
 .ma-community-actions {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.5rem;
 }
 
 .ma-community-discord,
@@ -157,37 +164,36 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  min-height: 2.5rem;
-  padding: 0.55rem 0.95rem;
+  gap: 0.42rem;
+  min-height: 2.35rem;
+  padding: 0.48rem 0.9rem;
   border-radius: 999px;
-  border: 0;
   font: inherit;
-  font-size: 0.9rem;
-  font-weight: 620;
-  letter-spacing: -0.018em;
+  font-size: 0.86rem;
+  font-weight: 560;
+  letter-spacing: -0.016em;
   cursor: pointer;
   transition:
-    transform 140ms cubic-bezier(0.22, 1, 0.32, 1),
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1),
     background 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
+    border-color 160ms ease,
+    color 160ms ease;
 }
 
 .ma-community-discord {
-  color: #fff8ea;
-  background: #2b1c0a;
-  box-shadow: 0 8px 18px rgba(43, 28, 10, 0.22);
+  color: #2a241c;
+  background: rgba(255, 252, 247, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 .ma-community-mail {
-  color: #2b1c0a;
-  background: rgba(255, 248, 232, 0.55);
-  box-shadow: inset 0 0 0 1px rgba(43, 28, 10, 0.12);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
-.ma-community-discord:hover,
-.ma-community-mail:hover,
 .ma-community-discord:focus-visible,
 .ma-community-mail:focus-visible {
   transform: translateY(-1px);
@@ -195,12 +201,12 @@
 
 .ma-community-discord:hover,
 .ma-community-discord:focus-visible {
-  background: #3d2910;
+  background: #fff;
 }
 
 .ma-community-mail:hover,
 .ma-community-mail:focus-visible {
-  background: rgba(255, 252, 244, 0.82);
+  background: rgba(255, 255, 255, 0.36);
 }
 
 .ma-community-discord:active,
@@ -208,11 +214,18 @@
   transform: scale(0.97);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .ma-community-discord:hover,
+  .ma-community-mail:hover {
+    transform: translateY(-1px);
+  }
+}
+
 @media (min-width: 980px) {
   .ma-community-banner {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    padding: 1.2rem 1.35rem;
+    padding: 1.1rem 1.25rem;
   }
 
   .ma-community-actions {
@@ -7862,6 +7875,7 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 
 @media (prefers-reduced-transparency: reduce) {
   .main-app .vault-overlay .ma-settings .ma-set-card,
+  .main-app .vault-overlay .ma-settings .ma-community-banner,
   .main-app .vault-overlay .ma-settings .btn,
   .main-app .vault-overlay .ma-settings .ma-seg,
   .main-app .vault-overlay .ma-settings .glass-look {
