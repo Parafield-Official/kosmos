@@ -8,7 +8,9 @@ import "./index.css";
 type Page = "home" | "about" | "features" | "workflow" | "faq" | "download";
 
 const page = (document.documentElement.dataset.page ?? "home") as Page;
-const VIDEO = "https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260613_180732_a54afbf6-b30d-470e-861f-669871f09f67.mp4";
+// The render plays forward and then returns to its opening frame, so the
+// browser's native loop restarts without a visible cut.
+const BACKGROUND_VIDEO = "kosmos-loop.mp4";
 const RAINBOW = "https://soft-zoom-63098134.figma.site/_assets/v11/8d520a7515d06cbfc403d0125e3d05b1a7ccd29c.png";
 const CLOUD = "https://soft-zoom-63098134.figma.site/_assets/v11/0d6dfd3f90b930f21726f2ed56a3320d79b7a797.png";
 const REPO = "https://github.com/Parafield-Official/kosmos";
@@ -119,7 +121,7 @@ function WindowsIcon() {
 function Hero() {
   return (
     <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0a0608]">
-      <video className="absolute inset-0 h-full w-full object-cover" autoPlay muted loop playsInline preload="auto"><source src={VIDEO} type="video/mp4" /></video>
+      <video className="absolute inset-0 h-full w-full object-cover" autoPlay muted loop playsInline preload="auto"><source src={asset(BACKGROUND_VIDEO)} type="video/mp4" /></video>
       <div className="absolute inset-0 bg-black/35" />
       <div className="hero-vignette absolute inset-0" />
       <div className="relative z-10 -mt-20 flex max-w-6xl flex-col items-center px-6 text-center md:-mt-28">
@@ -203,7 +205,7 @@ function QuoteSection() {
 function PageBackdrop() {
   return (
     <div className="page-backdrop" aria-hidden="true">
-      <video autoPlay muted loop playsInline preload="metadata"><source src={VIDEO} type="video/mp4" /></video>
+      <video autoPlay muted loop playsInline preload="metadata"><source src={asset(BACKGROUND_VIDEO)} type="video/mp4" /></video>
       <span className="page-backdrop-shade" />
       <img className="page-backdrop-rainbow" src={RAINBOW} alt="" />
       <img className="page-backdrop-cloud page-backdrop-cloud-left" src={CLOUD} alt="" />
