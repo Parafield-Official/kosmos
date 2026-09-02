@@ -440,18 +440,23 @@ jobs:
         # executes Electron binaries.
         run: npm ci --ignore-scripts
 
+      - name: Install Lightbox website dependencies
+        run: npm ci
+        working-directory: website
+
       - name: Download installer metadata
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-artifacts
           merge-multiple: true
 
-      - name: Prepare public Pages artifact
+      - name: Build Lightbox website and prepare public Pages artifact
         shell: bash
         run: |
           set -euo pipefail
+          npm run build --prefix website
           mkdir -p pages-site
-          cp -R site/. pages-site/
+          cp -R website-dist/. pages-site/
           touch pages-site/.nojekyll
           node scripts/prepare-pages-release.cjs \
             release-artifacts \

@@ -2,7 +2,6 @@ const { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } = require(
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const yaml = require("js-yaml");
-const { version } = require("../package.json");
 const {
   preparePagesRelease,
   releaseAssetUrl,
@@ -83,12 +82,11 @@ describe("GitHub Pages release feed", () => {
     })).toThrow(/release tag/i);
   });
 
-  it("keeps the download page fallback links on the packaged release version", () => {
-    const page = readFileSync(path.join(__dirname, "../site/download.html"), "utf8");
-    const tag = `v${version}`;
+  it("uses the release metadata feed for the Lightbox download page", () => {
+    const page = readFileSync(path.join(__dirname, "../website/src/main.tsx"), "utf8");
 
-    expect(page).toContain(`releases/download/${tag}/Kosmos-${version}-mac-arm64.dmg`);
-    expect(page).toContain(`releases/download/${tag}/Kosmos-${version}-win-x64.exe`);
-    expect(page).toContain(`data-kosmos-version>${version}<`);
+    expect(page).toContain('asset("updates/downloads.json")');
+    expect(page).toContain("const RELEASES_PAGE = `${REPO}/releases/latest`;");
+    expect(page).not.toMatch(/releases\/download\/v0\.1\.1/);
   });
 });

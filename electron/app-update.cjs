@@ -9,7 +9,7 @@ const UPDATE_FEED = {
   provider: "generic",
   url: "https://parafield-official.github.io/kosmos/updates/",
 };
-const RELEASE_PAGE = "https://parafield-official.github.io/kosmos/download.html";
+const RELEASE_PAGE = "https://parafield-official.github.io/kosmos/download/";
 const CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
 function copyFor(state) {
