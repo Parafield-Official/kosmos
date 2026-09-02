@@ -2,6 +2,7 @@ const { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } = require(
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const yaml = require("js-yaml");
+const { version } = require("../package.json");
 const {
   preparePagesRelease,
   releaseAssetUrl,
@@ -80,5 +81,14 @@ describe("GitHub Pages release feed", () => {
       output: path.join(root, "site"),
       tag: "../../latest",
     })).toThrow(/release tag/i);
+  });
+
+  it("keeps the download page fallback links on the packaged release version", () => {
+    const page = readFileSync(path.join(__dirname, "../site/download.html"), "utf8");
+    const tag = `v${version}`;
+
+    expect(page).toContain(`releases/download/${tag}/Kosmos-${version}-mac-arm64.dmg`);
+    expect(page).toContain(`releases/download/${tag}/Kosmos-${version}-win-x64.exe`);
+    expect(page).toContain(`data-kosmos-version>${version}<`);
   });
 });
