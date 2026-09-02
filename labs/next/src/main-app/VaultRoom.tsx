@@ -92,6 +92,16 @@ export function VaultRoom({
   }, []);
 
   useEffect(() => {
+    setInspect((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = projects.find((project) => project.id === current.project.id);
+      return next ? { ...current, project: next } : null;
+    });
+  }, [projects]);
+
+  useEffect(() => {
     if (!localSheet) {
       return;
     }

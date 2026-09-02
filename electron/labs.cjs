@@ -35,6 +35,8 @@ const {
   ensureProjectDirectory,
   projectAssetPath,
 } = require("./project-path.cjs");
+const { moveFileToDestination } = require("./manuscript-move.cjs");
+const { collectShelfWatchTargets } = require("./workspace-shelf.cjs");
 const { lightboxPageUrl, shouldOpenLightboxDebug } = require("./lightbox-entry.cjs");
 
 const THIRD_PARTY_NOTICES_URL = "https://github.com/Parafield-Official/kosmos/blob/main/THIRD_PARTY_NOTICES.md";
@@ -179,6 +181,10 @@ function mainUserDataPath() {
  */
 let grantedFolderPath = null;
 let micSessionCleared = false;
+const SHELF_WATCH_DEBOUNCE_MS = 400;
+const shelfWatchers = new Map();
+let shelfWatchTimer = null;
+let shelfWatchGen = 0;
 
 function workspaceSettingsPath() {
   return path.join(app.getPath("userData"), "labs-workspace.json");
@@ -251,6 +257,7 @@ async function requestFolderAccess() {
   }
   grantedFolderPath = result.filePaths[0];
   await persistWorkspacePath(grantedFolderPath);
+  notifyShelfChanged();
   return { granted: true, path: grantedFolderPath };
 }
 
@@ -267,6 +274,90 @@ const PROJECT_MARKER = "project.json";
 
 function getWorkspace() {
   return { workspace: grantedFolderPath || null };
+}
+
+function sendProjectsChanged() {
+  if (labWindow && !labWindow.isDestroyed()) {
+    labWindow.webContents.send("labs:projects-changed");
+  }
+}
+
+function notifyShelfChanged() {
+  sendProjectsChanged();
+  void syncShelfWatchers();
+}
+
+function scheduleProjectsChanged() {
+  if (shelfWatchTimer) {
+    clearTimeout(shelfWatchTimer);
+  }
+  shelfWatchTimer = setTimeout(() => {
+    shelfWatchTimer = null;
+    notifyShelfChanged();
+  }, SHELF_WATCH_DEBOUNCE_MS);
+}
+
+function closeShelfWatchers() {
+  if (shelfWatchTimer) {
+    clearTimeout(shelfWatchTimer);
+    shelfWatchTimer = null;
+  }
+  for (const watcher of shelfWatchers.values()) {
+    watcher.close();
+  }
+  shelfWatchers.clear();
+}
+
+function watchShelfTarget(target) {
+  if (shelfWatchers.has(target)) {
+    return;
+  }
+  try {
+    const watcher = fsSync.watch(target, { persistent: true }, () => {
+      scheduleProjectsChanged();
+    });
+    watcher.on("error", () => {
+      shelfWatchers.delete(target);
+      try {
+        watcher.close();
+      } catch {
+        // Already closed.
+      }
+      scheduleProjectsChanged();
+    });
+    shelfWatchers.set(target, watcher);
+  } catch {
+    // The folder may have been removed between readdir and watch.
+  }
+}
+
+async function syncShelfWatchers() {
+  const gen = ++shelfWatchGen;
+  const workspace = grantedFolderPath;
+  let childNames = [];
+  if (workspace) {
+    try {
+      const entries = await fs.readdir(workspace, { withFileTypes: true });
+      childNames = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch {
+      childNames = [];
+    }
+  }
+  const external = await readExternalPaths();
+  if (gen !== shelfWatchGen) {
+    return;
+  }
+  const targets = new Set(collectShelfWatchTargets(workspace, childNames, external));
+  for (const current of [...shelfWatchers.keys()]) {
+    if (!targets.has(current)) {
+      const watcher = shelfWatchers.get(current);
+      watcher.close();
+      shelfWatchers.delete(current);
+    }
+  }
+  for (const target of targets) {
+    watchShelfTarget(target);
+  }
 }
 
 function safeFolderName(title) {
@@ -425,6 +516,7 @@ async function moveProjectIntoWorkspace(folder) {
     await writeExternalPaths(next);
   }
   const movedMarker = (await readProjectMarker(dest)) || marker;
+  notifyShelfChanged();
   return { ok: true, project: { ...movedMarker, folder: dest, external: false } };
 }
 
@@ -445,6 +537,7 @@ async function registerExternalProject(folder) {
     external.push(root);
     await writeExternalPaths(external);
   }
+  notifyShelfChanged();
   return { ok: true, project: { ...marker, folder: root, external: true } };
 }
 
@@ -469,14 +562,22 @@ function safeProjectFileName(file, label = "File") {
   return file;
 }
 
-async function writeProjectManuscript(folder, name, base64) {
-  if (typeof folder !== "string" || typeof name !== "string" || typeof base64 !== "string") {
+async function writeProjectManuscript(folder, name, base64, sourcePath) {
+  if (typeof folder !== "string" || typeof name !== "string") {
     return { ok: false };
   }
   const root = await assertProjectFolder(folder);
   await ensureProjectDirectory(root, "manuscript");
   const safe = safeProjectFileName(name, "Manuscript file");
-  await fs.writeFile(projectAssetPath(root, `manuscript/${safe}`), Buffer.from(base64, "base64"));
+  const dest = projectAssetPath(root, `manuscript/${safe}`);
+  if (typeof sourcePath === "string" && sourcePath.length > 0) {
+    await moveFileToDestination(sourcePath, dest);
+    return { ok: true, manuscript: safe };
+  }
+  if (typeof base64 !== "string") {
+    return { ok: false };
+  }
+  await fs.writeFile(dest, Buffer.from(base64, "base64"));
   return { ok: true, manuscript: safe };
 }
 
@@ -705,7 +806,17 @@ async function createWorkspaceProject(input) {
     updatedAt: nowIso,
   };
   await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project), "utf8");
-  return { ...project, folder: dir, external: !isInsideWorkspace(dir) };
+  const inside = isInsideWorkspace(dir);
+  if (!inside) {
+    const external = await readExternalPaths();
+    const resolved = path.resolve(dir);
+    if (!external.some((entry) => path.resolve(entry) === resolved)) {
+      external.push(resolved);
+      await writeExternalPaths(external);
+    }
+  }
+  notifyShelfChanged();
+  return { ...project, folder: dir, external: !inside };
 }
 
 async function saveWorkspaceProject(project) {
@@ -777,6 +888,7 @@ async function deleteWorkspaceProject(folder) {
     return { ok: false };
   }
   await fs.rm(resolved, { recursive: true, force: true });
+  notifyShelfChanged();
   return { ok: true };
 }
 
@@ -797,7 +909,7 @@ async function importManuscriptFile(folder) {
   const base = safeProjectFileName(path.basename(source), "Manuscript file");
   await ensureProjectDirectory(root, "manuscript");
   const dest = projectAssetPath(root, `manuscript/${base}`);
-  await fs.copyFile(source, dest);
+  await moveFileToDestination(source, dest);
   return { ok: true, manuscript: base };
 }
 
@@ -833,8 +945,10 @@ async function downloadSpeechModel(event) {
 
 async function resetAccessState() {
   grantedFolderPath = null;
+  closeShelfWatchers();
   await persistWorkspacePath(null);
   micSessionCleared = true;
+  sendProjectsChanged();
   const snapshot = {
     mic: getMicrophoneAccess(),
     folder: getFolderAccess(),
@@ -1707,6 +1821,7 @@ function openLab() {
 
 app.whenReady().then(async () => {
   await loadWorkspacePath();
+  void syncShelfWatchers();
 
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(isTrustedRenderer(webContents) && isMicrophonePermission(permission));
@@ -1744,7 +1859,7 @@ app.whenReady().then(async () => {
   bindHandle("labs:project-move-in", (_event, folder) => moveProjectIntoWorkspace(folder));
   bindHandle("labs:project-link-external", (_event, folder) => registerExternalProject(folder));
   bindHandle("labs:project-write-manuscript", (_event, payload) =>
-    writeProjectManuscript(payload?.folder, payload?.name, payload?.base64),
+    writeProjectManuscript(payload?.folder, payload?.name, payload?.base64, payload?.sourcePath),
   );
   bindHandle("labs:project-read-manuscript", (_event, payload) =>
     readProjectManuscriptFile(payload?.folder, payload?.name),
@@ -1814,6 +1929,7 @@ app.on("second-instance", () => {
 });
 
 app.on("before-quit", () => {
+  closeShelfWatchers();
   labsAppUpdater?.dispose();
   stopLiveFollow({ force: true });
   terminateActiveCommands({ force: true });
