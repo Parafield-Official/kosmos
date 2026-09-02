@@ -59,7 +59,7 @@ describe("vault lighting layout", () => {
 
   it("softens the spot cone between inner and outer angles", () => {
     const inner = Math.cos((12 * Math.PI) / 180);
-    const outer = Math.cos((42 * Math.PI) / 180);
+    const outer = Math.cos((52 * Math.PI) / 180);
     expect(spotFactor(1, inner, outer)).toBe(1);
     expect(spotFactor(outer, inner, outer)).toBe(0);
     const mid = spotFactor((inner + outer) / 2, inner, outer);
@@ -100,6 +100,7 @@ describe("vault lighting layout", () => {
     expect(top).toBeGreaterThan(mid);
     expect(mid).toBeGreaterThan(bottom);
     expect(bottom).toBeGreaterThan(0);
+    expect(bottom / top).toBeGreaterThan(0.16);
   });
 
   it("lights a column more from its own fixture than from a far one", () => {
