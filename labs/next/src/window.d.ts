@@ -121,6 +121,8 @@ declare global {
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
       openMail?: () => Promise<{ ok: boolean } | unknown>;
+      getPathForFile?: (file: File) => string;
+      onProjectsChanged?: (callback: () => void) => (() => void) | void;
       getWorkspace?: () => Promise<{ workspace: string | null }>;
       listProjects?: () => Promise<{ workspace: string | null; projects: StoredProjectFile[] }>;
       createProject?: (input: {
@@ -136,7 +138,12 @@ declare global {
       importManuscript?: (folder: string) => Promise<{ ok: boolean; canceled?: boolean; manuscript?: string }>;
       moveProjectIntoWorkspace?: (folder: string) => Promise<{ ok: boolean; invalid?: boolean; project?: StoredProjectFile }>;
       linkExternalProject?: (folder: string) => Promise<{ ok: boolean; invalid?: boolean; project?: StoredProjectFile }>;
-      writeManuscript?: (payload: { folder: string; name: string; base64: string }) => Promise<{ ok: boolean; manuscript?: string }>;
+      writeManuscript?: (payload: {
+        folder: string;
+        name: string;
+        base64?: string;
+        sourcePath?: string;
+      }) => Promise<{ ok: boolean; manuscript?: string }>;
       readManuscript?: (payload: { folder: string; name?: string }) => Promise<{ ok: boolean; name?: string; base64?: string }>;
       writeChapterContents?: (payload: { folder: string; chapters: { id: string; html: string }[] }) => Promise<{ ok: boolean }>;
       writeChapterContent?: (payload: { folder: string; chapterId: string; html: string }) => Promise<{ ok: boolean }>;

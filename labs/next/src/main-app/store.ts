@@ -609,9 +609,30 @@ export async function chooseWorkspace(): Promise<string | null> {
     path = await getWorkspacePath();
   }
   if (path) {
-    window.dispatchEvent(new Event("kosmos-workspace-changed"));
+    notifyProjectsChanged();
   }
   return path;
+}
+
+/** Tell the shelf to re-read the workspace. Safe to call more than once. */
+export function notifyProjectsChanged(): void {
+  window.dispatchEvent(new Event("kosmos-workspace-changed"));
+}
+
+/** Fingerprint of what the shelf actually paints, so silent reloads can no-op. */
+export function shelfIdentity(projects: BookProject[], workspace: string | null): string {
+  return `${workspace ?? ""}\n${projects
+    .map((project) =>
+      [
+        project.id,
+        project.folder ?? "",
+        project.title,
+        project.author,
+        project.external ? "1" : "0",
+        project.coverDataUrl ? "1" : "0",
+      ].join("\t"),
+    )
+    .join("\n")}`;
 }
 
 export async function loadProjects(): Promise<BookProject[]> {
@@ -632,9 +653,12 @@ export async function createBook(input: {
 }): Promise<BookProject> {
   if (hasProjectBridge()) {
     const created = await window.kosmosNext!.createProject!(input);
+    notifyProjectsChanged();
     return normalizeProject(created as Partial<BookProject> & Record<string, unknown>);
   }
-  return createProject(input);
+  const created = createProject(input);
+  notifyProjectsChanged();
+  return created;
 }
 
 /** Pick a folder that will hold the new book project. */
@@ -681,6 +705,7 @@ export async function moveIntoWorkspace(project: BookProject): Promise<BookProje
   if (project.folder && window.kosmosNext?.moveProjectIntoWorkspace) {
     const result = await window.kosmosNext.moveProjectIntoWorkspace(project.folder);
     if (result.ok && result.project) {
+      notifyProjectsChanged();
       return normalizeProject(result.project as Partial<BookProject> & Record<string, unknown>);
     }
   }
@@ -692,6 +717,7 @@ export async function linkExternal(project: BookProject): Promise<BookProject> {
   if (project.folder && window.kosmosNext?.linkExternalProject) {
     const result = await window.kosmosNext.linkExternalProject(project.folder);
     if (result.ok && result.project) {
+      notifyProjectsChanged();
       return normalizeProject(result.project as Partial<BookProject> & Record<string, unknown>);
     }
   }
@@ -715,10 +741,31 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/** Copy an uploaded manuscript file into the project's manuscript/ folder. */
+/** Absolute path of a File picked in Electron, if the OS still has one. */
+export function manuscriptSourcePath(file: File): string | undefined {
+  if (window.kosmosNext?.getPathForFile) {
+    try {
+      const resolved = window.kosmosNext.getPathForFile(file);
+      if (typeof resolved === "string" && resolved.length > 0) {
+        return resolved;
+      }
+    } catch {
+      // Fall through to File.path or a copy.
+    }
+  }
+  const legacy = (file as File & { path?: string }).path;
+  return typeof legacy === "string" && legacy.length > 0 ? legacy : undefined;
+}
+
+/** Move an uploaded manuscript into the project's manuscript/ folder (copy only if no path). */
 export async function writeManuscript(folder: string | undefined, file: File): Promise<string | null> {
   if (!folder || !window.kosmosNext?.writeManuscript) {
     return null;
+  }
+  const sourcePath = manuscriptSourcePath(file);
+  if (sourcePath) {
+    const result = await window.kosmosNext.writeManuscript({ folder, name: file.name, sourcePath });
+    return result.ok ? result.manuscript ?? file.name : null;
   }
   const base64 = await fileToBase64(file);
   const result = await window.kosmosNext.writeManuscript({ folder, name: file.name, base64 });
@@ -981,9 +1028,11 @@ export async function readManuscriptBytes(
 export async function deleteBook(project: BookProject): Promise<void> {
   if (project.folder && window.kosmosNext?.deleteProjectFolder) {
     await window.kosmosNext.deleteProjectFolder(project.folder);
+    notifyProjectsChanged();
     return;
   }
   deleteProject(project.id);
+  notifyProjectsChanged();
 }
 
 export function chapterStage(chapter: BookChapter): ChapterStage {
