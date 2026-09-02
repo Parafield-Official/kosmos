@@ -434,6 +434,12 @@ jobs:
       - name: Check out release source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Install Pages release dependencies
+        # The feed generator parses electron-updater YAML metadata.  Keep this
+        # install script-free so a Pages-only deployment never downloads or
+        # executes Electron binaries.
+        run: npm ci --ignore-scripts
+
       - name: Download installer metadata
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
