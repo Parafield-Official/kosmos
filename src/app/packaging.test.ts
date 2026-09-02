@@ -91,9 +91,12 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/package:\n\s+needs:\s+authorize/);
   });
 
-  it("runs required build and test checks for main pull requests", () => {
+  it("checks dev pull requests and only promotes dev into main", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/ci.yml"), "utf8");
-    expect(yaml).toMatch(/pull_request:\n\s+branches:\n\s+- main/);
+    expect(yaml).toMatch(/pull_request:\n\s+branches:\n\s+- dev\n\s+- main/);
+    expect(yaml).toMatch(/push:\n\s+branches:\n\s+- dev\n\s+- main/);
+    expect(yaml).toContain("github.base_ref == 'main'");
+    expect(yaml).toContain('[ "$HEAD_BRANCH" != "dev" ]');
     expect(yaml).toContain("name: Build and test");
     expect(yaml).toContain("run: npm run build");
     expect(yaml).toContain("run: npm test");
