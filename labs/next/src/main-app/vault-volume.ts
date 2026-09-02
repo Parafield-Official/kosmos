@@ -4,6 +4,7 @@ import {
   LIGHT_INTENSITY,
   LIGHT_RADIUS,
   LIGHT_RANGE,
+  NICHE_DEPTH,
   OPENING_ASPECT,
   SPOT_INNER_DEG,
   SPOT_OUTER_DEG,
@@ -48,10 +49,13 @@ const VOLUME_FRAG = /* glsl */ `
     float atten = (1.0 / (dist * dist + uRadius * uRadius)) * window * window;
     vec3 view = normalize(cameraPosition - vWorldPos);
     float shell = pow(1.0 - abs(dot(normalize(vNormal), view)), 1.35);
-    float along = pow(max(dot(-view, uLightDir), 0.0), 5.0);
-    float glow = cone * atten * uIntensity * uShown * mix(0.22, 0.95, shell) * mix(0.75, 1.25, along);
-    vec3 rgb = vec3(0.50) + vec3(1.0, 0.94, 0.86) * glow * 0.22;
-    rgb = clamp(rgb, vec3(0.28), vec3(0.72));
+    float toward = pow(max(dot(-view, dir), 0.0), 2.5);
+    float along = pow(max(dot(-view, uLightDir), 0.0), 4.0);
+    float axis = exp(-length(cross(toPoint, uLightDir)) * 8.0);
+    float glow = cone * atten * uIntensity * uShown * mix(0.22, 0.95, shell)
+      * mix(0.78, 1.55, max(toward, along)) * (0.62 + axis * 0.72);
+    vec3 rgb = vec3(0.50) + vec3(1.0, 0.94, 0.86) * glow * 0.2;
+    rgb = clamp(rgb, vec3(0.28), vec3(0.8));
     gl_FragColor = vec4(rgb, 1.0);
   }
 `;
@@ -96,9 +100,10 @@ export function startVaultVolume(canvas: HTMLCanvasElement, getState: () => Vaul
   for (let column = 0; column < COLUMNS; column++) {
     const pos = lightPos(column, height);
     const aim = lightAim(column, height);
-    const travel = new THREE.Vector3(aim.x - pos.x, aim.y - pos.y, aim.z - pos.z);
-    const length = travel.length();
-    travel.normalize();
+    const travel = new THREE.Vector3(aim.x - pos.x, aim.y - pos.y, aim.z - pos.z).normalize();
+    const toFloor = travel.y < -1e-4 ? pos.y / -travel.y : LIGHT_RANGE;
+    const toBack = travel.z < -1e-4 ? (-WORLD_DEPTH - NICHE_DEPTH - pos.z) / travel.z : LIGHT_RANGE;
+    const length = Math.min(LIGHT_RANGE, Math.max(0.22, Math.min(toFloor, toBack)));
 
     const radius = Math.tan(degToRad(SPOT_OUTER_DEG)) * length;
     const geometry = new THREE.ConeGeometry(radius, length, 24, 1, true);
