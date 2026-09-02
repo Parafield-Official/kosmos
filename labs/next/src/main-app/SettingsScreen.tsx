@@ -420,6 +420,12 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                 </button>
               </div>
             </SetItem>
+            <p className="ma-third-party-notice">
+              Includes the Parakeet speech model under CC BY 4.0. {" "}
+              <button type="button" onClick={() => void window.kosmosNext?.openThirdPartyNotices?.()}>
+                Third-party notices
+              </button>
+            </p>
           </div>
         </div>
       </div>

@@ -117,6 +117,7 @@ declare global {
       checkForUpdates?: () => Promise<AppUpdateStatus>;
       installAppUpdate?: () => Promise<{ installed: boolean }>;
       openReleasePage?: () => Promise<unknown>;
+      openThirdPartyNotices?: () => Promise<unknown>;
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
       openDiscord?: (payload: { appUrl: string; webUrl: string }) => Promise<{ ok: boolean; via?: "app" | "web" }>;
       getWorkspace?: () => Promise<{ workspace: string | null }>;

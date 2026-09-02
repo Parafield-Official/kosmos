@@ -17,14 +17,18 @@ describe("packaged renderer configuration", () => {
     expect(html).toContain("frame-src 'none'");
   });
 
-  it("packages the verified Whisper model and the live follow model for zero-setup speech checking", () => {
+  it("packages verified speech models and their attribution for zero-setup speech checking", () => {
     expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
     expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
     expect(packageJson.scripts.pretest).toBe("npm run build:core");
     expect(packageJson.build.extraResources).toContainEqual({
       from: "vendor/models",
       to: "models",
-      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf"],
+      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf", "THIRD_PARTY_NOTICES.txt"],
+    });
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "THIRD_PARTY_NOTICES.md",
+      to: "THIRD_PARTY_NOTICES.md",
     });
   });
 
@@ -41,7 +45,7 @@ describe("packaged renderer configuration", () => {
     expect(plist).toContain("com.apple.security.device.audio-input");
   });
 
-  it("stages Windows ffmpeg and whisper under GITHUB_WORKSPACE, not RUNNER_TEMP", () => {
+  it("stages pinned Windows FFmpeg and Whisper under GITHUB_WORKSPACE, not RUNNER_TEMP", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     const start = yaml.indexOf("- name: Prepare Windows runtime assets");
     expect(start).toBeGreaterThan(-1);
@@ -49,39 +53,41 @@ describe("packaged renderer configuration", () => {
     const step = yaml.slice(start, next === -1 ? undefined : next);
     expect(step).toContain("GITHUB_WORKSPACE");
     expect(step).not.toMatch(/\$RUNNER_TEMP/);
-    expect(step).toContain("ffmpeg-n8.1-latest-win64-lgpl-8.1.zip");
+    expect(step).toContain("autobuild-2026-09-01-13-13");
+    expect(step).toContain("ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip");
+    expect(step).toContain("4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6");
+    expect(step).not.toContain("releases/download/latest");
     expect(step).toContain('sha256sum "$ffmpeg_archive"');
     expect(step).toContain("whisper-bin-x64.zip");
     expect(step).toContain("49dcc16de826f20bd53d44f947a1ae49dfa81f86cad67a64d80820cb192d674a");
     expect(step).not.toContain("Visual Studio 17 2022");
   });
 
-  it("points README download buttons at the tagged installers, not /releases/latest", () => {
+  it("points the README download button at the stable Kosmos Pages site", () => {
     const readme = readFileSync(resolve(__dirname, "../../README.md"), "utf8");
-    const version = packageJson.version;
     expect(readme).not.toContain("releases/latest");
-    expect(readme).toContain(
-      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-mac-arm64.dmg`,
-    );
-    expect(readme).toContain(
-      `https://github.com/Parafield-Official/kosmos/releases/download/v${version}/Kosmos-${version}-win-x64.exe`,
-    );
+    expect(readme).toContain("https://parafield-official.github.io/kosmos/download.html");
   });
 
-  it("publishes a GitHub updater feed so already-installed copies can keep current", () => {
+  it("publishes a GitHub Pages updater feed so installed copies can keep current", () => {
     expect(packageJson.dependencies["electron-updater"]).toBe("6.8.9");
     expect("electron-updater" in packageJson.devDependencies).toBe(false);
     expect(packageJson.devDependencies.electron).toBe("44.1.1");
     expect(packageJson.build.publish).toMatchObject({
-      provider: "github",
-      owner: "Parafield-Official",
-      repo: "kosmos",
+      provider: "generic",
+      url: "https://parafield-official.github.io/kosmos/updates/",
     });
     const macTargets = packageJson.build.mac.target;
     expect(macTargets).toEqual(expect.arrayContaining(["dmg", "zip"]));
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("dist/latest*.yml");
     expect(yaml).toMatch(/prerelease:\s*false/);
+    expect(yaml).toContain("actions/configure-pages@");
+    expect(yaml).toContain("actions/upload-pages-artifact@");
+    expect(yaml).toContain("actions/deploy-pages@");
+    expect(yaml).toContain("pages: write");
+    expect(yaml).toContain("id-token: write");
+    expect(yaml).toContain("scripts/prepare-pages-release.cjs");
   });
 
   it("only releases tags whose commits were merged into main", () => {
@@ -126,11 +132,13 @@ describe("packaged renderer configuration", () => {
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
   });
 
-  it("blocks unsigned Windows installers from reaching a release", () => {
+  it("makes the temporary unsigned Windows channel explicit without embedding signing secrets", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
-    expect(yaml).toContain("Get-AuthenticodeSignature");
-    expect(yaml).toContain("SignatureStatus]::Valid");
-    expect(yaml).toContain("WIN_CSC_LINK");
+    expect(packageJson.build.win.verifyUpdateCodeSignature).toBe(false);
+    expect(yaml).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'");
+    expect(yaml).not.toContain("Get-AuthenticodeSignature");
+    expect(yaml).not.toContain("WIN_CSC_LINK");
+    expect(yaml).not.toContain("WIN_CSC_KEY_PASSWORD");
     expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
     expect(yaml).toMatch(/publish:[\s\S]*?permissions:\n\s+contents:\s+write/);
   });

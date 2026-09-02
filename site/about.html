@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Download — Kosmos</title>
-  <meta name="description" content="Download Kosmos for Mac or Windows, or get the source on GitHub. Free, local, open source." />
+  <title>About — Kosmos</title>
+  <meta name="description" content="Kosmos is a free app for authors and narrators. Proofread the recording against the book. Export files Audible will take. The book stays on this computer." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&display=swap" rel="stylesheet" />
@@ -28,14 +28,14 @@
       </svg>
     </a>
     <nav class="links" aria-label="Primary">
-      <a href="about.html">About</a>
+      <a href="about.html" aria-current="page">About</a>
       <a href="features.html">Features</a>
       <a href="compare.html">Compare</a>
       <a href="faq.html">FAQ</a>
     </nav>
     <div class="top-actions">
       <a class="gh-mini" href="https://github.com/Parafield-Official/kosmos">GitHub</a>
-      <a class="pill pill-nav" href="download.html" aria-current="page"><span>Download</span></a>
+      <a class="pill pill-nav" href="download.html"><span>Download</span></a>
     </div>
     <button class="burger" id="burger" aria-expanded="false" aria-controls="menu" aria-label="Open menu"><i></i><i></i></button>
   </header>
@@ -57,67 +57,57 @@
   </nav>
 
   <main class="wrap" id="main">
-    <p class="kicker">Download</p>
-    <h1 class="headline"><span>Get Kosmos.</span><span>Keep the book.</span></h1>
-    <p class="lead">Free desktop app for Mac and Windows. Double-click. No terminal, no account, no “clone the repo” unless you want the source.</p>
-
-    <div class="downloads">
-      <article class="dl">
-        <h2>Mac</h2>
-        <p>Apple silicon. Open the disk image and drag Kosmos to Applications. The release is Developer ID signed and notarized by Apple.</p>
-        <a class="pill" data-kosmos-download="mac" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.4/Kosmos-0.1.4-mac-arm64.dmg"><span>Download .dmg</span></a>
-      </article>
-      <article class="dl">
-        <h2>Windows</h2>
-        <p>64-bit installer. If SmartScreen appears for an unsigned pre-release, choose More info → Run anyway.</p>
-        <a class="pill" data-kosmos-download="windows" href="https://github.com/Parafield-Official/kosmos/releases/download/v0.1.4/Kosmos-0.1.4-win-x64.exe"><span>Download .exe</span></a>
-      </article>
-    </div>
-    <p class="lead">Already have the first public build? Download this one once and replace the old app. After that, Kosmos checks this GitHub Pages update channel and installs later versions itself. Your book folder stays where it is.</p>
+    <p class="kicker">About</p>
+    <h1 class="headline"><span>One free app</span><span>for your audiobook.</span></h1>
+    <p class="lead">Import the book. Add the recording. Kosmos proofreads the words and exports files Audible will take. It runs on this computer. No account. No monthly fee.</p>
 
     <section class="section prose">
-      <h2>Source on GitHub</h2>
-      <p>Kosmos is MIT-licensed. Read the code, open an issue, or build it yourself. The same repository hosts these installers.</p>
-      <div class="actions">
-        <a class="pill pill-cta" href="https://github.com/Parafield-Official/kosmos"><span>Open GitHub</span></a>
-        <a class="ghost" href="https://github.com/Parafield-Official/kosmos/releases/latest">All release files</a>
-        <a class="ghost" href="https://github.com/Parafield-Official/kosmos/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a>
-      </div>
+      <h2>What you use it for</h2>
+      <p>Most people buy this in pieces: a paid teleprompter, a paid proofreading upload, then another tool to hit Audible’s numbers. Kosmos is all of that in one download.</p>
+      <p>You get a page that follows as you read, a list of missed words you can play back, and a finished folder of named files ready to upload. Authors and narrators can work the same book together — including on hotel Wi-Fi or a phone hotspot.</p>
     </section>
 
     <section class="section">
-      <h2>First ten minutes</h2>
+      <h2>What Kosmos is not</h2>
       <ul class="jobs">
         <li>
           <span class="n">01</span>
           <div>
-            <strong>New project, one folder</strong>
-            <span>Choose a folder on this computer. That folder is the book.</span>
+            <strong>Not a replacement for Reaper</strong>
+            <span>Record and edit in the software you already use. Kosmos sits next to it.</span>
           </div>
         </li>
         <li>
           <span class="n">02</span>
           <div>
-            <strong>Paste or import a chapter</strong>
-            <span>Then attach the WAV or MP3 — or try the sample that ships in the app.</span>
+            <strong>Not a performance coach</strong>
+            <span>It catches words that do not match the book. You still listen for acting, clicks, and room noise.</span>
           </div>
         </li>
         <li>
           <span class="n">03</span>
           <div>
-            <strong>Proof, then the traffic light</strong>
-            <span>See the mismatches. See whether the file will pass. Export when the lights are honest.</span>
+            <strong>Not an AI narrator</strong>
+            <span>It will not read the book or clone a voice. This is for a human recording.</span>
           </div>
         </li>
       </ul>
     </section>
+
+    <section class="section save">
+      <p class="figure"><strong class="zero">$0</strong><em>open source</em></p>
+      <p>Mac and Windows. Source on GitHub. The unpublished book stays on this computer.</p>
+      <div class="actions">
+        <a class="pill pill-cta" href="download.html"><span>Download</span></a>
+        <a class="ghost" href="https://github.com/Parafield-Official/kosmos">View on GitHub</a>
+      </div>
+    </section>
   </main>
 
   <footer class="foot">
-    <span>v<span data-kosmos-version>0.1.4</span> · MIT</span>
+    <span>Kosmos is free and open source.</span>
     <span><a href="https://github.com/Parafield-Official/kosmos">github.com/Parafield-Official/kosmos</a></span>
   </footer>
   <script src="nav.js"></script>
-  <script src="downloads.js"></script>
 </body>
 </html>

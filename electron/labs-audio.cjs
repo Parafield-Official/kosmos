@@ -20,6 +20,12 @@ const {
   buildPunchPreview,
 } = require("./punch.cjs");
 const { normalizeAudioFormat } = require("./audio-metadata.cjs");
+const {
+  assertProjectFolder,
+  ensureProjectDirectory,
+  projectAssetPath,
+  projectAudioPath,
+} = require("./project-path.cjs");
 
 const MAX_AUDIO_SECONDS = 2 * 60 * 60;
 const MAX_PCM_OUTPUT_BYTES = 1_500_000_000;
@@ -47,12 +53,26 @@ function presetFromPayload(masterCore, payload) {
   return masterCore.resolvePreset(id);
 }
 
+function safeProjectFileName(file, label = "File") {
+  if (
+    typeof file !== "string"
+    || file.length === 0
+    || file === "."
+    || file === ".."
+    || file.includes("/")
+    || file.includes("\\")
+  ) {
+    throw new Error(`${label} must be a single file name.`);
+  }
+  return file;
+}
+
 function audioPath(folder, file) {
-  return path.join(folder, "audio", path.basename(file));
+  return projectAudioPath(folder, `audio/${safeProjectFileName(file, "Audio file")}`);
 }
 
 function pickupClipPath(folder, file) {
-  return path.join(folder, "audio", "pickups", path.basename(file));
+  return projectAudioPath(folder, `audio/pickups/${safeProjectFileName(file, "Pickup file")}`);
 }
 
 function runFfmpeg(args, options = {}) {
@@ -297,7 +317,7 @@ async function loadPunchClip(folder, punch, audioCore, spliceCore) {
 }
 
 async function applyPunch(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const chapterId = payload?.chapterId;
   const originalFile = payload?.originalFile;
   const workingFile = payload?.workingFile;
@@ -310,6 +330,7 @@ async function applyPunch(payload) {
   if (!Number.isFinite(payload?.tStart) || !Number.isFinite(payload?.tEnd) || payload.tEnd <= payload.tStart) {
     return { ok: false, reason: "Punch boundaries must be a valid time range." };
   }
+  folder = await assertProjectFolder(folder);
 
   const audioCore = loadCoreModule("audio");
   const spliceCore = loadCoreModule("splice");
@@ -329,8 +350,8 @@ async function applyPunch(payload) {
   }
 
   const destName = typeof workingFile === "string" && workingFile
-    ? path.basename(workingFile)
-    : `${path.basename(chapterId)}-working.wav`;
+    ? safeProjectFileName(workingFile, "Working file")
+    : `${slugFileName(chapterId)}-working.wav`;
   const originalAbsolute = audioPath(folder, originalFile);
   const workingAbsolute = audioPath(folder, destName);
 
@@ -357,7 +378,7 @@ async function applyPunch(payload) {
   }
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
-  const clipName = `${path.basename(chapterId)}-${slugFileName(payload.pickupId || "manual")}-${stamp}.wav`;
+  const clipName = `${slugFileName(chapterId)}-${slugFileName(payload.pickupId || "manual")}-${stamp}.wav`;
   const nextPunch = {
     id: `punch-${stamp}-${crypto.randomUUID().slice(0, 8)}`,
     chapter_id: chapterId,
@@ -430,7 +451,7 @@ async function applyPunch(payload) {
 }
 
 async function undoLatestPunch(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const chapterId = payload?.chapterId;
   const originalFile = payload?.originalFile;
   const workingFile = payload?.workingFile;
@@ -441,10 +462,11 @@ async function undoLatestPunch(payload) {
   if (!latest) {
     return { ok: false, reason: "This chapter has no applied pickup to undo." };
   }
+  folder = await assertProjectFolder(folder);
 
   const destName = typeof workingFile === "string" && workingFile
-    ? path.basename(workingFile)
-    : `${path.basename(chapterId)}-working.wav`;
+    ? safeProjectFileName(workingFile, "Working file")
+    : `${slugFileName(chapterId)}-working.wav`;
   const audioCore = loadCoreModule("audio");
   const spliceCore = loadCoreModule("splice");
   const remaining = activePunches(payload.punches, chapterId).filter((punch) => punch.id !== latest.id);
@@ -482,16 +504,17 @@ function reportStatus(report) {
 }
 
 async function masterWorkingFile(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const workingFile = payload?.workingFile;
   const chapterId = typeof payload?.chapterId === "string" ? payload.chapterId : null;
   if (typeof folder !== "string" || typeof workingFile !== "string") {
     return { ok: false, reason: "A working file is required to master." };
   }
+  folder = await assertProjectFolder(folder);
   const filePath = audioPath(folder, workingFile);
   const destName = chapterId
-    ? `${path.basename(chapterId)}-mastered.wav`
-    : String(workingFile).replace(/-working(\.[^.]+)?$/i, "-mastered$1");
+    ? `${slugFileName(chapterId)}-mastered.wav`
+    : safeProjectFileName(String(workingFile).replace(/-working(\.[^.]+)?$/i, "-mastered$1"), "Mastered file");
   const destPath = audioPath(folder, destName);
   const masterCore = loadCoreModule("master");
   const audioCore = loadCoreModule("audio");
@@ -565,7 +588,7 @@ async function masterWorkingFile(payload) {
     );
     return {
       ok: true,
-      workingFile: path.basename(workingFile),
+      workingFile: safeProjectFileName(workingFile, "Working file"),
       masteredFile: destName,
       after: master.after ?? master.before,
       rms_dbfs: master.after?.rms_dbfs ?? master.before.rms_dbfs,
@@ -616,7 +639,7 @@ function chapterPackSource(chapter, handoff) {
 }
 
 async function exportDeliveryPack(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const handoff = payload?.mode === "handoff";
   const incoming = Array.isArray(payload?.chapters) ? payload.chapters : [];
   const chapters = handoff
@@ -642,6 +665,7 @@ async function exportDeliveryPack(payload) {
       };
     }
   }
+  folder = await assertProjectFolder(folder);
 
   const masterCore = loadCoreModule("master");
   const exportCore = loadCoreModule("export");
@@ -649,11 +673,11 @@ async function exportDeliveryPack(payload) {
   const preset = presetFromPayload(masterCore, payload);
   const profile = masterCore.deliveryProfile(preset);
   const packName = handoff ? `${profile.folderName}-handoff` : profile.folderName;
-  const outputFolder = path.join(folder, "export", packName);
+  const exportRoot = await ensureProjectDirectory(folder, "export");
+  const outputFolder = projectAssetPath(folder, `export/${safeProjectFileName(packName, "Export folder")}`);
   // Linked/external books may not have an export/ folder yet; the staging dir
   // is created inside it, so make sure it exists before mkdtemp.
-  await fs.mkdir(path.dirname(outputFolder), { recursive: true });
-  const stagingOutputFolder = await fs.mkdtemp(path.join(path.dirname(outputFolder), `.${packName}-staging-`));
+  const stagingOutputFolder = await fs.mkdtemp(path.join(exportRoot, `.${packName}-staging-`));
   const temporaryFolder = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-labs-export-"));
   const entries = [];
   const outputFiles = [];
@@ -746,7 +770,6 @@ async function exportDeliveryPack(payload) {
     await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries), "utf8");
     outputFiles.push("REPORT.txt");
 
-    await fs.mkdir(path.join(folder, "export"), { recursive: true });
     await fs.rm(outputFolder, { recursive: true, force: true });
     await fs.rename(stagingOutputFolder, outputFolder);
 
@@ -754,8 +777,7 @@ async function exportDeliveryPack(payload) {
       Array.isArray(chapter.pickups) ? chapter.pickups : [],
     );
     if (allPickups.length) {
-      const markerDir = path.join(folder, "export", "markers");
-      await fs.mkdir(markerDir, { recursive: true });
+      const markerDir = await ensureProjectDirectory(folder, "export/markers");
       const files = markersCore.markerFileSet("book", allPickups);
       for (const file of files) {
         await writeFileAtomic(path.join(markerDir, file.fileName), file.contents, "utf8");
@@ -779,7 +801,7 @@ async function exportDeliveryPack(payload) {
 
 /** Before/after clip around a punch, without writing the working file. */
 async function previewPunch(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const originalFile = payload?.originalFile;
   const workingFile = payload?.workingFile;
   if (typeof folder !== "string" || typeof originalFile !== "string") {
@@ -791,6 +813,7 @@ async function previewPunch(payload) {
   if (!Number.isFinite(payload?.tStart) || !Number.isFinite(payload?.tEnd) || payload.tEnd <= payload.tStart) {
     return { ok: false, reason: "Punch boundaries must be a valid time range." };
   }
+  folder = await assertProjectFolder(folder);
 
   const audioCore = loadCoreModule("audio");
   const spliceCore = loadCoreModule("splice");
@@ -845,12 +868,13 @@ async function previewPunch(payload) {
 
 /** ACX traffic-light report for a chapter working (or original) file. */
 async function measureChapterAudio(payload) {
-  const folder = payload?.folder;
+  let folder = payload?.folder;
   const file = payload?.file;
   if (typeof folder !== "string" || typeof file !== "string") {
     return { ok: false, reason: "A chapter audio file is required." };
   }
   try {
+    folder = await assertProjectFolder(folder);
     const decoded = await decodeAudioPcm(audioPath(folder, file));
     const masterCore = loadCoreModule("master");
     const report = masterCore.measurePcm({
