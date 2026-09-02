@@ -526,7 +526,8 @@
 }
 
 .vault-volume,
-.vault[data-gpu-light] .vault-volume {
+.vault[data-gpu-light] .vault-volume,
+.vault[data-gpu-light] .vault-pools {
   display: none;
 }
 
@@ -650,12 +651,12 @@
   border-radius: 3px;
   overflow: hidden;
   background: #c4c0b8;
-  filter: brightness(calc(0.34 + var(--irr) * 0.22));
+  filter: brightness(calc(0.62 + var(--irr) * 0.28));
   transition: filter 640ms cubic-bezier(0.22, 1, 0.32, 1);
 }
 
 .vault-slot[data-col-lit="true"] .vault-niche-well {
-  filter: brightness(calc(0.78 + var(--irr) * 0.32));
+  filter: brightness(calc(0.9 + var(--irr) * 0.26 + max(0, 0.18 - var(--look-y)) * 0.16));
 }
 
 .vault-niche-well::before {
@@ -667,9 +668,9 @@
   border-radius: 2px;
   background: #ccc8c0;
   box-shadow:
-    0 0 3px 1px #c4c0b8,
-    inset 0 6px 10px rgba(32, 30, 36, 0.18),
-    inset calc(var(--look-x) * -3px) 0 7px rgba(32, 30, 36, 0.12);
+    0 0 8px 3px #c4c0b8,
+    inset 0 12px 18px rgba(32, 30, 36, 0.1),
+    inset calc(var(--look-x) * -4px) 0 10px rgba(32, 30, 36, 0.08);
 }
 
 .vault-niche-well::after {
@@ -698,7 +699,12 @@
 
 .vault-niche-ceil {
   clip-path: polygon(0 0, 100% 0, calc(100% - var(--in-r)) var(--in-t), var(--in-l) var(--in-t));
-  background: linear-gradient(180deg, #9e9a93 0%, #bdb9b1 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 244, 220, calc(0.1 + var(--irr) * 0.18)) 0%,
+    #c4c0b8 100%
+  );
+  filter: brightness(calc(0.9 + var(--irr) * 0.16));
 }
 
 .vault-niche-l {
@@ -715,7 +721,8 @@
 
 .vault-niche-floor {
   clip-path: polygon(0 100%, var(--in-l) calc(100% - var(--in-b)), calc(100% - var(--in-r)) calc(100% - var(--in-b)), 100% 100%);
-  background: linear-gradient(0deg, #d2cec6 0%, #b8b4ac 100%);
+  background: linear-gradient(0deg, #d6d2ca 0%, #c2beb6 100%);
+  filter: brightness(calc(0.84 + var(--irr) * 0.22));
 }
 
 .vault-book {

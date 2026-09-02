@@ -29,17 +29,17 @@ export const WORLD_DEPTH = 0.38;
 export const OPENING_ASPECT = 0.5808;
 
 /** Aim down the column so the cone covers all three rows. */
-export const AIM_Y = 0.72;
-export const AIM_Z = 0.92;
+export const AIM_Y = 0.7;
+export const AIM_Z = 0.9;
 export const AIM_SPLAY = 0;
 
 export const SPOT_INNER_DEG = 12;
-export const SPOT_OUTER_DEG = 42;
-export const LIGHT_RANGE = 1.48;
+export const SPOT_OUTER_DEG = 52;
+export const LIGHT_RANGE = 1.72;
 export const LIGHT_RADIUS = 0.12;
 export const LIGHT_INTENSITY = 0.78;
 export const AMBIENT = 0.16;
-export const VOLUME_DENSITY = 0.2;
+export const VOLUME_DENSITY = 0.28;
 export const NICHE_DEPTH = 0.055;
 
 export const LAMP_ALL = 0b11111;
