@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
