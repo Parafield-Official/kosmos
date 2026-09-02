@@ -365,7 +365,7 @@ jobs:
           source_archive="$RUNNER_TEMP/ffmpeg.tar.xz"
           test -s "$source_archive"
           cp "$source_archive" dist/FFmpeg-8.1.1-source.tar.xz
-          sha256sum dist/FFmpeg-8.1.1-source.tar.xz > dist/FFmpeg-8.1.1-source.tar.xz.sha256
+          shasum -a 256 dist/FFmpeg-8.1.1-source.tar.xz > dist/FFmpeg-8.1.1-source.tar.xz.sha256
 
       - name: Package Windows installer
         if: runner.os == 'Windows'
