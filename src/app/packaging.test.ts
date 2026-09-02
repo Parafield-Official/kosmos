@@ -129,6 +129,8 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("secrets.APPLE_API_ISSUER");
     expect(yaml).toContain("codesign --verify --deep --strict");
     expect(yaml).toContain('xcrun stapler validate "$app_path"');
+    expect(yaml).toContain("shasum -a 256 dist/FFmpeg-8.1.1-source.tar.xz");
+    expect(yaml).not.toContain("sha256sum dist/FFmpeg-8.1.1-source.tar.xz");
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
   });
 
