@@ -3,9 +3,11 @@ name: Pull request checks
 on:
   pull_request:
     branches:
+      - dev
       - main
   push:
     branches:
+      - dev
       - main
 
 permissions:
@@ -20,6 +22,17 @@ jobs:
     name: Build and test
     runs-on: ubuntu-latest
     steps:
+      - name: Require dev promotion for main
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        shell: bash
+        run: |
+          if [ "$HEAD_BRANCH" != "dev" ]; then
+            echo "Pull requests into main must promote the protected dev branch." >&2
+            exit 1
+          fi
+
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
