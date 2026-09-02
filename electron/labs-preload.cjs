@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
     };
   },
   openDiscord: (payload) => ipcRenderer.invoke("labs:open-discord", payload),
+  openMail: () => ipcRenderer.invoke("labs:open-mail"),
   getWorkspace: () => ipcRenderer.invoke("labs:workspace-get"),
   listProjects: () => ipcRenderer.invoke("labs:projects-list"),
   createProject: (input) => ipcRenderer.invoke("labs:project-create", input),

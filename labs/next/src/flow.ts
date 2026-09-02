@@ -21,6 +21,8 @@ export const INTRO_COPYRIGHT = "© Parafield Inc.";
 export const INTRO_DISCORD = "https://discord.gg/g4aVz59mQ9";
 export const INTRO_DISCORD_APP = "discord://-/invite/g4aVz59mQ9";
 export const INTRO_GITHUB = "https://github.com/Parafield-Official/kosmos";
+export const CONTACT_EMAIL = "justin@parafield.ai";
+export const CONTACT_MAILTO = `mailto:${CONTACT_EMAIL}`;
 export const BRAND_LOGO = `${import.meta.env.BASE_URL}brand/logo.png`;
 export const WELCOME_VIDEO = `${import.meta.env.BASE_URL}welcome.mov?v=0`;
 export const WELCOME_VIDEO_GAIN = 1.45;

@@ -1104,6 +1104,21 @@
   gap: 0.55rem;
 }
 
+.vault-overlay .ma-community-banner {
+  color: #3a2710;
+}
+
+.vault-overlay .ma-community-kicker,
+.vault-overlay .ma-community-copy h2,
+.vault-overlay .ma-community-copy p {
+  color: #2b1c0a;
+}
+
+.vault-overlay .ma-community-kicker,
+.vault-overlay .ma-community-copy p:last-child {
+  color: rgba(43, 28, 10, 0.76);
+}
+
 .vault-overlay > .ma-screen.ma-settings.ma-theme-onboard {
   padding: 1.6rem 1.5rem 1.7rem;
   gap: 1.15rem;
