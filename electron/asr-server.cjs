@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { terminateChild } = require("./process.cjs");
+const { defaultLiveGpu, liveAccelerationLabel } = require("./runtime.cjs");
 
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -22,6 +23,8 @@ class PersistentWhisperServer {
     portFinder = findFreePort,
     randomId = () => crypto.randomUUID(),
     now = () => Date.now(),
+    platform = process.platform,
+    useGpu,
   } = {}) {
     this.idleTimeoutMs = idleTimeoutMs;
     this.spawnImpl = spawnImpl;
@@ -29,6 +32,7 @@ class PersistentWhisperServer {
     this.portFinder = portFinder;
     this.randomId = randomId;
     this.now = now;
+    this.platform = platform;
     this.child = null;
     this.port = null;
     this.requestPath = null;
@@ -37,7 +41,7 @@ class PersistentWhisperServer {
     this.readyPromise = null;
     this.idleTimer = null;
     this.lastUsedAt = 0;
-    this.useGpu = true;
+    this.useGpu = useGpu ?? defaultLiveGpu(platform);
     this.stderr = "";
     this.requestControllers = new Set();
   }
@@ -45,7 +49,7 @@ class PersistentWhisperServer {
   async warm({ serverPath, modelPath, threads }) {
     await this.ensureStarted({ serverPath, modelPath, threads });
     this.scheduleIdleShutdown();
-    return { persistent: true, acceleration: this.useGpu ? "Metal" : "CPU" };
+    return { persistent: true, acceleration: liveAccelerationLabel(this.useGpu, this.platform) };
   }
 
   async transcribe({ serverPath, modelPath, wavBytes, language = "en", threads }) {
@@ -61,12 +65,12 @@ class PersistentWhisperServer {
         ...normalizeServerResult(result),
         engine: "whisper.cpp server",
         modelPath,
-        acceleration: this.useGpu ? "Metal" : "CPU",
+        acceleration: liveAccelerationLabel(this.useGpu, this.platform),
       };
     } catch (error) {
-      // Metal can be unavailable on an older or constrained Mac even when the
-      // server itself starts. Retry the same request once with CPU before the
-      // caller falls back to the one-shot whisper-cli path.
+      // GPU/Metal can be unavailable even when the server itself starts.
+      // Retry the same request once with CPU before the caller falls back
+      // to the one-shot whisper-cli path.
       if (this.useGpu && this.child) {
         this.stop();
         this.useGpu = false;
@@ -179,6 +183,7 @@ class PersistentWhisperServer {
     const child = this.spawnImpl(serverPath, args, {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     this.child = child;
     this.port = port;

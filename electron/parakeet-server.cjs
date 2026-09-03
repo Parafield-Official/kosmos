@@ -1,6 +1,7 @@
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 const { terminateChild } = require("./process.cjs");
+const { liveAccelerationLabel } = require("./runtime.cjs");
 
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -38,7 +39,7 @@ class PersistentParakeetServer {
   async warm({ serverPath, modelPath }) {
     await this.ensureStarted({ serverPath, modelPath });
     this.scheduleIdleShutdown();
-    return { persistent: true, acceleration: "Metal", engine: "parakeet.cpp server" };
+    return { persistent: true, acceleration: liveAccelerationLabel(true), engine: "parakeet.cpp server" };
   }
 
   async transcribe({ serverPath, modelPath, wavBytes }) {
@@ -53,7 +54,7 @@ class PersistentParakeetServer {
       ...normalizeParakeetResult(result),
       engine: "parakeet.cpp server",
       modelPath,
-      acceleration: "Metal",
+      acceleration: liveAccelerationLabel(true),
     };
   }
 
@@ -125,6 +126,7 @@ class PersistentParakeetServer {
     const child = this.spawnImpl(serverPath, args, {
       cwd: process.cwd(),
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
     this.child = child;
     this.port = port;

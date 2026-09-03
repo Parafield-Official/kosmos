@@ -13,6 +13,7 @@ const path = require("node:path");
 const { app, shell } = require("electron");
 const { runCommand } = require("./process.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
+const { replaceDirectory, writeFileAtomic } = require("./file-utils.cjs");
 const {
   rebuildPunchTimeline,
   normalizePunchBounds,
@@ -82,7 +83,7 @@ function runFfmpeg(args, options = {}) {
       envVar: "FFMPEG_PATH",
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
-      requireBundled: !app.isPackaged,
+      requireBundled: app.isPackaged,
     }),
     args,
     { ...options, timeoutMs: options.timeoutMs ?? FFMPEG_TIMEOUT_MS },
@@ -96,18 +97,11 @@ function runFfprobe(args) {
       envVar: "FFPROBE_PATH",
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
-      requireBundled: !app.isPackaged,
+      requireBundled: app.isPackaged,
     }),
     args,
     { timeoutMs: 60_000 },
   );
-}
-
-async function writeFileAtomic(target, data, encoding) {
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}-${crypto.randomUUID()}.tmp`);
-  await fs.writeFile(tmp, data, encoding);
-  await fs.rename(tmp, target);
 }
 
 /** True when the buffer already carries a RIFF/WAVE header. */
@@ -770,8 +764,7 @@ async function exportDeliveryPack(payload) {
     await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries), "utf8");
     outputFiles.push("REPORT.txt");
 
-    await fs.rm(outputFolder, { recursive: true, force: true });
-    await fs.rename(stagingOutputFolder, outputFolder);
+    await replaceDirectory(stagingOutputFolder, outputFolder);
 
     const allPickups = chapters.flatMap((chapter) =>
       Array.isArray(chapter.pickups) ? chapter.pickups : [],

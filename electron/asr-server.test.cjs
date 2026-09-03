@@ -91,11 +91,19 @@ describe("persistent Whisper server adapter", () => {
     });
   });
 
+  it("starts Whisper on CPU unless the host is macOS", () => {
+    expect(new PersistentWhisperServer({ platform: "win32" }).useGpu).toBe(false);
+    expect(new PersistentWhisperServer({ platform: "linux" }).useGpu).toBe(false);
+    expect(new PersistentWhisperServer({ platform: "darwin" }).useGpu).toBe(true);
+  });
+
   it("keeps one model-loaded child for warm and transcription requests", async () => {
     const child = fakeChild();
     let starts = 0;
     const server = new PersistentWhisperServer({
       idleTimeoutMs: 60_000,
+      platform: "darwin",
+      useGpu: true,
       portFinder: async () => 43210,
       spawnImpl: () => {
         starts += 1;

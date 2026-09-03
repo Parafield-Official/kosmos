@@ -76,6 +76,7 @@ declare global {
         maximized: boolean;
         expanded: boolean;
         showTrafficChrome: boolean;
+        customWindowDrag: boolean;
       }>;
       onWindowChrome?: (callback: (state: {
         platform: NodeJS.Platform;
@@ -83,6 +84,7 @@ declare global {
         maximized: boolean;
         expanded: boolean;
         showTrafficChrome: boolean;
+        customWindowDrag: boolean;
       }) => void) => (() => void) | void;
       requestMicrophoneAccess?: () => Promise<{ granted: boolean; status?: string }>;
       getMicrophoneAccess?: () => Promise<{ granted: boolean; status?: string }>;

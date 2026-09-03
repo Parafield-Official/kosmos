@@ -154,7 +154,18 @@ describe("packaged renderer configuration", () => {
     expect(packageJson.build.files).toContain("!electron/**/*.test.cjs");
     expect(packageJson.build.files).toContain("!electron/glass-test-preload.cjs");
     const labsMain = readFileSync(resolve(__dirname, "../../electron/labs.cjs"), "utf8");
-    expect(labsMain).toMatch(/try\s*{[\s\S]+require\("electron-liquid-glass"\)[\s\S]+}\s*catch/);
+    expect(labsMain).toMatch(/process\.platform === "darwin"[\s\S]+try\s*{[\s\S]+require\("electron-liquid-glass"\)[\s\S]+}\s*catch/);
+    expect(labsMain).not.toMatch(/else\s*\{\s*labWindow\.setWindowButtonVisibility/);
+    expect(labsMain).toMatch(/name: "parakeet-live"[\s\S]+optional:\s*true/);
+    expect(labsMain).toMatch(/name: "parakeet-server"[\s\S]+optional:\s*true/);
+    expect(labsMain).toMatch(/function tryOpenLab/);
+  });
+
+  it("fails closed on missing bundled FFmpeg in packaged builds", () => {
+    const labsAudio = readFileSync(resolve(__dirname, "../../electron/labs-audio.cjs"), "utf8");
+    expect(labsAudio).toMatch(/requireBundled:\s*app\.isPackaged/);
+    expect(labsAudio).not.toMatch(/requireBundled:\s*!app\.isPackaged/);
+    expect(labsAudio).toMatch(/writeFileAtomic.*file-utils|file-utils\.cjs[\s\S]*writeFileAtomic/);
   });
 
   it("tells people on the first public installer to download once, then stay current in-app", () => {
