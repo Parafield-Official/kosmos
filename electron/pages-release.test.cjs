@@ -100,12 +100,19 @@ describe("GitHub Pages release feed", () => {
     expect(step("Set up Python for Microsoft MarkItDown").if).toBe(
       "steps.native-runtime-cache.outputs.cache-hit != 'true'",
     );
-    expect(step("Restore cached speech models")).toBeUndefined();
+    expect(step("Restore cached speech models").uses).toMatch(/^actions\/cache@[0-9a-f]{40}$/);
+    expect(step("Restore cached speech models").with.key).toContain("runner.os");
     expect(step("Resolve cross-platform speech model cache key")).toBeUndefined();
-    expect(step("Verify or download speech models")).toBeUndefined();
+    expect(step("Prepare verified speech models").run).toBe("npm run prepare:model");
     expect(step("Upload installer artifact").with["compression-level"]).toBe(0);
+    expect(step("Preserve signed app while Apple processes it").with["retention-days"]).toBe(7);
+    expect(workflow.jobs["notarization-status"]["runs-on"]).toBe("ubuntu-latest");
+    expect(workflow.jobs["notarization-status"]["timeout-minutes"]).toBe(345);
+    expect(workflow.jobs["finalize-mac"].needs).toEqual(["package", "notarization-status"]);
+    expect(workflow.jobs.publish.needs).toEqual(["package", "finalize-mac"]);
+    expect(workflow.jobs.publish.steps.find((candidate) => candidate.name === "Download installer artifacts").with.pattern).toBe("kosmos-installer-*");
     expect(pagesStep("Download installer metadata").with.pattern).toBe("kosmos-metadata-*");
-    expect(workflow.jobs["pages-build"].needs).toBe("package");
+    expect(workflow.jobs["pages-build"].needs).toEqual(["package", "finalize-mac"]);
     expect(workflow.jobs.pages.needs).toEqual(["publish", "pages-build"]);
     expect(packageConfig.build.compression).toBeUndefined();
   });

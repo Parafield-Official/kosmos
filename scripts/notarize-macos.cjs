@@ -1,15 +1,12 @@
 const { execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
-const os = require("node:os");
 const path = require("node:path");
 const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
-const POLL_INTERVAL_MS = 30_000;
-const POLL_TIMEOUT_MS = 90 * 60 * 1_000;
-const COMMAND_TIMEOUT_MS = 90_000;
-const ACCEPTED = "Accepted";
-const INVALID = new Set(["Invalid", "Rejected"]);
+const COMMAND_TIMEOUT_MS = 10 * 60 * 1_000;
+const STATE_FILE_NAME = "submission.json";
+const ARCHIVE_FILE_NAME = "Kosmos-signed-app.zip";
 
 function appPathForContext(context) {
   if (context.electronPlatformName !== "darwin") {
@@ -20,6 +17,13 @@ function appPathForContext(context) {
     throw new Error("macOS notarization did not receive the signed application path.");
   }
   return path.join(context.appOutDir, `${productFilename}.app`);
+}
+
+function stagingDirectoryForContext(context) {
+  if (!context.appOutDir) {
+    throw new Error("macOS notarization did not receive an output directory.");
+  }
+  return path.join(path.dirname(context.appOutDir), "notarization");
 }
 
 function credentialsFromEnv(env) {
@@ -34,15 +38,6 @@ function credentialsFromEnv(env) {
 
 function commandOutput(value) {
   return [value?.stdout, value?.stderr].filter(Boolean).join("\n").trim();
-}
-
-function isRetryableNetworkError(error) {
-  const output = `${error?.message ?? ""}\n${commandOutput(error)}`;
-  return /NSURLErrorDomain|No network route|internet connection appears to be offline|network connection was lost|network is unreachable|timed? out|Could not resolve host|statusCode: nil/i.test(output);
-}
-
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function runDefault(command, args) {
@@ -62,116 +57,81 @@ async function runJson(run, args) {
   }
 }
 
-async function writeSummary(env, line) {
+async function writeSummary(env, lines) {
   if (!env.GITHUB_STEP_SUMMARY) {
     return;
   }
-  await fs.appendFile(env.GITHUB_STEP_SUMMARY, `${line}\n`, "utf8");
+  await fs.appendFile(env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`, "utf8");
 }
 
-async function getNotarizationLog(run, submissionId, credentials) {
-  try {
-    const result = await run("xcrun", ["notarytool", "log", submissionId, ...credentials]);
-    return commandOutput(result);
-  } catch (error) {
-    return `Unable to fetch Apple's diagnostic log: ${commandOutput(error) || error.message}`;
-  }
+function submissionState({ context, env, submissionId, appPath, archivePath, createdAt }) {
+  return {
+    schemaVersion: 1,
+    submissionId,
+    status: "In Progress",
+    appName: path.basename(appPath),
+    appArchive: path.basename(archivePath),
+    version: context.packager?.appInfo?.version ?? "",
+    sourceSha: env.GITHUB_SHA ?? "",
+    sourceRef: env.GITHUB_REF ?? "",
+    sourceRefName: env.GITHUB_REF_NAME ?? "",
+    sourceRunId: env.GITHUB_RUN_ID ?? "",
+    createdAt,
+  };
 }
 
-async function pollUntilComplete({ run, submissionId, credentials, logger, now = Date.now, sleepFor = sleep, pollIntervalMs = POLL_INTERVAL_MS, timeoutMs = POLL_TIMEOUT_MS }) {
-  const deadline = now() + timeoutMs;
-  while (true) {
-    let submission;
-    try {
-      submission = await runJson(run, ["info", submissionId, ...credentials, "--output-format", "json"]);
-    } catch (error) {
-      if (!isRetryableNetworkError(error) || now() >= deadline) {
-        throw error;
-      }
-      logger(`[notarization] status check for ${submissionId} hit a temporary network error; retrying in ${Math.ceil(pollIntervalMs / 1_000)}s.`);
-      await sleepFor(Math.min(pollIntervalMs, Math.max(0, deadline - now())));
-      continue;
-    }
-
-    const status = String(submission.status ?? "Unknown");
-    logger(`[notarization] submission ${submissionId}: ${status}`);
-    if (status === ACCEPTED) {
-      return submission;
-    }
-    if (INVALID.has(status)) {
-      const diagnosticLog = await getNotarizationLog(run, submissionId, credentials);
-      throw new Error(`Apple rejected notarization submission ${submissionId}.\n${diagnosticLog}`);
-    }
-    if (now() >= deadline) {
-      throw new Error(`Apple did not finish notarization submission ${submissionId} within ${Math.round(timeoutMs / 60_000)} minutes.`);
-    }
-    await sleepFor(Math.min(pollIntervalMs, Math.max(0, deadline - now())));
-  }
-}
-
-async function stapleWithRetry({ run, appPath, logger, sleepFor = sleep }) {
-  let lastError;
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
-    try {
-      await run("xcrun", ["stapler", "staple", appPath]);
-      logger("[notarization] stapled Apple's ticket to the app bundle.");
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt === 4) {
-        break;
-      }
-      logger(`[notarization] stapling is not ready yet; retrying (${attempt}/4).`);
-      await sleepFor(attempt * 15_000);
-    }
-  }
-  throw lastError;
-}
-
-async function notarizeMacApp(context, dependencies = {}) {
+async function submitMacApp(context, dependencies = {}) {
   const appPath = appPathForContext(context);
   if (!appPath) {
-    return;
+    return null;
   }
 
   const env = dependencies.env ?? process.env;
   const run = dependencies.run ?? runDefault;
   const logger = dependencies.logger ?? ((line) => process.stdout.write(`${line}\n`));
-  const sleepFor = dependencies.sleepFor ?? sleep;
+  const createdAt = dependencies.createdAt ?? (() => new Date().toISOString());
   const credentials = credentialsFromEnv(env);
+  const stagingDirectory = stagingDirectoryForContext(context);
+  const archivePath = path.join(stagingDirectory, ARCHIVE_FILE_NAME);
+  const statePath = path.join(stagingDirectory, STATE_FILE_NAME);
+
   await fs.access(appPath);
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-notarize-"));
-  const archivePath = path.join(tempDirectory, `${path.basename(appPath, ".app")}.zip`);
+  await fs.mkdir(stagingDirectory, { recursive: true });
+  await Promise.all([
+    fs.rm(archivePath, { force: true }),
+    fs.rm(statePath, { force: true }),
+  ]);
 
-  try {
-    logger("[notarization] creating an upload archive from the signed app.");
-    await run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", appPath, archivePath]);
-    const submission = await runJson(run, ["submit", archivePath, ...credentials, "--output-format", "json"]);
-    const submissionId = typeof submission.id === "string" ? submission.id : "";
-    if (!submissionId) {
-      throw new Error("Apple did not return a notarization submission ID.");
-    }
-
-    logger(`[notarization] submitted to Apple: ${submissionId}`);
-    await writeSummary(env, `macOS notarization submission: ${submissionId}`);
-    await pollUntilComplete({
-      run,
-      submissionId,
-      credentials,
-      logger,
-      sleepFor,
-      pollIntervalMs: dependencies.pollIntervalMs ?? POLL_INTERVAL_MS,
-      timeoutMs: dependencies.timeoutMs ?? POLL_TIMEOUT_MS,
-      now: dependencies.now ?? Date.now,
-    });
-    await stapleWithRetry({ run, appPath, logger, sleepFor });
-  } finally {
-    await fs.rm(tempDirectory, { recursive: true, force: true });
+  logger("[notarization] preserving the exact signed app for asynchronous notarization.");
+  await run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", appPath, archivePath]);
+  const submission = await runJson(run, ["submit", archivePath, ...credentials, "--output-format", "json"]);
+  const submissionId = typeof submission.id === "string" ? submission.id : "";
+  if (!submissionId) {
+    throw new Error("Apple did not return a notarization submission ID.");
   }
+
+  const state = submissionState({
+    context,
+    env,
+    submissionId,
+    appPath,
+    archivePath,
+    createdAt: createdAt(),
+  });
+  await fs.writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  logger(`[notarization] submitted to Apple once: ${submissionId}`);
+  logger(`[notarization] saved the signed app and submission state at ${stagingDirectory}.`);
+  await writeSummary(env, [
+    `macOS notarization submission: ${submissionId}`,
+    "The signed app was preserved so a later job can wait, staple, and package it without rebuilding or resubmitting.",
+  ]);
+  return state;
 }
 
-module.exports = notarizeMacApp;
+module.exports = submitMacApp;
+module.exports.ARCHIVE_FILE_NAME = ARCHIVE_FILE_NAME;
+module.exports.STATE_FILE_NAME = STATE_FILE_NAME;
 module.exports.appPathForContext = appPathForContext;
-module.exports.isRetryableNetworkError = isRetryableNetworkError;
-module.exports.notarizeMacApp = notarizeMacApp;
-module.exports.pollUntilComplete = pollUntilComplete;
+module.exports.stagingDirectoryForContext = stagingDirectoryForContext;
+module.exports.submissionState = submissionState;
+module.exports.submitMacApp = submitMacApp;

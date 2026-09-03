@@ -127,20 +127,32 @@ describe("packaged renderer configuration", () => {
     expect(mac.notarize).toBe(false);
     expect(packageJson.build.afterSign).toBe("scripts/notarize-macos.cjs");
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("Restore cached speech models");
+    expect(yaml).toContain("Prepare verified speech models");
+    expect(yaml).toContain("run: npm run prepare:model");
     expect(yaml).toContain("secrets.MAC_CSC_LINK");
     expect(yaml).toContain("secrets.MAC_CSC_KEY_PASSWORD");
     expect(yaml).toContain("secrets.APPLE_API_KEY_B64");
     expect(yaml).toContain("secrets.APPLE_API_KEY_ID");
     expect(yaml).toContain("secrets.APPLE_API_ISSUER");
+    expect(yaml).toContain("Wait for Apple without holding a Mac runner");
+    expect(yaml).toContain("scripts/wait-for-notarization.cjs");
+    expect(yaml).toContain("kosmos-notarization-${{ github.run_id }}");
+    expect(yaml).toContain("--prepackaged \"$app_path\"");
     expect(yaml).toContain("codesign --verify --deep --strict");
     expect(yaml).toContain('xcrun stapler validate "$app_path"');
-    expect(yaml).toContain("shasum -a 256 dist/FFmpeg-8.1.1-source.tar.xz");
-    expect(yaml).not.toContain("sha256sum dist/FFmpeg-8.1.1-source.tar.xz");
+    expect(yaml).toContain("shasum -a 256 dist/notarization/FFmpeg-8.1.1-source.tar.xz");
+    expect(yaml).not.toContain("sha256sum dist/notarization/FFmpeg-8.1.1-source.tar.xz");
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
     const notarizationHook = readFileSync(resolve(__dirname, "../../scripts/notarize-macos.cjs"), "utf8");
+    const notarizationWaiter = readFileSync(resolve(__dirname, "../../scripts/wait-for-notarization.cjs"), "utf8");
     expect(notarizationHook).toContain("notarytool");
     expect(notarizationHook).toContain("submission");
     expect(notarizationHook).not.toContain('"--wait"');
+    expect(notarizationHook).not.toContain('"info"');
+    expect(notarizationWaiter).toContain('const API_ORIGIN = "https://appstoreconnect.apple.com"');
+    expect(notarizationWaiter).toContain("/notary/v2/submissions/");
+    expect(notarizationWaiter).toContain("Re-run failed jobs");
   });
 
   it("makes the temporary unsigned Windows channel explicit without embedding signing secrets", () => {
