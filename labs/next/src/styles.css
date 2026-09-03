@@ -284,6 +284,12 @@ button {
   height: 8px;
 }
 
+.viewport.native[data-platform="win32"] .drag-strip,
+.viewport.native[data-platform="linux"] .drag-strip {
+  display: none;
+  pointer-events: none;
+}
+
 .viewport.native[data-platform="win32"] *::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: rgba(21, 21, 23, 0.28);

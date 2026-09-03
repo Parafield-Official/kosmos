@@ -29,6 +29,11 @@ const {
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
 const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
+const {
+  applyMacWindowButtonVisibility,
+  callWindowMethod,
+  isFramedDesktopPlatform,
+} = require("./window-chrome.cjs");
 const { assertTrustedWindowEvent, isTrustedWindowEvent } = require("./ipc-security.cjs");
 const {
   assertProjectFolder,
@@ -153,10 +158,12 @@ function idleUpdateStatus() {
 }
 
 let liquidGlass = null;
-try {
-  liquidGlass = require("electron-liquid-glass").default ?? require("electron-liquid-glass");
-} catch (error) {
-  console.warn("[labs] electron-liquid-glass unavailable", error);
+if (process.platform === "darwin") {
+  try {
+    liquidGlass = require("electron-liquid-glass").default ?? require("electron-liquid-glass");
+  } catch (error) {
+    console.warn("[labs] electron-liquid-glass unavailable", error);
+  }
 }
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -1046,7 +1053,7 @@ function pinTrafficLights(intended) {
     return;
   }
   const chrome = windowChromeState();
-  labWindow.setWindowButtonVisibility(chrome.showTrafficChrome);
+  applyMacWindowButtonVisibility(labWindow, chrome.showTrafficChrome);
   if (typeof labWindow.setTrafficLightPosition !== "function") {
     return;
   }
@@ -1062,7 +1069,7 @@ function pinTrafficLights(intended) {
 const WINDOW_EDGE_SLOP = 4;
 const JUMP_PLACES = new Set(["mark", "intro", "brand", "welcome", "access", "community", "theme", "app"]);
 const ROOM_PLACES = new Set(["app"]);
-const FRAMED_PLATFORM = process.platform === "win32" || process.platform === "linux";
+const FRAMED_PLATFORM = isFramedDesktopPlatform(process.platform);
 const GLASS_BLUR_MAX = 48;
 /** @type {import("electron").BrowserWindow | null} */
 let labWindow = null;
@@ -1106,13 +1113,15 @@ async function startLiveFollow() {
       envVar: "PARAKEET_LIVE_PATH",
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
-      requireBundled: false,
+      optional: true,
     });
-    await liveFollowStream.start({ serverPath, modelPath });
-    if (!liveWordsUnsub) {
-      liveWordsUnsub = liveFollowStream.onWords(emitLiveWords);
+    if (serverPath) {
+      await liveFollowStream.start({ serverPath, modelPath });
+      if (!liveWordsUnsub) {
+        liveWordsUnsub = liveFollowStream.onWords(emitLiveWords);
+      }
+      return { ok: true, streaming: true, engine: "parakeet-live" };
     }
-    return { ok: true, streaming: true, engine: "parakeet-live" };
   } catch (error) {
     console.warn(`[labs] Parakeet live stream unavailable; using clip server: ${error?.message ?? error}`);
   }
@@ -1123,19 +1132,22 @@ async function startLiveFollow() {
       envVar: "PARAKEET_SERVER_PATH",
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
-      requireBundled: false,
+      optional: true,
     });
-    const warmed = await liveFollowServer.warm({
-      serverPath: liveFollowServerPath,
-      modelPath,
-    });
-    liveFollowServerReady = true;
-    return { ok: true, streaming: false, engine: warmed.engine };
+    if (liveFollowServerPath) {
+      const warmed = await liveFollowServer.warm({
+        serverPath: liveFollowServerPath,
+        modelPath,
+      });
+      liveFollowServerReady = true;
+      return { ok: true, streaming: false, engine: warmed.engine };
+    }
   } catch (error) {
     liveFollowServerReady = false;
     console.warn(`[labs] Parakeet clip server unavailable; using Whisper windows: ${error?.message ?? error}`);
-    return { ok: true, streaming: false, engine: "whisper.cpp", reason: String(error?.message ?? error) };
   }
+
+  return { ok: true, streaming: false, engine: "whisper.cpp", reason: "parakeet-unavailable" };
 }
 
 function sendLivePcm(payload) {
@@ -1220,6 +1232,7 @@ async function transcribeHop(payload) {
       live: true,
       inputIsPcmWav: true,
       quality: false,
+      requireBundled: app.isPackaged,
     });
     return { ok: true, words: result.words ?? [] };
   } catch (error) {
@@ -1249,6 +1262,7 @@ function isWindowExpanded(win) {
 }
 
 function windowChromeState() {
+  const customWindowDrag = !FRAMED_PLATFORM;
   if (!labWindow || labWindow.isDestroyed()) {
     return {
       platform: process.platform,
@@ -1256,6 +1270,7 @@ function windowChromeState() {
       maximized: false,
       expanded: false,
       showTrafficChrome: false,
+      customWindowDrag,
     };
   }
   const platform = process.platform;
@@ -1264,7 +1279,7 @@ function windowChromeState() {
   const expanded = isWindowExpanded(labWindow);
   const onApp = ROOM_PLACES.has(labPlace);
   const showTrafficChrome = platform === "darwin" && onApp;
-  return { platform, fullscreen, maximized, expanded, showTrafficChrome };
+  return { platform, fullscreen, maximized, expanded, showTrafficChrome, customWindowDrag };
 }
 
 function notifyWindowChrome() {
@@ -1281,10 +1296,12 @@ function syncWindowChrome(place) {
   if (typeof place === "string" && JUMP_PLACES.has(place)) {
     updateLabPlace(place);
   }
-  if (process.platform === "darwin") {
-    pinTrafficLights();
-  } else {
-    labWindow.setWindowButtonVisibility(false);
+  try {
+    if (process.platform === "darwin") {
+      pinTrafficLights();
+    }
+  } catch (error) {
+    console.warn("[labs] window chrome sync skipped", error);
   }
   notifyWindowChrome();
 }
@@ -1328,7 +1345,7 @@ function ensureLiquidGlass(win) {
 }
 
 function applyNativeGlass(win, material = {}) {
-  if (!win || win.isDestroyed()) {
+  if (!win || win.isDestroyed() || FRAMED_PLATFORM) {
     return;
   }
 
@@ -1458,13 +1475,13 @@ function applySize(win, size, animate) {
     if (typeof win.setMaximizable === "function") {
       win.setMaximizable(true);
     }
-    if (typeof win.setAspectRatio === "function") {
+    if (!FRAMED_PLATFORM && typeof win.setAspectRatio === "function") {
       win.setAspectRatio(APP_ASPECT);
     }
     ({ width, height } = fitAppFrame(win, size));
   } else {
     win.setMinimumSize(320, 300);
-    if (typeof win.setAspectRatio === "function") {
+    if (!FRAMED_PLATFORM && typeof win.setAspectRatio === "function") {
       win.setAspectRatio(0);
     }
     width = Math.max(320, Math.round(size?.width ?? START_SIZE.width));
@@ -1567,7 +1584,7 @@ function openDebugWindow() {
   });
   secureRendererWindow(debugWindow, { allowedUrls: [debugUrl] });
 
-  debugWindow.setAlwaysOnTop(true, "floating");
+  callWindowMethod(debugWindow, "setAlwaysOnTop", true);
   const revealDebug = () => {
     if (!debugWindow || debugWindow.isDestroyed()) {
       return;
@@ -1748,7 +1765,7 @@ function openLab() {
   labWindow.on("enter-full-screen", onWindowChromeChange);
   labWindow.on("leave-full-screen", onWindowChromeChange);
   labWindow.on("maximize", () => {
-    if (!ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed()) {
+    if (FRAMED_PLATFORM || !ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed()) {
       onWindowChromeChange();
       return;
     }
@@ -1765,7 +1782,7 @@ function openLab() {
   labWindow.on("unmaximize", onWindowChromeChange);
   let aspectLock = false;
   labWindow.on("will-resize", (event, newBounds) => {
-    if (aspectLock || !ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed() || labWindow.isFullScreen()) {
+    if (aspectLock || FRAMED_PLATFORM || !ROOM_PLACES.has(labPlace) || !labWindow || labWindow.isDestroyed() || labWindow.isFullScreen()) {
       return;
     }
     const min = labWindow.getMinimumSize();
@@ -1817,6 +1834,17 @@ function openLab() {
     stopLiveFollow();
     terminateActiveCommands();
   });
+}
+
+function tryOpenLab() {
+  try {
+    openLab();
+  } catch (error) {
+    console.error("[labs] failed to open window", error);
+    if (labWindow && !labWindow.isDestroyed()) {
+      callWindowMethod(labWindow, "show");
+    }
+  }
 }
 
 app.whenReady().then(async () => {
@@ -1910,7 +1938,7 @@ app.whenReady().then(async () => {
   });
 
   if (gotSingleInstanceLock) {
-    openLab();
+    tryOpenLab();
   }
 
   ensureLabsUpdater();
@@ -1925,7 +1953,7 @@ app.on("second-instance", () => {
     openDebugWindow();
     return;
   }
-  openLab();
+  tryOpenLab();
 });
 
 app.on("before-quit", () => {

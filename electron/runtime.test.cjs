@@ -5,6 +5,9 @@ const {
   auditFfmpegBuild,
   auditWhisperBuild,
   auditWhisperServerBuild,
+  defaultLiveGpu,
+  liveAccelerationLabel,
+  nativeLibraryEnv,
   resolveRuntimeBinary,
 } = require("./runtime.cjs");
 
@@ -118,5 +121,40 @@ describe("runtime binary resolution", () => {
       help: "usage: whisper-server [options]",
       sha256: "b".repeat(64),
     })).toEqual({ license: "MIT", sha256: "b".repeat(64) });
+  });
+
+  it("returns null for optional engines that were not staged", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "booth-runtime-optional-"));
+    expect(resolveRuntimeBinary({
+      name: "parakeet-live",
+      resourcesPath: path.join(root, "missing"),
+      appPath: path.join(root, "app"),
+      cwd: root,
+      platform: "win32",
+      env: {},
+      optional: true,
+    })).toBeNull();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("starts live GPU only on macOS and labels other platforms as GPU or CPU", () => {
+    expect(defaultLiveGpu("darwin")).toBe(true);
+    expect(defaultLiveGpu("win32")).toBe(false);
+    expect(defaultLiveGpu("linux")).toBe(false);
+    expect(liveAccelerationLabel(true, "darwin")).toBe("Metal");
+    expect(liveAccelerationLabel(true, "win32")).toBe("GPU");
+    expect(liveAccelerationLabel(false, "win32")).toBe("CPU");
+  });
+
+  it("points native helpers at sibling libraries on each desktop", () => {
+    const binary = path.join("opt", "kosmos", "parakeet-live");
+    const dir = path.dirname(binary);
+    expect(nativeLibraryEnv(binary, "darwin", {})).toMatchObject({
+      DYLD_LIBRARY_PATH: dir,
+    });
+    const windows = nativeLibraryEnv(binary, "win32", { PATH: "/usr/bin" });
+    expect(windows.PATH.startsWith(`${dir}${path.delimiter}`)).toBe(true);
+    expect(windows.PATH).toContain("/usr/bin");
+    expect(nativeLibraryEnv(binary, "linux", {}).LD_LIBRARY_PATH).toBe(dir);
   });
 });
