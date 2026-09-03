@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
@@ -41,8 +41,8 @@
     "design:shots": "electron scripts/design-shots.cjs",
     "audit:runtime": "node scripts/audit-runtime.cjs",
     "prepare:model": "node scripts/prepare-model.cjs",
-    "package:mac": "npm run build && npm run audit:runtime && electron-builder --mac --publish never",
-    "package:win": "npm run build && npm run audit:runtime && electron-builder --win --publish never"
+    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac --publish never",
+    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win --publish never"
   },
   "build": {
     "appId": "com.boothdesk.app",
@@ -72,6 +72,15 @@
         ]
       },
       {
+        "from": "vendor/models",
+        "to": "models",
+        "filter": [
+          "ggml-small.en.bin",
+          "realtime_eou_120m-v1-f16.gguf",
+          "THIRD_PARTY_NOTICES.txt"
+        ]
+      },
+      {
         "from": "vendor/cmudict",
         "to": "cmudict",
         "filter": [
@@ -98,7 +107,7 @@
       ],
       "category": "public.app-category.music",
       "hardenedRuntime": true,
-      "notarize": true,
+      "notarize": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
@@ -115,7 +124,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
+    },
+    "afterSign": "scripts/notarize-macos.cjs"
   },
   "dependencies": {
     "electron-updater": "6.8.9",
