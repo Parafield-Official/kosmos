@@ -57,6 +57,9 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("WHISPERX_THIRD_PARTY_NOTICES.txt");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
+    expect(yaml.indexOf("public/examples/proof/on_vs_in.wav")).toBeGreaterThan(
+      yaml.indexOf("- name: Prepare Windows runtime assets"),
+    );
     expect(yaml).toMatch(/whisperx(?:\.exe)?\"? --version/);
 
     const wrapper = readFileSync(resolve(__dirname, "../../scripts/whisperx_cli.py"), "utf8");

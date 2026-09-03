@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
+  alignImportedAudioWithWhisperX,
   buildWhisperXArgs,
   parseWhisperXWords,
   resolveWhisperXCommand,
@@ -9,6 +10,35 @@ const {
 } = require("./whisperx.cjs");
 
 describe("WhisperX imported-audio alignment", () => {
+  it("puts the bundled ffmpeg beside WhisperX on PATH", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-path-"));
+    const resourcesPath = path.join(root, "resources");
+    const userDataPath = path.join(root, "user-data");
+    const audioPath = path.join(root, "chapter.wav");
+    let runOptions;
+    try {
+      fs.writeFileSync(audioPath, "audio", "utf8");
+      await alignImportedAudioWithWhisperX({
+        audioPath,
+        userDataPath,
+        resourcesPath,
+        appPath: path.join(root, "app"),
+        resolveCommand: () => path.join(resourcesPath, "whisperx", "whisperx"),
+        run: async (_command, args, options) => {
+          runOptions = options;
+          const outputDir = args[args.indexOf("--output_dir") + 1];
+          fs.writeFileSync(path.join(outputDir, "chapter.json"), JSON.stringify({
+            word_segments: [{ word: "aligned", start: 0, end: 0.5, score: 0.9 }],
+          }));
+        },
+      });
+
+      expect(runOptions.env.PATH.split(path.delimiter)[0]).toBe(path.join(resourcesPath, "bin"));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("prefers the bundled onedir runtime shipped inside app resources", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-runtime-"));
     const executable = path.join(root, "whisperx", process.platform === "win32" ? "whisperx.exe" : "whisperx");

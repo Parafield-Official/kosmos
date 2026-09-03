@@ -124,6 +124,12 @@ async function alignImportedAudioWithWhisperX({
   const command = resolveCommand({ resourcesPath, appPath, requireBundled });
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-whisperx-"));
   const modelDir = path.join(userDataPath, "models", "whisperx");
+  const helperPath = [
+    resourcesPath && path.join(resourcesPath, "bin"),
+    appPath && path.join(appPath, "vendor", "bin"),
+    path.join(process.cwd(), "vendor", "bin"),
+    process.env.PATH,
+  ].filter(Boolean).join(path.delimiter);
   try {
     await fs.mkdir(modelDir, { recursive: true });
     await run(command, buildWhisperXArgs({
@@ -140,6 +146,7 @@ async function alignImportedAudioWithWhisperX({
         OMP_NUM_THREADS: String(Math.min(6, Math.max(2, os.cpus().length))),
         TORCH_HOME: path.join(modelDir, "torch"),
         MPLCONFIGDIR: path.join(modelDir, "matplotlib"),
+        PATH: helperPath,
       },
     });
     const outputPath = path.join(temporaryRoot, `${path.parse(audioPath).name}.json`);

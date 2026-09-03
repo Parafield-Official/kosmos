@@ -64,7 +64,7 @@ jobs:
       WHISPER_CPP_COMMIT: 4834a2327d008ace3ec5a9ed00f51454bcabbc1c
       # Bump this only when a pinned native dependency or its build recipe
       # changes. Ordinary application code releases reuse the verified tools.
-      NATIVE_RUNTIME_CACHE_REVISION: v4
+      NATIVE_RUNTIME_CACHE_REVISION: v5
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -167,28 +167,6 @@ jobs:
           fi
           test -f "$whisperx_executable"
           "$whisperx_executable" --version | grep -F 'whisperx 3.8.6'
-          mkdir -p \
-            .release-cache/whisperx-models/torch \
-            "$RUNNER_TEMP/whisperx-matplotlib" \
-            "$RUNNER_TEMP/whisperx-smoke"
-          MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
-            TORCH_HOME="$GITHUB_WORKSPACE/.release-cache/whisperx-models/torch" \
-            TOKENIZERS_PARALLELISM=false \
-            "$whisperx_executable" \
-              public/examples/proof/on_vs_in.wav \
-              --model small.en \
-              --language en \
-              --device cpu \
-              --compute_type int8 \
-              --batch_size 4 \
-              --vad_method silero \
-              --model_dir .release-cache/whisperx-models \
-              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
-              --output_format json \
-              --verbose False \
-              --print_progress False
-          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("segments")' \
-            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
 
       - name: Install JavaScript dependencies
         # electron-builder needs Electron's downloaded runtime in a clean
@@ -406,6 +384,34 @@ jobs:
             test -f vendor/whisperx-runtime/whisperx/whisperx.exe
             vendor/whisperx-runtime/whisperx/whisperx.exe --version | grep -F 'whisperx 3.8.6'
           fi
+          mkdir -p \
+            .release-cache/whisperx-models/torch \
+            "$RUNNER_TEMP/whisperx-matplotlib" \
+            "$RUNNER_TEMP/whisperx-smoke"
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx'
+          else
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx.exe'
+          fi
+          PATH="$GITHUB_WORKSPACE/vendor/bin:$PATH" \
+            MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
+            TORCH_HOME="$GITHUB_WORKSPACE/.release-cache/whisperx-models/torch" \
+            TOKENIZERS_PARALLELISM=false \
+            "$whisperx_executable" \
+              public/examples/proof/on_vs_in.wav \
+              --model small.en \
+              --language en \
+              --device cpu \
+              --compute_type int8 \
+              --batch_size 4 \
+              --vad_method silero \
+              --model_dir .release-cache/whisperx-models \
+              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
+              --output_format json \
+              --verbose False \
+              --print_progress False
+          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("segments")' \
+            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
           test -s vendor/bin/MARKITDOWN_LICENSE.txt
           test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
           test -s vendor/whisperx-runtime/whisperx/WHISPERX_THIRD_PARTY_NOTICES.txt
