@@ -59,20 +59,44 @@ function parseWhisperXWords(value) {
   return words;
 }
 
-function resolveWhisperXCommand({ resourcesPath, appPath, cwd = process.cwd(), env = process.env } = {}) {
+function resolveWhisperXCommand({
+  resourcesPath,
+  appPath,
+  cwd = process.cwd(),
+  env = process.env,
+  platform = process.platform,
+  requireBundled = false,
+} = {}) {
+  const extension = platform === "win32" ? ".exe" : "";
+  const executableName = `whisperx${extension}`;
+  const packagedCandidates = [
+    resourcesPath && path.join(resourcesPath, "whisperx", executableName),
+    appPath && path.join(appPath, "vendor", "whisperx-runtime", "whisperx", executableName),
+    cwd && path.join(cwd, "vendor", "whisperx-runtime", "whisperx", executableName),
+  ].filter(Boolean);
+  for (const candidate of packagedCandidates) {
+    try {
+      if (fsSync.statSync(candidate).isFile()) {
+        return candidate;
+      }
+    } catch {
+      // Try the next packaged layout before consulting developer installs.
+    }
+  }
+
   const configured = resolveRuntimeBinary({
     name: "whisperx",
     envVar: "WHISPERX_PATH",
     resourcesPath,
     appPath,
     cwd,
+    platform,
     env,
-    requireBundled: false,
+    requireBundled,
   });
   if (configured !== "whisperx") {
     return configured;
   }
-  const extension = process.platform === "win32" ? ".exe" : "";
   const home = os.homedir();
   const userCandidates = [
     path.join(home, ".local", "bin", `whisperx${extension}`),
@@ -93,10 +117,11 @@ async function alignImportedAudioWithWhisperX({
   resourcesPath,
   appPath,
   language = "en",
+  requireBundled = false,
   resolveCommand = resolveWhisperXCommand,
   run = runCommand,
 }) {
-  const command = resolveCommand({ resourcesPath, appPath });
+  const command = resolveCommand({ resourcesPath, appPath, requireBundled });
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-whisperx-"));
   const modelDir = path.join(userDataPath, "models", "whisperx");
   try {
@@ -113,6 +138,8 @@ async function alignImportedAudioWithWhisperX({
       env: {
         TOKENIZERS_PARALLELISM: "false",
         OMP_NUM_THREADS: String(Math.min(6, Math.max(2, os.cpus().length))),
+        TORCH_HOME: path.join(modelDir, "torch"),
+        MPLCONFIGDIR: path.join(modelDir, "matplotlib"),
       },
     });
     const outputPath = path.join(temporaryRoot, `${path.parse(audioPath).name}.json`);

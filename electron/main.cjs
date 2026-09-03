@@ -3641,6 +3641,7 @@ ipcMain.handle("proof:transcribe", async (_event, payload) => {
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath(),
       language: payload.language || "en",
+      requireBundled: app.isPackaged,
     }),
     transcribeWithWhisper: () => transcribeAudio({
       audioPath,

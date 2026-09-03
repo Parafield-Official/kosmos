@@ -32,6 +32,8 @@ vendor/bin/whisper-cli.exe
 vendor/bin/*.dylib
 vendor/bin/*.dll
 vendor/bin/FFMPEG_AUDIT.json
+vendor/whisperx-runtime/whisperx/*
+!vendor/whisperx-runtime/whisperx/README.md
 !vendor/bin/ffmpeg
 !vendor/bin/ffprobe
 !vendor/bin/whisper-cli

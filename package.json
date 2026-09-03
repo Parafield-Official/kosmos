@@ -72,6 +72,13 @@
         ]
       },
       {
+        "from": "vendor/whisperx-runtime/whisperx",
+        "to": "whisperx",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "vendor/cmudict",
         "to": "cmudict",
         "filter": [

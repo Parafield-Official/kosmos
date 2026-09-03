@@ -1,7 +1,8 @@
 # Release runtime assets
 
 Release builds use the platform-specific `ffmpeg`, `ffprobe`, `whisper-cli`,
-`whisper-server`, and `markitdown` helpers in this directory. `whisper-server`
+`whisper-server`, and `markitdown` helpers in this directory, plus the bundled
+WhisperX/faster-whisper runtime under `vendor/whisperx-runtime`. `whisper-server`
 is used only for short, listen-only narration windows so the small.en model
 stays loaded while the narrator is speaking; Kosmos stops it when narration
 stops and also has a 30-second idle safety timeout. The macOS arm64 runtime is staged
