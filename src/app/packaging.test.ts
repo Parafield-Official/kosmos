@@ -17,11 +17,11 @@ describe("packaged renderer configuration", () => {
     expect(html).toContain("frame-src 'none'");
   });
 
-  it("ships the verified speech models in every installer", () => {
-    expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
-    expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
+  it("downloads verified speech models once into persistent user storage", () => {
+    expect(packageJson.scripts["package:mac"]).not.toContain("npm run prepare:model");
+    expect(packageJson.scripts["package:win"]).not.toContain("npm run prepare:model");
     expect(packageJson.scripts.pretest).toBe("npm run build:core");
-    expect(packageJson.build.extraResources).toContainEqual({
+    expect(packageJson.build.extraResources).not.toContainEqual({
       from: "vendor/models",
       to: "models",
       filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf", "THIRD_PARTY_NOTICES.txt"],
@@ -32,6 +32,8 @@ describe("packaged renderer configuration", () => {
     });
     const model = readFileSync(resolve(__dirname, "../../electron/model.cjs"), "utf8");
     expect(model).toContain('path.join(userDataPath, "models", MODEL.fileName)');
+    expect(model).toContain("for (const spec of MODELS)");
+    expect(model).toContain("downloadVerifiedModel(spec, destination, onProgress)");
     expect(model).toContain('const MODEL_MARKER_SUFFIX = ".sha256"');
     expect(model).toContain("resolve/80da2d8bfee42b0e836fc3a9890373e5defc00a6");
   });
@@ -127,9 +129,11 @@ describe("packaged renderer configuration", () => {
     expect(mac.notarize).toBe(false);
     expect(packageJson.build.afterSign).toBe("scripts/notarize-macos.cjs");
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
-    expect(yaml).toContain("Restore cached speech models");
-    expect(yaml).toContain("Prepare verified speech models");
-    expect(yaml).toContain("run: npm run prepare:model");
+    expect(yaml).toMatch(/push:\n\s+tags:\n\s+- "v\*\.\*\.\*"/);
+    expect(yaml).not.toContain("workflow_dispatch:");
+    expect(yaml).not.toContain("Restore cached speech models");
+    expect(yaml).not.toContain("Prepare verified speech models");
+    expect(yaml).not.toContain("run: npm run prepare:model");
     expect(yaml).toContain("secrets.MAC_CSC_LINK");
     expect(yaml).toContain("secrets.MAC_CSC_KEY_PASSWORD");
     expect(yaml).toContain("secrets.APPLE_API_KEY_B64");

@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
+
+# A release is intentionally created only from an immutable version tag.  The
+# same tagged build is signed, notarized, and published after Apple accepts it;
+# this prevents a manual preflight build from creating a second Apple
+# submission for the same version.  Use GitHub's "Re-run jobs" on that tagged
+# run if a transient service failure needs recovery.
 
 permissions:
   contents: read
@@ -121,17 +126,6 @@ jobs:
         # electron-builder needs Electron's downloaded runtime in a clean
         # runner; --ignore-scripts leaves that runtime absent.
         run: npm ci
-
-      - name: Restore cached speech models
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: vendor/models
-          key: kosmos-models-v1-${{ runner.os }}-${{ hashFiles('electron/model.cjs', 'scripts/prepare-model.cjs') }}
-
-      - name: Prepare verified speech models
-        # This command verifies both SHA-256 values on every release. It only
-        # downloads a model when the OS-specific cache is absent or invalid.
-        run: npm run prepare:model
 
       - name: Check tag matches package version
         if: startsWith(github.ref, 'refs/tags/')
