@@ -3,7 +3,8 @@ KOSMOS SPEECH MODEL NOTICES
 ggml-small.en.bin
 Source: https://huggingface.co/ggerganov/whisper.cpp
 License: MIT
-Kosmos verifies the published SHA-1 before packaging this file.
+Kosmos downloads this file from an immutable upstream revision and verifies
+its published SHA-256 before use.
 
 realtime_eou_120m-v1-f16.gguf
 Source: https://huggingface.co/mudler/parakeet-cpp-gguf

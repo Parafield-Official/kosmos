@@ -813,9 +813,11 @@ Place fixtures under `/testdata` (short WAVs, a few seconds).
 | `project_roundtrip` | Save, quit, open, same pickups |
 | `master_audiobabble_neg42_noise` | Clean speech + −42 dBFS white noise: after master, floor ≤ −60 and no obvious voice-destroy (keep a before/after RMS-of-speech sanity bound) |
 | `collab_roles_roundtrip` | Author note + chapter approved survives zip → open as narrator |
-| `offline` | With network blocked (or stub), proof runs from the installer-bundled model |
+| `offline` | After the one-time setup download, proof runs with network blocked (or stub) from the user's verified local model cache |
 
-Do not commit huge model files; document the checksum and fetch them during release packaging so the installer still contains them.
+Do not commit huge model files or fetch them during release packaging. Pin each
+upstream revision, verify its SHA-256 on the user's one-time setup download,
+and retain it in the app-data cache across app updates.
 
 ---
 
@@ -859,7 +861,8 @@ A person can:
 2. Import a book or a chapter, attach audio, get pickups, play them.
 3. See honest ACX lights (true peak + noise floor + RMS).
 4. Export a named ACX folder that our meter says is green (on a clean recording).
-5. Do all of that **offline immediately after installation** with the bundled model.
+5. Do all of that **offline after one-time setup completes** with the verified
+   local model cache.
 6. Read in the README that we do not upload, do not clone, do not narrate.
 
 Teleprompter, glossary, duet, and in-app punch make it a **complete booth**. They are worthless if Phase 1 is flaky.

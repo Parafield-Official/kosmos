@@ -85,7 +85,7 @@ describe("GitHub Pages release feed", () => {
     expect(page).not.toMatch(/releases\/download\/v0\.1\.1/);
   });
 
-  it("keeps repeat releases on the cached, metadata-only fast path", () => {
+  it("keeps repeat releases on the native-runtime and metadata-only fast path", () => {
     const workflow = yaml.load(readFileSync(
       path.join(__dirname, "../.github/workflows/release.yml"),
       "utf8",
@@ -100,17 +100,13 @@ describe("GitHub Pages release feed", () => {
     expect(step("Set up Python for Microsoft MarkItDown").if).toBe(
       "steps.native-runtime-cache.outputs.cache-hit != 'true'",
     );
-    expect(step("Restore cached speech models").with.enableCrossOsArchive).toBe(true);
+    expect(step("Restore cached speech models")).toBeUndefined();
+    expect(step("Resolve cross-platform speech model cache key")).toBeUndefined();
+    expect(step("Verify or download speech models")).toBeUndefined();
     expect(step("Upload installer artifact").with["compression-level"]).toBe(0);
     expect(pagesStep("Download installer metadata").with.pattern).toBe("kosmos-metadata-*");
     expect(workflow.jobs["pages-build"].needs).toBe("package");
     expect(workflow.jobs.pages.needs).toEqual(["publish", "pages-build"]);
     expect(packageConfig.build.compression).toBeUndefined();
-    expect(step("Resolve cross-platform speech model cache key").run).toContain(
-      "git rev-parse HEAD:electron/model.cjs",
-    );
-    expect(step("Restore cached speech models").with["restore-keys"]).toContain(
-      "kosmos-speech-models-v1-",
-    );
   });
 });
