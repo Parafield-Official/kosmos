@@ -322,31 +322,6 @@ jobs:
           test -s vendor/bin/THIRD_PARTY_NOTICES.txt
           npm run audit:runtime
 
-      - name: Resolve cross-platform speech model cache key
-        id: speech-model-cache-key
-        shell: bash
-        run: echo "revision=$(git rev-parse HEAD:electron/model.cjs)" >> "$GITHUB_OUTPUT"
-
-      - name: Restore cached speech models
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: |
-            vendor/models/ggml-small.en.bin
-            vendor/models/ggml-small.en.bin.sha1
-            vendor/models/realtime_eou_120m-v1-f16.gguf
-            vendor/models/realtime_eou_120m-v1-f16.gguf.sha1
-          # Use Git's blob id instead of hashFiles so Windows line-ending
-          # conversion cannot create a duplicate cache for identical models.
-          key: kosmos-speech-models-v1-${{ steps.speech-model-cache-key.outputs.revision }}
-          # Reuse the verified cache written before the cross-platform key
-          # migration. prepare:model still checks the pinned model digests.
-          restore-keys: |
-            kosmos-speech-models-v1-
-          enableCrossOsArchive: true
-
-      - name: Verify or download speech models
-        run: npm run prepare:model
-
       - name: Build renderer and core bundles
         run: npm run build
 

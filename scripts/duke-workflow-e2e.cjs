@@ -86,8 +86,8 @@ function buildFixtures() {
     path.join(modelDirectory, "ggml-small.en.bin"),
   );
   linkSync(
-    path.join(ROOT, "vendor", "models", "ggml-small.en.bin.sha1"),
-    path.join(modelDirectory, "ggml-small.en.bin.sha1"),
+    path.join(ROOT, "vendor", "models", "ggml-small.en.bin.sha256"),
+    path.join(modelDirectory, "ggml-small.en.bin.sha256"),
   );
   writeFileSync(MANUSCRIPT_PATH, `${MANUSCRIPT}\n`, "utf8");
 

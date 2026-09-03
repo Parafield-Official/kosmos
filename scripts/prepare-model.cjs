@@ -20,7 +20,7 @@ async function prepareModel(root = path.resolve(__dirname, "..")) {
   const missing = [];
   for (const spec of MODELS) {
     const destination = path.join(vendorRoot, "models", spec.fileName);
-    const expected = spec.sha256 || spec.sha1;
+    const expected = spec.sha256;
     const current = spec === MODEL
       ? await modelStatus(vendorRoot)
       : await modelStatusForFile(destination, expected);
@@ -32,7 +32,7 @@ async function prepareModel(root = path.resolve(__dirname, "..")) {
     return modelStatus(vendorRoot);
   }
 
-  process.stdout.write(`Preparing bundled speech models (${missing.join(", ")})\n`);
+  process.stdout.write(`Preparing local development speech models (${missing.join(", ")})\n`);
   const installed = await downloadModel(vendorRoot, ({ received, total, fraction }) => {
     if (total > 0) {
       process.stdout.write(`\rDownloading speech models: ${Math.round(fraction * 100)}% (${received}/${total} bytes)`);
@@ -43,12 +43,12 @@ async function prepareModel(root = path.resolve(__dirname, "..")) {
   process.stdout.write("\n");
   for (const spec of MODELS) {
     const destination = path.join(vendorRoot, "models", spec.fileName);
-    const expected = spec.sha256 || spec.sha1;
+    const expected = spec.sha256;
     const status = spec === MODEL
       ? installed
       : await modelStatusForFile(destination, expected);
     if (!isModelReady(status)) {
-      throw new Error(`Bundled speech model ${spec.id} failed verification at ${destination}.`);
+      throw new Error(`Local development speech model ${spec.id} failed verification at ${destination}.`);
     }
   }
   return installed;
@@ -56,7 +56,7 @@ async function prepareModel(root = path.resolve(__dirname, "..")) {
 
 if (require.main === module) {
   prepareModel().then((status) => {
-    process.stdout.write(`Bundled speech models ready. Whisper ${status.bytes} bytes, SHA-1 ${status.expectedSha1}\n`);
+    process.stdout.write(`Local development speech models ready. Whisper ${status.bytes} bytes, SHA-256 ${status.expectedSha256}\n`);
   }).catch((error) => {
     process.stderr.write(`${error?.stack ?? error}\n`);
     process.exitCode = 1;

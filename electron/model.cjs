@@ -8,28 +8,30 @@ const { writeFileAtomic } = require("./file-utils.cjs");
 const MODEL = {
   id: "small.en",
   fileName: "ggml-small.en.bin",
-  url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
-  // Official whisper.cpp model table checksum (SHA-1, used only to detect a
-  // partial or altered download before the model is loaded).
-  sha1: "db8a495a91d927739e50b3fc1cc4c6b8f6c2d022",
+  // A revision-pinned upstream file prevents a moving `main` branch from
+  // silently changing what an already released app downloads.
+  url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/80da2d8bfee42b0e836fc3a9890373e5defc00a6/ggml-small.en.bin",
+  // Hugging Face's immutable LFS object digest. SHA-256 is verified before a
+  // model becomes available to the local speech engine.
+  sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
 };
 
 const LIVE_MODEL = {
   id: "parakeet-eou-120m",
   fileName: "realtime_eou_120m-v1-f16.gguf",
-  url: "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/main/realtime_eou_120m-v1-f16.gguf",
+  url: "https://huggingface.co/mudler/parakeet-cpp-gguf/resolve/7a4b05ad8cbc0f42bd73e1244aa00620acecab20/realtime_eou_120m-v1-f16.gguf",
   sha256: "d1a2b12f12b8a096a57499c9111ed13b442a2b786e17a292c168be45088f0edc",
 };
 
 const MODELS = [MODEL, LIVE_MODEL];
 
-const MODEL_MARKER_SUFFIX = ".sha1";
+const MODEL_MARKER_SUFFIX = ".sha256";
 const MODEL_DOWNLOAD_TIMEOUT_MS = 30_000;
 const MAX_MODEL_BYTES = 1_000_000_000;
 const inFlightDownloads = new Map();
 const verifiedModelFiles = new Map();
 
-async function modelStatus(userDataPath, expectedSha1 = MODEL.sha1) {
+async function modelStatus(userDataPath, expectedSha256 = MODEL.sha256) {
   const modelPath = path.join(userDataPath, "models", MODEL.fileName);
   const markerPath = `${modelPath}${MODEL_MARKER_SUFFIX}`;
   let marker = "";
@@ -40,35 +42,44 @@ async function modelStatus(userDataPath, expectedSha1 = MODEL.sha1) {
     }
     marker = (await fsp.readFile(markerPath, "utf8")).trim();
   } catch {
-    // A legacy or interrupted cache is not trusted until it is downloaded
-    // and marked again.
+    // The model content is still verified below. A valid pre-SHA-256 cache is
+    // upgraded in place so users do not need to download the same model again.
   }
-  const status = await modelStatusForFile(modelPath, expectedSha1);
-  return { ...status, available: marker === expectedSha1 && status.available };
+  const status = await modelStatusForFile(modelPath, expectedSha256);
+  if (!status.available) {
+    return status;
+  }
+  if (marker !== expectedSha256) {
+    // This marker is only a fast, human-readable record. The SHA-256 above is
+    // authoritative, so a transient marker-write failure must not discard a
+    // verified local model.
+    await writeFileAtomic(markerPath, `${expectedSha256}\n`, "utf8").catch(() => undefined);
+  }
+  return status;
 }
 
 /**
- * Verify an immutable/bundled model path without requiring a sidecar marker.
- * The packaged app uses this for the read-only model under Resources/models.
+ * Verify a model file without requiring a sidecar marker. This is used for the
+ * user's persistent cache, developer fixtures, and older installed builds.
  */
-async function modelStatusForFile(modelPath, expectedSha1 = MODEL.sha1) {
+async function modelStatusForFile(modelPath, expectedSha256 = MODEL.sha256) {
   try {
     const stat = await fsp.lstat(modelPath);
     if (!stat.isFile()) {
       throw new Error("Whisper model is not a regular file");
     }
-    const cacheKey = `${path.resolve(modelPath)}:${stat.size}:${stat.mtimeMs}:${expectedSha1}`;
+    const cacheKey = `${path.resolve(modelPath)}:${stat.size}:${stat.mtimeMs}:${expectedSha256}`;
     const cached = verifiedModelFiles.get(cacheKey);
     if (cached) {
       return cached;
     }
-    const digest = stat.size > 0 ? await fileDigest(modelPath, expectedSha1.length === 64 ? "sha256" : "sha1") : "";
+    const digest = stat.size > 0 ? await fileDigest(modelPath) : "";
     const status = {
       id: MODEL.id,
       path: modelPath,
-      available: stat.size > 0 && digest === expectedSha1,
+      available: stat.size > 0 && digest === expectedSha256,
       bytes: stat.size,
-      expectedSha1,
+      expectedSha256,
     };
     if (status.available) {
       verifiedModelFiles.set(cacheKey, status);
@@ -80,7 +91,7 @@ async function modelStatusForFile(modelPath, expectedSha1 = MODEL.sha1) {
       path: modelPath,
       available: false,
       bytes: 0,
-      expectedSha1,
+      expectedSha256,
     };
   }
 }
@@ -105,8 +116,10 @@ async function downloadModel(userDataPath, onProgress) {
 }
 
 async function downloadVerifiedModel(spec, destination, onProgress) {
-  const expected = spec.sha256 || spec.sha1;
-  const algorithm = spec.sha256 ? "sha256" : "sha1";
+  const expected = spec.sha256;
+  if (!/^[a-f0-9]{64}$/.test(expected ?? "")) {
+    throw new Error(`Speech model ${spec.id} is missing a valid SHA-256 checksum.`);
+  }
   const existing = await modelStatusForFile(destination, expected);
   if (existing.available) {
     await writeFileAtomic(`${destination}${MODEL_MARKER_SUFFIX}`, `${expected}\n`, "utf8");
@@ -126,7 +139,7 @@ async function downloadVerifiedModel(spec, destination, onProgress) {
 
   try {
     await download(spec.url, partial, onProgress);
-    const digest = await fileDigest(partial, algorithm);
+    const digest = await fileDigest(partial);
     if (digest !== expected) {
       throw new Error("The speech model checksum did not match; the partial download was removed.");
     }
@@ -253,7 +266,7 @@ async function downloadProofModel(userDataPath, onProgress) {
   return modelStatusForFile(destination);
 }
 
-function fileDigest(filePath, algorithm = "sha1") {
+function fileDigest(filePath, algorithm = "sha256") {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash(algorithm);
     const stream = fs.createReadStream(filePath);

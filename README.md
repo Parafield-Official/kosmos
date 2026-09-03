@@ -34,10 +34,12 @@ multitrack music workstation. Narrators can record and punch directly in Kosmos
 or continue using Reaper, Audition, or another editor and import the result.
 
 Release packaging includes the audited FFmpeg/ffprobe and whisper.cpp runtimes,
-checksum-verified local speech models, and Microsoft's offline
-[MarkItDown](https://github.com/microsoft/markitdown) helper with a built-in
-fallback. See [third-party notices](THIRD_PARTY_NOTICES.md) for the bundled
-model/runtime licenses and attributions.
+and Microsoft's offline [MarkItDown](https://github.com/microsoft/markitdown)
+helper with a built-in fallback. During setup, Kosmos downloads its local speech
+models once from revision-pinned HTTPS sources, verifies SHA-256 checksums, and
+keeps them in the user's app-data folder across updates. See
+[third-party notices](THIRD_PARTY_NOTICES.md) for model/runtime licenses and
+attributions.
 
 ## Install
 
@@ -47,8 +49,8 @@ model/runtime licenses and attributions.
 3. On Windows, run the installer. If SmartScreen appears, choose **More info →
    Run anyway**.
 4. On first launch, allow microphone access, choose where project folders live,
-   and confirm the local proofreading tool is ready. Release builds include the
-   required tools; if a model is missing, setup downloads it once.
+   and download the local proofreading tool. This one-time download is verified
+   before use and is retained through later app updates.
 
 Download the current release once. After setup, recording, proofreading,
 mastering, and export run locally. Later versions arrive through the in-app

@@ -273,7 +273,7 @@ interface ModelStatus {
   path: string;
   available: boolean;
   bytes: number;
-  expectedSha1: string;
+  expectedSha256: string;
   bundled?: boolean;
 }
 
