@@ -89,6 +89,7 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("word_segments");
     expect(yaml).toContain("snakers4_silero-vad_master");
+    expect(yaml).toContain('$GITHUB_WORKSPACE/.ci-runtime/silero-vad');
   });
 
   it("uses Kosmos as the installer and window product name", () => {

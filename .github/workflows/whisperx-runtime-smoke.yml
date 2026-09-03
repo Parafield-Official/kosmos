@@ -68,19 +68,21 @@ jobs:
           if ! command -v ffmpeg >/dev/null 2>&1; then
             choco install ffmpeg --no-progress --yes
           fi
-          silero_archive="$RUNNER_TEMP/silero-vad-${SILERO_VAD_COMMIT}.tar.gz"
+          silero_runtime="$GITHUB_WORKSPACE/.ci-runtime/silero-vad"
+          silero_archive="$silero_runtime/silero-vad-${SILERO_VAD_COMMIT}.tar.gz"
+          mkdir -p "$silero_runtime"
           curl -fL --retry 3 --retry-delay 2 \
             "https://codeload.github.com/snakers4/silero-vad/tar.gz/${SILERO_VAD_COMMIT}" \
             -o "$silero_archive"
           actual_sha="$(sha256sum "$silero_archive" | awk '{print $1}')"
           actual_sha="${actual_sha#\\}"
           test "$SILERO_VAD_SHA256" = "$actual_sha"
-          tar -xzf "$silero_archive" -C "$RUNNER_TEMP"
+          tar -xzf "$silero_archive" -C "$silero_runtime"
           mkdir -p \
             "$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master" \
             "$RUNNER_TEMP/whisperx-matplotlib" \
             "$RUNNER_TEMP/whisperx-smoke"
-          silero_source="$RUNNER_TEMP/silero-vad-${SILERO_VAD_COMMIT}"
+          silero_source="$silero_runtime/silero-vad-${SILERO_VAD_COMMIT}"
           silero_target="$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master"
           cp "$silero_source/hubconf.py" "$silero_source/LICENSE" "$silero_target/"
           cp -R "$silero_source/src" "$silero_target/src"
