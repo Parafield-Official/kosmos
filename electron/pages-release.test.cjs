@@ -109,5 +109,8 @@ describe("GitHub Pages release feed", () => {
     expect(step("Resolve cross-platform speech model cache key").run).toContain(
       "git rev-parse HEAD:electron/model.cjs",
     );
+    expect(step("Restore cached speech models").with["restore-keys"]).toContain(
+      "kosmos-speech-models-v1-",
+    );
   });
 });
