@@ -63,8 +63,22 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/whisperx(?:\.exe)?\"? --version/);
 
     const wrapper = readFileSync(resolve(__dirname, "../../scripts/whisperx_cli.py"), "utf8");
+    expect(wrapper).toContain("multiprocessing.freeze_support()");
+    expect(wrapper).toContain('metadata.version("whisperx")');
     expect(wrapper).toContain("from whisperx.__main__ import cli");
     expect(wrapper).toContain("raise SystemExit(cli())");
+  });
+
+  it("smoke-tests the frozen WhisperX runtime on Windows before release tags", () => {
+    const yaml = readFileSync(
+      resolve(__dirname, "../../.github/workflows/whisperx-runtime-smoke.yml"),
+      "utf8",
+    );
+    expect(yaml).toContain("windows-latest");
+    expect(yaml).toContain("scripts/whisperx_cli.py");
+    expect(yaml).toContain("--onedir");
+    expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
+    expect(yaml).toContain("word_segments");
   });
 
   it("uses Kosmos as the installer and window product name", () => {

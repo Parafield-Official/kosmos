@@ -1,0 +1,87 @@
+name: WhisperX frozen runtime smoke
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/workflows/whisperx-runtime-smoke.yml"
+      - "scripts/whisperx_cli.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whisperx-runtime-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows frozen runtime
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and transcribe with the frozen runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install \
+            'pyinstaller==6.22.2' \
+            'whisperx==3.8.6' \
+            'faster-whisper==1.2.1' \
+            'ctranslate2==4.8.1'
+          PYINSTALLER_CONFIG_DIR="$RUNNER_TEMP/pyinstaller-whisperx" \
+            pyinstaller \
+              --noconfirm \
+              --clean \
+              --onedir \
+              --collect-all whisperx \
+              --collect-all faster_whisper \
+              --collect-all ctranslate2 \
+              --collect-all onnxruntime \
+              --collect-data pyannote.audio \
+              --recursive-copy-metadata whisperx \
+              --name whisperx \
+              --distpath vendor/whisperx-runtime \
+              --workpath "$RUNNER_TEMP/whisperx-build" \
+              --specpath "$RUNNER_TEMP/whisperx-spec" \
+              scripts/whisperx_cli.py
+          whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx.exe'
+          "$whisperx_executable" --version | grep -F 'whisperx 3.8.6'
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            choco install ffmpeg --no-progress --yes
+          fi
+          mkdir -p \
+            "$RUNNER_TEMP/whisperx-models/torch" \
+            "$RUNNER_TEMP/whisperx-matplotlib" \
+            "$RUNNER_TEMP/whisperx-smoke"
+          MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
+            TORCH_HOME="$RUNNER_TEMP/whisperx-models/torch" \
+            TOKENIZERS_PARALLELISM=false \
+            "$whisperx_executable" \
+              public/examples/proof/on_vs_in.wav \
+              --model small.en \
+              --language en \
+              --device cpu \
+              --compute_type int8 \
+              --batch_size 4 \
+              --vad_method silero \
+              --model_dir "$RUNNER_TEMP/whisperx-models" \
+              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
+              --output_format json \
+              --verbose False \
+              --print_progress False
+          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("word_segments")' \
+            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
