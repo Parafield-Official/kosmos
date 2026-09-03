@@ -100,8 +100,7 @@ describe("GitHub Pages release feed", () => {
     expect(step("Set up Python for Microsoft MarkItDown").if).toBe(
       "steps.native-runtime-cache.outputs.cache-hit != 'true'",
     );
-    expect(step("Restore cached speech models").uses).toMatch(/^actions\/cache@[0-9a-f]{40}$/);
-    expect(step("Restore cached speech models").with.key).toContain("runner.os");
+    expect(step("Restore cached speech models")).toBeUndefined();
     expect(step("Resolve cross-platform speech model cache key")).toBeUndefined();
     expect(step("Prepare verified speech models")).toBeUndefined();
     expect(step("Upload installer artifact").with["compression-level"]).toBe(0);
