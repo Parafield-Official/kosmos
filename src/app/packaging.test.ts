@@ -127,6 +127,8 @@ describe("packaged renderer configuration", () => {
     expect(mac.notarize).toBe(false);
     expect(packageJson.build.afterSign).toBe("scripts/notarize-macos.cjs");
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toMatch(/push:\n\s+tags:\n\s+- "v\*\.\*\.\*"/);
+    expect(yaml).not.toContain("workflow_dispatch:");
     expect(yaml).toContain("Restore cached speech models");
     expect(yaml).toContain("Prepare verified speech models");
     expect(yaml).toContain("run: npm run prepare:model");
