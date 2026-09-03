@@ -146,7 +146,12 @@ declare global {
         base64?: string;
         sourcePath?: string;
       }) => Promise<{ ok: boolean; manuscript?: string }>;
-      readManuscript?: (payload: { folder: string; name?: string }) => Promise<{ ok: boolean; name?: string; base64?: string }>;
+      readManuscript?: (payload: { folder: string; name?: string }) => Promise<{
+        ok: boolean;
+        name?: string;
+        base64?: string;
+        text?: string;
+      }>;
       writeChapterContents?: (payload: { folder: string; chapters: { id: string; html: string }[] }) => Promise<{ ok: boolean }>;
       writeChapterContent?: (payload: { folder: string; chapterId: string; html: string }) => Promise<{ ok: boolean }>;
       deleteChapterFiles?: (payload: { folder: string; chapterId: string }) => Promise<{ ok: boolean }>;

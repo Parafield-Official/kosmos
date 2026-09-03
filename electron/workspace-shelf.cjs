@@ -1,5 +1,22 @@
 const path = require("node:path");
 
+/** Classify how a project folder relates to the selected workspace. */
+function projectLocation(workspace, folder) {
+  if (typeof workspace !== "string" || !workspace || typeof folder !== "string" || !folder) {
+    return "external";
+  }
+  const root = path.resolve(workspace);
+  const target = path.resolve(folder);
+  const relative = path.relative(root, target);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return "external";
+  }
+  if (relative.length > 0 && !relative.includes(path.sep)) {
+    return "direct";
+  }
+  return "nested";
+}
+
 /**
  * Folders whose direct children changing should refresh the shelf:
  * the workspace itself, each immediate project (or in-progress) folder, and
@@ -45,4 +62,4 @@ function shelfIdentity(projects, workspace) {
   return `${workspace ?? ""}\n${books.join("\n")}`;
 }
 
-module.exports = { collectShelfWatchTargets, shelfIdentity };
+module.exports = { collectShelfWatchTargets, projectLocation, shelfIdentity };

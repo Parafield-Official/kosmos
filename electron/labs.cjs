@@ -28,6 +28,7 @@ const {
 } = require("./labs-audio.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
+const { extractPdfText } = require("./pdf-text.cjs");
 const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
 const {
   applyMacWindowButtonVisibility,
@@ -40,8 +41,8 @@ const {
   ensureProjectDirectory,
   projectAssetPath,
 } = require("./project-path.cjs");
-const { moveFileToDestination } = require("./manuscript-move.cjs");
-const { collectShelfWatchTargets } = require("./workspace-shelf.cjs");
+const { copyFileToDestination } = require("./manuscript-move.cjs");
+const { collectShelfWatchTargets, projectLocation } = require("./workspace-shelf.cjs");
 const { lightboxPageUrl, shouldOpenLightboxDebug } = require("./lightbox-entry.cjs");
 
 const THIRD_PARTY_NOTICES_URL = "https://github.com/Parafield-Official/kosmos/blob/main/THIRD_PARTY_NOTICES.md";
@@ -416,9 +417,14 @@ function isInsideWorkspace(folder) {
   return target === ws || target.startsWith(ws + path.sep);
 }
 
+function locationInWorkspace(folder) {
+  return projectLocation(grantedFolderPath, folder);
+}
+
 /**
- * Books kept outside the workspace ("linked" / extended branch) are tracked by
- * absolute path here so they still show on the shelf.
+ * Books that cannot be found by the workspace's direct-child scan are tracked
+ * by absolute path here. This includes external books and books intentionally
+ * placed in a nested collection folder inside the workspace.
  */
 function externalRegistryPath() {
   return path.join(app.getPath("userData"), "labs-external-projects.json");
@@ -439,6 +445,15 @@ async function writeExternalPaths(paths) {
     await fs.writeFile(externalRegistryPath(), JSON.stringify(paths, null, 2), "utf8");
   } catch {
     // Non-fatal; linked books just won't persist across launches.
+  }
+}
+
+async function rememberProjectPath(folder) {
+  const resolved = path.resolve(folder);
+  const remembered = await readExternalPaths();
+  if (!remembered.some((entry) => path.resolve(entry) === resolved)) {
+    remembered.push(resolved);
+    await writeExternalPaths(remembered);
   }
 }
 
@@ -474,7 +489,8 @@ async function listWorkspaceProjects() {
   const external = await readExternalPaths();
   const keptExternal = [];
   for (const dir of external) {
-    if (isInsideWorkspace(dir)) {
+    const location = projectLocation(workspace, dir);
+    if (location === "direct") {
       continue;
     }
     const marker = await readProjectMarker(dir);
@@ -487,7 +503,7 @@ async function listWorkspaceProjects() {
     if (typeof marker.id === "string") {
       seenIds.add(marker.id);
     }
-    projects.push({ ...marker, folder: dir, external: true });
+    projects.push({ ...marker, folder: dir, external: location === "external" });
     keptExternal.push(dir);
   }
   if (keptExternal.length !== external.length) {
@@ -536,16 +552,13 @@ async function registerExternalProject(folder) {
   if (!marker) {
     return { ok: false, invalid: true };
   }
-  if (isInsideWorkspace(root)) {
+  const location = locationInWorkspace(root);
+  if (location === "direct") {
     return { ok: true, project: { ...marker, folder: root, external: false } };
   }
-  const external = await readExternalPaths();
-  if (!external.some((entry) => path.resolve(entry) === root)) {
-    external.push(root);
-    await writeExternalPaths(external);
-  }
+  await rememberProjectPath(root);
   notifyShelfChanged();
-  return { ok: true, project: { ...marker, folder: root, external: true } };
+  return { ok: true, project: { ...marker, folder: root, external: location === "external" } };
 }
 
 function chapterFileName(chapterId) {
@@ -578,7 +591,7 @@ async function writeProjectManuscript(folder, name, base64, sourcePath) {
   const safe = safeProjectFileName(name, "Manuscript file");
   const dest = projectAssetPath(root, `manuscript/${safe}`);
   if (typeof sourcePath === "string" && sourcePath.length > 0) {
-    await moveFileToDestination(sourcePath, dest);
+    await copyFileToDestination(sourcePath, dest);
     return { ok: true, manuscript: safe };
   }
   if (typeof base64 !== "string") {
@@ -780,6 +793,21 @@ async function readProjectManuscriptFile(folder, name) {
   }
   try {
     const bytes = await fs.readFile(target);
+    if (/\.pdf$/iu.test(target)) {
+      const text = await extractPdfText({
+        sourcePath: target,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        cwd: process.cwd(),
+        requireBundled: app.isPackaged,
+      });
+      return {
+        ok: true,
+        name: path.basename(target),
+        base64: bytes.toString("base64"),
+        ...(text ? { text } : {}),
+      };
+    }
     return { ok: true, name: path.basename(target), base64: bytes.toString("base64") };
   } catch {
     return { ok: false };
@@ -814,17 +842,12 @@ async function createWorkspaceProject(input) {
     updatedAt: nowIso,
   };
   await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project), "utf8");
-  const inside = isInsideWorkspace(dir);
-  if (!inside) {
-    const external = await readExternalPaths();
-    const resolved = path.resolve(dir);
-    if (!external.some((entry) => path.resolve(entry) === resolved)) {
-      external.push(resolved);
-      await writeExternalPaths(external);
-    }
+  const location = locationInWorkspace(dir);
+  if (location !== "direct") {
+    await rememberProjectPath(dir);
   }
   notifyShelfChanged();
-  return { ...project, folder: dir, external: !inside };
+  return { ...project, folder: dir, external: location === "external" };
 }
 
 async function saveWorkspaceProject(project) {
@@ -878,7 +901,12 @@ async function openWorkspaceProject() {
   if (!marker) {
     return { ok: false, invalid: true, folder: root };
   }
-  return { ok: true, project: { ...marker, folder: root }, external: !isInsideWorkspace(root) };
+  const location = locationInWorkspace(root);
+  if (location === "nested") {
+    await rememberProjectPath(root);
+    notifyShelfChanged();
+  }
+  return { ok: true, project: { ...marker, folder: root }, external: location === "external" };
 }
 
 async function deleteWorkspaceProject(folder) {
@@ -917,7 +945,7 @@ async function importManuscriptFile(folder) {
   const base = safeProjectFileName(path.basename(source), "Manuscript file");
   await ensureProjectDirectory(root, "manuscript");
   const dest = projectAssetPath(root, `manuscript/${base}`);
-  await moveFileToDestination(source, dest);
+  await copyFileToDestination(source, dest);
   return { ok: true, manuscript: base };
 }
 

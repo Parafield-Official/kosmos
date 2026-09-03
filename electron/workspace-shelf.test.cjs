@@ -1,5 +1,14 @@
 const path = require("node:path");
-const { collectShelfWatchTargets, shelfIdentity } = require("./workspace-shelf.cjs");
+const { collectShelfWatchTargets, projectLocation, shelfIdentity } = require("./workspace-shelf.cjs");
+
+describe("projectLocation", () => {
+  it("distinguishes direct projects from nested and external project folders", () => {
+    const workspace = path.resolve("/tmp/kosmos-workspace");
+    expect(projectLocation(workspace, path.join(workspace, "Book"))).toBe("direct");
+    expect(projectLocation(workspace, path.join(workspace, "Collection", "Book"))).toBe("nested");
+    expect(projectLocation(workspace, "/tmp/somewhere-else/Book")).toBe("external");
+  });
+});
 
 describe("collectShelfWatchTargets", () => {
   it("watches the workspace, each child folder, and linked externals", () => {
