@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
@@ -41,8 +41,8 @@
     "design:shots": "electron scripts/design-shots.cjs",
     "audit:runtime": "node scripts/audit-runtime.cjs",
     "prepare:model": "node scripts/prepare-model.cjs",
-    "package:mac": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --mac --publish never",
-    "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win --publish never"
+    "package:mac": "npm run build && npm run audit:runtime && electron-builder --mac --publish never",
+    "package:win": "npm run build && npm run audit:runtime && electron-builder --win --publish never"
   },
   "build": {
     "appId": "com.boothdesk.app",
@@ -69,15 +69,6 @@
         "to": "bin",
         "filter": [
           "**/*"
-        ]
-      },
-      {
-        "from": "vendor/models",
-        "to": "models",
-        "filter": [
-          "ggml-small.en.bin",
-          "realtime_eou_120m-v1-f16.gguf",
-          "THIRD_PARTY_NOTICES.txt"
         ]
       },
       {

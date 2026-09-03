@@ -39,18 +39,13 @@ describe("GitHub Pages release feed", () => {
       "  - url: Kosmos-0.2.0-mac-arm64.zip",
       "    sha512: mac-checksum",
       "    size: 456",
+      "  - url: Kosmos-0.2.0-mac-arm64.dmg",
+      "    sha512: mac-dmg-checksum",
+      "    size: 789",
       "path: Kosmos-0.2.0-mac-arm64.zip",
       "sha512: mac-checksum",
       "",
     ].join("\n"));
-    for (const asset of [
-      "Kosmos-0.2.0-win-x64.exe",
-      "Kosmos-0.2.0-win-x64.exe.blockmap",
-      "Kosmos-0.2.0-mac-arm64.zip",
-      "Kosmos-0.2.0-mac-arm64.dmg",
-    ]) {
-      writeFileSync(path.join(artifacts, asset), "fixture");
-    }
 
     const result = preparePagesRelease({ artifacts, output, tag: "v0.2.0" });
     const windows = yaml.load(readFileSync(path.join(output, "updates/latest.yml"), "utf8"));
@@ -88,5 +83,30 @@ describe("GitHub Pages release feed", () => {
     expect(page).toContain('asset("updates/downloads.json")');
     expect(page).toContain("const RELEASES_PAGE = `${REPO}/releases/latest`;");
     expect(page).not.toMatch(/releases\/download\/v0\.1\.1/);
+  });
+
+  it("keeps repeat releases on the native-runtime and metadata-only fast path", () => {
+    const workflow = yaml.load(readFileSync(
+      path.join(__dirname, "../.github/workflows/release.yml"),
+      "utf8",
+    ));
+    const packageSteps = workflow.jobs.package.steps;
+    const step = (name) => packageSteps.find((candidate) => candidate.name === name);
+    const pagesSteps = workflow.jobs["pages-build"].steps;
+    const pagesStep = (name) => pagesSteps.find((candidate) => candidate.name === name);
+    const packageConfig = JSON.parse(readFileSync(path.join(__dirname, "../package.json"), "utf8"));
+
+    expect(step("Restore cached native runtime").uses).toMatch(/^actions\/cache@[0-9a-f]{40}$/);
+    expect(step("Set up Python for Microsoft MarkItDown").if).toBe(
+      "steps.native-runtime-cache.outputs.cache-hit != 'true'",
+    );
+    expect(step("Restore cached speech models")).toBeUndefined();
+    expect(step("Resolve cross-platform speech model cache key")).toBeUndefined();
+    expect(step("Verify or download speech models")).toBeUndefined();
+    expect(step("Upload installer artifact").with["compression-level"]).toBe(0);
+    expect(pagesStep("Download installer metadata").with.pattern).toBe("kosmos-metadata-*");
+    expect(workflow.jobs["pages-build"].needs).toBe("package");
+    expect(workflow.jobs.pages.needs).toEqual(["publish", "pages-build"]);
+    expect(packageConfig.build.compression).toBeUndefined();
   });
 });

@@ -1,21 +1,23 @@
 # Third-party notices
 
-Kosmos is MIT-licensed, but its release installers also contain independent
-software and model assets. These notices travel with every installer and are
-linked from the download page.
+Kosmos is MIT-licensed, but its release installers contain independent
+software and its setup flow downloads independently licensed model assets.
+These notices travel with every installer and are linked from the download
+page.
 
 ## Speech models
 
 - `ggml-small.en.bin` is the English small Whisper model in ggml format from
   [ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp), which
-  is released under the MIT License. Kosmos verifies the upstream published
-  SHA-1 before packaging it.
+  is released under the MIT License. Kosmos downloads a revision-pinned
+  upstream file during setup and verifies its published SHA-256 before use.
 - `realtime_eou_120m-v1-f16.gguf` is a GGUF conversion from
   [mudler/parakeet-cpp-gguf](https://huggingface.co/mudler/parakeet-cpp-gguf),
   derived from NVIDIA NeMo Parakeet checkpoints. The model weights are
   licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-  Kosmos distributes the unmodified F16 file named above and includes this
-  attribution and license link in the installed application.
+  Kosmos downloads the unmodified F16 file from a revision-pinned upstream
+  source during setup and includes this attribution and license link in the
+  installed application.
 
 ## Native runtime tools
 
