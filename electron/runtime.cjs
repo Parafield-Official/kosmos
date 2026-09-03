@@ -11,6 +11,7 @@ function resolveRuntimeBinary({
   platform = process.platform,
   env = process.env,
   requireBundled = false,
+  optional = false,
 }) {
   const extension = platform === "win32" ? ".exe" : "";
   const candidates = [
@@ -37,8 +38,41 @@ function resolveRuntimeBinary({
     throw new Error(`The packaged Kosmos build is missing its bundled ${name} runtime.`);
   }
 
+  if (optional) {
+    return null;
+  }
+
   // Let the operating system resolve a system installation for source builds.
   return name;
+}
+
+/** GPU/Metal is proven on macOS. Other platforms start on CPU. */
+function defaultLiveGpu(platform = process.platform) {
+  return platform === "darwin";
+}
+
+function liveAccelerationLabel(useGpu, platform = process.platform) {
+  if (!useGpu) {
+    return "CPU";
+  }
+  return platform === "darwin" ? "Metal" : "GPU";
+}
+
+/** Point the helper at sibling native libraries without relying on PATH. */
+function nativeLibraryEnv(binaryPath, platform = process.platform, env = process.env) {
+  const dir = path.dirname(binaryPath);
+  if (platform === "darwin") {
+    return { ...env, DYLD_LIBRARY_PATH: dir };
+  }
+  if (platform === "linux") {
+    const current = env.LD_LIBRARY_PATH || "";
+    return { ...env, LD_LIBRARY_PATH: current ? `${dir}${path.delimiter}${current}` : dir };
+  }
+  if (platform === "win32") {
+    const current = env.PATH || "";
+    return { ...env, PATH: current ? `${dir}${path.delimiter}${current}` : dir };
+  }
+  return { ...env };
 }
 
 function auditFfmpegBuild({ ffmpegVersion, ffprobeVersion, notices }) {
@@ -102,4 +136,12 @@ function auditWhisperServerBuild({ help, sha256 }) {
   return { license: "MIT", sha256: checksum };
 }
 
-module.exports = { auditFfmpegBuild, auditWhisperBuild, auditWhisperServerBuild, resolveRuntimeBinary };
+module.exports = {
+  auditFfmpegBuild,
+  auditWhisperBuild,
+  auditWhisperServerBuild,
+  defaultLiveGpu,
+  liveAccelerationLabel,
+  nativeLibraryEnv,
+  resolveRuntimeBinary,
+};

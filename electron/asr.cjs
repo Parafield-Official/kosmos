@@ -97,7 +97,11 @@ function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
 
   for (const candidate of candidates) {
     try {
-      const result = spawnSync(candidate, ["--version"], { stdio: "ignore", timeout: 5000 });
+      const result = spawnSync(candidate, ["--version"], {
+        stdio: "ignore",
+        timeout: 5000,
+        windowsHide: true,
+      });
       if (result.status === 0) {
         whisperCliCache = { key: cacheKey, path: candidate };
         return candidate;
@@ -112,7 +116,7 @@ function findWhisperCli({ resourcesPath, appPath, requireBundled = false }) {
   }
 
   const lookup = process.platform === "win32" ? "where" : "which";
-  const result = spawnSync(lookup, ["whisper-cli"], { encoding: "utf8" });
+  const result = spawnSync(lookup, ["whisper-cli"], { encoding: "utf8", windowsHide: true });
   if (result.status === 0 && result.stdout.trim()) {
     const resolved = result.stdout.trim().split(/\r?\n/)[0];
     whisperCliCache = { key: cacheKey, path: resolved };

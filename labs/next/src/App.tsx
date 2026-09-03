@@ -38,16 +38,19 @@ type WindowChrome = {
   maximized: boolean;
   expanded: boolean;
   showTrafficChrome: boolean;
+  customWindowDrag: boolean;
 };
 
 function defaultWindowChrome(hosted: boolean): WindowChrome {
   const platform = window.kosmosNext?.platform ?? "darwin";
+  const framed = platform === "win32" || platform === "linux";
   return {
     platform,
     fullscreen: false,
     maximized: false,
     expanded: false,
-    showTrafficChrome: hosted,
+    showTrafficChrome: hosted && !framed,
+    customWindowDrag: !hosted && !framed,
   };
 }
 
@@ -63,11 +66,17 @@ function useWindowChrome(hosted: boolean): WindowChrome {
     let alive = true;
     void window.kosmosNext.getWindowChrome().then((state) => {
       if (alive) {
-        setChrome(state);
+        setChrome({
+          ...defaultWindowChrome(false),
+          ...state,
+        });
       }
     });
     const off = window.kosmosNext.onWindowChrome?.((state) => {
-      setChrome(state);
+      setChrome({
+        ...defaultWindowChrome(false),
+        ...state,
+      });
     });
     return () => {
       alive = false;
@@ -196,7 +205,7 @@ export function App() {
   }, []);
 
   function startWindowDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!electron || event.button !== 0 || !window.kosmosNext?.startWindowDrag) {
+    if (!electron || !windowChrome.customWindowDrag || event.button !== 0 || !window.kosmosNext?.startWindowDrag) {
       return;
     }
     event.preventDefault();
@@ -263,6 +272,8 @@ export function App() {
       style={electron ? undefined : { width: size.width, height: size.height }}
     >
       <GlassMaterial animate={!isRoomPlace(place)} />
+      {windowChrome.customWindowDrag ? (
+      <>
       <div
         className="drag-strip drag-strip-start"
         aria-hidden="true"
@@ -279,6 +290,8 @@ export function App() {
         onPointerUp={endWindowDrag}
         onPointerCancel={endWindowDrag}
       />
+      </>
+      ) : null}
       <ClearGlassFilter />
       <div className="frame">{body}</div>
       {place === "app" ? <BrandMark /> : null}

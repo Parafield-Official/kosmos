@@ -1,6 +1,7 @@
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { terminateChild } = require("./process.cjs");
+const { liveAccelerationLabel, nativeLibraryEnv } = require("./runtime.cjs");
 
 const DEFAULT_FEED_WAIT_MS = 1_500;
 const START_SETTLE_MS = 120;
@@ -34,7 +35,7 @@ class PersistentParakeetLive {
 
   async start({ serverPath, modelPath }) {
     if (this.running && this.serverPath === serverPath && this.modelPath === modelPath) {
-      return { persistent: true, acceleration: "Metal", engine: "parakeet-live", streaming: true };
+      return { persistent: true, acceleration: liveAccelerationLabel(true), engine: "parakeet-live", streaming: true };
     }
     if (this.child) {
       this.stop();
@@ -42,10 +43,8 @@ class PersistentParakeetLive {
     const child = this.spawnImpl(serverPath, [modelPath], {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: path.dirname(serverPath),
-      env: {
-        ...process.env,
-        DYLD_LIBRARY_PATH: path.dirname(serverPath),
-      },
+      windowsHide: true,
+      env: nativeLibraryEnv(serverPath),
     });
     this.child = child;
     this.buffer = "";
@@ -91,7 +90,7 @@ class PersistentParakeetLive {
     if (!this.running) {
       throw new Error(`Parakeet live stream failed to start${this.stderr ? `: ${this.stderr.trim()}` : "."}`);
     }
-    return { persistent: true, acceleration: "Metal", engine: "parakeet-live", streaming: true };
+    return { persistent: true, acceleration: liveAccelerationLabel(true), engine: "parakeet-live", streaming: true };
   }
 
   /**
