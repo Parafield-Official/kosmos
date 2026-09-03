@@ -79,6 +79,13 @@
         ]
       },
       {
+        "from": "vendor/silero-vad/snakers4_silero-vad_master",
+        "to": "silero-vad/snakers4_silero-vad_master",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "vendor/cmudict",
         "to": "cmudict",
         "filter": [

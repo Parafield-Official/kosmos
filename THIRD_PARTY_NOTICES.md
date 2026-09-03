@@ -30,6 +30,10 @@ page.
   runtime notices.
 - whisper.cpp is MIT-licensed: <https://github.com/ggml-org/whisper.cpp>.
 - WhisperX is BSD-2-Clause licensed: <https://github.com/m-bain/whisperX>.
+- Silero VAD is MIT-licensed: <https://github.com/snakers4/silero-vad>.
+  Kosmos bundles the runtime files from an immutable upstream revision so
+  WhisperX voice-activity detection does not download executable code on first
+  use.
 - faster-whisper and CTranslate2 are MIT-licensed:
   <https://github.com/SYSTRAN/faster-whisper> and
   <https://github.com/OpenNMT/CTranslate2>. The generated dependency inventory

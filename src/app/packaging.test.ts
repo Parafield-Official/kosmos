@@ -44,6 +44,11 @@ describe("packaged renderer configuration", () => {
       to: "whisperx",
       filter: ["**/*"],
     });
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "vendor/silero-vad/snakers4_silero-vad_master",
+      to: "silero-vad/snakers4_silero-vad_master",
+      filter: ["**/*"],
+    });
 
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("vendor/whisperx-runtime");
@@ -55,6 +60,10 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("--collect-data pyannote.audio");
     expect(yaml).not.toContain("--collect-all torchcodec");
     expect(yaml).toContain("WHISPERX_THIRD_PARTY_NOTICES.txt");
+    expect(yaml).toContain("867c2aa692646a1f1de3e94a15c9dd9f614c0acb");
+    expect(yaml).toContain("562d99d4bf35eea155596a08a937ef418353541623e9df213e024aeb7070f8bb");
+    expect(yaml).toContain("snakers4_silero-vad_master/hubconf.py");
+    expect(yaml).toContain(".kosmos-silero-vad-revision");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
     expect(yaml.indexOf("public/examples/proof/on_vs_in.wav")).toBeGreaterThan(
@@ -79,6 +88,7 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("--onedir");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("word_segments");
+    expect(yaml).toContain("snakers4_silero-vad_master");
   });
 
   it("uses Kosmos as the installer and window product name", () => {

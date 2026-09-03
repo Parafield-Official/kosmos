@@ -10,6 +10,63 @@ const {
 } = require("./whisperx.cjs");
 
 describe("WhisperX imported-audio alignment", () => {
+  it("seeds the bundled Silero VAD cache before WhisperX starts", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-silero-"));
+    const resourcesPath = path.join(root, "resources");
+    const userDataPath = path.join(root, "user-data");
+    const audioPath = path.join(root, "chapter.wav");
+    const bundledSileroPath = path.join(
+      resourcesPath,
+      "silero-vad",
+      "snakers4_silero-vad_master",
+    );
+    const cachedHubconfPath = path.join(
+      userDataPath,
+      "models",
+      "whisperx",
+      "torch",
+      "hub",
+      "snakers4_silero-vad_master",
+      "hubconf.py",
+    );
+    const cachedRevisionPath = path.join(
+      path.dirname(cachedHubconfPath),
+      ".kosmos-silero-vad-revision",
+    );
+    try {
+      fs.mkdirSync(bundledSileroPath, { recursive: true });
+      fs.writeFileSync(path.join(bundledSileroPath, "hubconf.py"), "# bundled", "utf8");
+      fs.writeFileSync(
+        path.join(bundledSileroPath, ".kosmos-silero-vad-revision"),
+        "pinned-revision\n",
+        "utf8",
+      );
+      fs.mkdirSync(path.dirname(cachedHubconfPath), { recursive: true });
+      fs.writeFileSync(cachedHubconfPath, "# stale", "utf8");
+      fs.writeFileSync(cachedRevisionPath, "old-revision\n", "utf8");
+      fs.writeFileSync(audioPath, "audio", "utf8");
+
+      await alignImportedAudioWithWhisperX({
+        audioPath,
+        userDataPath,
+        resourcesPath,
+        appPath: path.join(root, "app"),
+        requireBundled: true,
+        resolveCommand: () => path.join(resourcesPath, "whisperx", "whisperx"),
+        run: async (_command, args) => {
+          expect(fs.readFileSync(cachedHubconfPath, "utf8")).toBe("# bundled");
+          expect(fs.readFileSync(cachedRevisionPath, "utf8")).toBe("pinned-revision\n");
+          const outputDir = args[args.indexOf("--output_dir") + 1];
+          fs.writeFileSync(path.join(outputDir, "chapter.json"), JSON.stringify({
+            word_segments: [{ word: "aligned", start: 0, end: 0.5, score: 0.9 }],
+          }));
+        },
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("puts the bundled ffmpeg beside WhisperX on PATH", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-path-"));
     const resourcesPath = path.join(root, "resources");

@@ -8,6 +8,8 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - ".github/workflows/whisperx-runtime-smoke.yml"
+      - "electron/whisperx.cjs"
+      - "package.json"
       - "scripts/whisperx_cli.py"
   workflow_dispatch:
 
@@ -23,6 +25,9 @@ jobs:
     name: Windows frozen runtime
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      SILERO_VAD_COMMIT: 867c2aa692646a1f1de3e94a15c9dd9f614c0acb
+      SILERO_VAD_SHA256: 562d99d4bf35eea155596a08a937ef418353541623e9df213e024aeb7070f8bb
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -63,10 +68,23 @@ jobs:
           if ! command -v ffmpeg >/dev/null 2>&1; then
             choco install ffmpeg --no-progress --yes
           fi
+          silero_archive="$RUNNER_TEMP/silero-vad-${SILERO_VAD_COMMIT}.tar.gz"
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://codeload.github.com/snakers4/silero-vad/tar.gz/${SILERO_VAD_COMMIT}" \
+            -o "$silero_archive"
+          actual_sha="$(sha256sum "$silero_archive" | awk '{print $1}')"
+          actual_sha="${actual_sha#\\}"
+          test "$SILERO_VAD_SHA256" = "$actual_sha"
+          tar -xzf "$silero_archive" -C "$RUNNER_TEMP"
           mkdir -p \
-            "$RUNNER_TEMP/whisperx-models/torch" \
+            "$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master" \
             "$RUNNER_TEMP/whisperx-matplotlib" \
             "$RUNNER_TEMP/whisperx-smoke"
+          silero_source="$RUNNER_TEMP/silero-vad-${SILERO_VAD_COMMIT}"
+          silero_target="$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master"
+          cp "$silero_source/hubconf.py" "$silero_source/LICENSE" "$silero_target/"
+          cp -R "$silero_source/src" "$silero_target/src"
+          test -s "$silero_target/src/silero_vad/data/silero_vad.jit"
           MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
             TORCH_HOME="$RUNNER_TEMP/whisperx-models/torch" \
             TOKENIZERS_PARALLELISM=false \
