@@ -38,6 +38,32 @@ describe("packaged renderer configuration", () => {
     expect(model).toContain("resolve/80da2d8bfee42b0e836fc3a9890373e5defc00a6");
   });
 
+  it("ships a pinned WhisperX faster-whisper runtime for every installer", () => {
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "vendor/whisperx-runtime/whisperx",
+      to: "whisperx",
+      filter: ["**/*"],
+    });
+
+    const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("vendor/whisperx-runtime");
+    expect(yaml).toContain("whisperx==3.8.6");
+    expect(yaml).toContain("faster-whisper==1.2.1");
+    expect(yaml).toContain("ctranslate2==4.8.1");
+    expect(yaml).toContain("scripts/whisperx_cli.py");
+    expect(yaml).toContain("--onedir");
+    expect(yaml).toContain("--collect-data pyannote.audio");
+    expect(yaml).not.toContain("--collect-all torchcodec");
+    expect(yaml).toContain("WHISPERX_THIRD_PARTY_NOTICES.txt");
+    expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
+    expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
+    expect(yaml).toMatch(/whisperx(?:\.exe)?\"? --version/);
+
+    const wrapper = readFileSync(resolve(__dirname, "../../scripts/whisperx_cli.py"), "utf8");
+    expect(wrapper).toContain("from whisperx.__main__ import cli");
+    expect(wrapper).toContain("raise SystemExit(cli())");
+  });
+
   it("uses Kosmos as the installer and window product name", () => {
     expect(packageJson.build.productName).toBe("Kosmos");
     expect(packageJson.build.artifactName).toContain("Kosmos-");

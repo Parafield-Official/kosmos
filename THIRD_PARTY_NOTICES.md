@@ -29,6 +29,11 @@ page.
   LGPL libraries. Their license/source references are included in the release
   runtime notices.
 - whisper.cpp is MIT-licensed: <https://github.com/ggml-org/whisper.cpp>.
+- WhisperX is BSD-2-Clause licensed: <https://github.com/m-bain/whisperX>.
+- faster-whisper and CTranslate2 are MIT-licensed:
+  <https://github.com/SYSTRAN/faster-whisper> and
+  <https://github.com/OpenNMT/CTranslate2>. The generated dependency inventory
+  for the bundled WhisperX runtime is included beside its executable.
 - parakeet.cpp is MIT-licensed: <https://github.com/mudler/parakeet.cpp>.
 - Microsoft MarkItDown is MIT-licensed:
   <https://github.com/microsoft/markitdown>. The generated license inventory
