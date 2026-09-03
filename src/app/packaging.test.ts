@@ -66,6 +66,7 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain(".kosmos-silero-vad-revision");
     expect(yaml).toContain("tarfile.open");
     expect(yaml).toContain("shutil.copytree");
+    expect(yaml).toContain("hashlib.sha256");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
     expect(yaml.indexOf("public/examples/proof/on_vs_in.wav")).toBeGreaterThan(
@@ -94,6 +95,7 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain('$GITHUB_WORKSPACE/.ci-runtime/silero-vad');
     expect(yaml).toContain("tarfile.open");
     expect(yaml).toContain("shutil.copytree");
+    expect(yaml).toContain("hashlib.sha256");
     expect(yaml).not.toContain('tar -xzf "$silero_archive"');
   });
 

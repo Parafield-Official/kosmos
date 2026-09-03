@@ -74,8 +74,7 @@ jobs:
           curl -fL --retry 3 --retry-delay 2 \
             "https://codeload.github.com/snakers4/silero-vad/tar.gz/${SILERO_VAD_COMMIT}" \
             -o "$silero_archive"
-          actual_sha="$(sha256sum "$silero_archive" | awk '{print $1}')"
-          actual_sha="${actual_sha#\\}"
+          actual_sha="$(python -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$silero_archive")"
           test "$SILERO_VAD_SHA256" = "$actual_sha"
           python -c 'import sys, tarfile; tarfile.open(sys.argv[1], "r:gz").extractall(sys.argv[2], filter="data")' \
             "$silero_archive" "$silero_runtime"
