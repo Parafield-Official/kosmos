@@ -17,11 +17,15 @@ describe("packaged renderer configuration", () => {
     expect(html).toContain("frame-src 'none'");
   });
 
-  it("keeps speech models in each user's verified persistent cache, not every installer", () => {
-    expect(packageJson.scripts["package:mac"]).not.toContain("npm run prepare:model");
-    expect(packageJson.scripts["package:win"]).not.toContain("npm run prepare:model");
+  it("ships the verified speech models in every installer", () => {
+    expect(packageJson.scripts["package:mac"]).toContain("npm run prepare:model");
+    expect(packageJson.scripts["package:win"]).toContain("npm run prepare:model");
     expect(packageJson.scripts.pretest).toBe("npm run build:core");
-    expect(packageJson.build.extraResources).not.toContainEqual(expect.objectContaining({ from: "vendor/models" }));
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "vendor/models",
+      to: "models",
+      filter: ["ggml-small.en.bin", "realtime_eou_120m-v1-f16.gguf", "THIRD_PARTY_NOTICES.txt"],
+    });
     expect(packageJson.build.extraResources).toContainEqual({
       from: "THIRD_PARTY_NOTICES.md",
       to: "THIRD_PARTY_NOTICES.md",
@@ -118,20 +122,37 @@ describe("packaged renderer configuration", () => {
     expect(actionRefs.every((ref) => /^[0-9a-f]{40}$/u.test(ref))).toBe(true);
   });
 
-  it("requires signed and notarized macOS releases for reliable in-app updates", () => {
+  it("requires signed and resiliently-notarized macOS releases for reliable in-app updates", () => {
     const mac = packageJson.build.mac as { notarize?: boolean };
-    expect(mac.notarize).toBe(true);
+    expect(mac.notarize).toBe(false);
+    expect(packageJson.build.afterSign).toBe("scripts/notarize-macos.cjs");
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
+    expect(yaml).toContain("Restore cached speech models");
+    expect(yaml).toContain("Prepare verified speech models");
+    expect(yaml).toContain("run: npm run prepare:model");
     expect(yaml).toContain("secrets.MAC_CSC_LINK");
     expect(yaml).toContain("secrets.MAC_CSC_KEY_PASSWORD");
     expect(yaml).toContain("secrets.APPLE_API_KEY_B64");
     expect(yaml).toContain("secrets.APPLE_API_KEY_ID");
     expect(yaml).toContain("secrets.APPLE_API_ISSUER");
+    expect(yaml).toContain("Wait for Apple without holding a Mac runner");
+    expect(yaml).toContain("scripts/wait-for-notarization.cjs");
+    expect(yaml).toContain("kosmos-notarization-${{ github.run_id }}");
+    expect(yaml).toContain("--prepackaged \"$app_path\"");
     expect(yaml).toContain("codesign --verify --deep --strict");
     expect(yaml).toContain('xcrun stapler validate "$app_path"');
-    expect(yaml).toContain("shasum -a 256 dist/FFmpeg-8.1.1-source.tar.xz");
-    expect(yaml).not.toContain("sha256sum dist/FFmpeg-8.1.1-source.tar.xz");
+    expect(yaml).toContain("shasum -a 256 dist/notarization/FFmpeg-8.1.1-source.tar.xz");
+    expect(yaml).not.toContain("sha256sum dist/notarization/FFmpeg-8.1.1-source.tar.xz");
     expect(yaml).not.toContain('xcrun stapler validate "${dmg_files[0]}"');
+    const notarizationHook = readFileSync(resolve(__dirname, "../../scripts/notarize-macos.cjs"), "utf8");
+    const notarizationWaiter = readFileSync(resolve(__dirname, "../../scripts/wait-for-notarization.cjs"), "utf8");
+    expect(notarizationHook).toContain("notarytool");
+    expect(notarizationHook).toContain("submission");
+    expect(notarizationHook).not.toContain('"--wait"');
+    expect(notarizationHook).not.toContain('"info"');
+    expect(notarizationWaiter).toContain('const API_ORIGIN = "https://appstoreconnect.apple.com"');
+    expect(notarizationWaiter).toContain("/notary/v2/submissions/");
+    expect(notarizationWaiter).toContain("Re-run failed jobs");
   });
 
   it("makes the temporary unsigned Windows channel explicit without embedding signing secrets", () => {
