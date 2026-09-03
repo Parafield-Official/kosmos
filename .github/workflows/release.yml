@@ -4,7 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
+
+# A release is intentionally created only from an immutable version tag.  The
+# same tagged build is signed, notarized, and published after Apple accepts it;
+# this prevents a manual preflight build from creating a second Apple
+# submission for the same version.  Use GitHub's "Re-run jobs" on that tagged
+# run if a transient service failure needs recovery.
 
 permissions:
   contents: read
