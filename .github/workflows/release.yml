@@ -64,7 +64,7 @@ jobs:
       WHISPER_CPP_COMMIT: 4834a2327d008ace3ec5a9ed00f51454bcabbc1c
       # Bump this only when a pinned native dependency or its build recipe
       # changes. Ordinary application code releases reuse the verified tools.
-      NATIVE_RUNTIME_CACHE_REVISION: v1
+      NATIVE_RUNTIME_CACHE_REVISION: v4
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -75,8 +75,10 @@ jobs:
         with:
           path: |
             vendor/bin
+            vendor/whisperx-runtime
             .release-cache/native
-          key: kosmos-native-${{ env.NATIVE_RUNTIME_CACHE_REVISION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/markitdown_cli.py', 'vendor/bin/**') }}
+            .release-cache/whisperx-models
+          key: kosmos-native-${{ env.NATIVE_RUNTIME_CACHE_REVISION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/markitdown_cli.py', 'scripts/whisperx_cli.py', 'vendor/bin/**') }}
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -121,6 +123,72 @@ jobs:
               --specpath "$RUNNER_TEMP/markitdown-spec" \
               scripts/markitdown_cli.py
           chmod +x vendor/bin/markitdown* || true
+
+      - name: Build bundled WhisperX faster-whisper runtime
+        if: steps.native-runtime-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade \
+            'whisperx==3.8.6' \
+            'faster-whisper==1.2.1' \
+            'ctranslate2==4.8.1'
+          python -m piplicenses \
+            --from=mixed \
+            --format=plain-vertical \
+            --with-license-file \
+            --with-notice-file \
+            --no-license-path \
+            --output-file vendor/bin/WHISPERX_THIRD_PARTY_NOTICES.txt
+          test -s vendor/bin/WHISPERX_THIRD_PARTY_NOTICES.txt
+          PYINSTALLER_CONFIG_DIR="$RUNNER_TEMP/pyinstaller-whisperx" \
+            pyinstaller \
+              --noconfirm \
+              --clean \
+              --onedir \
+              --collect-all whisperx \
+              --collect-all faster_whisper \
+              --collect-all ctranslate2 \
+              --collect-all onnxruntime \
+              --collect-data pyannote.audio \
+              --recursive-copy-metadata whisperx \
+              --name whisperx \
+              --distpath vendor/whisperx-runtime \
+              --workpath "$RUNNER_TEMP/whisperx-build" \
+              --specpath "$RUNNER_TEMP/whisperx-spec" \
+              scripts/whisperx_cli.py
+          cp vendor/bin/WHISPERX_THIRD_PARTY_NOTICES.txt \
+            vendor/whisperx-runtime/whisperx/WHISPERX_THIRD_PARTY_NOTICES.txt
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx'
+            chmod +x "$whisperx_executable"
+          else
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx.exe'
+          fi
+          test -f "$whisperx_executable"
+          "$whisperx_executable" --version | grep -F 'whisperx 3.8.6'
+          mkdir -p \
+            .release-cache/whisperx-models/torch \
+            "$RUNNER_TEMP/whisperx-matplotlib" \
+            "$RUNNER_TEMP/whisperx-smoke"
+          MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
+            TORCH_HOME="$GITHUB_WORKSPACE/.release-cache/whisperx-models/torch" \
+            TOKENIZERS_PARALLELISM=false \
+            "$whisperx_executable" \
+              public/examples/proof/on_vs_in.wav \
+              --model small.en \
+              --language en \
+              --device cpu \
+              --compute_type int8 \
+              --batch_size 4 \
+              --vad_method silero \
+              --model_dir .release-cache/whisperx-models \
+              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
+              --output_format json \
+              --verbose False \
+              --print_progress False
+          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("segments")' \
+            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
 
       - name: Install JavaScript dependencies
         # electron-builder needs Electron's downloaded runtime in a clean
@@ -233,6 +301,8 @@ jobs:
           printf '%s\n' \
             "FFmpeg ${ffmpeg_version}: LGPL-2.1-or-later; source archive attached to this GitHub Release." \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
+            'WhisperX: BSD-2-Clause; faster-whisper and CTranslate2: MIT.' \
+            'Bundled Python dependency notices: WHISPERX_THIRD_PARTY_NOTICES.txt' \
             'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
@@ -294,6 +364,8 @@ jobs:
           printf '%s\r\n' \
             "FFmpeg ${ffmpeg_archive}: LGPL-2.1-or-later; source link in FFMPEG_LICENSE.txt." \
             'whisper.cpp v1.9.2 official Windows x64 binaries, MIT, https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.2' \
+            'WhisperX: BSD-2-Clause; faster-whisper and CTranslate2: MIT.' \
+            'Bundled Python dependency notices: WHISPERX_THIRD_PARTY_NOTICES.txt' \
             'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
@@ -327,8 +399,16 @@ jobs:
             test -f vendor/bin/markitdown.exe
             vendor/bin/markitdown.exe --help >/dev/null
           fi
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            test -x vendor/whisperx-runtime/whisperx/whisperx
+            vendor/whisperx-runtime/whisperx/whisperx --version | grep -F 'whisperx 3.8.6'
+          else
+            test -f vendor/whisperx-runtime/whisperx/whisperx.exe
+            vendor/whisperx-runtime/whisperx/whisperx.exe --version | grep -F 'whisperx 3.8.6'
+          fi
           test -s vendor/bin/MARKITDOWN_LICENSE.txt
           test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
+          test -s vendor/whisperx-runtime/whisperx/WHISPERX_THIRD_PARTY_NOTICES.txt
           test -s vendor/bin/FFMPEG_LICENSE.txt
           test -s vendor/bin/THIRD_PARTY_NOTICES.txt
           npm run audit:runtime

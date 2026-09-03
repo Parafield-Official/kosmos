@@ -1,6 +1,6 @@
 {
   "name": "booth-desk",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
@@ -72,6 +72,13 @@
         ]
       },
       {
+        "from": "vendor/whisperx-runtime/whisperx",
+        "to": "whisperx",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "vendor/cmudict",
         "to": "cmudict",
         "filter": [
@@ -120,7 +127,7 @@
   },
   "dependencies": {
     "electron-updater": "6.8.9",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "three": "^0.182.0",

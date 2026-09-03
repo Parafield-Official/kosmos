@@ -1,10 +1,33 @@
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const {
   buildWhisperXArgs,
   parseWhisperXWords,
+  resolveWhisperXCommand,
   transcribeImportedAudio,
 } = require("./whisperx.cjs");
 
 describe("WhisperX imported-audio alignment", () => {
+  it("prefers the bundled onedir runtime shipped inside app resources", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-runtime-"));
+    const executable = path.join(root, "whisperx", process.platform === "win32" ? "whisperx.exe" : "whisperx");
+    try {
+      fs.mkdirSync(path.dirname(executable), { recursive: true });
+      fs.writeFileSync(executable, "bundled runtime", "utf8");
+
+      expect(resolveWhisperXCommand({
+        resourcesPath: root,
+        appPath: "/missing/app",
+        cwd: "/missing/cwd",
+        env: {},
+        requireBundled: true,
+      })).toBe(executable);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs local CPU alignment with JSON word output and no diarization", () => {
     expect(buildWhisperXArgs({
       audioPath: "/books/chapter.wav",

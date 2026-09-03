@@ -710,6 +710,7 @@ async function transcribeChapterAudio(folder, file) {
         resourcesPath: process.resourcesPath,
         appPath: app.getAppPath(),
         language: "en",
+        requireBundled: app.isPackaged,
       }),
       transcribeWithWhisper: () => transcribeAudio({
         audioPath,
