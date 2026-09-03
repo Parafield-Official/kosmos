@@ -45,7 +45,6 @@
     "package:win": "npm run prepare:model && npm run build && npm run audit:runtime && electron-builder --win --publish never"
   },
   "build": {
-    "compression": "store",
     "appId": "com.boothdesk.app",
     "productName": "Kosmos",
     "asar": true,
