@@ -105,6 +105,9 @@ describe("GitHub Pages release feed", () => {
     expect(pagesStep("Download installer metadata").with.pattern).toBe("kosmos-metadata-*");
     expect(workflow.jobs["pages-build"].needs).toBe("package");
     expect(workflow.jobs.pages.needs).toEqual(["publish", "pages-build"]);
-    expect(packageConfig.build.compression).toBe("store");
+    expect(packageConfig.build.compression).toBeUndefined();
+    expect(step("Resolve cross-platform speech model cache key").run).toContain(
+      "git rev-parse HEAD:electron/model.cjs",
+    );
   });
 });
