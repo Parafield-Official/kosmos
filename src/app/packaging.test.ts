@@ -44,6 +44,11 @@ describe("packaged renderer configuration", () => {
       to: "whisperx",
       filter: ["**/*"],
     });
+    expect(packageJson.build.extraResources).toContainEqual({
+      from: "vendor/silero-vad/snakers4_silero-vad_master",
+      to: "silero-vad/snakers4_silero-vad_master",
+      filter: ["**/*"],
+    });
 
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("vendor/whisperx-runtime");
@@ -55,13 +60,41 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("--collect-data pyannote.audio");
     expect(yaml).not.toContain("--collect-all torchcodec");
     expect(yaml).toContain("WHISPERX_THIRD_PARTY_NOTICES.txt");
+    expect(yaml).toContain("867c2aa692646a1f1de3e94a15c9dd9f614c0acb");
+    expect(yaml).toContain("562d99d4bf35eea155596a08a937ef418353541623e9df213e024aeb7070f8bb");
+    expect(yaml).toContain("snakers4_silero-vad_master/hubconf.py");
+    expect(yaml).toContain(".kosmos-silero-vad-revision");
+    expect(yaml).toContain("tarfile.open");
+    expect(yaml).toContain("shutil.copytree");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
+    expect(yaml.indexOf("public/examples/proof/on_vs_in.wav")).toBeGreaterThan(
+      yaml.indexOf("- name: Prepare Windows runtime assets"),
+    );
     expect(yaml).toMatch(/whisperx(?:\.exe)?\"? --version/);
 
     const wrapper = readFileSync(resolve(__dirname, "../../scripts/whisperx_cli.py"), "utf8");
+    expect(wrapper).toContain("multiprocessing.freeze_support()");
+    expect(wrapper).toContain('metadata.version("whisperx")');
     expect(wrapper).toContain("from whisperx.__main__ import cli");
     expect(wrapper).toContain("raise SystemExit(cli())");
+  });
+
+  it("smoke-tests the frozen WhisperX runtime on Windows before release tags", () => {
+    const yaml = readFileSync(
+      resolve(__dirname, "../../.github/workflows/whisperx-runtime-smoke.yml"),
+      "utf8",
+    );
+    expect(yaml).toContain("windows-latest");
+    expect(yaml).toContain("scripts/whisperx_cli.py");
+    expect(yaml).toContain("--onedir");
+    expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
+    expect(yaml).toContain("word_segments");
+    expect(yaml).toContain("snakers4_silero-vad_master");
+    expect(yaml).toContain('$GITHUB_WORKSPACE/.ci-runtime/silero-vad');
+    expect(yaml).toContain("tarfile.open");
+    expect(yaml).toContain("shutil.copytree");
+    expect(yaml).not.toContain('tar -xzf "$silero_archive"');
   });
 
   it("uses Kosmos as the installer and window product name", () => {
