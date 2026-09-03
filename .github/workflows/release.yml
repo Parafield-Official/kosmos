@@ -111,9 +111,10 @@ jobs:
           actual_sha="${actual_sha#\\}"
           echo "Silero VAD sha256 expected=$SILERO_VAD_SHA256 actual=$actual_sha"
           test "$SILERO_VAD_SHA256" = "$actual_sha"
-          tar -xzf "$archive" -C "$RUNNER_TEMP"
-          cp "$source_dir/hubconf.py" "$source_dir/LICENSE" "$target_dir/"
-          cp -R "$source_dir/src" "$target_dir/src"
+          python -c 'import sys, tarfile; tarfile.open(sys.argv[1], "r:gz").extractall(sys.argv[2], filter="data")' \
+            "$archive" "$RUNNER_TEMP"
+          python -c 'import pathlib, shutil, sys; source = pathlib.Path(sys.argv[1]); target = pathlib.Path(sys.argv[2]); target.mkdir(parents=True, exist_ok=True); shutil.copy2(source / "hubconf.py", target); shutil.copy2(source / "LICENSE", target); shutil.copytree(source / "src", target / "src", dirs_exist_ok=True)' \
+            "$source_dir" "$target_dir"
           printf '%s\n' "$SILERO_VAD_COMMIT" > "$target_dir/.kosmos-silero-vad-revision"
           test -s "$target_dir/hubconf.py"
           test -s "$target_dir/LICENSE"

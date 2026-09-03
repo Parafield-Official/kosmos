@@ -64,6 +64,8 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("562d99d4bf35eea155596a08a937ef418353541623e9df213e024aeb7070f8bb");
     expect(yaml).toContain("snakers4_silero-vad_master/hubconf.py");
     expect(yaml).toContain(".kosmos-silero-vad-revision");
+    expect(yaml).toContain("tarfile.open");
+    expect(yaml).toContain("shutil.copytree");
     expect(yaml).toContain("public/examples/proof/on_vs_in.wav");
     expect(yaml).toContain("whisperx-smoke/on_vs_in.json");
     expect(yaml.indexOf("public/examples/proof/on_vs_in.wav")).toBeGreaterThan(
@@ -90,6 +92,9 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toContain("word_segments");
     expect(yaml).toContain("snakers4_silero-vad_master");
     expect(yaml).toContain('$GITHUB_WORKSPACE/.ci-runtime/silero-vad');
+    expect(yaml).toContain("tarfile.open");
+    expect(yaml).toContain("shutil.copytree");
+    expect(yaml).not.toContain('tar -xzf "$silero_archive"');
   });
 
   it("uses Kosmos as the installer and window product name", () => {

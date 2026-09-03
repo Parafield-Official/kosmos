@@ -77,15 +77,16 @@ jobs:
           actual_sha="$(sha256sum "$silero_archive" | awk '{print $1}')"
           actual_sha="${actual_sha#\\}"
           test "$SILERO_VAD_SHA256" = "$actual_sha"
-          tar -xzf "$silero_archive" -C "$silero_runtime"
+          python -c 'import sys, tarfile; tarfile.open(sys.argv[1], "r:gz").extractall(sys.argv[2], filter="data")' \
+            "$silero_archive" "$silero_runtime"
           mkdir -p \
             "$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master" \
             "$RUNNER_TEMP/whisperx-matplotlib" \
             "$RUNNER_TEMP/whisperx-smoke"
           silero_source="$silero_runtime/silero-vad-${SILERO_VAD_COMMIT}"
           silero_target="$RUNNER_TEMP/whisperx-models/torch/hub/snakers4_silero-vad_master"
-          cp "$silero_source/hubconf.py" "$silero_source/LICENSE" "$silero_target/"
-          cp -R "$silero_source/src" "$silero_target/src"
+          python -c 'import pathlib, shutil, sys; source = pathlib.Path(sys.argv[1]); target = pathlib.Path(sys.argv[2]); target.mkdir(parents=True, exist_ok=True); shutil.copy2(source / "hubconf.py", target); shutil.copy2(source / "LICENSE", target); shutil.copytree(source / "src", target / "src", dirs_exist_ok=True)' \
+            "$silero_source" "$silero_target"
           test -s "$silero_target/src/silero_vad/data/silero_vad.jit"
           MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
             TORCH_HOME="$RUNNER_TEMP/whisperx-models/torch" \
