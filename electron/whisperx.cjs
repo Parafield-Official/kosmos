@@ -6,6 +6,8 @@ const { runCommand } = require("./process.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 
 const WHISPERX_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const SILERO_VAD_CACHE_DIRECTORY = "snakers4_silero-vad_master";
+const SILERO_VAD_REVISION_FILE = ".kosmos-silero-vad-revision";
 const WORD_PATTERN = /[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*(?:-[\p{L}\p{N}]+)*/gu;
 
 function buildWhisperXArgs({
@@ -111,6 +113,57 @@ function resolveWhisperXCommand({
   }) ?? configured;
 }
 
+function resolveBundledSileroVad({
+  resourcesPath,
+  appPath,
+  cwd = process.cwd(),
+} = {}) {
+  const candidates = [
+    resourcesPath && path.join(resourcesPath, "silero-vad", SILERO_VAD_CACHE_DIRECTORY),
+    appPath && path.join(appPath, "vendor", "silero-vad", SILERO_VAD_CACHE_DIRECTORY),
+    cwd && path.join(cwd, "vendor", "silero-vad", SILERO_VAD_CACHE_DIRECTORY),
+  ].filter(Boolean);
+  return candidates.find((candidate) => {
+    try {
+      return fsSync.statSync(path.join(candidate, "hubconf.py")).isFile()
+        && fsSync.statSync(path.join(candidate, SILERO_VAD_REVISION_FILE)).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+async function seedBundledSileroVad({
+  modelDir,
+  resourcesPath,
+  appPath,
+  requireBundled = false,
+}) {
+  const source = resolveBundledSileroVad({ resourcesPath, appPath });
+  if (!source) {
+    if (requireBundled) {
+      throw new Error("The packaged Silero VAD runtime is missing.");
+    }
+    return;
+  }
+  const destination = path.join(modelDir, "torch", "hub", SILERO_VAD_CACHE_DIRECTORY);
+  const sourceRevision = await fs.readFile(path.join(source, SILERO_VAD_REVISION_FILE), "utf8");
+  try {
+    const [destinationRevision, hubconf] = await Promise.all([
+      fs.readFile(path.join(destination, SILERO_VAD_REVISION_FILE), "utf8"),
+      fs.stat(path.join(destination, "hubconf.py")),
+    ]);
+    if (hubconf.isFile() && destinationRevision === sourceRevision) {
+      return;
+    }
+  } catch {
+    // Seed a fresh cache below.
+  }
+  await fs.rm(destination, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  await fs.cp(source, destination, { recursive: true, force: false, errorOnExist: false });
+}
+
 async function alignImportedAudioWithWhisperX({
   audioPath,
   userDataPath,
@@ -124,8 +177,15 @@ async function alignImportedAudioWithWhisperX({
   const command = resolveCommand({ resourcesPath, appPath, requireBundled });
   const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-whisperx-"));
   const modelDir = path.join(userDataPath, "models", "whisperx");
+  const helperPath = [
+    resourcesPath && path.join(resourcesPath, "bin"),
+    appPath && path.join(appPath, "vendor", "bin"),
+    path.join(process.cwd(), "vendor", "bin"),
+    process.env.PATH,
+  ].filter(Boolean).join(path.delimiter);
   try {
     await fs.mkdir(modelDir, { recursive: true });
+    await seedBundledSileroVad({ modelDir, resourcesPath, appPath, requireBundled });
     await run(command, buildWhisperXArgs({
       audioPath,
       outputDir: temporaryRoot,
@@ -140,6 +200,7 @@ async function alignImportedAudioWithWhisperX({
         OMP_NUM_THREADS: String(Math.min(6, Math.max(2, os.cpus().length))),
         TORCH_HOME: path.join(modelDir, "torch"),
         MPLCONFIGDIR: path.join(modelDir, "matplotlib"),
+        PATH: helperPath,
       },
     });
     const outputPath = path.join(temporaryRoot, `${path.parse(audioPath).name}.json`);
@@ -180,6 +241,8 @@ module.exports = {
   alignImportedAudioWithWhisperX,
   buildWhisperXArgs,
   parseWhisperXWords,
+  resolveBundledSileroVad,
   resolveWhisperXCommand,
+  seedBundledSileroVad,
   transcribeImportedAudio,
 };

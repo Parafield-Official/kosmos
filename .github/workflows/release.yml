@@ -62,9 +62,11 @@ jobs:
       # Pin the native proof engine so a tag rebuild is reproducible and can
       # be audited against one upstream source revision.
       WHISPER_CPP_COMMIT: 4834a2327d008ace3ec5a9ed00f51454bcabbc1c
+      SILERO_VAD_COMMIT: 867c2aa692646a1f1de3e94a15c9dd9f614c0acb
+      SILERO_VAD_SHA256: 562d99d4bf35eea155596a08a937ef418353541623e9df213e024aeb7070f8bb
       # Bump this only when a pinned native dependency or its build recipe
       # changes. Ordinary application code releases reuse the verified tools.
-      NATIVE_RUNTIME_CACHE_REVISION: v4
+      NATIVE_RUNTIME_CACHE_REVISION: v6
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -76,6 +78,7 @@ jobs:
           path: |
             vendor/bin
             vendor/whisperx-runtime
+            vendor/silero-vad
             .release-cache/native
             .release-cache/whisperx-models
           key: kosmos-native-${{ env.NATIVE_RUNTIME_CACHE_REVISION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/markitdown_cli.py', 'scripts/whisperx_cli.py', 'vendor/bin/**') }}
@@ -91,6 +94,32 @@ jobs:
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
+
+      - name: Stage pinned Silero VAD cache
+        if: steps.native-runtime-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$GITHUB_WORKSPACE/.release-cache/native/silero-vad-${SILERO_VAD_COMMIT}.tar.gz"
+          source_dir="$RUNNER_TEMP/silero-vad-${SILERO_VAD_COMMIT}"
+          target_dir="$GITHUB_WORKSPACE/vendor/silero-vad/snakers4_silero-vad_master"
+          mkdir -p "$(dirname "$archive")" "$target_dir"
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://codeload.github.com/snakers4/silero-vad/tar.gz/${SILERO_VAD_COMMIT}" \
+            -o "$archive"
+          actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+          actual_sha="${actual_sha#\\}"
+          echo "Silero VAD sha256 expected=$SILERO_VAD_SHA256 actual=$actual_sha"
+          test "$SILERO_VAD_SHA256" = "$actual_sha"
+          python -c 'import sys, tarfile; tarfile.open(sys.argv[1], "r:gz").extractall(sys.argv[2], filter="data")' \
+            "$archive" "$RUNNER_TEMP"
+          python -c 'import pathlib, shutil, sys; source = pathlib.Path(sys.argv[1]); target = pathlib.Path(sys.argv[2]); target.mkdir(parents=True, exist_ok=True); shutil.copy2(source / "hubconf.py", target); shutil.copy2(source / "LICENSE", target); shutil.copytree(source / "src", target / "src", dirs_exist_ok=True)' \
+            "$source_dir" "$target_dir"
+          printf '%s\n' "$SILERO_VAD_COMMIT" > "$target_dir/.kosmos-silero-vad-revision"
+          test -s "$target_dir/hubconf.py"
+          test -s "$target_dir/LICENSE"
+          test -s "$target_dir/.kosmos-silero-vad-revision"
+          test -s "$target_dir/src/silero_vad/data/silero_vad.jit"
 
       - name: Build bundled Microsoft MarkItDown helper
         if: steps.native-runtime-cache.outputs.cache-hit != 'true'
@@ -167,28 +196,6 @@ jobs:
           fi
           test -f "$whisperx_executable"
           "$whisperx_executable" --version | grep -F 'whisperx 3.8.6'
-          mkdir -p \
-            .release-cache/whisperx-models/torch \
-            "$RUNNER_TEMP/whisperx-matplotlib" \
-            "$RUNNER_TEMP/whisperx-smoke"
-          MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
-            TORCH_HOME="$GITHUB_WORKSPACE/.release-cache/whisperx-models/torch" \
-            TOKENIZERS_PARALLELISM=false \
-            "$whisperx_executable" \
-              public/examples/proof/on_vs_in.wav \
-              --model small.en \
-              --language en \
-              --device cpu \
-              --compute_type int8 \
-              --batch_size 4 \
-              --vad_method silero \
-              --model_dir .release-cache/whisperx-models \
-              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
-              --output_format json \
-              --verbose False \
-              --print_progress False
-          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("segments")' \
-            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
 
       - name: Install JavaScript dependencies
         # electron-builder needs Electron's downloaded runtime in a clean
@@ -302,6 +309,7 @@ jobs:
             "FFmpeg ${ffmpeg_version}: LGPL-2.1-or-later; source archive attached to this GitHub Release." \
             'whisper.cpp: MIT, https://github.com/ggerganov/whisper.cpp' \
             'WhisperX: BSD-2-Clause; faster-whisper and CTranslate2: MIT.' \
+            'Silero VAD: MIT, pinned source cache bundled for offline startup.' \
             'Bundled Python dependency notices: WHISPERX_THIRD_PARTY_NOTICES.txt' \
             'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
@@ -365,6 +373,7 @@ jobs:
             "FFmpeg ${ffmpeg_archive}: LGPL-2.1-or-later; source link in FFMPEG_LICENSE.txt." \
             'whisper.cpp v1.9.2 official Windows x64 binaries, MIT, https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.2' \
             'WhisperX: BSD-2-Clause; faster-whisper and CTranslate2: MIT.' \
+            'Silero VAD: MIT, pinned source cache bundled for offline startup.' \
             'Bundled Python dependency notices: WHISPERX_THIRD_PARTY_NOTICES.txt' \
             'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
@@ -406,9 +415,43 @@ jobs:
             test -f vendor/whisperx-runtime/whisperx/whisperx.exe
             vendor/whisperx-runtime/whisperx/whisperx.exe --version | grep -F 'whisperx 3.8.6'
           fi
+          mkdir -p \
+            .release-cache/whisperx-models/torch \
+            .release-cache/whisperx-models/torch/hub \
+            "$RUNNER_TEMP/whisperx-matplotlib" \
+            "$RUNNER_TEMP/whisperx-smoke"
+          cp -R vendor/silero-vad/snakers4_silero-vad_master \
+            .release-cache/whisperx-models/torch/hub/
+          if [ "${{ matrix.target }}" = "mac" ]; then
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx'
+          else
+            whisperx_executable='vendor/whisperx-runtime/whisperx/whisperx.exe'
+          fi
+          PATH="$GITHUB_WORKSPACE/vendor/bin:$PATH" \
+            MPLCONFIGDIR="$RUNNER_TEMP/whisperx-matplotlib" \
+            TORCH_HOME="$GITHUB_WORKSPACE/.release-cache/whisperx-models/torch" \
+            TOKENIZERS_PARALLELISM=false \
+            "$whisperx_executable" \
+              public/examples/proof/on_vs_in.wav \
+              --model small.en \
+              --language en \
+              --device cpu \
+              --compute_type int8 \
+              --batch_size 4 \
+              --vad_method silero \
+              --model_dir .release-cache/whisperx-models \
+              --output_dir "$RUNNER_TEMP/whisperx-smoke" \
+              --output_format json \
+              --verbose False \
+              --print_progress False
+          python -c 'import json, sys; assert json.load(open(sys.argv[1], encoding="utf-8")).get("segments")' \
+            "$RUNNER_TEMP/whisperx-smoke/on_vs_in.json"
           test -s vendor/bin/MARKITDOWN_LICENSE.txt
           test -s vendor/bin/MARKITDOWN_THIRD_PARTY_NOTICES.txt
           test -s vendor/whisperx-runtime/whisperx/WHISPERX_THIRD_PARTY_NOTICES.txt
+          test -s vendor/silero-vad/snakers4_silero-vad_master/hubconf.py
+          test -s vendor/silero-vad/snakers4_silero-vad_master/LICENSE
+          test -s vendor/silero-vad/snakers4_silero-vad_master/.kosmos-silero-vad-revision
           test -s vendor/bin/FFMPEG_LICENSE.txt
           test -s vendor/bin/THIRD_PARTY_NOTICES.txt
           npm run audit:runtime
