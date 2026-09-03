@@ -338,6 +338,10 @@ jobs:
           # Use Git's blob id instead of hashFiles so Windows line-ending
           # conversion cannot create a duplicate cache for identical models.
           key: kosmos-speech-models-v1-${{ steps.speech-model-cache-key.outputs.revision }}
+          # Reuse the verified cache written before the cross-platform key
+          # migration. prepare:model still checks the pinned model digests.
+          restore-keys: |
+            kosmos-speech-models-v1-
           enableCrossOsArchive: true
 
       - name: Verify or download speech models
