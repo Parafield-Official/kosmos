@@ -3,6 +3,7 @@ import {
   countHtmlWords,
   readChapterContent,
   saveChapterContent,
+  stageChapterContent,
   type BookProject,
 } from "./store";
 import { READING_FONT_STACKS, readPromptTheme, readReadingFont } from "./reading-prefs";
@@ -77,6 +78,7 @@ export function ChapterEditor({
 
   function scheduleSave() {
     setStatus("saving");
+    stageChapterContent(project, chapterId, editorRef.current?.innerHTML ?? "");
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
     }
