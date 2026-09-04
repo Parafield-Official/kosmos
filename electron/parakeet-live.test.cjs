@@ -7,13 +7,15 @@ function fakeChild() {
   child.exitCode = null;
   child.signalCode = null;
   child.writes = [];
-  child.stdin = {
+  child.stdin = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    writable: true,
     write: (bytes) => {
       child.writes.push(bytes.length / 4);
       return true;
     },
     end: () => undefined,
-  };
+  });
   child.stdout = new EventEmitter();
   child.stdout.setEncoding = () => undefined;
   child.kill = () => {
@@ -77,6 +79,29 @@ describe("parakeet live process", () => {
     expect(children[0].killed).toBe(true);
     expect(live.modelPath).toBe("/models/new.gguf");
     live.stop();
+  });
+
+  it("degrades cleanly when the helper closes its stdin pipe", async () => {
+    const child = fakeChild();
+    const live = new PersistentParakeetLive({ spawnImpl: () => child });
+    await live.start({ serverPath: "/bin/parakeet-live", modelPath: "/models/x.gguf" });
+
+    expect(() => child.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" })))
+      .not.toThrow();
+    expect(live.running).toBe(false);
+    expect(() => live.write(new Float32Array(2560))).toThrow(/not running/i);
+  });
+
+  it("contains a synchronous EPIPE raised while writing audio", async () => {
+    const child = fakeChild();
+    child.stdin.write = () => {
+      throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    };
+    const live = new PersistentParakeetLive({ spawnImpl: () => child });
+    await live.start({ serverPath: "/bin/parakeet-live", modelPath: "/models/x.gguf" });
+
+    expect(live.write(new Float32Array(2560))).toEqual({ blocks: 0, buffered: 0, dropped: true });
+    expect(live.running).toBe(false);
   });
 });
 
