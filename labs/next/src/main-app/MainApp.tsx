@@ -158,15 +158,18 @@ export function MainApp() {
       const report = (fraction: number, label: string) =>
         setAnalyzing({ progress: fraction, label: `Parsing “${label}”` });
       let result;
-      if (file) {
+      const isPdf = Boolean(file && /\.pdf$/iu.test(file.name));
+      if (file && !isPdf) {
         result = await analyzeFile(file, report);
       } else {
         const manuscript = await readManuscriptBytes(project);
-        const source = manuscript ? manuscriptSource(manuscript.name, manuscript.bytes) : null;
+        const source = manuscript
+          ? manuscript.text ?? manuscriptSource(manuscript.name, manuscript.bytes)
+          : null;
         if (!source) {
           throw new Error(
             manuscript && /\.pdf$/i.test(manuscript.name)
-              ? "PDF manuscripts need a text layer. Try .txt, .md, .docx, or .epub."
+              ? "Kosmos could not read text from that PDF. It may be a scan without a text layer."
               : "Kosmos couldn't read that manuscript. Try a .txt, .md, .docx, or .epub.",
           );
         }

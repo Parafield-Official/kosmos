@@ -30,7 +30,7 @@ describe("manuscriptSourcePath", () => {
     vi.unstubAllGlobals();
   });
 
-  it("prefers Electron's getPathForFile so the main process can move the file", () => {
+  it("prefers Electron's getPathForFile so the main process can copy the file", () => {
     vi.stubGlobal("window", {
       kosmosNext: {
         getPathForFile: () => "/Users/ada/Drafts/northwind.docx",

@@ -74,6 +74,15 @@ class PersistentParakeetLive {
     child.stderr?.on("data", (chunk) => {
       this.stderr = `${this.stderr}${String(chunk)}`.slice(-4_000);
     });
+    child.stdin?.on?.("error", (error) => {
+      this.stderr = `${this.stderr}\n[stdin] ${error?.message ?? error}`.slice(-4_000);
+      if (this.child === child) {
+        this.child = null;
+        this.residual = new Float32Array(0);
+        terminateChild(child);
+      }
+      this.flushWaiters();
+    });
     child.once("error", () => {
       if (this.child === child) {
         this.child = null;
@@ -140,7 +149,24 @@ class PersistentParakeetLive {
     const aligned = blocks * HOP_SAMPLES;
     if (blocks > 0) {
       const block = merged.subarray(0, aligned);
-      this.child.stdin.write(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+      const child = this.child;
+      const stdin = child?.stdin;
+      if (!stdin || stdin.destroyed === true || stdin.writable === false) {
+        this.residual = new Float32Array(0);
+        return { blocks: 0, buffered: 0, dropped: true };
+      }
+      try {
+        stdin.write(Buffer.from(block.buffer, block.byteOffset, block.byteLength));
+      } catch (error) {
+        this.stderr = `${this.stderr}\n[stdin] ${error?.message ?? error}`.slice(-4_000);
+        if (this.child === child) {
+          this.child = null;
+          terminateChild(child);
+        }
+        this.residual = new Float32Array(0);
+        this.flushWaiters();
+        return { blocks: 0, buffered: 0, dropped: true };
+      }
     }
     this.residual = merged.slice(aligned);
     return { blocks, buffered: this.residual.length };

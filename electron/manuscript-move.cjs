@@ -1,11 +1,13 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { copyFileAtomic } = require("./file-utils.cjs");
 
 /**
- * Move a regular file to dest. Same-volume uses rename; otherwise copy then
- * remove the source so the user is not left with two copies.
+ * Copy a regular manuscript into a project without taking ownership of the
+ * user's source document. The atomic destination replacement also avoids
+ * exposing a partial project copy if the operation is interrupted.
  */
-async function moveFileToDestination(source, dest) {
+async function copyFileToDestination(source, dest) {
   if (typeof source !== "string" || source.length === 0 || !path.isAbsolute(source)) {
     throw new Error("Manuscript source must be an absolute path.");
   }
@@ -15,7 +17,7 @@ async function moveFileToDestination(source, dest) {
   const src = path.resolve(source);
   const dst = path.resolve(dest);
   if (src === dst) {
-    return { ok: true, moved: false };
+    return { ok: true, moved: false, copied: false };
   }
 
   const srcStat = await fs.lstat(src);
@@ -23,16 +25,12 @@ async function moveFileToDestination(source, dest) {
     throw new Error("Manuscript must be a regular file.");
   }
 
-  await fs.mkdir(path.dirname(dst), { recursive: true });
-  await fs.rm(dst, { force: true });
-  try {
-    await fs.rename(src, dst);
-    return { ok: true, moved: true };
-  } catch {
-    await fs.copyFile(src, dst);
-    await fs.rm(src, { force: true });
-    return { ok: true, moved: true };
-  }
+  await copyFileAtomic(src, dst);
+  return { ok: true, moved: false, copied: true };
 }
 
-module.exports = { moveFileToDestination };
+module.exports = {
+  copyFileToDestination,
+  /** @deprecated Manuscript imports are copies; retained for compatibility. */
+  moveFileToDestination: copyFileToDestination,
+};

@@ -1015,11 +1015,15 @@ export function countHtmlWords(html: string): number {
 /** Read a stored manuscript back out of the project folder (for re-analysis). */
 export async function readManuscriptBytes(
   project: BookProject,
-): Promise<{ name: string; bytes: Uint8Array } | null> {
+): Promise<{ name: string; bytes: Uint8Array; text?: string } | null> {
   if (project.folder && window.kosmosNext?.readManuscript) {
     const result = await window.kosmosNext.readManuscript({ folder: project.folder, name: project.manuscript });
     if (result.ok && result.base64) {
-      return { name: result.name ?? project.manuscript ?? "manuscript.txt", bytes: base64ToBytes(result.base64) };
+      return {
+        name: result.name ?? project.manuscript ?? "manuscript.txt",
+        bytes: base64ToBytes(result.base64),
+        text: result.text,
+      };
     }
   }
   return null;

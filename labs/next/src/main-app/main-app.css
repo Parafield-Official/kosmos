@@ -1749,13 +1749,17 @@
 
 .ma-glossary-list li {
   display: grid;
-  grid-template-columns: minmax(5.5rem, 10rem) var(--ma-guide-field, 6.25rem) auto;
+  grid-template-columns: auto minmax(5.5rem, 10rem) var(--ma-guide-field, 6.25rem) auto;
   gap: 0.55rem 0.7rem;
   align-items: center;
   padding: 0.55rem 0.65rem;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.ma-glossary-list li:not(:has(.ma-block-grip)) {
+  grid-template-columns: minmax(5.5rem, 10rem) var(--ma-guide-field, 6.25rem) auto;
 }
 
 .ma-glossary-list li.is-set {

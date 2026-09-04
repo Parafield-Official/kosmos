@@ -25,6 +25,7 @@ const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand, terminateActiveCommands } = require("./process.cjs");
 const { convertWithMarkItDown } = require("./markitdown.cjs");
+const { extractPdfText } = require("./pdf-text.cjs");
 const { isMicrophonePermission, ensureMicrophoneAccess } = require("./media-access.cjs");
 const {
   assertProjectFolder,
@@ -447,6 +448,19 @@ async function parseManuscriptFile(sourcePath) {
   const manuscriptCore = loadCoreModule("manuscript");
   const extension = path.extname(sourcePath).toLowerCase();
   try {
+    if (extension === ".pdf") {
+      const extracted = await extractPdfText({
+        sourcePath,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        cwd: process.cwd(),
+        requireBundled: app.isPackaged,
+      });
+      if (!extracted) {
+        throw new Error("The PDF has no readable text layer.");
+      }
+      return manuscriptCore.fromPlainText(extracted, "pdf");
+    }
     const convertedMarkdown = await convertWithMarkItDown({
       sourcePath,
       extension,
@@ -460,15 +474,6 @@ async function parseManuscriptFile(sourcePath) {
         ...manuscriptCore.fromPlainText(convertedMarkdown, "md"),
         format: extension.replace(/^\./u, ""),
       };
-    }
-    if (extension === ".pdf") {
-      const extracted = await runCommand(resolveRuntimeBinary({
-        name: "pdftotext",
-        envVar: "PDFTOTEXT_PATH",
-        resourcesPath: process.resourcesPath,
-        appPath: app.getAppPath(),
-      }), ["-layout", sourcePath, "-"], { maxOutputBytes: 100_000_000 });
-      return manuscriptCore.fromPlainText(extracted.toString("utf8"), "pdf");
     }
     const bytes = await fs.readFile(sourcePath);
     return manuscriptCore.importManuscriptBytes(

@@ -138,6 +138,10 @@ export async function analyzeFile(file: File, onProgress?: AnalyzeProgress): Pro
   } else if (ext === "docx" || ext === "epub") {
     const bytes = new Uint8Array(await file.arrayBuffer());
     source = manuscriptSource(file.name, bytes);
+  } else if (ext === "pdf") {
+    // PDFs are containers, not UTF-8 manuscripts. The Electron main process
+    // extracts them with bundled MarkItDown/pdftotext before analysis.
+    source = null;
   } else {
     try {
       source = await file.text();
@@ -148,7 +152,7 @@ export async function analyzeFile(file: File, onProgress?: AnalyzeProgress): Pro
   if (!source || !source.trim()) {
     throw new Error(
       ext === "pdf"
-        ? "PDF manuscripts need a text layer. Try .txt, .md, .docx, or .epub."
+        ? "PDF manuscripts must be extracted by the desktop app before analysis."
         : "Kosmos couldn't read any text from that file. Try a .txt, .md, .docx, or .epub.",
     );
   }
