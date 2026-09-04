@@ -787,6 +787,42 @@ function chapterContentKey(project: BookProject, chapterId: string): string {
   return `kosmos-chapter:${project.folder ?? project.id}:${chapterId}`;
 }
 
+function chapterDraftKey(project: BookProject, chapterId: string): string {
+  return `${chapterContentKey(project, chapterId)}:recovery`;
+}
+
+/**
+ * Keep the latest editor input synchronously before its debounced filesystem
+ * save starts. Chromium persists localStorage across a normal quit, giving the
+ * next launch a recovery copy if the window closes during the debounce.
+ */
+export function stageChapterContent(project: BookProject, chapterId: string, html: string): void {
+  try {
+    window.localStorage.setItem(chapterDraftKey(project, chapterId), html);
+  } catch {
+    // The normal filesystem save still runs when storage is unavailable.
+  }
+}
+
+function readChapterDraft(project: BookProject, chapterId: string): string | null {
+  try {
+    return window.localStorage.getItem(chapterDraftKey(project, chapterId));
+  } catch {
+    return null;
+  }
+}
+
+function clearChapterDraft(project: BookProject, chapterId: string, html: string): void {
+  try {
+    const key = chapterDraftKey(project, chapterId);
+    if (window.localStorage.getItem(key) === html) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // A successful project-file save is already durable.
+  }
+}
+
 export async function writeChapterContents(
   project: BookProject,
   contents: { id: string; html: string }[],
@@ -809,18 +845,42 @@ export async function saveChapterContent(
   chapterId: string,
   html: string,
 ): Promise<void> {
+  stageChapterContent(project, chapterId, html);
   if (project.folder && window.kosmosNext?.writeChapterContent) {
-    await window.kosmosNext.writeChapterContent({ folder: project.folder, chapterId, html });
+    const result = await window.kosmosNext.writeChapterContent({ folder: project.folder, chapterId, html });
+    if (!result.ok) {
+      throw new Error("Kosmos couldn't save that chapter edit.");
+    }
+    clearChapterDraft(project, chapterId, html);
     return;
   }
   try {
     window.localStorage.setItem(chapterContentKey(project, chapterId), html);
+    clearChapterDraft(project, chapterId, html);
   } catch {
     // Best effort.
   }
 }
 
 export async function readChapterContent(project: BookProject, chapterId: string): Promise<string> {
+  const recovery = readChapterDraft(project, chapterId);
+  if (recovery !== null) {
+    if (project.folder && window.kosmosNext?.writeChapterContent) {
+      try {
+        const result = await window.kosmosNext.writeChapterContent({
+          folder: project.folder,
+          chapterId,
+          html: recovery,
+        });
+        if (result.ok) {
+          clearChapterDraft(project, chapterId, recovery);
+        }
+      } catch {
+        // Keep the recovery draft and still show it to the user.
+      }
+    }
+    return recovery;
+  }
   if (project.folder && window.kosmosNext?.readChapterContent) {
     const result = await window.kosmosNext.readChapterContent({ folder: project.folder, chapterId });
     return result.html ?? "";
