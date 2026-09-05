@@ -13,6 +13,7 @@ export interface AppUpdateStatus {
   text?: string;
   showBanner?: boolean;
   canInstall?: boolean;
+  canDownloadInstaller?: boolean;
   releasePage?: string;
 }
 
