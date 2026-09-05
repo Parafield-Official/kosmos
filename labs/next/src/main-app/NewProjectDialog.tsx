@@ -154,8 +154,8 @@ export function NewProjectDialog({
       return;
     }
     setManuscript(file);
-    // Offer the file name as the title immediately; refine from metadata below.
-    setTitle((current) => (current.trim() ? current : titleFromFileName(file.name)));
+    setTitle(titleFromFileName(file.name));
+    setAuthor("");
 
     const [meta, cover] = await Promise.all([
       detectManuscriptMeta(file),
@@ -163,14 +163,14 @@ export function NewProjectDialog({
     ]);
 
     if (meta.title) {
-      setTitle((current) => (current.trim() ? current : meta.title!));
+      setTitle(meta.title);
     }
     if (meta.authors && meta.authors.length) {
-      setAuthor((current) => (current.trim() ? current : meta.authors!.join(", ")));
+      setAuthor(meta.authors.join(", "));
     }
     if (cover) {
       setCoverError(null);
-      setCoverDataUrl((current) => current ?? cover);
+      setCoverDataUrl(cover);
     }
   }
 
@@ -217,23 +217,28 @@ export function NewProjectDialog({
           Create a project
         </h2>
         <p className="ma-dialog-sub">
-          Manuscript first, then a folder on this computer. Kosmos saves the book there.
+          Upload the manuscript first. Title, author, and cover fill in from the file — then you can edit them and choose where to save.
         </p>
 
-        <div className="ma-field ma-field-full">
-          <span>Manuscript</span>
-          <button
-            type="button"
-            className="ma-manuscript-pick"
-            onClick={() => manuscriptRef.current?.click()}
-          >
-            <UploadIcon />
-            {manuscript ? (
-              <span className="ma-manuscript-name">{manuscript.name}</span>
-            ) : (
-              <span className="ma-manuscript-empty">Choose a .txt, .md, .docx, .epub, or .pdf</span>
-            )}
-          </button>
+        <section className="vault-create-step">
+          <p className="vault-create-step-kicker">Manuscript</p>
+          {manuscript ? (
+            <div className="vault-create-chip">
+              <UploadIcon />
+              <span className="ma-manuscript-name" title={manuscript.name}>
+                {manuscript.name}
+              </span>
+              <button type="button" className="vault-create-chip-act" onClick={() => manuscriptRef.current?.click()}>
+                Change
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="vault-create-drop" onClick={() => manuscriptRef.current?.click()}>
+              <UploadIcon />
+              <strong>Choose a manuscript</strong>
+              <span>.txt, .md, .docx, .epub, or .pdf</span>
+            </button>
+          )}
           <input
             ref={manuscriptRef}
             type="file"
@@ -241,97 +246,102 @@ export function NewProjectDialog({
             className="ma-visually-hidden"
             onChange={(event) => pickManuscript(event.target.files?.[0])}
           />
-        </div>
+        </section>
 
-        <div className="ma-field ma-field-full">
-          <span>Save location</span>
-          {hasBridge ? (
-            <button
-              type="button"
-              className="ma-manuscript-pick"
-              disabled={picking || !manuscript}
-              onClick={() => {
-                setPicking(true);
-                void pickProjectParent()
-                  .then((path) => {
-                    if (path) {
-                      setParentFolder(path);
-                    }
-                  })
-                  .finally(() => setPicking(false));
-              }}
-            >
-              <UploadIcon />
-              {parentFolder ? (
-                <span className="ma-manuscript-name" title={parentFolder}>
-                  {parentFolder}
-                </span>
+        {manuscript ? (
+          <>
+            <section className="vault-create-step">
+              <p className="vault-create-step-kicker">Details</p>
+              <p className="vault-create-step-hint">Filled from the manuscript. Edit anything that’s off.</p>
+              <div className="ma-dialog-body">
+                <button
+                  type="button"
+                  className="ma-cover-pick"
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Choose cover image"
+                >
+                  {coverDataUrl ? (
+                    <img src={coverDataUrl} alt="" className="ma-cover-preview" />
+                  ) : (
+                    <span className="ma-cover-empty">
+                      <PlusIcon />
+                      <span>Cover</span>
+                    </span>
+                  )}
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="ma-visually-hidden"
+                  onChange={(event) => pickCover(event.target.files?.[0])}
+                />
+
+                <div className="ma-fields">
+                  <label className="ma-field">
+                    <span>Title</span>
+                    <input
+                      className="ma-create-input"
+                      value={title}
+                      placeholder="The Silent Orbit"
+                      onChange={(event) => setTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && title.trim()) {
+                          submit();
+                        }
+                      }}
+                    />
+                  </label>
+                  <label className="ma-field">
+                    <span>Author</span>
+                    <input
+                      className="ma-create-input"
+                      value={author}
+                      placeholder="Your name"
+                      onChange={(event) => setAuthor(event.target.value)}
+                    />
+                  </label>
+                  {coverError ? <p className="ma-error">{coverError}</p> : null}
+                </div>
+              </div>
+            </section>
+
+            <section className="vault-create-step">
+              <p className="vault-create-step-kicker">Save</p>
+              {hasBridge ? (
+                <div className="vault-create-folder">
+                  <button
+                    type="button"
+                    className="vault-create-folder-btn"
+                    disabled={picking}
+                    onClick={() => {
+                      setPicking(true);
+                      void pickProjectParent()
+                        .then((path) => {
+                          if (path) {
+                            setParentFolder(path);
+                          }
+                        })
+                        .finally(() => setPicking(false));
+                    }}
+                  >
+                    <UploadIcon />
+                    {picking ? "Opening…" : parentFolder ? "Change folder" : "Choose folder"}
+                  </button>
+                  {parentFolder ? (
+                    <p className="vault-create-path" title={parentFolder}>
+                      {parentFolder}
+                    </p>
+                  ) : (
+                    <p className="vault-create-path is-empty">A project folder is created inside it.</p>
+                  )}
+                </div>
               ) : (
-                <span className="ma-manuscript-empty">
-                  {!manuscript
-                    ? "Upload the manuscript first."
-                    : picking
-                      ? "Opening picker…"
-                      : "Choose a folder. A project folder is created inside it."}
-                </span>
+                <p className="vault-create-step-hint">In the browser preview, the book is stored in this browser.</p>
               )}
-            </button>
-          ) : (
-            <p className="ma-dialog-sub">In the browser preview, the book is stored in this browser.</p>
-          )}
-        </div>
-
-        <div className="ma-dialog-body">
-          <button
-            type="button"
-            className="ma-cover-pick"
-            onClick={() => fileRef.current?.click()}
-            aria-label="Choose cover image"
-          >
-            {coverDataUrl ? (
-              <img src={coverDataUrl} alt="" className="ma-cover-preview" />
-            ) : (
-              <span className="ma-cover-empty">
-                <PlusIcon />
-                <span>Cover</span>
-              </span>
-            )}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="ma-visually-hidden"
-            onChange={(event) => pickCover(event.target.files?.[0])}
-          />
-
-          <div className="ma-fields">
-            <label className="ma-field">
-              <span>Title</span>
-              <input
-                className="ma-create-input"
-                value={title}
-                placeholder="The Silent Orbit"
-                onChange={(event) => setTitle(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && title.trim()) {
-                    submit();
-                  }
-                }}
-              />
-            </label>
-            <label className="ma-field">
-              <span>Author</span>
-              <input
-                className="ma-create-input"
-                value={author}
-                placeholder="Your name"
-                onChange={(event) => setAuthor(event.target.value)}
-              />
-            </label>
-            {coverError ? <p className="ma-error">{coverError}</p> : null}
-          </div>
-        </div>
+            </section>
+          </>
+        ) : null}
 
         <div className="ma-dialog-actions">
           <button type="button" className="vault-create-btn" onClick={onClose}>

@@ -14,12 +14,15 @@ import {
   type BookProject,
 } from "./store";
 import { ConfirmAlert } from "./ConfirmAlert";
+import { importMasteringFiles } from "./mastering-flow";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { SoundMasteringDialog } from "./SoundMasteringDialog";
 import { VaultRoom } from "./VaultRoom";
 
 export function LibraryScreen({
   onOpen,
   onCreated,
+  onMasteringCreated,
   onSettings,
   onHome,
   pane = "home",
@@ -28,6 +31,7 @@ export function LibraryScreen({
 }: {
   onOpen: (project: BookProject) => void;
   onCreated: (project: BookProject, file?: File) => void;
+  onMasteringCreated: (project: BookProject) => void;
   onSettings: () => void;
   onHome: () => void;
   pane?: "home" | "glass";
@@ -37,7 +41,8 @@ export function LibraryScreen({
   const [projects, setProjects] = useState<BookProject[]>([]);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"book" | "mastering" | null>(null);
+  const [savingMaster, setSavingMaster] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [externalPrompt, setExternalPrompt] = useState<BookProject | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -116,7 +121,13 @@ export function LibraryScreen({
 
   async function startNewBook() {
     if (await ensureWorkspace()) {
-      setDialogOpen(true);
+      setCreateMode("book");
+    }
+  }
+
+  async function startMastering() {
+    if (await ensureWorkspace()) {
+      setCreateMode("mastering");
     }
   }
 
@@ -172,12 +183,12 @@ export function LibraryScreen({
         nav={nav}
         overlay={overlay}
         createSheet={
-          dialogOpen ? (
+          createMode === "book" ? (
             <NewProjectDialog
               embedded
-              onClose={() => setDialogOpen(false)}
+              onClose={() => setCreateMode(null)}
               onCreated={async (input) => {
-                setDialogOpen(false);
+                setCreateMode(null);
                 try {
                   let project = await createBook({
                     title: input.title,
@@ -198,14 +209,47 @@ export function LibraryScreen({
                 }
               }}
             />
+          ) : createMode === "mastering" ? (
+            <SoundMasteringDialog
+              busy={savingMaster}
+              onClose={() => {
+                if (!savingMaster) {
+                  setCreateMode(null);
+                }
+              }}
+              onCreated={async (input) => {
+                setSavingMaster(true);
+                try {
+                  let project = await createBook({
+                    title: input.title,
+                    author: "",
+                    parentFolder: input.parentFolder,
+                    kind: "mastering",
+                  });
+                  project = await persistBook(await importMasteringFiles(project, input.files));
+                  notifyProjectsChanged();
+                  setCreateMode(null);
+                  onMasteringCreated(project);
+                } catch (error) {
+                  setNotice(error instanceof Error ? error.message : "Could not start sound mastering.");
+                } finally {
+                  setSavingMaster(false);
+                }
+              }}
+            />
           ) : null
         }
         onOpen={onOpen}
         onHome={onHome}
         onCreate={() => void startNewBook()}
         onImport={() => void openExisting()}
+        onMaster={() => void startMastering()}
         onSettings={onSettings}
-        onCreateClose={() => setDialogOpen(false)}
+        onCreateClose={() => {
+          if (!savingMaster) {
+            setCreateMode(null);
+          }
+        }}
       />
 
       {externalPrompt ? (

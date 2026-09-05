@@ -24,6 +24,7 @@ export interface StoredProjectFile {
   title: string;
   author: string;
   coverDataUrl?: string;
+  kind?: "book" | "mastering";
   chapters: unknown[];
   createdAt: string;
   updatedAt: string;
@@ -134,11 +135,13 @@ declare global {
         author: string;
         coverDataUrl?: string;
         parentFolder?: string;
+        kind?: "book" | "mastering";
       }) => Promise<StoredProjectFile>;
       pickProjectParent?: () => Promise<{ ok: boolean; canceled?: boolean; path?: string }>;
       saveProjectFile?: (project: StoredProjectFile) => Promise<StoredProjectFile>;
       openProjectFolder?: () => Promise<{ ok: boolean; canceled?: boolean; invalid?: boolean; folder?: string; project?: StoredProjectFile; external?: boolean }>;
       deleteProjectFolder?: (folder: string) => Promise<{ ok: boolean }>;
+      revealProjectFolder?: (folder: string) => Promise<{ ok: boolean; reason?: string }>;
       importManuscript?: (folder: string) => Promise<{ ok: boolean; canceled?: boolean; manuscript?: string }>;
       moveProjectIntoWorkspace?: (folder: string) => Promise<{ ok: boolean; invalid?: boolean; project?: StoredProjectFile }>;
       linkExternalProject?: (folder: string) => Promise<{ ok: boolean; invalid?: boolean; project?: StoredProjectFile }>;

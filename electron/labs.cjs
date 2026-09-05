@@ -837,6 +837,7 @@ async function createWorkspaceProject(input) {
     title: typeof input?.title === "string" && input.title.trim() ? input.title.trim() : "Untitled book",
     author: typeof input?.author === "string" ? input.author : "",
     coverDataUrl: typeof input?.coverDataUrl === "string" ? input.coverDataUrl : undefined,
+    kind: input?.kind === "mastering" ? "mastering" : undefined,
     chapters: [],
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -926,6 +927,19 @@ async function deleteWorkspaceProject(folder) {
   await fs.rm(resolved, { recursive: true, force: true });
   notifyShelfChanged();
   return { ok: true };
+}
+
+async function revealWorkspaceProject(folder) {
+  if (typeof folder !== "string") {
+    return { ok: false };
+  }
+  try {
+    const root = await assertProjectFolder(folder);
+    shell.showItemInFolder(root);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error) };
+  }
 }
 
 async function importManuscriptFile(folder) {
@@ -1912,6 +1926,7 @@ app.whenReady().then(async () => {
   bindHandle("labs:project-save", (_event, project) => saveWorkspaceProject(project));
   bindHandle("labs:project-open", () => openWorkspaceProject());
   bindHandle("labs:project-delete", (_event, folder) => deleteWorkspaceProject(folder));
+  bindHandle("labs:project-reveal", (_event, folder) => revealWorkspaceProject(folder));
   bindHandle("labs:project-import-manuscript", (_event, folder) => importManuscriptFile(folder));
   bindHandle("labs:project-move-in", (_event, folder) => moveProjectIntoWorkspace(folder));
   bindHandle("labs:project-link-external", (_event, folder) => registerExternalProject(folder));

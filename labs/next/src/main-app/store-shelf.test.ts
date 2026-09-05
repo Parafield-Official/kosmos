@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { manuscriptSourcePath, shelfIdentity, type BookProject } from "./store";
+import { fileManagerName, manuscriptSourcePath, revealFolderLabel, shelfIdentity, type BookProject } from "./store";
 
 function book(partial: Partial<BookProject> = {}): BookProject {
   return {
@@ -50,5 +50,16 @@ describe("manuscriptSourcePath", () => {
   it("returns undefined so the caller can copy when no disk path exists", () => {
     vi.stubGlobal("window", { kosmosNext: {} });
     expect(manuscriptSourcePath(new File(["hi"], "northwind.docx"))).toBeUndefined();
+  });
+});
+
+describe("file manager labels", () => {
+  it("names Finder on macOS and Explorer on Windows", () => {
+    expect(fileManagerName("darwin")).toBe("Finder");
+    expect(fileManagerName("win32")).toBe("Explorer");
+    expect(fileManagerName("linux")).toBe("Folder");
+    expect(revealFolderLabel("darwin")).toBe("Show in Finder");
+    expect(revealFolderLabel("win32")).toBe("Open in Explorer");
+    expect(revealFolderLabel("linux")).toBe("Show in folder");
   });
 });
