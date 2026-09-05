@@ -25,6 +25,7 @@ export function VaultRoom({
   onHome,
   onCreate,
   onImport,
+  onMaster,
   onSettings,
   onCreateClose,
 }: {
@@ -39,6 +40,7 @@ export function VaultRoom({
   onHome: () => void;
   onCreate: () => void;
   onImport: () => void;
+  onMaster: () => void;
   onSettings: () => void;
   onCreateClose?: () => void;
 }) {
@@ -65,6 +67,10 @@ export function VaultRoom({
 
   function pickCreate() {
     void onCreate();
+  }
+
+  function pickMaster() {
+    void onMaster();
   }
 
   function pickImport() {
@@ -255,7 +261,7 @@ export function VaultRoom({
 
         {compose && !createSheet ? (
           <div className="vault-sheet-layer" onClick={closeSheets}>
-            <ComposePanel onCreate={pickCreate} onImport={pickImport} />
+            <ComposePanel onCreate={pickCreate} onImport={pickImport} onMaster={pickMaster} />
           </div>
         ) : null}
 
@@ -431,7 +437,15 @@ function VaultCoverArt({ project }: { project: BookProject }) {
   );
 }
 
-function ComposePanel({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
+function ComposePanel({
+  onCreate,
+  onImport,
+  onMaster,
+}: {
+  onCreate: () => void;
+  onImport: () => void;
+  onMaster: () => void;
+}) {
   return (
     <div
       className="vault-chooser"
@@ -461,6 +475,20 @@ function ComposePanel({ onCreate, onImport }: { onCreate: () => void; onImport: 
           <span>Open a Kosmos project that’s already on this computer.</span>
         </span>
       </button>
+      <div className="vault-chooser-split">
+        <span className="vault-chooser-split-rule" aria-hidden="true" />
+        <p className="vault-chooser-split-label">Skip Recording / Proofreading</p>
+        <span className="vault-chooser-split-rule" aria-hidden="true" />
+      </div>
+      <button type="button" className="vault-chooser-row vault-chooser-row-master" onClick={onMaster}>
+        <span className="vault-chooser-icon" aria-hidden="true">
+          <WaveGlyph />
+        </span>
+        <span className="vault-chooser-copy">
+          <strong>Sound mastering</strong>
+          <span>Upload finished chapter audio. No manuscript, recording, or proof.</span>
+        </span>
+      </button>
     </div>
   );
 }
@@ -486,7 +514,7 @@ function InspectPanel({
   const progress = completionPct(project);
   const canListen =
     project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered && Boolean(chapter.masteredFile));
-  const canRead = project.chapters.length > 0;
+  const canRead = project.kind !== "mastering" && project.chapters.length > 0;
   const reduceMotion = useMemo(
     () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
@@ -577,7 +605,7 @@ function InspectPanel({
           <div className="vault-inspect-actions">
             <button type="button" className="vault-inspect-btn" onClick={onEdit}>
               <EditGlyph />
-              <span>Edit</span>
+              <span>{project.kind === "mastering" ? "Master" : "Edit"}</span>
             </button>
             <button type="button" className="vault-inspect-btn" disabled={!canListen} onClick={onListen}>
               <ListenGlyph />
@@ -626,6 +654,19 @@ function GearGlyph() {
         stroke="currentColor"
         strokeWidth="2.15"
         strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WaveGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 12h1.6M7.2 7.5v9M10.4 4.8v14.4M13.6 8.4v7.2M16.8 5.8v10.4M20 10.8v2.4"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
       />
     </svg>
   );
