@@ -6,6 +6,8 @@ export interface AppUpdateStatus {
   currentVersion?: string;
   version?: string;
   percent?: number;
+  transferred?: number;
+  total?: number;
   message?: string;
   skipped?: boolean;
   text?: string;

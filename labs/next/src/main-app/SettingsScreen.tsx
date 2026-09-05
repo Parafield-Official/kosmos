@@ -116,11 +116,15 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const updateMessage = update?.text
-    ? update.text
-    : update?.skipped
-      ? "This development copy does not check for updates."
-      : "Up to date.";
+  const busy = checking || ["checking", "available", "downloading"].includes(update?.phase ?? "");
+  const updateMessage = update?.skipped ? "Updates are unavailable in this development copy."
+    : update?.phase === "ready" ? `Kosmos ${update.version} is ready to install`
+    : update?.phase === "downloading" ? `Downloading Kosmos ${update.version ?? "update"}`
+    : update?.phase === "available" ? `Preparing to download Kosmos ${update.version}`
+    : update?.phase === "error" ? "Update could not finish"
+    : busy ? "Checking for updates…"
+    : update?.phase === "up-to-date" ? "You’re up to date"
+    : "Automatic updates";
 
   useEffect(() => {
     let alive = true;
@@ -413,15 +417,30 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               </button>
             </SetItem>
             <SetItem icon={<InfoIcon />} title="About Kosmos Labs" sub={updateMessage}>
-              <p className="ma-set-value">{appVersion ? `Version ${appVersion}` : "Version unavailable"}</p>
+              <p className="ma-set-value">{appVersion ? `Installed version ${appVersion}` : "Loading installed version…"}</p>
+              <div className="ma-update-status" role="status" aria-live="polite">
+                {update?.phase === "downloading" || update?.phase === "available" ? (
+                  <>
+                    <progress aria-label="Update download progress" max={100}
+                      value={update.phase === "downloading" && Number.isFinite(update.percent) ? Math.max(0, Math.min(100, update.percent!)) : undefined} />
+                    <p>{update.phase === "available" ? "Connecting to the download…" : `${Math.round(update.percent ?? 0)}% downloaded`}
+                      {update.total ? ` · ${Math.round((update.transferred ?? 0) / 1e6)} / ${Math.round(update.total / 1e6)} MB` : ""}</p>
+                    <p>You can keep working. Restart after the download finishes to install the update.</p>
+                  </>
+                ) : update?.phase === "ready" ? <p>Download complete. Finish recording, then restart Kosmos to use the new version.</p>
+                  : update?.phase === "error" ? <>
+                    <p>Your current version still works. Try again or download the installer.</p>
+                    {update.message ? <details><summary>Show error details</summary><p>{update.message}</p></details> : null}
+                  </> : <p>Updates download automatically. A restart applies the new version.</p>}
+              </div>
               <div className="ma-set-control-row">
                 <button
                   type="button"
                   className="btn"
-                  disabled={checking || update?.skipped}
+                  disabled={busy || update?.skipped || update?.canInstall}
                   onClick={() => void checkForUpdates()}
                 >
-                  {checking ? "Checking…" : "Check for updates"}
+                  {busy ? update?.phase === "checking" || checking ? "Checking…" : "Downloading…" : update?.phase === "error" ? "Try again" : "Check for updates"}
                 </button>
                 {update?.canInstall ? (
                   <button
@@ -429,11 +448,11 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     className="btn btn-clear"
                     onClick={() => void window.kosmosNext?.installAppUpdate?.()}
                   >
-                    Get update
+                    Restart to update
                   </button>
                 ) : null}
                 <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
-                  View releases
+                  Download installer
                 </button>
               </div>
             </SetItem>
