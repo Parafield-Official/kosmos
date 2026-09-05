@@ -2,6 +2,7 @@ const { execFile } = require("node:child_process");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { promisify } = require("node:util");
+const { verifyPackagedAppUpdateConfig } = require("./ensure-app-update-config.cjs");
 
 const execFileAsync = promisify(execFile);
 const COMMAND_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -96,6 +97,7 @@ async function submitMacApp(context, dependencies = {}) {
   const statePath = path.join(stagingDirectory, STATE_FILE_NAME);
 
   await fs.access(appPath);
+  await verifyPackagedAppUpdateConfig({ platform: "darwin", appPath });
   await fs.mkdir(stagingDirectory, { recursive: true });
   await Promise.all([
     fs.rm(archivePath, { force: true }),
