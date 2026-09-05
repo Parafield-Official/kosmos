@@ -51,6 +51,7 @@ function present(state) {
     text: copyFor(state),
     showBanner,
     canInstall: state.phase === "ready",
+    canDownloadInstaller: state.phase === "error",
     releasePage: RELEASE_PAGE,
   };
 }

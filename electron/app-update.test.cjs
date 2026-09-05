@@ -131,6 +131,32 @@ describe("desktop auto-update", () => {
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
+  it("offers the manual installer only after automatic updating fails", async () => {
+    const autoUpdater = fakeAutoUpdater();
+    autoUpdater.checkForUpdates.mockImplementation(async () => {
+      autoUpdater.emit("update-not-available", { version: "0.1.25" });
+      return {};
+    });
+    const updater = createAppUpdater({
+      autoUpdater,
+      isPackaged: true,
+      currentVersion: "0.1.25",
+      send: vi.fn(),
+    });
+
+    await updater.started;
+    expect(updater.getStatus()).toMatchObject({
+      phase: "up-to-date",
+      canDownloadInstaller: false,
+    });
+
+    autoUpdater.emit("error", new Error("Download connection closed"));
+    expect(updater.getStatus()).toMatchObject({
+      phase: "error",
+      canDownloadInstaller: true,
+    });
+  });
+
   it("does not force a restart while a download is still in flight", async () => {
     const autoUpdater = fakeAutoUpdater();
     autoUpdater.checkForUpdates.mockImplementation(async () => {

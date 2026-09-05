@@ -104,6 +104,25 @@ describe("collaborator archive extraction", () => {
       .rejects.toThrow(/more than Kosmos will accept/i);
   });
 
+  it("closes an output file opened before rejecting an oversized archive", async () => {
+    const folder = await workspace();
+    const archivePath = writeZip(folder, { "Book/audio/01.wav": "x".repeat(4096) });
+    const destination = path.join(folder, "out");
+    const close = vi.fn(async () => undefined);
+    const open = vi.spyOn(fsp, "open").mockResolvedValue({
+      write: vi.fn(async () => undefined),
+      close,
+    });
+
+    try {
+      await expect(extractArchive({ archivePath, destination, maxBytes: 1024 }))
+        .rejects.toThrow(/more than Kosmos will accept/i);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it("refuses an archive with nothing in it", async () => {
     const folder = await workspace();
     const archivePath = path.join(folder, "empty.zip");

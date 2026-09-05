@@ -451,9 +451,11 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                     Restart to update
                   </button>
                 ) : null}
-                <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
-                  Download installer
-                </button>
+                {update?.canDownloadInstaller ? (
+                  <button type="button" className="btn" onClick={() => void window.kosmosNext?.openReleasePage?.()}>
+                    Download installer
+                  </button>
+                ) : null}
               </div>
             </SetItem>
             <p className="ma-third-party-notice">

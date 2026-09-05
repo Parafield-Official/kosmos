@@ -32,6 +32,7 @@ async function extractArchive({
   let totalBytes = 0;
   let failure = null;
   let pending = [];
+  const openHandles = new Set();
 
   const unzip = new Unzip();
   unzip.register(UnzipInflate);
@@ -59,6 +60,7 @@ async function extractArchive({
     const open = (async () => {
       await fsp.mkdir(path.dirname(target), { recursive: true });
       handle = await fsp.open(target, "wx");
+      openHandles.add(handle);
     })();
     pending.push(open);
     let written = 0;
@@ -84,6 +86,7 @@ async function extractArchive({
         }
         if (final) {
           await handle.close();
+          openHandles.delete(handle);
           handle = null;
         }
       })());
@@ -111,6 +114,7 @@ async function extractArchive({
   } catch (error) {
     source.destroy();
     await settle().catch(() => undefined);
+    await closeOpenHandles();
     await fsp.rm(destination, { recursive: true, force: true });
     throw error;
   }
@@ -126,6 +130,12 @@ async function extractArchive({
       pending = [];
       await Promise.all(waiting);
     }
+  }
+
+  async function closeOpenHandles() {
+    const handles = [...openHandles];
+    openHandles.clear();
+    await Promise.allSettled(handles.map((handle) => handle.close()));
   }
 }
 
