@@ -49,6 +49,13 @@ describe("asynchronous macOS notarization", () => {
     const calls = [];
     try {
       await fs.mkdir(appPath, { recursive: true });
+      await fs.mkdir(path.join(appPath, "Contents", "Resources"), { recursive: true });
+      await fs.writeFile(path.join(appPath, "Contents", "Resources", "app-update.yml"), [
+        "provider: generic",
+        "url: https://parafield-official.github.io/kosmos/updates/",
+        "updaterCacheDirName: booth-desk-updater",
+        "",
+      ].join("\n"));
       const state = await submitMacApp(contextFor(appDirectory), {
         env: {
           APPLE_API_KEY: "/private/key.p8",
@@ -88,6 +95,31 @@ describe("asynchronous macOS notarization", () => {
       expect(calls.filter(([, args]) => args[0] === "notarytool" && args[1] === "submit")).toHaveLength(1);
       expect(calls.some(([, args]) => args[0] === "notarytool" && args[1] === "info")).toBe(false);
       expect(calls.some(([, args]) => args[0] === "stapler")).toBe(false);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to submit a macOS app that cannot download future updates", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-notarize-test-"));
+    const appDirectory = path.join(root, "dist", "mac-arm64");
+    const appPath = path.join(appDirectory, "Kosmos.app");
+    const calls = [];
+    try {
+      await fs.mkdir(appPath, { recursive: true });
+      await expect(submitMacApp(contextFor(appDirectory), {
+        env: {
+          APPLE_API_KEY: "/private/key.p8",
+          APPLE_API_KEY_ID: "KEYID",
+          APPLE_API_ISSUER: "ISSUER",
+        },
+        logger: () => undefined,
+        run: async (command, args) => {
+          calls.push([command, args]);
+          return { stdout: JSON.stringify({ id: "unexpected-submission" }) };
+        },
+      })).rejects.toThrow(/app-update\.yml/i);
+      expect(calls).toHaveLength(0);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
