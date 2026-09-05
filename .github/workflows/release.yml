@@ -492,6 +492,11 @@ jobs:
           # Apple's ticket is available.
           npx electron-builder --mac dir --${{ matrix.arch }} --publish never
 
+      - name: Verify updater configuration in the signed macOS app
+        if: runner.os == 'macOS'
+        shell: bash
+        run: node scripts/ensure-app-update-config.cjs darwin "dist/mac-${{ matrix.arch }}/Kosmos.app"
+
       - name: Stage matching macOS FFmpeg source
         if: runner.os == 'macOS'
         shell: bash
@@ -511,7 +516,9 @@ jobs:
           # The free direct-download channel is intentionally unsigned for
           # now. electron-updater still enforces the SHA-512 in latest.yml.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win --${{ matrix.arch }} --publish never
+        run: |
+          npx electron-builder --win --${{ matrix.arch }} --publish never
+          node scripts/ensure-app-update-config.cjs win32 dist/win-unpacked
 
       - name: Upload installer artifact
         if: runner.os == 'Windows'
@@ -628,6 +635,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
           xcrun stapler validate "$app_path"
+          node scripts/ensure-app-update-config.cjs darwin "$app_path"
 
       - name: Create final DMG, ZIP, and updater metadata
         shell: bash
@@ -646,6 +654,9 @@ jobs:
           test "${#dmg_files[@]}" -eq 1
           test "${#zip_files[@]}" -eq 1
           test -s dist/latest-mac.yml
+          update_check_dir="$(mktemp -d "$RUNNER_TEMP/kosmos-update-config.XXXXXX")"
+          ditto -x -k "${zip_files[0]}" "$update_check_dir"
+          node scripts/ensure-app-update-config.cjs darwin "$update_check_dir/Kosmos.app"
           cp notarization-staging/FFmpeg-8.1.1-source.tar.xz dist/FFmpeg-8.1.1-source.tar.xz
           cp notarization-staging/FFmpeg-8.1.1-source.tar.xz.sha256 dist/FFmpeg-8.1.1-source.tar.xz.sha256
 
