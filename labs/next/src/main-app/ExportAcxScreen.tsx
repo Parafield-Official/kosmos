@@ -7,7 +7,7 @@ import {
   type SpecPresetId,
 } from "./engine-prefs";
 import { exportBookPack, type ExportPackMode } from "./punch";
-import { bookInitials, chapterStage, type BookChapter, type BookProject } from "./store";
+import { bookInitials, chapterStage, isMasteringProject, type BookChapter, type BookProject } from "./store";
 import { VaultListenSheet } from "./vault-media";
 
 export function ExportAcxScreen({
@@ -34,7 +34,8 @@ export function ExportAcxScreen({
     [project.chapters],
   );
   const canListen = playable.length > 0;
-  const canHandoff = project.chapters.some(chapterHasTape);
+  const masteringOnly = isMasteringProject(project);
+  const canHandoff = !masteringOnly && project.chapters.some(chapterHasTape);
   const presetHint =
     SPEC_PRESET_OPTIONS.find((option) => option.value === presetId)?.hint ??
     "Loudness as RMS (−23 to −18 dBFS), true peak, noise floor, and room tone.";
@@ -144,7 +145,11 @@ export function ExportAcxScreen({
               </button>
             ))}
           </div>
-          <p className="ma-export-note">Mono, 192 kbps or better. ACX needs every chapter mastered.</p>
+          <p className="ma-export-note">
+            {masteringOnly
+              ? "Exports mastered chapter audio. Mono, 192 kbps or better."
+              : "Mono, 192 kbps or better. ACX needs every chapter mastered."}
+          </p>
 
           <div className="ma-export-acts">
             <button
@@ -165,20 +170,24 @@ export function ExportAcxScreen({
               <ExportGlyph />
               {busy === "acx" ? "Exporting…" : "Export ACX"}
             </button>
-            <button
-              type="button"
-              className="ma-export-handoff"
-              disabled={!canHandoff || busy !== null}
-              onClick={() => void run("handoff")}
-            >
-              {busy === "handoff" ? "Packing…" : "Handoff pack"}
-            </button>
+            {masteringOnly ? null : (
+              <button
+                type="button"
+                className="ma-export-handoff"
+                disabled={!canHandoff || busy !== null}
+                onClick={() => void run("handoff")}
+              >
+                {busy === "handoff" ? "Packing…" : "Handoff pack"}
+              </button>
+            )}
             <p className="ma-export-hint">
               {canExportAcx
                 ? "Ready for Audible."
-                : canHandoff
-                  ? "Handoff includes any original, working, or mastered tape so another booth can finish."
-                  : "Record at least one chapter before handing the book off."}
+                : masteringOnly
+                  ? "Master every uploaded file, then export ACX audio."
+                  : canHandoff
+                    ? "Handoff includes any original, working, or mastered tape so another booth can finish."
+                    : "Record at least one chapter before handing the book off."}
             </p>
           </div>
           {error ? <p className="ma-error">{error}</p> : null}

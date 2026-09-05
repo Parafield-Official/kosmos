@@ -27,6 +27,28 @@ function fakeAutoUpdater() {
 }
 
 describe("desktop auto-update", () => {
+  it("shows a background download rejection instead of staying available", async () => {
+    const autoUpdater = fakeAutoUpdater();
+    autoUpdater.checkForUpdates.mockImplementation(async () => {
+      autoUpdater.emit("update-available", { version: "0.1.24" });
+      return { downloadPromise: Promise.reject(new Error("Download connection closed")) };
+    });
+    const updater = createAppUpdater({ autoUpdater, isPackaged: true, currentVersion: "0.1.23", send: vi.fn(), setIntervalFn: vi.fn() });
+    await updater.started;
+    await Promise.resolve();
+    expect(updater.getStatus()).toMatchObject({ phase: "error", message: "Download connection closed" });
+  });
+
+  it("publishes actual download byte counts", async () => {
+    const autoUpdater = fakeAutoUpdater();
+    const updater = createAppUpdater({ autoUpdater, isPackaged: true, currentVersion: "0.1.23", send: vi.fn(), setIntervalFn: vi.fn() });
+    await updater.started;
+    autoUpdater.emit("update-available", { version: "0.1.24" });
+    autoUpdater.emit("download-progress", { percent: 25, transferred: 200, total: 800 });
+    expect(updater.getStatus()).toMatchObject({ phase: "downloading", percent: 25, transferred: 200, total: 800 });
+    await updater.check();
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+  });
   it("does not contact the update service from an unpackaged development copy", async () => {
     const autoUpdater = fakeAutoUpdater();
     const send = vi.fn();

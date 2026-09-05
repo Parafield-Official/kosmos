@@ -7,6 +7,7 @@ import {
   readManuscriptBytes,
   writeChapterContents,
   writeManuscript,
+  isMasteringProject,
   type BookProject,
 } from "./store";
 import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
@@ -23,6 +24,7 @@ import { ExportAcxScreen } from "./ExportAcxScreen";
 import { ChapterWorkspace } from "./ChapterWorkspace";
 import { ChapterEditor } from "./ChapterEditor";
 import { SettingsScreen } from "./SettingsScreen";
+import { SoundMasteringScreen } from "./SoundMasteringScreen";
 import { VaultReadSheet } from "./vault-media";
 import { ThemeAtmosphere } from "./ThemeAtmosphere";
 import { PigmentOnboardingPanel } from "./ThemeOnboardingScreen";
@@ -34,7 +36,8 @@ type WorkScreen =
   | { name: "book"; project: BookProject; tab: BookTab }
   | { name: "chapter"; project: BookProject; chapterId: string; step: ChapterStep }
   | { name: "editor"; project: BookProject; chapterId: string }
-  | { name: "reader"; project: BookProject; chapterId: string };
+  | { name: "reader"; project: BookProject; chapterId: string }
+  | { name: "mastering"; project: BookProject };
 
 type MainScreen = WorkScreen | { name: "settings"; from: WorkScreen };
 
@@ -84,6 +87,10 @@ export function MainApp() {
 
   const openProject = useCallback((project: BookProject, tab: BookTab = "dashboard") => {
     if (pickingPigment) {
+      return;
+    }
+    if (isMasteringProject(project)) {
+      setScreen({ name: "mastering", project });
       return;
     }
     setScreen({ name: "book", project, tab });
@@ -245,6 +252,10 @@ export function MainApp() {
     [analyzeAndApply],
   );
 
+  const onMasteringCreated = useCallback((project: BookProject) => {
+    setScreen({ name: "mastering", project });
+  }, []);
+
   const themeStyle = {
     "--ma-accent": themePaint.hex,
     "--ma-accent-rgb": themePaint.rgb,
@@ -304,6 +315,15 @@ export function MainApp() {
         onBack={() => openProject(screen.project, "chapters")}
       />
     );
+  } else if (screen.name === "mastering") {
+    overlay = (
+      <SoundMasteringScreen
+        project={screen.project}
+        onBack={openLibrary}
+        onChange={(next) => void commit(next)}
+        onDelete={() => setDeleteTarget(screen.project)}
+      />
+    );
   } else if (screen.name === "book") {
     overlay = (
       <BookShell
@@ -361,6 +381,7 @@ export function MainApp() {
           overlay={overlay}
           onOpen={openProject}
           onCreated={onCreatedBook}
+          onMasteringCreated={onMasteringCreated}
           onSettings={openSettings}
           onHome={openLibrary}
         />

@@ -44,6 +44,8 @@ function present(state) {
     currentVersion: state.currentVersion,
     version: state.version,
     percent: state.percent,
+    transferred: state.transferred,
+    total: state.total,
     message: state.message,
     skipped: Boolean(state.skipped),
     text: copyFor(state),
@@ -83,6 +85,8 @@ function createAppUpdater({
       currentVersion,
       version: resetProgress && partial.phase !== "checking" ? partial.version : (partial.version ?? state.version),
       percent: resetProgress ? partial.percent : (partial.percent ?? state.percent),
+      transferred: resetProgress ? undefined : (partial.transferred ?? state.transferred),
+      total: resetProgress ? undefined : (partial.total ?? state.total),
       message: partial.message,
       skipped: partial.skipped ?? false,
     });
@@ -93,12 +97,18 @@ function createAppUpdater({
     if (!isPackaged) {
       return getStatus();
     }
-    if (state.phase === "downloading" || state.phase === "ready") {
+    if (["checking", "available", "downloading", "ready"].includes(state.phase)) {
       return getStatus();
     }
     emit({ phase: "checking" });
     try {
-      await autoUpdater.checkForUpdates();
+      const result = await autoUpdater.checkForUpdates();
+      if (result?.downloadPromise) {
+        void result.downloadPromise.catch((error) => emit({
+          phase: "error",
+          message: error instanceof Error ? error.message : String(error),
+        }));
+      }
       if (state.phase === "checking") {
         emit({ phase: "up-to-date" });
       }
@@ -155,6 +165,8 @@ function createAppUpdater({
     emit({
       phase: "downloading",
       percent: progress?.percent,
+      transferred: progress?.transferred,
+      total: progress?.total,
     });
   });
   autoUpdater.on("update-downloaded", (info) => {

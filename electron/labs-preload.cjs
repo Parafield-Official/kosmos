@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld("kosmosNext", {
   saveProjectFile: (project) => ipcRenderer.invoke("labs:project-save", project),
   openProjectFolder: () => ipcRenderer.invoke("labs:project-open"),
   deleteProjectFolder: (folder) => ipcRenderer.invoke("labs:project-delete", folder),
+  revealProjectFolder: (folder) => ipcRenderer.invoke("labs:project-reveal", folder),
   importManuscript: (folder) => ipcRenderer.invoke("labs:project-import-manuscript", folder),
   moveProjectIntoWorkspace: (folder) => ipcRenderer.invoke("labs:project-move-in", folder),
   linkExternalProject: (folder) => ipcRenderer.invoke("labs:project-link-external", folder),

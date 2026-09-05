@@ -15,6 +15,7 @@ const PROJECTS_KEY = "kosmos-projects";
 const LAST_PROJECT_KEY = "kosmos-last-project";
 
 export type ChapterStage = "blank" | "recording" | "proofing" | "mastering" | "done";
+export type BookKind = "book" | "mastering";
 export type AudioSlot = "original" | "working" | "mastered";
 export type PromptHighlightMode = "word" | "line" | "paragraph";
 export type ReadingFont = "serif" | "sans" | "palatino" | "courier" | "clear" | "hyperlegible";
@@ -122,6 +123,8 @@ export interface BookProject {
   author: string;
   /** Data-URL cover art shown on the shelf. */
   coverDataUrl?: string;
+  /** `mastering` is audio-only: import takes, master, export ACX. */
+  kind?: BookKind;
   chapters: BookChapter[];
   createdAt: string;
   updatedAt: string;
@@ -330,6 +333,7 @@ function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): 
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title : "Untitled book",
     author: typeof raw.author === "string" ? raw.author : "",
     coverDataUrl: typeof raw.coverDataUrl === "string" ? raw.coverDataUrl : undefined,
+    kind: raw.kind === "mastering" ? "mastering" : undefined,
     chapters: chapters.map((chapter) => {
       const rawChapter = chapter as BookChapter & { takes?: Array<{ file?: string; kind?: string }> };
       const legacyTakes = Array.isArray(rawChapter.takes)
@@ -441,12 +445,14 @@ export function createProject(input: {
   title: string;
   author: string;
   coverDataUrl?: string;
+  kind?: BookKind;
 }): BookProject {
   const project: BookProject = {
     id: uid("bk"),
     title: input.title.trim() || "Untitled book",
     author: input.author.trim(),
     coverDataUrl: input.coverDataUrl,
+    kind: input.kind === "mastering" ? "mastering" : undefined,
     chapters: [],
     createdAt: now(),
     updatedAt: now(),
@@ -524,6 +530,11 @@ export function bookProgress(project: BookProject): number {
     return 0;
   }
   const perChapter = project.chapters.map((chapter) => {
+    if (isMasteringProject(project)) {
+      const have = chapter.hasOriginalAudio || chapter.recordedPct >= 1 ? 1 : 0;
+      const master = chapter.mastered ? 1 : 0;
+      return (have + master) / 2;
+    }
     const record = Math.min(1, Math.max(0, chapter.recordedPct));
     const proof = chapter.proofed ? 1 : 0;
     const master = chapter.mastered ? 1 : 0;
@@ -531,6 +542,10 @@ export function bookProgress(project: BookProject): number {
   });
   const total = perChapter.reduce((sum, value) => sum + value, 0);
   return total / project.chapters.length;
+}
+
+export function isMasteringProject(project: Pick<BookProject, "kind">): boolean {
+  return project.kind === "mastering";
 }
 
 /** Pure helper: returns a new project with an appended chapter. */
@@ -548,6 +563,27 @@ export function appendChapter(project: BookProject, title: string): BookProject 
     mastered: false,
   };
   return { ...project, chapters: [...project.chapters, chapter] };
+}
+
+/** Keep chapter ids, rewrite the list order. No-op if the ids do not match. */
+export function reorderChapters(project: BookProject, orderedIds: string[]): BookProject {
+  if (orderedIds.length !== project.chapters.length) {
+    return project;
+  }
+  const byId = new Map(project.chapters.map((chapter) => [chapter.id, chapter]));
+  const next: BookChapter[] = [];
+  for (const id of orderedIds) {
+    const chapter = byId.get(id);
+    if (!chapter) {
+      return project;
+    }
+    next.push(chapter);
+    byId.delete(id);
+  }
+  if (byId.size > 0) {
+    return project;
+  }
+  return { ...project, chapters: next };
 }
 
 /** Drop a chapter from the book and delete its text and audio files. */
@@ -650,11 +686,16 @@ export async function createBook(input: {
   author: string;
   coverDataUrl?: string;
   parentFolder?: string;
+  kind?: BookKind;
 }): Promise<BookProject> {
   if (hasProjectBridge()) {
     const created = await window.kosmosNext!.createProject!(input);
     notifyProjectsChanged();
-    return normalizeProject(created as Partial<BookProject> & Record<string, unknown>);
+    const project = normalizeProject(created as Partial<BookProject> & Record<string, unknown>);
+    if (input.kind === "mastering" && project.kind !== "mastering") {
+      return persistBook({ ...project, kind: "mastering" });
+    }
+    return project;
   }
   const created = createProject(input);
   notifyProjectsChanged();
@@ -1097,6 +1138,38 @@ export async function deleteBook(project: BookProject): Promise<void> {
   }
   deleteProject(project.id);
   notifyProjectsChanged();
+}
+
+/** Short label for the local file manager. */
+export function fileManagerName(platform = window.kosmosNext?.platform): string {
+  if (platform === "darwin") {
+    return "Finder";
+  }
+  if (platform === "win32") {
+    return "Explorer";
+  }
+  return "Folder";
+}
+
+export function revealFolderLabel(platform = window.kosmosNext?.platform): string {
+  if (platform === "darwin") {
+    return "Show in Finder";
+  }
+  if (platform === "win32") {
+    return "Open in Explorer";
+  }
+  return "Show in folder";
+}
+
+/** Reveal the project directory in Finder, Explorer, or the system file manager. */
+export async function revealBookFolder(project: BookProject): Promise<{ ok: boolean; reason?: string }> {
+  if (!project.folder) {
+    return { ok: false, reason: "This project has no folder yet." };
+  }
+  if (!window.kosmosNext?.revealProjectFolder) {
+    return { ok: false, reason: "Opening the project folder isn’t available here." };
+  }
+  return window.kosmosNext.revealProjectFolder(project.folder);
 }
 
 export function chapterStage(chapter: BookChapter): ChapterStage {
