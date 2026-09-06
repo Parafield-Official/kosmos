@@ -7,7 +7,7 @@ const { createRequire } = require("node:module");
 
 // Exercise the real export transaction and filesystem while stubbing codec
 // work so a publication failure can be injected on every CI platform.
-function loadExport(failPublish) {
+function loadExport(failPublish, failMarkers = false) {
   const filename = path.join(__dirname, "labs-audio.cjs");
   const localRequire = createRequire(filename);
   const wrappedFs = {
@@ -35,6 +35,7 @@ function loadExport(failPublish) {
           : localRequire(name),
     module: { exports: {} },
     __dirname,
+    failMarkers,
     process,
     Buffer,
     console,
@@ -51,7 +52,7 @@ function loadExport(failPublish) {
       buildExportPlan: () => ({ readmeFiles: [] }),
       reportText: () => "report",
       revealTargetInExportPack: files => files[0],
-    } : {};
+    } : { markerFileSet: () => { if (failMarkers) throw new Error("injected marker failure"); return []; } };
   `, context, { filename });
   return context.module.exports.exportDeliveryPack;
 }
@@ -82,3 +83,17 @@ describe("Labs export preservation", () => {
     }
   });
 });
+
+ it("keeps old audio published when marker generation fails", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-markers-test-"));
+  try {
+   await fs.writeFile(path.join(root,"project.json"),"{}");
+   await fs.mkdir(path.join(root,"audio"));
+   await fs.mkdir(path.join(root,"export/acx-handoff"),{recursive:true});
+   const output = path.join(root,"export/acx-handoff/01_chapter.mp3");
+   await fs.writeFile(output,"previous export");
+   const result = await loadExport(false,true)({folder:root,mode:"handoff",chapters:[{id:"one",workingFile:"take.wav",pickups:[{id:"pickup"}]}]});
+   expect(result.ok).toBe(false);
+   expect(await fs.readFile(output,"utf8")).toBe("previous export");
+  } finally { await fs.rm(root,{recursive:true,force:true}); }
+ });

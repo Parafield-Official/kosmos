@@ -272,8 +272,8 @@ check(
   `ours ${report.noise_floor_dbfs.toFixed(1)}, ffmpeg ${Math.max(head.rms, tail.rms).toFixed(1)}`,
 );
 check(
-  "and we call the file a pass",
-  report.traffic_light === "green",
+  "no technical requirements fail, and the encoding is verified",
+  !Object.values(report.checks).includes("fail") && report.checks.format === "pass",
   `${report.traffic_light}: ${JSON.stringify(report.checks)}`,
 );
 
@@ -325,4 +325,4 @@ if (failures.length > 0) {
   console.error(`\nFailed: ${failures.join("; ")}`);
   process.exit(1);
 }
-console.log("ffmpeg agrees: what we master and encode is what ACX asks for.");
+console.log("The controlled fixture meets the independently checked audio limits; listening and submission-content review remain necessary.");

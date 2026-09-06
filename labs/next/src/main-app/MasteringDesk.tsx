@@ -85,18 +85,19 @@ export function MasteringDesk({
   }
 
   useEffect(() => {
-    if (chapter?.masteredFile && compareTakes.includes("mastered")) {
+    if (chapter?.mastered && chapter?.masteredFile && compareTakes.includes("mastered")) {
       setListen("mastered");
     } else if (chapter?.workingFile && compareTakes.includes("working")) {
       setListen("working");
     } else {
       setListen("original");
     }
-  }, [chapter?.masteredFile, chapter?.workingFile, chapter?.originalFile, compareTakes]);
+  }, [chapter?.mastered, chapter?.masteredFile, chapter?.workingFile, chapter?.originalFile, compareTakes]);
 
   useEffect(() => {
-    const file = chapter?.masteredFile;
+    const file = chapter?.mastered ? chapter.masteredFile : undefined;
     if (!file || !project.folder || !window.kosmosNext?.measureChapter) {
+      setAcxReport(null);
       return;
     }
     let cancelled = false;
@@ -116,14 +117,14 @@ export function MasteringDesk({
     return () => {
       cancelled = true;
     };
-  }, [chapter?.masteredFile, project.folder, measureNonce]);
+  }, [chapter?.mastered, chapter?.masteredFile, project.folder, measureNonce]);
 
   if (!chapter) {
     return null;
   }
   const current = chapter;
   const listenFile =
-    listen === "mastered" ? current.masteredFile : listen === "working" ? current.workingFile : current.originalFile;
+    listen === "mastered" ? (current.mastered ? current.masteredFile : undefined) : listen === "working" ? current.workingFile : current.originalFile;
 
   async function runMaster() {
     setMasterError(null);
@@ -204,7 +205,7 @@ export function MasteringDesk({
     if (!acxReport) {
       return;
     }
-    const file = current.masteredFile ?? current.workingFile ?? current.originalFile;
+    const file = (current.mastered ? current.masteredFile : undefined) ?? current.workingFile ?? current.originalFile;
     if (!file) {
       return;
     }

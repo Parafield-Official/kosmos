@@ -1,0 +1,36 @@
+{
+  "softBoundary": {
+    "sourceSoftStart": 1,
+    "sourceSoftEnd": 3.2,
+    "detectedStart": 1.2,
+    "detectedEnd": 3,
+    "noiseFloor": -66.10833915531053,
+    "discardedStartSeconds": 0.19999999999999996,
+    "discardedEndSeconds": 0.20000000000000018
+  },
+  "staleHandoff": {
+    "chapter": {
+      "mastered": false,
+      "masteredFile": "old-master.wav",
+      "workingFile": "new-pickup.wav"
+    },
+    "selected": "old-master.wav"
+  },
+  "noiseWindow": {
+    "bodyPauseRms": -43.0103,
+    "reportedFloor": -83.01029994198106,
+    "checks": {
+      "rms": "pass",
+      "loudness": "unspecified",
+      "true_peak": "pass",
+      "noise_floor": "pass",
+      "sample_rate": "pass",
+      "channels": "pass",
+      "duration": "pass",
+      "format": "pass",
+      "head_room_tone": "pass",
+      "tail_room_tone": "pass"
+    },
+    "traffic": "green"
+  }
+}

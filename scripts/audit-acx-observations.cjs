@@ -1,0 +1,13 @@
+const fs=require('fs'),vm=require('vm'),path=require('path'),{createRequire}=require('module');
+const root=path.resolve(__dirname,'..'),filename=root+'/electron/labs-audio.cjs',req=createRequire(filename);
+const ctx={require:n=>n==='electron'?{app:{getAppPath:()=>root,isPackaged:false},shell:{}}:req(n),module:{exports:{}},__dirname:path.dirname(filename),process,Buffer,console};
+vm.runInNewContext(fs.readFileSync(filename,'utf8')+'\nmodule.exports.audit={chapterPackSource,retailSampleRange};',ctx);
+const coreCtx={module:{exports:{}},exports:{},require:req,console,process,Buffer};
+vm.runInNewContext(fs.readFileSync(root+'/dist-core/master.cjs','utf8')+'\nmodule.exports.audit={analyzeSpeech,speechBody};',coreCtx);
+const core=coreCtx.module.exports,rate=44100;
+const samples=Float32Array.from({length:rate*5},(_,i)=>{const t=i/rate;return t>=1&&t<1.2||t>=3&&t<3.2?0.0014*Math.sin(2*Math.PI*1000*t):t>=1.2&&t<3?0.14*Math.sin(2*Math.PI*200*t):0.0007*Math.sin(2*Math.PI*4000*t);});
+const report=core.measurePcm({samples,sampleRate:rate,channels:1});const analysis=core.audit.analyzeSpeech(Array.from(samples),rate,report.noise_floor_dbfs);const speech=analysis.speechFrames;const first=speech.findIndex(Boolean)*.02;const last=speech.lastIndexOf(true)*.02+.02;
+const noisy=Float32Array.from({length:rate*10},(_,i)=>{const t=i/rate;return (t<1.5||t>=8.5?0.0001:t>=4&&t<5?0.01:0.14)*Math.sin(2*Math.PI*200*t);});
+const noisyReport=core.measurePcm({samples:noisy,sampleRate:rate,channels:1,format:'mp3',bitrate_kbps:192,vbr:false});
+const audit={softBoundary:{sourceSoftStart:1,sourceSoftEnd:3.2,detectedStart:first,detectedEnd:last,noiseFloor:report.noise_floor_dbfs,discardedStartSeconds:first-1,discardedEndSeconds:3.2-last},staleHandoff:{chapter:{mastered:false,masteredFile:'old-master.wav',workingFile:'new-pickup.wav'},selected:ctx.module.exports.audit.chapterPackSource({mastered:false,masteredFile:'old-master.wav',workingFile:'new-pickup.wav'},true)},noiseWindow:{bodyPauseRms:-43.0103,reportedFloor:noisyReport.noise_floor_dbfs,checks:noisyReport.checks,traffic:noisyReport.traffic_light}};
+console.log(JSON.stringify(audit,null,2));fs.writeFileSync(root+'/docs/diagnostics/acx-audit-observations.json',JSON.stringify(audit,null,2));

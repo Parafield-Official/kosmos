@@ -8,14 +8,14 @@ function bookHasAudiobook(project: BookProject): boolean {
   return project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered && Boolean(chapter.masteredFile));
 }
 
-function chapterListenFile(
-  chapter: { masteredFile?: string; workingFile?: string; originalFile?: string } | undefined,
+export function chapterListenFile(
+  chapter: { mastered?: boolean; masteredFile?: string; workingFile?: string; originalFile?: string } | undefined,
   partial: boolean,
 ): string | undefined {
   if (!chapter) {
     return undefined;
   }
-  if (chapter.masteredFile) {
+  if (chapter.mastered && chapter.masteredFile) {
     return chapter.masteredFile;
   }
   if (!partial) {

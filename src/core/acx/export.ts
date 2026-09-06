@@ -180,6 +180,9 @@ export function reportText(entries: ReportEntry[]): string {
     }
     if (entry.after) {
       lines.push(`  after:  ${summary(entry.after)}`);
+      if (entry.after.noise_floor_note) lines.push(`  listening check: ${entry.after.noise_floor_note}`);
+      const warnings = Object.entries(entry.after.checks).filter(([, status]) => status === "warn").map(([name]) => name.replaceAll("_", " "));
+      if (warnings.length) lines.push(`  review: ${warnings.join(", ")}`);
     }
     lines.push("");
   }
