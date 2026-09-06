@@ -89,7 +89,7 @@ Current guidance includes spoken opening/closing credits, a sample no longer tha
 
 ## Authorized fixes completed locally — September 6, 2026
 
-This section supersedes the corresponding open statuses above; the baseline JSON reproductions are retained unchanged. No release, tag, version bump, or promotion was initiated for these changes.
+This section supersedes the corresponding open statuses above; the baseline JSON reproductions are retained unchanged. The fixes were prepared for the v0.1.29 release after validation.
 
 - **Boundary preservation:** automatic threshold-based cropping is removed. Only effectively digital silence (absolute sample amplitude at most 1e-9) is stripped. Quiet boundary content and existing room tone remain. Excessively long room tone may consequently require manual editing rather than automatic deletion of possible speech. Regression covers quiet signal at both ends.
 - **Stale masters:** working edits clear the master reference and measured readiness. Playback and handoff also reject a legacy master reference when its mastered flag is false. Old audio files are not deleted. This does not resolve the separately documented asynchronous snapshot race.
