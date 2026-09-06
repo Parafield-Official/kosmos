@@ -115,7 +115,9 @@ declare global {
       openMicrophoneSettings?: () => Promise<{ ok: boolean }>;
       getAppInfo?: () => Promise<{ version: string; update: AppUpdateStatus }>;
       checkForUpdates?: () => Promise<AppUpdateStatus>;
-      installAppUpdate?: () => Promise<{ installed: boolean }>;
+      installAppUpdate?: () => Promise<{ installed: boolean; reason?: string }>;
+      setUnsavedWork?: (key: string, reason: string | null) => void;
+      getUnsavedWork?: (scope?: "navigation") => string | null;
       openReleasePage?: () => Promise<unknown>;
       openThirdPartyNotices?: () => Promise<unknown>;
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
@@ -223,6 +225,7 @@ declare global {
         presetId?: string;
       }) => Promise<{ ok: boolean; reason?: string; report?: import("../../../src/core/acx/measure").AcxReport }>;
       exportDelivery?: (payload: {
+        acxSubmission?: import("./main-app/store").AcxSubmission & { reviewed: boolean };
         folder: string;
         presetId?: string;
         mode?: "acx" | "handoff";

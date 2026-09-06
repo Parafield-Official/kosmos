@@ -26,3 +26,13 @@ describe("privileged IPC boundary", () => {
       .toThrow(/untrusted renderer/i);
   });
 });
+
+it("allows only navigation from the secured development debug window", () => {
+  const { isTrustedDebugJump } = require("./ipc-security.cjs");
+  const window = windowWith(42), event = { sender: { id: 42 } };
+  expect(isTrustedDebugJump(event, "labs:jump", false, window, () => true)).toBe(true);
+  expect(isTrustedDebugJump(event, "labs:jump", true, window, () => true)).toBe(false);
+  expect(isTrustedDebugJump(event, "labs:project-save", false, window, () => true)).toBe(false);
+  expect(isTrustedDebugJump(event, "labs:jump", false, window, () => false)).toBe(false);
+  expect(isTrustedDebugJump({ sender: { id: 43 } }, "labs:jump", false, window, () => true)).toBe(false);
+});

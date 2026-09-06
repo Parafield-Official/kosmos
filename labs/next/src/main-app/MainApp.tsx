@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { PIGMENT_OFFER_EVENT, hasChosenPigment, markPigmentChosen, shouldOfferPigment } from "../flow";
 import {
   appendChapter,
@@ -44,7 +44,7 @@ function withProject(screen: WorkScreen, project: BookProject): WorkScreen {
   if (screen.name === "library") {
     return screen;
   }
-  return { ...screen, project };
+  return screen.project.id === project.id ? { ...screen, project } : screen;
 }
 
 function vaultHosts(): boolean {
@@ -52,6 +52,10 @@ function vaultHosts(): boolean {
 }
 
 export function MainApp() {
+  const saveRevision = useRef(new Map<string, number>());
+  const [saveFailures, setSaveFailures] = useState<Record<string, BookProject>>({});
+  const saveFailure = Object.values(saveFailures)[0];
+  const [navigationError, setNavigationError] = useState<string | null>(null);
   const [screen, setScreen] = useState<MainScreen>({ name: "library" });
   const [themeAccent, setThemeAccent] = useState<ThemeAccent>(() => readThemeAccent());
   const [themePaint, setThemePaint] = useState<ThemeAccentOption>(() => accentOption(readThemeAccent()));
@@ -82,43 +86,54 @@ export function MainApp() {
     };
   }, []);
 
+  const navigate = useCallback((next: MainScreen) => {
+    const reason = window.kosmosNext?.getUnsavedWork?.("navigation");
+    if (reason) { setNavigationError(reason); return; }
+    setNavigationError(null);
+    setScreen(next);
+  }, []);
+
   const openProject = useCallback((project: BookProject, tab: BookTab = "dashboard") => {
     if (pickingPigment) {
       return;
     }
-    setScreen({ name: "book", project, tab });
-  }, [pickingPigment]);
+    navigate({ name: "book", project, tab });
+  }, [pickingPigment, navigate]);
 
   const openLibrary = useCallback(() => {
-    setScreen({ name: "library" });
-  }, []);
+    navigate({ name: "library" });
+  }, [navigate]);
 
   const openChapter = useCallback((project: BookProject, chapterId: string, step?: ChapterStep) => {
     const chapter = project.chapters.find((item) => item.id === chapterId);
-    setScreen({
+    navigate({
       name: "chapter",
       project,
       chapterId,
       step: step ?? (chapter ? defaultChapterStep(chapter) : "recording"),
     });
-  }, []);
+  }, [navigate]);
 
   const openEditor = useCallback((project: BookProject, chapterId: string) => {
-    setScreen({ name: "editor", project, chapterId });
-  }, []);
+    navigate({ name: "editor", project, chapterId });
+  }, [navigate]);
 
   const openReader = useCallback((project: BookProject, chapterId: string) => {
-    setScreen({ name: "reader", project, chapterId });
-  }, []);
+    navigate({ name: "reader", project, chapterId });
+  }, [navigate]);
 
   const openSettings = useCallback(() => {
     if (pickingPigment) {
       return;
     }
-    setScreen((current) => (current.name === "settings" ? current : { name: "settings", from: current }));
-  }, [pickingPigment]);
+    if (screen.name !== "settings") navigate({ name: "settings", from: screen });
+  }, [pickingPigment, screen, navigate]);
 
   const commit = useCallback(async (next: BookProject) => {
+    const revision = (saveRevision.current.get(next.id) || 0) + 1;
+    saveRevision.current.set(next.id, revision);
+    const key = `project:${next.id}`;
+    window.kosmosNext?.setUnsavedWork?.(key, "Your project changes are still being saved.");
     setScreen((current) => {
       if (current.name === "library") {
         return current;
@@ -133,6 +148,9 @@ export function MainApp() {
     });
     try {
       const saved = await persistBook(next);
+      if (revision !== saveRevision.current.get(next.id)) return saved;
+      window.kosmosNext?.setUnsavedWork?.(key, null);
+      setSaveFailures((current) => { const updated = { ...current }; delete updated[next.id]; return updated; });
       setScreen((current) => {
         if (current.name === "library") {
           return current;
@@ -147,6 +165,10 @@ export function MainApp() {
       });
       return saved;
     } catch {
+      if (revision === saveRevision.current.get(next.id)) {
+        setSaveFailures((current) => ({ ...current, [next.id]: next }));
+        window.kosmosNext?.setUnsavedWork?.(key, "Your project could not be saved. Use Retry save before closing.");
+      }
       return next;
     }
   }, []);
@@ -269,7 +291,7 @@ export function MainApp() {
         project={screen.project}
         chapterId={screen.chapterId}
         step={screen.step}
-        onStep={(step) => setScreen({ ...screen, step })}
+        onStep={(step) => navigate({ ...screen, step })}
         onBack={() => openProject(screen.project, "chapters")}
         onChange={(next) => void commit(next)}
         onNextChapter={() => {
@@ -306,7 +328,7 @@ export function MainApp() {
       <BookShell
         project={screen.project}
         tab={screen.tab}
-        onTab={(tab) => setScreen({ name: "book", project: screen.project, tab })}
+        onTab={(tab) => navigate({ name: "book", project: screen.project, tab })}
         onBack={openLibrary}
         onDelete={() => setDeleteTarget(screen.project)}
       >
@@ -314,7 +336,7 @@ export function MainApp() {
           <DashboardScreen
             project={screen.project}
             onChange={(next) => void commit(next)}
-            onGoChapters={() => setScreen({ name: "book", project: screen.project, tab: "chapters" })}
+            onGoChapters={() => navigate({ name: "book", project: screen.project, tab: "chapters" })}
             onAnalyze={() => void analyzeAndApply(screen.project)}
             onChooseManuscript={(file) => void chooseManuscript(screen.project, file)}
             analyzeError={analyzeError}
@@ -328,7 +350,7 @@ export function MainApp() {
             onRead={(chapterId) => openReader(screen.project, chapterId)}
             onAddChapter={(title) => void commit(appendChapter(screen.project, title))}
             onChange={(next) => void commit(next)}
-            onOpenExport={() => setScreen({ name: "book", project: screen.project, tab: "export" })}
+            onOpenExport={() => navigate({ name: "book", project: screen.project, tab: "export" })}
           />
         ) : null}
         {screen.tab === "pronunciation" ? (
@@ -350,6 +372,10 @@ export function MainApp() {
       style={themeStyle}
     >
       <ThemeAtmosphere />
+      {saveFailure ? <div role="alert" className="ma-save-error">
+        Your project could not be saved. Keep Kosmos open and retry.
+        <button type="button" onClick={() => void commit(saveFailure)}>Retry save</button>
+      </div> : navigationError ? <div role="alert" className="ma-save-error">{navigationError}</div> : null}
 
       {hosted ? (
         <LibraryScreen

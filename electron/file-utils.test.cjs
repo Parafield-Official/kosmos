@@ -8,9 +8,24 @@ const {
   nextAvailablePath,
   replaceDirectory,
   writeJsonAtomic,
+  writeFileAtomic,
 } = require("./file-utils.cjs");
 
 describe("desktop file safety helpers", () => {
+  it("publishes overlapping saves in request order even when the first write is slow", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-ordered-save-"));
+    const file = path.join(root, "chapter.html");
+    const original = fs.writeFile;
+    const spy = vi.spyOn(fs, "writeFile").mockImplementation(async (target, data, options) => {
+      if (data === "first") await new Promise(resolve => setTimeout(resolve, 25));
+      return original(target, data, options);
+    });
+    try {
+      await Promise.all([writeFileAtomic(file, "first"), writeFileAtomic(file, "second")]);
+      expect(await fs.readFile(file, "utf8")).toBe("second");
+    } finally { spy.mockRestore(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("keeps concurrent JSON saves parseable and cleans temporary files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "booth-file-utils-"));
     const destination = path.join(root, "state.json");

@@ -19,6 +19,7 @@ const {
   latestActivePunch,
   buildPunchPreview,
 } = require("./punch.cjs");
+const { replaceDirectory, writeFileAtomic } = require("./file-utils.cjs");
 const { normalizeAudioFormat } = require("./audio-metadata.cjs");
 const {
   assertProjectFolder,
@@ -101,13 +102,6 @@ function runFfprobe(args) {
     args,
     { timeoutMs: 60_000 },
   );
-}
-
-async function writeFileAtomic(target, data, encoding) {
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  const tmp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}-${crypto.randomUUID()}.tmp`);
-  await fs.writeFile(tmp, data, encoding);
-  await fs.rename(tmp, target);
 }
 
 /** True when the buffer already carries a RIFF/WAVE header. */
@@ -638,13 +632,22 @@ function chapterPackSource(chapter, handoff) {
   return null;
 }
 
+function failedAudioChecks(report) {
+  const failed = Object.entries(report?.checks ?? {}).filter(([, status]) => status === "fail").map(([name]) => name.replaceAll("_", " "));
+  return failed.length ? failed.join(", ") : "audio checks failed";
+}
+
 async function exportDeliveryPack(payload) {
   let folder = payload?.folder;
   const handoff = payload?.mode === "handoff";
+  const acxDelivery = !handoff && (payload?.mode === "acx" || !payload?.presetId || payload.presetId === "acx");
+  const submission = payload?.acxSubmission;
+  const skipCredits = acxDelivery && submission?.skipCredits === true;
+  const skipRetail = acxDelivery && submission?.skipRetailSample === true;
   const incoming = Array.isArray(payload?.chapters) ? payload.chapters : [];
   const chapters = handoff
     ? incoming.filter((chapter) => chapterPackSource(chapter, true))
-    : incoming;
+    : skipCredits ? incoming.filter(chapter => ![submission.openingChapterId, submission.closingChapterId].includes(chapter.id)) : incoming;
   if (typeof folder !== "string") {
     return { ok: false, reason: "A project folder is required to export." };
   }
@@ -657,7 +660,7 @@ async function exportDeliveryPack(payload) {
     };
   }
   if (!handoff) {
-    const missing = chapters.filter((chapter) => !chapterPackSource(chapter, false) || !chapter.mastered);
+    const missing = chapters.filter((chapter) => !chapterPackSource(chapter, false) || !chapter.mastered || (acxDelivery && !chapter.masteredFile));
     if (missing.length) {
       return {
         ok: false,
@@ -665,12 +668,29 @@ async function exportDeliveryPack(payload) {
       };
     }
   }
+  if (acxDelivery) {
+    const ids = new Set(chapters.map(chapter => chapter.id));
+    if (ids.size !== chapters.length || (!skipCredits && (!ids.has(submission?.openingChapterId) || !ids.has(submission?.closingChapterId)
+      || submission.openingChapterId === submission.closingChapterId))) {
+      return { ok: false, reason: "Select separate recorded opening and closing credits. Add and master these as sections of your book first." };
+    }
+    if (!skipRetail && (!ids.has(submission?.retailChapterId) || [submission.openingChapterId, submission.closingChapterId].includes(submission.retailChapterId))) {
+      return { ok: false, reason: "Choose a narration chapter for the retail sample." };
+    }
+    if (!skipRetail && (!Number.isFinite(submission.retailStartSeconds) || submission.retailStartSeconds < 0
+      || !Number.isFinite(submission.retailDurationSeconds) || submission.retailDurationSeconds < 60 || submission.retailDurationSeconds > 296)) {
+      return { ok: false, reason: "Choose a retail passage of 60–296 seconds with a valid start time. Space is reserved for room tone and MP3 padding." };
+    }
+    if (submission.reviewed !== true) {
+      return { ok: false, reason: "Listen to the book and selected sample, then confirm the submission checklist." };
+    }
+  }
   folder = await assertProjectFolder(folder);
 
   const masterCore = loadCoreModule("master");
   const exportCore = loadCoreModule("export");
   const markersCore = loadCoreModule("markers");
-  const preset = presetFromPayload(masterCore, payload);
+  const preset = presetFromPayload(masterCore, acxDelivery ? { presetId: "acx" } : payload);
   const profile = masterCore.deliveryProfile(preset);
   const packName = handoff ? `${profile.folderName}-handoff` : profile.folderName;
   const exportRoot = await ensureProjectDirectory(folder, "export");
@@ -682,6 +702,7 @@ async function exportDeliveryPack(payload) {
   const entries = [];
   const outputFiles = [];
   let retailPcm = null;
+  let narrationIndex = 0;
 
   try {
     for (const [index, chapter] of chapters.entries()) {
@@ -700,7 +721,9 @@ async function exportDeliveryPack(payload) {
         format: decoded.format,
         bitrate_kbps: decoded.bitrateKbps,
       }, { preset });
-      const fileName = exportCore.chapterFileName({ index: index + 1 }, profile.extension);
+      const credit = acxDelivery && !skipCredits && (chapter.id === submission.openingChapterId ? "opening" : chapter.id === submission.closingChapterId ? "closing" : null);
+      const fileName = credit ? `${credit === "opening" ? "00" : "98"}_${credit}_credits.mp3`
+        : exportCore.chapterFileName({ index: acxDelivery ? ++narrationIndex : index + 1 }, profile.extension);
       const temporaryPcm = path.join(temporaryFolder, `${chapter.id}.f32le`);
       await fs.writeFile(temporaryPcm, Buffer.from(resampled.buffer, resampled.byteOffset, resampled.byteLength));
       const destination = path.join(stagingOutputFolder, fileName);
@@ -720,15 +743,15 @@ async function exportDeliveryPack(payload) {
         status: reportStatus(after),
       });
       outputFiles.push(fileName);
-      if (!retailPcm) {
+      if (acxDelivery ? chapter.id === submission.retailChapterId : !retailPcm) {
         retailPcm = resampled;
       }
     }
 
     const failed = entries.filter((entry) => entry.status === "fail");
     if (!handoff && failed.length) {
-      const preview = failed.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || `failed ${preset.label} checks`}`).join("; ");
-      throw new Error(`${preset.label} export stopped because ${failed.length} chapter${failed.length === 1 ? "" : "s"} failed: ${preview}`);
+      const preview = failed.slice(0, 3).map((entry) => `${entry.fileName}: ${entry.note || failedAudioChecks(entry.after)}`).join("; ");
+      throw new Error(`${preset.label} export stopped because ${failed.length} chapter${failed.length === 1 ? "" : "s"} failed: ${preview}. Select ACX as the mastering target and remaster the affected sections.`);
     }
 
     const fakeProject = {
@@ -741,19 +764,27 @@ async function exportDeliveryPack(payload) {
         author_status: "approved",
       })),
     };
-    const plan = exportCore.buildExportPlan(fakeProject, { profile });
+    const plan = exportCore.buildExportPlan(fakeProject, { profile, includeOpeningCredits: acxDelivery, includeClosingCredits: acxDelivery });
     for (const readme of plan.readmeFiles) {
       await writeFileAtomic(path.join(stagingOutputFolder, readme.fileName), readme.contents, "utf8");
     }
 
     const retailSpec = exportCore.ACX_SPEC?.retail_sample_s ?? { min: 60, max: 300 };
-    if (!handoff && profile.includeRetailSample && retailPcm) {
-      const start = Math.min(retailPcm.length, Math.round(profile.headSeconds * profile.sampleRate));
+    if (!handoff && !skipRetail && profile.includeRetailSample && retailPcm) {
+      const start = Math.min(retailPcm.length, Math.round((acxDelivery ? submission.retailStartSeconds : profile.headSeconds) * profile.sampleRate));
       const availableLength = Math.max(0, retailPcm.length - start);
       const minimumSamples = Math.round(retailSpec.min * profile.sampleRate);
       if (availableLength >= minimumSamples) {
-        const sampleLength = Math.min(availableLength, Math.round(retailSpec.max * profile.sampleRate));
-        const sampleBytes = retailPcm.subarray(start, start + sampleLength);
+        const sampleLength = acxDelivery ? Math.round(submission.retailDurationSeconds * profile.sampleRate)
+          : Math.min(availableLength, Math.round((retailSpec.max - 4) * profile.sampleRate));
+        if (sampleLength > availableLength) throw new Error("The selected retail passage extends beyond this chapter. Shorten it or select another chapter.");
+        // Copy verified room tone from the selected master around the passage.
+        // Leave a full second below the duration cap for MP3 frame padding.
+        const pad = Math.round(1.5 * profile.sampleRate);
+        const sampleBytes = new Float32Array(sampleLength + pad * 2);
+        sampleBytes.set(retailPcm.subarray(0, pad));
+        sampleBytes.set(retailPcm.subarray(start, start + sampleLength), pad);
+        sampleBytes.set(retailPcm.subarray(retailPcm.length - pad), pad + sampleLength);
         const samplePath = path.join(temporaryFolder, "retail.f32le");
         await fs.writeFile(samplePath, Buffer.from(sampleBytes.buffer, sampleBytes.byteOffset, sampleBytes.byteLength));
         const retailName = `99_retail_sample.${profile.extension}`;
@@ -761,17 +792,27 @@ async function exportDeliveryPack(payload) {
           samplePath,
           path.join(stagingOutputFolder, retailName),
           profile,
-          sampleLength / profile.sampleRate,
+          sampleBytes.length / profile.sampleRate,
         );
+        const decodedSample = await decodeAudioPcm(path.join(stagingOutputFolder, retailName));
+        const sampleReport = masterCore.measurePcm({ samples: float32View(decodedSample.pcm), sampleRate: decodedSample.sampleRate,
+          channels: decodedSample.channels, format: profile.container, bitrate_kbps: decodedSample.bitrateKbps }, { preset });
+        const seconds = decodedSample.pcm.length / 4 / decodedSample.channels / decodedSample.sampleRate;
+        if (seconds < retailSpec.min || seconds > retailSpec.max) throw new Error(`Retail sample is ${seconds.toFixed(3)} seconds after encoding; choose a shorter passage.`);
+        if (reportStatus(sampleReport) === "fail") throw new Error(`Retail sample failed: ${failedAudioChecks(sampleReport)}. Choose another passage or remaster the chapter for ACX.`);
+        entries.push({ fileName: retailName, after: sampleReport, status: reportStatus(sampleReport) });
         outputFiles.push(retailName);
+      } else if (acxDelivery) {
+        throw new Error("This chapter does not contain 60 seconds after the selected start. Choose a longer chapter or an earlier start for the retail sample.");
       }
     }
 
-    await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries), "utf8");
+    const skipped = [skipCredits ? "Opening and closing credit recordings" : null, skipRetail ? "Retail sample" : null].filter(Boolean);
+    const omissionNote = skipped.length ? `\n\nSkipped at your request: ${skipped.join("; ")}.\nThis is a partial pack. Add the skipped assets separately before submitting the complete audiobook to ACX.\n` : "";
+    await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries) + omissionNote, "utf8");
     outputFiles.push("REPORT.txt");
 
-    await fs.rm(outputFolder, { recursive: true, force: true });
-    await fs.rename(stagingOutputFolder, outputFolder);
+    await replaceDirectory(stagingOutputFolder, outputFolder);
 
     const allPickups = chapters.flatMap((chapter) =>
       Array.isArray(chapter.pickups) ? chapter.pickups : [],

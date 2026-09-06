@@ -2,6 +2,23 @@ const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
+// Publication order follows request order, even if disk I/O finishes out of order.
+const fileWrites = new Map();
+function queueFileWrite(destination, operation) {
+  const key = path.resolve(destination);
+  const task = (fileWrites.get(key) || Promise.resolve()).catch(() => {}).then(operation);
+  fileWrites.set(key, task);
+  const clear = () => { if (fileWrites.get(key) === task) fileWrites.delete(key); };
+  task.then(clear, clear);
+  return task;
+}
+function writeFileAtomic(destination, data, encoding) {
+  return queueFileWrite(destination, () => writeFileAtomicUnqueued(destination, data, encoding));
+}
+function copyFileAtomic(source, destination) {
+  return queueFileWrite(destination, () => copyFileAtomicUnqueued(source, destination));
+}
+
 /**
  * Write a UTF-8 JSON document without exposing a partially-written target.
  *
@@ -18,7 +35,7 @@ async function writeJsonAtomic(destination, value) {
 }
 
 /** Write a file through a same-directory temporary and a final rename. */
-async function writeFileAtomic(destination, data, encoding) {
+async function writeFileAtomicUnqueued(destination, data, encoding) {
   const temporary = `${destination}.tmp-${process.pid}-${crypto.randomUUID()}`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
   try {
@@ -31,7 +48,7 @@ async function writeFileAtomic(destination, data, encoding) {
 
 /** Copy through a private temporary so an existing destination symlink can
  * never redirect the copy outside the project. */
-async function copyFileAtomic(source, destination) {
+async function copyFileAtomicUnqueued(source, destination) {
   const temporary = `${destination}.tmp-${process.pid}-${crypto.randomUUID()}`;
   await fs.mkdir(path.dirname(destination), { recursive: true });
   try {

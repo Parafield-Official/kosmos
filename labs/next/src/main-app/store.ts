@@ -116,7 +116,18 @@ export interface BookChapter {
   mastered: boolean;
 }
 
+export interface AcxSubmission {
+  skipCredits?: boolean;
+  skipRetailSample?: boolean;
+  openingChapterId: string;
+  closingChapterId: string;
+  retailChapterId: string;
+  retailStartSeconds: number;
+  retailDurationSeconds: number;
+}
+
 export interface BookProject {
+  acxSubmission?: AcxSubmission;
   id: string;
   title: string;
   author: string;
@@ -323,12 +334,22 @@ function normalizeRoomCheck(raw: unknown): RoomCheckReport | undefined {
 
 /** Fill in any fields a legacy or partial record is missing so the UI never
  * hits an undefined title/author/chapters. */
+function normalizeAcxSubmission(raw: unknown): AcxSubmission | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as AcxSubmission;
+  if (![value.openingChapterId, value.closingChapterId, value.retailChapterId].every(id => typeof id === "string")
+    || !Number.isFinite(value.retailStartSeconds) || !Number.isFinite(value.retailDurationSeconds)) return undefined;
+  return { skipCredits: value.skipCredits === true, skipRetailSample: value.skipRetailSample === true, openingChapterId: value.openingChapterId, closingChapterId: value.closingChapterId, retailChapterId: value.retailChapterId,
+    retailStartSeconds: value.retailStartSeconds, retailDurationSeconds: value.retailDurationSeconds };
+}
+
 function normalizeProject(raw: Partial<BookProject> & Record<string, unknown>): BookProject {
   const chapters = Array.isArray(raw.chapters) ? (raw.chapters as BookChapter[]) : [];
   return {
     id: typeof raw.id === "string" ? raw.id : uid("bk"),
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title : "Untitled book",
     author: typeof raw.author === "string" ? raw.author : "",
+    acxSubmission: normalizeAcxSubmission(raw.acxSubmission),
     coverDataUrl: typeof raw.coverDataUrl === "string" ? raw.coverDataUrl : undefined,
     chapters: chapters.map((chapter) => {
       const rawChapter = chapter as BookChapter & { takes?: Array<{ file?: string; kind?: string }> };

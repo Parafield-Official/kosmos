@@ -163,13 +163,15 @@ export type ExportPackMode = "acx" | "handoff";
 export async function exportBookPack(
   project: BookProject,
   mode: ExportPackMode = "acx",
+  reviewed = false,
 ): Promise<BookProject> {
   if (!project.folder || !window.kosmosNext?.exportDelivery) {
     throw new Error("Export needs the desktop app.");
   }
   const result = await window.kosmosNext.exportDelivery({
     folder: project.folder,
-    presetId: readEnginePrefs().spec_preset_id,
+    presetId: mode === "acx" ? "acx" : readEnginePrefs().spec_preset_id,
+    acxSubmission: project.acxSubmission ? { ...project.acxSubmission, reviewed } : undefined,
     mode,
     chapters: project.chapters.map((chapter) => ({
       id: chapter.id,
@@ -187,7 +189,7 @@ export async function exportBookPack(
   if (mode === "handoff") {
     return project;
   }
-  return { ...project, completedAt: new Date().toISOString() };
+  return { ...project, completedAt: project.acxSubmission?.skipCredits || project.acxSubmission?.skipRetailSample ? undefined : new Date().toISOString() };
 }
 
 export async function previewPunchRecording(

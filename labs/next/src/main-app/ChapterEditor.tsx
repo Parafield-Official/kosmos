@@ -29,9 +29,12 @@ export function ChapterEditor({
   );
   const editorRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<number | null>(null);
+  const pendingHtml = useRef<string | null>(null);
+  const revision = useRef(0);
+  const saveKey = `manuscript:${project.id}:${chapterId}`;
   const [loaded, setLoaded] = useState(false);
   const [words, setWords] = useState(chapter?.wordCount ?? 0);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [chapterTitle, setChapterTitle] = useState(chapter?.title ?? "");
   const [theme] = useState(readPromptTheme);
   const [readingFont] = useState(readReadingFont);
@@ -54,6 +57,7 @@ export function ChapterEditor({
       if (saveTimer.current) {
         window.clearTimeout(saveTimer.current);
       }
+      if (pendingHtml.current !== null) void flush();
     };
   }, [project.id, chapterId]);
 
@@ -76,6 +80,9 @@ export function ChapterEditor({
   }
 
   function scheduleSave() {
+    pendingHtml.current = editorRef.current?.innerHTML ?? "";
+    revision.current += 1;
+    window.kosmosNext?.setUnsavedWork?.(saveKey, "Your manuscript changes are still being saved.");
     setStatus("saving");
     if (saveTimer.current) {
       window.clearTimeout(saveTimer.current);
@@ -84,19 +91,29 @@ export function ChapterEditor({
   }
 
   async function flush() {
-    const html = editorRef.current?.innerHTML ?? "";
-    const wordCount = countHtmlWords(html);
-    setWords(wordCount);
-    await saveChapterContent(project, chapterId, html);
-    if (chapter && chapter.wordCount !== wordCount) {
-      onChange({
-        ...project,
-        chapters: project.chapters.map((item) =>
-          item.id === chapterId ? { ...item, wordCount } : item,
-        ),
-      });
+    const html = pendingHtml.current ?? editorRef.current?.innerHTML ?? "";
+    const savingRevision = revision.current;
+    try {
+      const wordCount = countHtmlWords(html);
+      setWords(wordCount);
+      await saveChapterContent(project, chapterId, html);
+      if (chapter && chapter.wordCount !== wordCount) {
+        onChange({
+          ...project,
+          chapters: project.chapters.map((item) =>
+            item.id === chapterId ? { ...item, wordCount } : item,
+          ),
+        });
+      }
+      if (savingRevision === revision.current) {
+        pendingHtml.current = null;
+        window.kosmosNext?.setUnsavedWork?.(saveKey, null);
+        setStatus("saved");
+      }
+    } catch {
+      setStatus("error");
+      window.kosmosNext?.setUnsavedWork?.(saveKey, "Your manuscript could not be saved. Use Retry save before closing.");
     }
-    setStatus("saved");
   }
 
   function format(command: string, value?: string) {
@@ -153,7 +170,8 @@ export function ChapterEditor({
           />
         </h2>
         <span className="ma-editor-status">
-          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : ""}
+          {status === "saving" ? "Saving…" : status === "saved" ? "Saved" : status === "error" ? "Save failed" : ""}
+          {status === "error" ? <button type="button" onClick={() => void flush()}>Retry save</button> : null}
         </span>
       </header>
 

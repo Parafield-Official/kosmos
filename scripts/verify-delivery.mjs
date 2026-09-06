@@ -104,7 +104,13 @@ try {
   const source = path.join(workspace, "noisy.wav");
   writeWav(noisy, source);
   const first = core.masterPcm({ samples: noisy, sampleRate: SAMPLE_RATE, channels: 1, format: "wav" });
-  check("the noisy take asks for automatic cleanup", first.abort_code === "noise_floor", first.abort_reason);
+  // Keep the filter's established -54 dB fixture for the independent meters.
+  // Envelope compression can now pass that fixture without FFT cleanup, so
+  // exercise the retry trigger separately with a noisier recording.
+  const needsCleanup = core.masterPcm({
+    samples: noisyNarration(-46), sampleRate: SAMPLE_RATE, channels: 1, format: "wav",
+  });
+  check("a noisier take asks for automatic cleanup", needsCleanup.abort_code === "noise_floor", needsCleanup.abort_reason);
 
   let cleanedMaster = first;
   let used = 0;

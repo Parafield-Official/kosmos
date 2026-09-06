@@ -27,6 +27,33 @@ function fakeAutoUpdater() {
 }
 
 describe("desktop auto-update", () => {
+  it("unfreezes work if the native installer reports a late error", async () => {
+    const autoUpdater = fakeAutoUpdater();
+    const release = vi.fn();
+    const updater = createAppUpdater({ autoUpdater, isPackaged: true, currentVersion: "0.1.4", send() {}, beforeInstall: async () => ({ ok: true }), onInstallError: release });
+    await updater.started;
+    autoUpdater.emit("update-downloaded", { version: "0.1.5" });
+    expect(await updater.install()).toEqual({ installed: true });
+    autoUpdater.emit("error", Error("installer failed"));
+    expect(release).toHaveBeenCalledTimes(1);
+    updater.dispose();
+  });
+
+  it("does not restart before save approval, and stays open when it is denied", async () => {
+    const autoUpdater = fakeAutoUpdater();
+    let approve;
+    const beforeInstall = vi.fn(() => new Promise(resolve => { approve = resolve; }));
+    const updater = createAppUpdater({ autoUpdater, isPackaged: true, currentVersion: "0.1.4", send() {}, beforeInstall });
+    await updater.started;
+    autoUpdater.emit("update-downloaded", { version: "0.1.5" });
+    const install = updater.install();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    approve({ ok: false, reason: "Save failed" });
+    expect(await install).toEqual({ installed: false, reason: "Save failed" });
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    updater.dispose();
+  });
+
   it("does not contact the update service from an unpackaged development copy", async () => {
     const autoUpdater = fakeAutoUpdater();
     const send = vi.fn();
@@ -105,7 +132,7 @@ describe("desktop auto-update", () => {
     expect(updater.getStatus().text).toMatch(/restart/i);
     expect(updater.getStatus().releasePage).toBe(RELEASE_PAGE);
 
-    expect(updater.install()).toEqual({ installed: true });
+    expect(await updater.install()).toEqual({ installed: true });
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
@@ -128,7 +155,7 @@ describe("desktop auto-update", () => {
     expect(updater.getStatus().text).toMatch(/10/);
     await updater.check();
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(updater.install()).toEqual({ installed: false });
+    expect(await updater.install()).toEqual({ installed: false });
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
@@ -149,7 +176,7 @@ describe("desktop auto-update", () => {
       canInstall: false,
     });
     expect(updater.getStatus().text).toMatch(/still works/i);
-    expect(updater.install()).toEqual({ installed: false });
+    expect(await updater.install()).toEqual({ installed: false });
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 

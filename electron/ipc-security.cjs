@@ -19,7 +19,12 @@ function assertTrustedWindowEvent(event, window, isTrustedRenderer) {
   }
 }
 
+function isTrustedDebugJump(event, channel, isPackaged, debugWindow, isTrustedRenderer) {
+  return !isPackaged && channel === "labs:jump" && isTrustedWindowEvent(event, debugWindow, isTrustedRenderer);
+}
+
 module.exports = {
+  isTrustedDebugJump,
   assertTrustedWindowEvent,
   isTrustedWindowEvent,
 };

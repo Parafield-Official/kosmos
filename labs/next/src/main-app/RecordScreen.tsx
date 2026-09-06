@@ -1,3 +1,4 @@
+import { createRetainedSave } from "./retained-save";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { resamplePcmToMono } from "../../../../src/core/audio/resample";
 import { encodeWavPcm16 } from "../../../../src/core/audio/wav";
@@ -211,6 +212,10 @@ export function RecordScreen({
   const [recording, setRecording] = useState(false);
   const [paused, setPaused] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const retainedTake = useRef(createRetainedSave<Blob>());
+  const savingRef = useRef(false);
+  const recordingKey = `recording:${project.id}:${chapterId}`;
   const [cursor, setCursor] = useState(chapter?.resumeWordIndex ?? 0);
   const [error, setError] = useState<string | null>(null);
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
@@ -731,6 +736,10 @@ export function RecordScreen({
   }
 
   async function startSession(fromBeginning: boolean) {
+    if (retainedTake.current.hasPending || pcm16kCountRef.current > 0) {
+      throw new Error("Save the current take before starting another recording.");
+    }
+    window.kosmosNext?.setUnsavedWork?.(recordingKey, "Stop and save your recording before leaving or restarting Kosmos.");
     const generation = ++captureGenerationRef.current;
     setError(null);
     const current = chapterRef.current;
@@ -830,6 +839,7 @@ export function RecordScreen({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Microphone unavailable.");
       cleanupCapture();
+      if (!pcm16kCountRef.current && !retainedTake.current.hasPending) window.kosmosNext?.setUnsavedWork?.(recordingKey, null);
     } finally {
       startingRef.current = false;
     }
@@ -984,62 +994,84 @@ export function RecordScreen({
   }
 
   async function stopAndSave() {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
-    // Stop producing new blocks before waiting for the final short-window
-    // transcription. Keep recordingRef true just long enough for its result to
-    // be incorporated into the saved cursor/word timing.
-    streamRef.current?.getAudioTracks().forEach((track) => {
-      track.enabled = false;
-    });
-    await audioCtxRef.current?.suspend().catch(() => undefined);
-    // applyHeard intentionally ignores callbacks after recordingRef is cleared;
-    // flush first when there is a partial local Whisper window to preserve the
-    // last spoken words without accepting late callbacks after teardown.
-    await flushWhisperWindow(true);
-    recordingRef.current = false;
-    const samples = joinQueued(pcm16kRef.current);
-    pcm16kRef.current = [];
-    pcm16kCountRef.current = 0;
-    cleanupCapture();
-    setRecording(false);
-    setPaused(false);
-    showLevel(0);
+    setError(null);
+    try {
+      // Stop producing new blocks before waiting for the final short-window
+      // transcription. Keep recordingRef true just long enough for its result to
+      // be incorporated into the saved cursor/word timing.
+      streamRef.current?.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+      await audioCtxRef.current?.suspend().catch(() => undefined);
+      // applyHeard intentionally ignores callbacks after recordingRef is cleared;
+      // flush first when there is a partial local Whisper window to preserve the
+      // last spoken words without accepting late callbacks after teardown.
+      await flushWhisperWindow(true);
+      recordingRef.current = false;
+      const samples = joinQueued(pcm16kRef.current);
+      cleanupCapture();
+      setRecording(false);
+      setPaused(false);
+      showLevel(0);
 
-    const current = chapterRef.current;
-    const fromIndex = resumeFromRef.current;
-    const existing = current?.originalFile
-      ? await readChapterAudioBytes(projectRef.current, current.originalFile)
-      : null;
-    const blob = concatWav(existing, samples, TARGET_RATE, tapeBaseRef.current);
-    let file: string | null = current?.originalFile ?? null;
-    if (blob.size > 0) {
-      file = await writeChapterAudio(projectRef.current, chapterId, blob, { slot: "original" });
+      const current = chapterRef.current;
+      const fromIndex = resumeFromRef.current;
+      const file = await retainedTake.current.run(async () => {
+        const existing = current?.originalFile
+          ? await readChapterAudioBytes(projectRef.current, current.originalFile)
+          : null;
+        if (current?.originalFile && !existing) throw new Error("The previous take could not be read. Retry when the project folder is available.");
+        return concatWav(existing, samples, TARGET_RATE, tapeBaseRef.current);
+      }, async (blob) => {
+        const savedFile = await writeChapterAudio(projectRef.current, chapterId, blob, { slot: "original" });
+        if (!savedFile) throw new Error("The recording could not be saved. Your take is still in memory; keep Kosmos open and retry.");
+        return savedFile;
+      });
+      pcm16kRef.current = [];
+      pcm16kCountRef.current = 0;
+      setSaveFailed(false);
+
+      const recordedWords = mergeRecordedWords(current?.recordedWords, confirmedRef.current, fromIndex);
+      const resumeWordIndex = Math.max(
+        fromIndex,
+        recordedWords.reduce((max, word) => Math.max(max, word.index + 1), fromIndex),
+        cursor,
+      );
+      const recordedPct = coverageOf(resumeWordIndex, script.expected.length || 1);
+      onChange(
+        applyOriginalTape(projectRef.current, chapterId, {
+          file,
+          recordedPct: recordedPct >= 0.98 ? 1 : recordedPct,
+          resumeWordIndex,
+          recordedWords,
+        }),
+      );
+      window.kosmosNext?.setUnsavedWork?.(recordingKey, null);
+      setFollowHint(
+        recordedPct >= 0.98
+          ? "Original tape saved. Proofreading uses this file."
+          : "Original tape saved. Continue recording picks up from this word.",
+      );
+    } catch (reason) {
+      setSaveFailed(true);
+      setError(reason instanceof Error ? reason.message : "The recording could not be saved. Retry save.");
+      window.kosmosNext?.setUnsavedWork?.(recordingKey, "Your recording has not been saved. Use Retry save before leaving or restarting.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
 
-    const recordedWords = mergeRecordedWords(current?.recordedWords, confirmedRef.current, fromIndex);
-    const resumeWordIndex = Math.max(
-      fromIndex,
-      recordedWords.reduce((max, word) => Math.max(max, word.index + 1), fromIndex),
-      cursor,
-    );
-    const recordedPct = coverageOf(resumeWordIndex, script.expected.length || 1);
-    onChange(
-      applyOriginalTape(projectRef.current, chapterId, {
-        file,
-        recordedPct: recordedPct >= 0.98 ? 1 : recordedPct,
-        resumeWordIndex,
-        recordedWords,
-      }),
-    );
-    setSaving(false);
-    setFollowHint(
-      recordedPct >= 0.98
-        ? "Original tape saved. Proofreading uses this file."
-        : "Original tape saved. Continue recording picks up from this word.",
-    );
   }
 
   async function applyStartOver() {
+    if (savingRef.current) return;
+    retainedTake.current.discard();
+    pcm16kRef.current = [];
+    pcm16kCountRef.current = 0;
+    setSaveFailed(false);
     cleanupCapture();
     setRecording(false);
     setPaused(false);
@@ -1060,6 +1092,7 @@ export function RecordScreen({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Microphone unavailable.");
       cleanupCapture();
+      if (!pcm16kCountRef.current && !retainedTake.current.hasPending) window.kosmosNext?.setUnsavedWork?.(recordingKey, null);
     } finally {
       startingRef.current = false;
     }
@@ -1173,6 +1206,7 @@ export function RecordScreen({
   const inBand = (index: number) => Boolean(band && index >= band.from && index <= band.to);
 
   function onPrimary() {
+    if (saveFailed) { void stopAndSave(); return; }
     if (workflow.primaryLabel === "Stop recording") {
       void stopAndSave();
       return;
@@ -1318,7 +1352,7 @@ export function RecordScreen({
               <span ref={levelFillRef} className="ma-level-fill" style={{ width: "0%" }} />
             </div>
             <div className="ma-recorder-controls">
-              {workflow.primaryLabel ? (
+              {workflow.primaryLabel || saveFailed ? (
                 <button
                   type="button"
                   className={recording && !paused ? "ma-rec-btn is-recording" : "ma-rec-btn"}
@@ -1326,7 +1360,7 @@ export function RecordScreen({
                   disabled={saving}
                 >
                   <span className={recording && !paused ? "ma-rec-dot is-stop" : "ma-rec-dot"} />
-                  {saving ? "Saving…" : workflow.primaryLabel === "Resume recording" ? "Continue" : workflow.primaryLabel}
+                  {saving ? "Saving…" : saveFailed ? "Retry save" : workflow.primaryLabel === "Resume recording" ? "Continue" : workflow.primaryLabel}
                 </button>
               ) : (
                 <span className="ma-rec-time">Saving…</span>

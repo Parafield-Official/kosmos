@@ -133,6 +133,20 @@ describe("ACX master chain", () => {
     expect(head.some((value) => value > 0)).toBe(true);
   });
 
+  it("adds valid room tone when narration starts and ends at the recording edges", () => {
+    const result = masterPcm({
+      samples: edgeToEdgeNarrationFixture(),
+      sampleRate: 2_000,
+      channels: 1,
+    });
+
+    expect(result.status).toBe("ok");
+    expect(result.after?.head_room_tone_s).toBeGreaterThanOrEqual(1.5);
+    expect(result.after?.tail_room_tone_s).toBeGreaterThanOrEqual(1.5);
+    expect(result.after?.checks.head_room_tone).toBe("pass");
+    expect(result.after?.checks.tail_room_tone).toBe("pass");
+  });
+
   it("treats duration and room-tone failures as a mastering abort, not a green result", () => {
     const failure = masteringStructuralFailure({
       checks: {
@@ -207,4 +221,41 @@ function bathroomFixture(): Float32Array {
     output[index] = 0.055 * Math.sin((2 * Math.PI * 180 * index) / sampleRate) + noise;
   }
   return output;
+}
+
+/**
+ * A coarse 40 ms RMS envelope captured from the edges of a real failed take.
+ * It contains no speech content, only level changes represented by a sine wave.
+ */
+function edgeToEdgeNarrationFixture(): Float32Array {
+  const sampleRate = 2_000;
+  const frameSize = Math.round(sampleRate * 0.02);
+  const blockLevelsDbfs = [
+    -60, -57, -57, -57, -60, -69, -66, -66, -66, -66, -72, -69, -66, -69, -66, -69,
+    -69, -66, -66, -66, -66, -63, -69, -66, -66, -69, -69, -72, -69, -57, -48, -48,
+    -60, -63, -63, -54, -30, -27, -21, -18, -24, -27, -39, -42, -39, -24, -24, -27,
+    -33, -45, -51, -33, -33, -36, -42, -39, -39, -45, -51, -57, -63, -66, -66, -63,
+    -69, -63, -66, -66, -63, -69, -69, -66, -69, -66, -69, -66, -69, -66, -66, -66,
+    -69, -69, -69, -69, -69, -45, -27, -24, -27, -30, -30, -36, -36, -18, -18, -18,
+    -15, -21, -24, -24, -30, -48, -57, -33, -24, -18, -21, -21, -18, -21, -24, -27,
+    -18, -18, -18, -21, -27, -21, -18, -18, -18, -21, -18, -18, -21, -27, -30, -30,
+    -45, -24, -21, -24, -33, -27, -21, -21, -21, -27, -30, -33, -42, -57, -57, -60,
+    -57, -57, -57, -60, -57, -54, -51, -54, -54, -57, -54, -57, -57, -54, -57, -54,
+    -54, -57, -51, -48, -48, -57, -57, -57, -57, -57, -57, -57, -57, -54, -51, -48,
+    -39, -42, -42, -42, -39, -45, -51, -51, -51, -54, -51, -48, -45, -54, -57, -51,
+    -48, -54, -60, -57, -54, -54, -51, -51, -51, -51, -54, -54, -57, -54, -51, -54,
+    -54, -57, -51, -51,
+  ];
+  const frameLevelsDbfs = blockLevelsDbfs.flatMap((level) => [level, level]);
+  frameLevelsDbfs[0] = -240;
+  const samples = new Float32Array(frameLevelsDbfs.length * frameSize);
+
+  for (let frame = 0; frame < frameLevelsDbfs.length; frame += 1) {
+    const amplitude = (10 ** (frameLevelsDbfs[frame] / 20)) * Math.SQRT2;
+    for (let index = 0; index < frameSize; index += 1) {
+      samples[frame * frameSize + index] =
+        amplitude * Math.sin((2 * Math.PI * 180 * index) / sampleRate);
+    }
+  }
+  return samples;
 }
