@@ -55,6 +55,8 @@ declare global {
   interface Window {
     kosmosNext?: {
       platform?: NodeJS.Platform;
+      getUnsavedWork?: (scope?: "navigation") => string | null;
+      setUnsavedWork?: (key: string, reason: string | null) => void;
       ready: (payload: { width: number; height: number; place: LabsPlace }) => void;
       resize: (size: { width: number; height: number }) => Promise<void>;
       startWindowDrag?: (point: { screenX: number; screenY: number }) => void;
@@ -121,7 +123,7 @@ declare global {
       openMicrophoneSettings?: () => Promise<{ ok: boolean }>;
       getAppInfo?: () => Promise<{ version: string; update: AppUpdateStatus }>;
       checkForUpdates?: () => Promise<AppUpdateStatus>;
-      installAppUpdate?: () => Promise<{ installed: boolean }>;
+      installAppUpdate?: () => Promise<{ installed: boolean; reason?: string }>;
       openReleasePage?: () => Promise<unknown>;
       openThirdPartyNotices?: () => Promise<unknown>;
       onAppUpdate?: (callback: (status: AppUpdateStatus) => void) => () => void;
