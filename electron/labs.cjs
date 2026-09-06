@@ -27,6 +27,9 @@ const {
   isWavBuffer,
 } = require("./labs-audio.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
+const { writeFileAtomic, copyFileAtomic } = require("./file-utils.cjs");
+const { saveProjectJson, readProjectJson } = require("./project-save.cjs");
+const { createShutdownGuard, requestRendererApproval } = require("./shutdown.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
 const { extractPdfText } = require("./pdf-text.cjs");
 const { isTrustedRenderer, secureRendererWindow } = require("./window-security.cjs");
@@ -52,6 +55,42 @@ const execFileAsync = promisify(execFile);
 /** Shared GitHub Releases updater; reuses the same feed as the original app. */
 let labsAppUpdater = null;
 
+// Updates and normal quits share the same save barrier. The trusted preload
+// confirms that recordings and manuscript edits are settled before teardown.
+const shutdownGuard = createShutdownGuard({
+  askRenderer: () => requestRendererApproval({
+    win: labWindow,
+    ipcMain,
+    isTrusted: isTrustedLabEvent,
+  }),
+  releaseRenderer: () => {
+    if (labWindow && !labWindow.isDestroyed()) {
+      labWindow.webContents.send("labs:shutdown-release");
+    }
+  },
+});
+let quitRequest = null;
+
+function requestSafeQuit() {
+  if (quitRequest) {
+    return quitRequest;
+  }
+  quitRequest = (async () => {
+    const result = await shutdownGuard.prepare();
+    if (result.ok) {
+      app.quit();
+      return;
+    }
+    await dialog.showMessageBox({
+      type: "info",
+      title: "Your work is still open",
+      message: result.reason,
+      buttons: ["Keep working"],
+    });
+  })().finally(() => { quitRequest = null; });
+  return quitRequest;
+}
+
 function isTrustedLabEvent(event) {
   return isTrustedWindowEvent(event, labWindow, isTrustedRenderer);
 }
@@ -64,7 +103,10 @@ function bindHandle(channel, listener) {
   }
   ipcMain.handle(channel, (event, ...args) => {
     assertTrustedWindowEvent(event, labWindow, isTrustedRenderer);
-    return listener(event, ...args);
+    if (channel === "labs:update-install") {
+      return listener(event, ...args);
+    }
+    return shutdownGuard.run(() => listener(event, ...args));
   });
 }
 
@@ -139,6 +181,8 @@ function ensureLabsUpdater() {
       isPackaged: app.isPackaged,
       currentVersion: app.getVersion(),
       send: broadcastLabsUpdate,
+      beforeInstall: () => shutdownGuard.prepare(),
+      onInstallError: () => shutdownGuard.release(),
     });
   } catch {
     labsAppUpdater = null;
@@ -214,7 +258,7 @@ async function loadWorkspacePath() {
 async function persistWorkspacePath(next) {
   try {
     if (next) {
-      await fs.writeFile(workspaceSettingsPath(), JSON.stringify({ workspace: next }), "utf8");
+      await writeFileAtomic(workspaceSettingsPath(), JSON.stringify({ workspace: next }), "utf8");
     } else {
       await fs.rm(workspaceSettingsPath(), { force: true });
     }
@@ -397,8 +441,7 @@ async function uniqueProjectDir(workspace, base) {
 async function readProjectMarker(dir) {
   try {
     const root = await assertProjectFolder(dir);
-    const raw = await fs.readFile(projectAssetPath(root, PROJECT_MARKER), "utf8");
-    const parsed = JSON.parse(raw);
+    const parsed = await readProjectJson(projectAssetPath(root, PROJECT_MARKER));
     if (parsed && typeof parsed === "object" && Array.isArray(parsed.chapters)) {
       return parsed;
     }
@@ -442,7 +485,7 @@ async function readExternalPaths() {
 
 async function writeExternalPaths(paths) {
   try {
-    await fs.writeFile(externalRegistryPath(), JSON.stringify(paths, null, 2), "utf8");
+    await writeFileAtomic(externalRegistryPath(), JSON.stringify(paths, null, 2), "utf8");
   } catch {
     // Non-fatal; linked books just won't persist across launches.
   }
@@ -597,7 +640,7 @@ async function writeProjectManuscript(folder, name, base64, sourcePath) {
   if (typeof base64 !== "string") {
     return { ok: false };
   }
-  await fs.writeFile(dest, Buffer.from(base64, "base64"));
+  await writeFileAtomic(dest, Buffer.from(base64, "base64"));
   return { ok: true, manuscript: safe };
 }
 
@@ -615,7 +658,7 @@ async function writeChapterContents(folder, chapters) {
   await Promise.all(
     chapters.map((chapter) =>
       chapter && typeof chapter.id === "string" && typeof chapter.html === "string"
-        ? fs.writeFile(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapter.id)}`), chapter.html, "utf8")
+        ? writeFileAtomic(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapter.id)}`), chapter.html, "utf8")
         : Promise.resolve(),
     ),
   );
@@ -627,7 +670,7 @@ async function writeChapterContent(folder, chapterId, html) {
     return { ok: false };
   }
   const root = await chaptersDir(folder);
-  await fs.writeFile(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapterId)}`), html, "utf8");
+  await writeFileAtomic(projectAssetPath(root, `manuscript/chapters/${chapterFileName(chapterId)}`), html, "utf8");
   return { ok: true };
 }
 
@@ -686,7 +729,7 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   const alreadyWav = isWavBuffer(bytes) || (typeof mime === "string" && mime.includes("wav"));
   try {
     const wav = alreadyWav ? bytes : await transcodeToWav(bytes);
-    await fs.writeFile(projectAssetPath(root, `audio/${file}`), wav);
+    await writeFileAtomic(projectAssetPath(root, `audio/${file}`), wav);
     return { ok: true, file };
   } catch (error) {
     console.warn(`[labs] write chapter audio failed: ${error?.message ?? error}`);
@@ -762,7 +805,7 @@ async function copyToWorking(folder, chapterId, file) {
   const ext = path.extname(name) || ".wav";
   const destName = `${chapterFileName(chapterId).slice(0, -5)}-working${ext}`;
   try {
-    await fs.copyFile(src, projectAssetPath(root, `audio/${destName}`));
+    await copyFileAtomic(src, projectAssetPath(root, `audio/${destName}`));
     return { ok: true, file: destName };
   } catch (error) {
     console.warn(`[labs] copy working failed: ${error?.message ?? error}`);
@@ -842,7 +885,7 @@ async function createWorkspaceProject(input) {
     createdAt: nowIso,
     updatedAt: nowIso,
   };
-  await fs.writeFile(path.join(dir, PROJECT_MARKER), JSON.stringify(project), "utf8");
+  await saveProjectJson(path.join(dir, PROJECT_MARKER), project);
   const location = locationInWorkspace(dir);
   if (location !== "direct") {
     await rememberProjectPath(dir);
@@ -858,7 +901,7 @@ async function saveWorkspaceProject(project) {
   const { folder, ...rest } = project;
   const root = await assertProjectFolder(folder);
   const next = { ...rest, updatedAt: new Date().toISOString() };
-  await fs.writeFile(projectAssetPath(root, PROJECT_MARKER), JSON.stringify(next), "utf8");
+  await saveProjectJson(projectAssetPath(root, PROJECT_MARKER), next);
   return { ...next, folder: root };
 }
 
@@ -1781,6 +1824,12 @@ function openLab() {
   bindChapterDelete();
   ipcMain.on("labs:push-tuning", onPushTuning);
 
+  labWindow.on("close", (event) => {
+    if (!shutdownGuard.approved) {
+      event.preventDefault();
+      void requestSafeQuit();
+    }
+  });
   labWindow.on("closed", () => {
     stopLiveFollow();
     terminateActiveCommands();
@@ -2000,7 +2049,12 @@ app.on("second-instance", () => {
   tryOpenLab();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (!shutdownGuard.approved) {
+    event.preventDefault();
+    void requestSafeQuit();
+    return;
+  }
   closeShelfWatchers();
   labsAppUpdater?.dispose();
   stopLiveFollow({ force: true });

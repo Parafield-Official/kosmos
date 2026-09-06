@@ -5,6 +5,7 @@ import {
   type DeliveryProfile,
   type SpecPreset,
 } from "./presets";
+import { trafficLight } from "./spec";
 
 export { measurePcm } from "./measure";
 export { integratedLufs } from "./loudness";
@@ -121,6 +122,7 @@ const FRAME_SECONDS = 0.02;
 const GATE_ATTACK_SECONDS = 0.005;
 const GATE_RELEASE_SECONDS = 0.5;
 const GATE_TARGET_DBFS = -70;
+const ROOM_TONE_MAX_FRAME_SPREAD_DB = 6;
 
 export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): MasterResult {
   if (!Number.isInteger(input.sampleRate) || input.sampleRate <= 0) {
@@ -207,7 +209,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
     ? Array.from(resampled)
     : applyGate(resampled, analysis, outputSampleRate, before.noise_floor_dbfs);
   if (level?.standard === "rms") {
-    processed = compressLightly(processed, -28, 2);
+    processed = compressLightly(processed, outputSampleRate, -28, 2);
   }
   const projected = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
   const gainDb = level ? level.target - measuredLevel(projected, outputSampleRate, level.standard, preset) : 0;
@@ -219,18 +221,12 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
   // Limiting can shave a little off the requested level. Two bounded
   // corrections work for both RMS audiobook targets and integrated-LUFS
   // broadcast targets without changing the processing order.
-  let after = measurePcm(
-    { samples: padded, sampleRate: outputSampleRate, channels: 1 },
-    { preset },
-  );
+  let after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
   for (let attempt = 0; level && attempt < 2 && levelStatus(after, level.standard) === "fail"; attempt += 1) {
     const correction = level.target - reportLevel(after, level.standard);
     processed = limitTruePeak(applyGain(processed, correction), limiterCeiling);
     padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
-    after = measurePcm(
-      { samples: padded, sampleRate: outputSampleRate, channels: 1 },
-      { preset },
-    );
+    after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
   }
 
   if (level && levelStatus(after, level.standard) === "fail") {
@@ -352,6 +348,35 @@ function reportLevel(report: AcxReport, standard: "rms" | "lufs"): number {
   return standard === "rms" ? report.rms_dbfs : report.lufs_integrated;
 }
 
+/**
+ * Generated boundary pads prove structure, but they must not become the
+ * quietest window used to grade the narration's noise floor.
+ */
+function measureMasteredOutput(
+  padded: number[],
+  processed: number[],
+  sampleRate: number,
+  preset: SpecPreset,
+): AcxReport {
+  const delivery = measurePcm(
+    { samples: padded, sampleRate, channels: 1 },
+    { preset },
+  );
+  const body = measurePcm(
+    { samples: processed, sampleRate, channels: 1 },
+    { preset, requireRoomTone: false },
+  );
+  const checks = { ...delivery.checks, noise_floor: body.checks.noise_floor };
+  return {
+    ...delivery,
+    noise_floor_dbfs: body.noise_floor_dbfs,
+    noise_floor_start_seconds: body.noise_floor_start_seconds,
+    noise_floor_duration_seconds: body.noise_floor_duration_seconds,
+    checks,
+    traffic_light: trafficLight(checks),
+  };
+}
+
 function levelStatus(report: AcxReport, standard: "rms" | "lufs") {
   return standard === "rms" ? report.checks.rms : report.checks.loudness;
 }
@@ -429,17 +454,20 @@ function applyGate(samples: number[], analysis: SpeechAnalysis, sampleRate: numb
   return output;
 }
 
-function compressLightly(samples: number[], thresholdDbfs: number, ratio: number): number[] {
-  const threshold = 10 ** (thresholdDbfs / 20);
+/** Track programme energy and smooth gain; never reshape individual cycles. */
+function compressLightly(samples: number[], sampleRate: number, thresholdDbfs: number, ratio: number): number[] {
+  const detectorCoefficient = Math.exp(-1 / (sampleRate * 0.05));
+  const attackCoefficient = Math.exp(-1 / (sampleRate * 0.01));
+  const releaseCoefficient = Math.exp(-1 / (sampleRate * 0.15));
+  let power = 0;
+  let gainDb = 0;
   return samples.map((sample) => {
-    const sign = sample < 0 ? -1 : 1;
-    const amplitude = Math.abs(sample);
-    if (amplitude <= threshold) {
-      return sample;
-    }
-    const inputDb = 20 * Math.log10(amplitude);
-    const outputDb = thresholdDbfs + (inputDb - thresholdDbfs) / ratio;
-    return sign * (10 ** (outputDb / 20));
+    power = detectorCoefficient * power + (1 - detectorCoefficient) * sample * sample;
+    const levelDb = 10 * Math.log10(Math.max(power, 1e-20));
+    const targetGainDb = -Math.max(0, levelDb - thresholdDbfs) * (1 - 1 / ratio);
+    const coefficient = targetGainDb < gainDb ? attackCoefficient : releaseCoefficient;
+    gainDb = coefficient * gainDb + (1 - coefficient) * targetGainDb;
+    return sample * 10 ** (gainDb / 20);
   });
 }
 
@@ -469,6 +497,29 @@ function padRoomTone(
   tailSeconds: number,
 ): number[] {
   const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
+  const body = speechBody(samples, analysis, sampleRate);
+  const room = stableRoomTone(quietRoomTone(samples, analysis, frameSize), frameSize);
+  const head = repeatRoomTone(room, Math.round(headSeconds * sampleRate));
+  const tail = repeatRoomTone(room, Math.round(tailSeconds * sampleRate));
+  const output = new Array<number>(head.length + body.length + tail.length);
+  let outputIndex = 0;
+  for (const sample of head) {
+    output[outputIndex] = sample;
+    outputIndex += 1;
+  }
+  for (const sample of body) {
+    output[outputIndex] = sample;
+    outputIndex += 1;
+  }
+  for (const sample of tail) {
+    output[outputIndex] = sample;
+    outputIndex += 1;
+  }
+  return output;
+}
+
+function speechBody(samples: number[], analysis: SpeechAnalysis, sampleRate: number): number[] {
+  const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
   const firstSpeechFrame = analysis.speechFrames.findIndex(Boolean);
   let lastSpeechFrame = -1;
   for (let index = analysis.speechFrames.length - 1; index >= 0; index -= 1) {
@@ -477,29 +528,11 @@ function padRoomTone(
       break;
     }
   }
-
   const bodyStart = firstSpeechFrame < 0 ? 0 : firstSpeechFrame * frameSize;
   const bodyEnd = lastSpeechFrame < 0
     ? samples.length
     : Math.min(samples.length, (lastSpeechFrame + 1) * frameSize);
-  const room = quietRoomTone(samples, analysis, frameSize);
-  const head = repeatRoomTone(room, Math.round(headSeconds * sampleRate));
-  const tail = repeatRoomTone(room, Math.round(tailSeconds * sampleRate));
-  const output = new Array<number>(head.length + (bodyEnd - bodyStart) + tail.length);
-  let outputIndex = 0;
-  for (const sample of head) {
-    output[outputIndex] = sample;
-    outputIndex += 1;
-  }
-  for (let index = bodyStart; index < bodyEnd; index += 1) {
-    output[outputIndex] = samples[index];
-    outputIndex += 1;
-  }
-  for (const sample of tail) {
-    output[outputIndex] = sample;
-    outputIndex += 1;
-  }
-  return output;
+  return samples.slice(bodyStart, bodyEnd);
 }
 
 function quietRoomTone(samples: number[], analysis: SpeechAnalysis, frameSize: number): number[] {
@@ -524,6 +557,31 @@ function quietRoomTone(samples: number[], analysis: SpeechAnalysis, frameSize: n
     return bestRoom;
   }
   return syntheticRoomTone(Math.max(32, frameSize * 10));
+}
+
+/**
+ * A quiet segment can still contain the gate's release edge. Repeating that
+ * edge at the file boundaries makes the meter mistake an automatic pad for
+ * speech. Keep genuinely steady microphone tone, but use the deterministic
+ * low-level fallback when the candidate varies too much to be safe.
+ */
+function stableRoomTone(room: number[], frameSize: number): number[] {
+  const frameLevels: number[] = [];
+  for (let start = 0; start < room.length; start += frameSize) {
+    const level = rmsDbfs(room.slice(start, start + frameSize));
+    if (!Number.isFinite(level)) {
+      return syntheticRoomTone(Math.max(32, frameSize * 10));
+    }
+    frameLevels.push(level);
+  }
+  const quietest = Math.min(...frameLevels);
+  const loudest = Math.max(...frameLevels);
+  if (loudest - quietest > ROOM_TONE_MAX_FRAME_SPREAD_DB) {
+    return syntheticRoomTone(Math.max(32, frameSize * 10));
+  }
+  return loudest > GATE_TARGET_DBFS
+    ? applyGain(room, GATE_TARGET_DBFS - loudest)
+    : room;
 }
 
 function repeatRoomTone(room: number[], length: number): number[] {

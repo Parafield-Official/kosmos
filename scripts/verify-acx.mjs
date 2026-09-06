@@ -281,7 +281,9 @@ check(
 // A take that cannot be fixed. Lifting it to ACX's window would lift the room
 // with it, so the honest answer is to refuse and say why.
 // ---------------------------------------------------------------------------
-const noisy = rawTake({ speechDbfs: -30, roomToneDbfs: -48 });
+// Use overwhelming room noise. The old borderline fixture can meet the floor
+// once envelope compression avoids the former waveshaper's makeup gain.
+const noisy = rawTake({ speechDbfs: -30, roomToneDbfs: -24 });
 const refused = masterCore.masterPcm(
   { samples: noisy, sampleRate: SAMPLE_RATE, channels: 1 },
   { targetRmsDbfs: -20 },
