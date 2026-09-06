@@ -1,0 +1,9 @@
+const fs=require('node:fs/promises'),sync=require('node:fs'),path=require('node:path'),vm=require('node:vm'),{createRequire}=require('node:module');
+const root=path.resolve(__dirname,'..'),filename=root+'/electron/labs-audio.cjs',req=createRequire(filename);
+const ctx={require:n=>n==='electron'?{app:{},shell:{showItemInFolder(){}}}:req(n),module:{exports:{}},__dirname:path.dirname(filename),process,Buffer,console};
+vm.runInNewContext(sync.readFileSync(filename,'utf8')+`
+ decodeAudioPcm=async()=>({pcm:Buffer.alloc(44100*4),sampleRate:44100,channels:1,format:'wav'});
+ encodeDeliveryAudio=async(i,o)=>fs.writeFile(o,'new export');
+ loadCoreModule=name=>name==='master'?{resolvePreset:()=>({label:'ACX'}),deliveryProfile:()=>({sampleRate:44100,headSeconds:.5,folderName:'acx',extension:'mp3'}),measurePcm:()=>({traffic_light:'green'})}:name==='export'?{chapterFileName:()=> '01_chapter.mp3',buildExportPlan:()=>({readmeFiles:[]}),reportText:()=> 'report',revealTargetInExportPack:f=>f[0]}:{markerFileSet:()=>{throw new Error('injected marker failure')}};
+`,ctx);
+(async()=>{const folder=await fs.mkdtemp(path.join(require('node:os').tmpdir(),'kosmos-publish-audit-'));try{await fs.mkdir(folder+'/export/acx-handoff',{recursive:true});await fs.mkdir(folder+'/audio');await fs.writeFile(folder+'/project.json','{}');const file=folder+'/export/acx-handoff/01_chapter.mp3';await fs.writeFile(file,'old export');const result=await ctx.module.exports.exportDeliveryPack({folder,mode:'handoff',chapters:[{id:'one',workingFile:'one.wav',pickups:[{id:'pickup'}]}]});const actual={result,contentsAfterFailedExport:await fs.readFile(file,'utf8')};console.log(JSON.stringify(actual,null,2));await fs.writeFile(root+'/docs/diagnostics/acx-publication-observation.json',JSON.stringify(actual,null,2));}finally{await fs.rm(folder,{recursive:true,force:true});}})();

@@ -26,8 +26,8 @@ const ROW_ORDER: Array<{ id: string; key: CheckKey; label: string; measured: (re
 ];
 
 function statusLabel(status: CheckStatus | AcxReport["traffic_light"]): string {
-  if (status === "green" || status === "pass") return "Ready";
-  if (status === "yellow" || status === "warn") return "Close";
+  if (status === "green" || status === "pass") return "Pass";
+  if (status === "yellow" || status === "warn") return "Review";
   if (status === "red" || status === "fail") return "Needs a fix";
   return "Not judged";
 }
@@ -64,23 +64,25 @@ export function ChapterMeter({
     <div className={`ma-meter neu-inset ma-meter-${light}`}>
       <div className="ma-meter-verdict">
         <span className={`ma-meter-light ma-meter-light-${light}`}>
-          {light === "in-hand" ? "Mastering will settle" : statusLabel(report.traffic_light)}
+          {light === "in-hand" ? "Mastering can help" : statusLabel(report.traffic_light)}
         </span>
         <p>
           {trouble.length === 0
-            ? "This chapter meets every ACX level Audible asks for."
+            ? "The measured technical checks pass. Listen through the chapter before submitting."
             : yours.length === 0
-              ? "Nothing here needs a re-record. Mastering will settle the rest."
+              ? "Mastering can try to bring these measurements into range. Check the result afterward."
               : yours.length === 1
-                ? "One thing only you can settle before ACX will take this."
-                : `${yours.length} things only you can settle before ACX will take this.`}
+                ? "Review this measurement and listen to the audio before submitting."
+                : `Review these ${yours.length} measurements before submitting.`}
         </p>
       </div>
       {yours.length > 0 ? (
         <ul className="ma-meter-trouble">
           {yours.map((row) => (
             <li key={row.id}>
-              <strong>{row.label}</strong> is {row.measured}; ACX wants {row.target}.
+              <strong>{row.label}</strong>{row.key === "noise_floor" && report.noise_floor_note
+                ? `: ${report.noise_floor_note}`
+                : ` is ${row.measured}; the target is ${row.target}.`}
             </li>
           ))}
         </ul>

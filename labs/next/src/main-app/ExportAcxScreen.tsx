@@ -23,7 +23,7 @@ export function ExportAcxScreen({
   const [error, setError] = useState<string | null>(null);
 
   const progress = completionPct(project);
-  const mastered = project.chapters.filter((chapter) => chapter.mastered).length;
+  const mastered = project.chapters.filter((chapter) => chapter.mastered && chapter.masteredFile).length;
   const total = project.chapters.length;
   const canExportAcx = total > 0 && mastered === total;
   const playable = useMemo(
@@ -182,7 +182,7 @@ export function ExportAcxScreen({
             )}
             <p className="ma-export-hint">
               {canExportAcx
-                ? "Ready for Audible."
+                ? "Ready to export audio. Listen through it and include recorded opening and closing credits before submitting to ACX."
                 : masteringOnly
                   ? "Master every uploaded file, then export ACX audio."
                   : canHandoff

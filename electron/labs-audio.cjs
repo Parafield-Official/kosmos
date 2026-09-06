@@ -241,8 +241,11 @@ async function probeAudio(filePath) {
   };
 }
 
-async function decodeAudioPcm(filePath) {
+async function decodeAudioPcm(filePath, targetSampleRate) {
   const metadata = await probeAudio(filePath);
+  // FFmpeg applies anti-alias filtering when converting to the delivery rate.
+  // Do this before the JS core, whose linear interpolation is not a low-pass filter.
+  const sampleRate = targetSampleRate ?? metadata.sampleRate;
   if (metadata.duration > MAX_AUDIO_SECONDS) {
     throw new Error(`Audio exceeds Kosmos's ${MAX_AUDIO_SECONDS / 60} minute decode limit.`);
   }
@@ -250,13 +253,13 @@ async function decodeAudioPcm(filePath) {
     "-v", "error", "-i", filePath,
     "-f", "f32le", "-acodec", "pcm_f32le",
     "-ac", String(metadata.channels),
-    "-ar", String(metadata.sampleRate),
+    "-ar", String(sampleRate),
     "pipe:1",
   ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
   if (pcm.length === 0 || pcm.length % (4 * metadata.channels) !== 0) {
     throw new Error("Audio decoder returned no complete PCM frames");
   }
-  return { ...metadata, pcm };
+  return { ...metadata, sampleRate, pcm };
 }
 
 async function repairAudioFile(masterCore, filePath, metadata) {
@@ -516,7 +519,7 @@ async function masterWorkingFile(payload) {
   const profile = masterCore.deliveryProfile(preset);
 
   try {
-    const decoded = await decodeAudioPcm(filePath);
+    const decoded = await decodeAudioPcm(filePath, profile.sampleRate);
     const repaired = await repairAudioFile(masterCore, filePath, decoded);
     const repairAssessment = masterCore.assessRepairCandidate(
       float32View(decoded.pcm),
@@ -620,7 +623,7 @@ async function encodeDeliveryAudio(inputPath, outputPath, profile, durationSecon
 }
 
 function chapterPackSource(chapter, handoff) {
-  if (chapter?.masteredFile) {
+  if (chapter?.mastered && chapter?.masteredFile) {
     return chapter.masteredFile;
   }
   if (chapter?.workingFile) {
@@ -709,7 +712,7 @@ async function exportDeliveryPack(payload) {
         continue;
       }
       const filePath = audioPath(folder, sourceFile);
-      const decoded = await decodeAudioPcm(filePath);
+      const decoded = await decodeAudioPcm(filePath, profile.sampleRate);
       const samples = mixInterleavedToMono(float32View(decoded.pcm), decoded.channels);
       const resampled = resampleLinearArray(samples, decoded.sampleRate, profile.sampleRate);
       const before = masterCore.measurePcm({
@@ -731,6 +734,8 @@ async function exportDeliveryPack(payload) {
         channels: measured.channels,
         format: profile.container,
         bitrate_kbps: measured.bitrateKbps,
+        // This file was encoded immediately above with libmp3lame -b:a, no VBR quality flag.
+        vbr: profile.container === "mp3" ? false : undefined,
       }, { preset });
       entries.push({
         fileName,
@@ -790,6 +795,7 @@ async function exportDeliveryPack(payload) {
           channels: decodedSample.channels,
           format: decodedSample.format,
           bitrate_kbps: decodedSample.bitrateKbps,
+          vbr: profile.container === "mp3" ? false : undefined,
         }, { preset, requireRoomTone: false });
         const encodedSeconds = decodedSample.pcm.length / 4 / decodedSample.channels / decodedSample.sampleRate;
         if (encodedSeconds < retailSpec.min || encodedSeconds > retailSpec.max) {
@@ -811,20 +817,23 @@ async function exportDeliveryPack(payload) {
     await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries), "utf8");
     outputFiles.push("REPORT.txt");
 
-    await replaceDirectory(stagingOutputFolder, outputFolder);
-
     const allPickups = chapters.flatMap((chapter) =>
       Array.isArray(chapter.pickups) ? chapter.pickups : [],
     );
     if (allPickups.length) {
-      const markerDir = await ensureProjectDirectory(folder, "export/markers");
+      // Markers are part of the same transaction as audio: publish the pack once.
+      const markerDir = path.join(stagingOutputFolder, "markers");
+      await fs.mkdir(markerDir, { recursive: true });
       const files = markersCore.markerFileSet("book", allPickups);
       for (const file of files) {
         await writeFileAtomic(path.join(markerDir, file.fileName), file.contents, "utf8");
+        outputFiles.push(`markers/${file.fileName}`);
       }
     }
 
-    const reveal = path.join(outputFolder, exportCore.revealTargetInExportPack(outputFiles));
+    const revealFile = exportCore.revealTargetInExportPack(outputFiles);
+    await replaceDirectory(stagingOutputFolder, outputFolder);
+    const reveal = path.join(outputFolder, revealFile);
     try {
       shell.showItemInFolder(fsSync.existsSync(reveal) ? reveal : outputFolder);
     } catch {

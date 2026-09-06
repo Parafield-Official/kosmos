@@ -157,3 +157,25 @@ describe("ACX measurement", () => {
     expect(noiseFloorListenRange(0, 0.2, 1.1)).toEqual({ start: 0, end: 1.1 });
   });
 });
+
+describe('incomplete MP3 metadata', () => {
+  it('rejects a known low bitrate even when CBR status is unknown', () => {
+    const report = measurePcm({ samples: new Float32Array(44100).fill(0.1), sampleRate: 44100, channels: 1, format: 'mp3', bitrate_kbps: 128 });
+    expect(report.checks.format).toBe('fail');
+  });
+  it('rejects known VBR even when bitrate is unknown', () => {
+    const report = measurePcm({ samples: new Float32Array(44100).fill(0.1), sampleRate: 44100, channels: 1, format: 'mp3', vbr: true });
+    expect(report.checks.format).toBe('fail');
+  });
+});
+
+it('does not give a clean noise verdict when quiet ends hide a louder internal pause', () => {
+  const rate = 44100;
+  const samples = Float32Array.from({length: rate * 10}, (_,i) => {
+    const t = i / rate;
+    return (t < 1.5 || t >= 8.5 ? 0.0001 : t >= 4 && t < 5 ? 0.01 : 0.14) * Math.sin(2*Math.PI*200*t);
+  });
+  const report = measurePcm({samples, sampleRate:rate, channels:1, format:'mp3', bitrate_kbps:192, vbr:false});
+  expect(report.checks.noise_floor).toBe('warn');
+  expect(report.traffic_light).toBe('yellow');
+});
