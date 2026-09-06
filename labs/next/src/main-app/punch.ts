@@ -169,7 +169,7 @@ export async function exportBookPack(
   }
   const result = await window.kosmosNext.exportDelivery({
     folder: project.folder,
-    presetId: readEnginePrefs().spec_preset_id,
+    presetId: mode === "acx" ? "acx" : readEnginePrefs().spec_preset_id,
     mode,
     chapters: project.chapters.map((chapter) => ({
       id: chapter.id,

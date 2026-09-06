@@ -61,6 +61,8 @@ function createAppUpdater({
   isPackaged,
   currentVersion,
   send,
+  beforeInstall = async () => ({ ok: true }),
+  onInstallError = () => {},
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
   checkEveryMs = CHECK_EVERY_MS,
@@ -122,12 +124,31 @@ function createAppUpdater({
     return getStatus();
   }
 
-  function install() {
+  let installing = false;
+  async function install() {
     if (!isPackaged || state.phase !== "ready") {
       return { installed: false };
     }
-    autoUpdater.quitAndInstall(false, true);
-    return { installed: true };
+    if (installing) {
+      return { installed: false, reason: "An update restart is already being prepared." };
+    }
+    installing = true;
+    try {
+      const ready = await beforeInstall();
+      if (!installing) {
+        return { installed: false, reason: "The update was interrupted. Your work remains open." };
+      }
+      if (ready?.ok !== true) {
+        installing = false;
+        return { installed: false, reason: ready?.reason || "Save your work before restarting." };
+      }
+      autoUpdater.quitAndInstall(false, true);
+      return { installed: true };
+    } catch (error) {
+      installing = false;
+      onInstallError();
+      return { installed: false, reason: String(error?.message || error) };
+    }
   }
 
   function dispose() {
@@ -174,6 +195,10 @@ function createAppUpdater({
     emit({ phase: "ready", version: info?.version ?? state.version });
   });
   autoUpdater.on("error", (error) => {
+    if (installing) {
+      installing = false;
+      onInstallError();
+    }
     emit({
       phase: "error",
       message: error instanceof Error ? error.message : String(error),

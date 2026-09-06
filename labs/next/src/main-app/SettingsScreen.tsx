@@ -56,6 +56,7 @@ function SetItem({
 }
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
+  const [installError, setInstallError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [fontScale, setFontScale] = useState<FontScale>(() => readFontScale());
@@ -442,11 +443,22 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                 >
                   {busy ? update?.phase === "checking" || checking ? "Checking…" : "Downloading…" : update?.phase === "error" ? "Try again" : "Check for updates"}
                 </button>
+                {installError ? <p role="alert">{installError}</p> : null}
                 {update?.canInstall ? (
                   <button
                     type="button"
                     className="btn btn-clear"
-                    onClick={() => void window.kosmosNext?.installAppUpdate?.()}
+                    onClick={async () => {
+                      setInstallError(null);
+                      try {
+                        const result = await window.kosmosNext?.installAppUpdate?.();
+                        if (!result?.installed) {
+                          setInstallError(result?.reason || "The update could not restart Kosmos. Your work remains open.");
+                        }
+                      } catch {
+                        setInstallError("The update could not restart Kosmos. Your work remains open.");
+                      }
+                    }}
                   >
                     Restart to update
                   </button>
