@@ -1,0 +1,7 @@
+{
+  "result": {
+    "ok": false,
+    "reason": "injected marker failure"
+  },
+  "contentsAfterFailedExport": "new export"
+}
