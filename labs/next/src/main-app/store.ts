@@ -1267,7 +1267,7 @@ export function applyWorkingTape(project: BookProject, chapterId: string, file: 
     ...project,
     chapters: project.chapters.map((chapter) =>
       chapter.id === chapterId
-        ? { ...chapter, workingFile: file, hasWorkingAudio: true, mastered: false, acxTrafficLight: undefined }
+        ? { ...chapter, workingFile: file, hasWorkingAudio: true, masteredFile: undefined, hasMasteredAudio: false, mastered: false, acxTrafficLight: undefined }
         : chapter,
     ),
   };

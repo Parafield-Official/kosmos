@@ -370,6 +370,7 @@ function measureMasteredOutput(
   return {
     ...delivery,
     noise_floor_dbfs: body.noise_floor_dbfs,
+    noise_floor_note: body.noise_floor_note,
     noise_floor_start_seconds: body.noise_floor_start_seconds,
     noise_floor_duration_seconds: body.noise_floor_duration_seconds,
     checks,
@@ -497,7 +498,7 @@ function padRoomTone(
   tailSeconds: number,
 ): number[] {
   const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
-  const body = speechBody(samples, analysis, sampleRate);
+  const body = speechBody(samples);
   const room = stableRoomTone(quietRoomTone(samples, analysis, frameSize), frameSize);
   const head = repeatRoomTone(room, Math.round(headSeconds * sampleRate));
   const tail = repeatRoomTone(room, Math.round(tailSeconds * sampleRate));
@@ -518,20 +519,13 @@ function padRoomTone(
   return output;
 }
 
-function speechBody(samples: number[], analysis: SpeechAnalysis, sampleRate: number): number[] {
-  const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
-  const firstSpeechFrame = analysis.speechFrames.findIndex(Boolean);
-  let lastSpeechFrame = -1;
-  for (let index = analysis.speechFrames.length - 1; index >= 0; index -= 1) {
-    if (analysis.speechFrames[index]) {
-      lastSpeechFrame = index;
-      break;
-    }
-  }
-  const bodyStart = firstSpeechFrame < 0 ? 0 : firstSpeechFrame * frameSize;
-  const bodyEnd = lastSpeechFrame < 0
-    ? samples.length
-    : Math.min(samples.length, (lastSpeechFrame + 1) * frameSize);
+function speechBody(samples: number[]): number[] {
+  // Only digital silence is safe to discard without knowing the spoken words.
+  // Amplitude-based speech detection must never decide which content to delete.
+  let bodyStart = 0;
+  let bodyEnd = samples.length;
+  while (bodyStart < bodyEnd && Math.abs(samples[bodyStart]) <= 1e-9) bodyStart += 1;
+  while (bodyEnd > bodyStart && Math.abs(samples[bodyEnd - 1]) <= 1e-9) bodyEnd -= 1;
   return samples.slice(bodyStart, bodyEnd);
 }
 

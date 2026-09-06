@@ -31,6 +31,8 @@ export interface AcxReport {
   true_peak_dbfs: number;
   sample_peak_dbfs: number;
   noise_floor_dbfs: number;
+  /** A quietest-window estimate cannot establish clean noise throughout the take. */
+  noise_floor_note?: string;
   /** Start of the sustained low-level window used for the floor estimate. */
   noise_floor_start_seconds: number;
   /** Duration of the sustained low-level window used for the floor estimate. */
@@ -134,6 +136,10 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
   const preset = options.preset ?? ACX_PRESET;
   const lufs = integratedLufs(samples, sampleRate, channels > 0 ? channels : 1);
 
+  const inconsistentQuiet = hasInconsistentQuietIntervals(frameRms, noiseFloor, preset.noise_floor_dbfs_max);
+  const floorStatus = preset.noise_floor_dbfs_max === null
+    ? "unspecified"
+    : upperBoundStatus(noiseFloor, preset.noise_floor_dbfs_max, 0.5, true);
   const checks = {
     rms: preset.rms_dbfs
       ? rangeStatus(rmsDbfs(samples), preset.rms_dbfs.min, preset.rms_dbfs.max, 0.5)
@@ -142,9 +148,7 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
     true_peak: preset.true_peak_dbfs_max === null
       ? "unspecified"
       : upperBoundStatus(truePeak, preset.true_peak_dbfs_max, 0.5),
-    noise_floor: preset.noise_floor_dbfs_max === null
-      ? "unspecified"
-      : upperBoundStatus(noiseFloor, preset.noise_floor_dbfs_max, 0.5, true),
+    noise_floor: floorStatus === "pass" && inconsistentQuiet ? "warn" : floorStatus,
     sample_rate: preset.sample_rate === null
       ? "unspecified"
       : sampleRate === preset.sample_rate ? "pass" : "fail",
@@ -166,6 +170,9 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
     true_peak_dbfs: truePeak,
     sample_peak_dbfs: samplePeak,
     noise_floor_dbfs: noiseFloor,
+    noise_floor_note: inconsistentQuiet
+      ? "Quiet passages vary substantially. The quietest window does not prove the narration is free of background noise. Listen to internal pauses and quiet speech before submitting."
+      : undefined,
     noise_floor_start_seconds: noiseEstimate.start_frame * FRAME_SECONDS,
     noise_floor_duration_seconds: (noiseEstimate.end_frame - noiseEstimate.start_frame) * FRAME_SECONDS,
     sample_rate: sampleRate,
@@ -181,6 +188,24 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
     checks,
     traffic_light: trafficLight(checks),
   };
+}
+
+/** Flag ambiguous internal low-level intervals; do not label quiet speech as proven noise. */
+function hasInconsistentQuietIntervals(levels: number[], floor: number, limit: number | null): boolean {
+  if (limit === null || !Number.isFinite(floor) || levels.length === 0) return false;
+  const sorted = levels.filter(Number.isFinite).sort((a, b) => a - b);
+  const speechReference = sorted[Math.floor(sorted.length * 0.9)] ?? -Infinity;
+  const lowLevelCeiling = speechReference - 15;
+  const first = levels.findIndex(value => value > lowLevelCeiling);
+  let last = levels.length - 1;
+  while (last >= 0 && levels[last] <= lowLevelCeiling) last -= 1;
+  let run = 0;
+  for (let i = first + 1; i < last; i += 1) {
+    const ambiguous = levels[i] > limit && levels[i] > floor + 12 && levels[i] <= lowLevelCeiling;
+    run = ambiguous ? run + 1 : 0;
+    if (run >= Math.ceil(MIN_ROOM_TONE_SECONDS / FRAME_SECONDS)) return true;
+  }
+  return false;
 }
 
 function roomToneStatus(

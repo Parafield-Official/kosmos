@@ -29,3 +29,17 @@ describe("mastering waveform fidelity", () => {
     });
   }
 });
+
+it('preserves non-silent quiet boundary content instead of trimming by speech threshold', () => {
+  const rate = 44100;
+  const samples = Float32Array.from({ length: rate * 5 }, (_, i) => {
+    const t = i / rate;
+    const amplitude = (t >= 1 && t < 1.2) || (t >= 3 && t < 3.2) ? 0.0014 : t >= 1.2 && t < 3 ? 0.14 : 0.0007;
+    const hz = amplitude === 0.14 ? 200 : amplitude === 0.0014 ? 1000 : 4000;
+    return amplitude * Math.sin(2 * Math.PI * hz * t);
+  });
+  const result = masterPcm({ samples, sampleRate: rate, channels: 1 });
+  expect(result.status).toBe('ok');
+  // Original five seconds must remain between the added 1.5-second pads.
+  expect(result.samples.length).toBeGreaterThanOrEqual(samples.length + rate * 3 - 2);
+});

@@ -86,3 +86,18 @@ ACX Audio Submission Requirements, published April 15, 2026, retrieved September
 https://help.acx.com/s/article/what-are-the-acx-audio-submission-requirements
 
 Current guidance includes spoken opening/closing credits, a sample no longer than five minutes, consistent sound and channels, absence of extraneous noises, chapter/section structure, and MP3 delivery requirements. The page also restricts unauthorized automated narration; meeting audio numbers does not establish eligibility of an ElevenLabs recording. This audit does not determine whether the customer has an authorization.
+
+## Authorized fixes completed locally — September 6, 2026
+
+This section supersedes the corresponding open statuses above; the baseline JSON reproductions are retained unchanged. No release, tag, version bump, or promotion was initiated for these changes.
+
+- **Boundary preservation:** automatic threshold-based cropping is removed. Only effectively digital silence (absolute sample amplitude at most 1e-9) is stripped. Quiet boundary content and existing room tone remain. Excessively long room tone may consequently require manual editing rather than automatic deletion of possible speech. Regression covers quiet signal at both ends.
+- **Stale masters:** working edits clear the master reference and measured readiness. Playback and handoff also reject a legacy master reference when its mastered flag is false. Old audio files are not deleted. This does not resolve the separately documented asynchronous snapshot race.
+- **Noise reporting:** substantially louder internal low-level intervals trigger a review warning and explanation even if the quietest window passes. This is an uncertainty detector, not proof of noise or a guarantee of clean speech; a quiet consonant can warrant review. The numerical estimate remains the quietest-window measurement.
+- **Publication:** marker generation and writes now occur inside the staged audio pack before the directory transaction. Failure preserves the previous pack. Marker files now live in the pack's markers/ subdirectory (export/acx/markers or export/acx-handoff/markers), and are listed in the result. Existing shared export/markers files are untouched.
+- **Readiness wording:** the existing screen says ready to export audio and requests listening review and recorded credits, rather than claiming Audible readiness. Measured passes are labeled technical passes. The deferred credit/sample selection UI is not included.
+- **Bitrate:** the earlier local audit changes retain known-invalid bitrate/VBR failures and supply CBR provenance for explicitly encoded delivery files.
+
+Validation: application build passed; 133 test files / 995 tests passed. Real-codec desktop-handler verification passed (import, mastering, ACX encoding, final checks, sample duration, repeat export and failed-export preservation). The independent codec check measured RMS -20.65 dBFS and peak -3.50 dBFS; the app estimates true peak -3.46 dBFS and correctly warns about proximity to the limit. Its former all-green assertion has been replaced by no failed requirements plus verified encoding; independent numerical bounds remain enforced. Independent codec verification finished with 18/18 checks passing. New regressions first reproduced the defects before fixes.
+
+The wider audit's other open findings and risks remain open. Original narration listening comparisons are still needed to assess perceptual quality across voices and recording conditions. These fixes do not establish universal ACX acceptance.

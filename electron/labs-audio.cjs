@@ -623,7 +623,7 @@ async function encodeDeliveryAudio(inputPath, outputPath, profile, durationSecon
 }
 
 function chapterPackSource(chapter, handoff) {
-  if (chapter?.masteredFile) {
+  if (chapter?.mastered && chapter?.masteredFile) {
     return chapter.masteredFile;
   }
   if (chapter?.workingFile) {
@@ -817,20 +817,23 @@ async function exportDeliveryPack(payload) {
     await writeFileAtomic(path.join(stagingOutputFolder, "REPORT.txt"), exportCore.reportText(entries), "utf8");
     outputFiles.push("REPORT.txt");
 
-    await replaceDirectory(stagingOutputFolder, outputFolder);
-
     const allPickups = chapters.flatMap((chapter) =>
       Array.isArray(chapter.pickups) ? chapter.pickups : [],
     );
     if (allPickups.length) {
-      const markerDir = await ensureProjectDirectory(folder, "export/markers");
+      // Markers are part of the same transaction as audio: publish the pack once.
+      const markerDir = path.join(stagingOutputFolder, "markers");
+      await fs.mkdir(markerDir, { recursive: true });
       const files = markersCore.markerFileSet("book", allPickups);
       for (const file of files) {
         await writeFileAtomic(path.join(markerDir, file.fileName), file.contents, "utf8");
+        outputFiles.push(`markers/${file.fileName}`);
       }
     }
 
-    const reveal = path.join(outputFolder, exportCore.revealTargetInExportPack(outputFiles));
+    const revealFile = exportCore.revealTargetInExportPack(outputFiles);
+    await replaceDirectory(stagingOutputFolder, outputFolder);
+    const reveal = path.join(outputFolder, revealFile);
     try {
       shell.showItemInFolder(fsSync.existsSync(reveal) ? reveal : outputFolder);
     } catch {

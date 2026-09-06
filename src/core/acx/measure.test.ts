@@ -168,3 +168,14 @@ describe('incomplete MP3 metadata', () => {
     expect(report.checks.format).toBe('fail');
   });
 });
+
+it('does not give a clean noise verdict when quiet ends hide a louder internal pause', () => {
+  const rate = 44100;
+  const samples = Float32Array.from({length: rate * 10}, (_,i) => {
+    const t = i / rate;
+    return (t < 1.5 || t >= 8.5 ? 0.0001 : t >= 4 && t < 5 ? 0.01 : 0.14) * Math.sin(2*Math.PI*200*t);
+  });
+  const report = measurePcm({samples, sampleRate:rate, channels:1, format:'mp3', bitrate_kbps:192, vbr:false});
+  expect(report.checks.noise_floor).toBe('warn');
+  expect(report.traffic_light).toBe('yellow');
+});
