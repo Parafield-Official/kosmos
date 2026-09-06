@@ -50,3 +50,12 @@ jobs:
 
       - name: Run test suite
         run: npm test
+
+      - name: Install audio verification tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Verify real ACX pipeline
+        env:
+          FFMPEG_PATH: /usr/bin/ffmpeg
+          FFPROBE_PATH: /usr/bin/ffprobe
+        run: node scripts/verify-acx-pipeline.cjs

@@ -209,11 +209,11 @@ function formatStatus(audio: PcmAudio, preset: SpecPreset): CheckStatus {
   if (preset.min_bitrate_cbr === null) {
     return "pass";
   }
-  if (audio.format === "mp3" && (audio.bitrate_kbps === undefined || audio.vbr === undefined)) {
-    return "warn";
-  }
   if (audio.format === "mp3" && ((audio.vbr === true && !preset.vbr_allowed) || (audio.bitrate_kbps ?? Infinity) < preset.min_bitrate_cbr)) {
     return "fail";
+  }
+  if (audio.format === "mp3" && (audio.bitrate_kbps === undefined || audio.vbr === undefined)) {
+    return "warn";
   }
   // Bitrate and VBR rules are submission rules for MP3. A source WAV/FLAC
   // may have a low or absent codec bitrate and is still a known, measurable
