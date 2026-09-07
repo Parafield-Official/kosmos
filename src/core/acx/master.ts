@@ -1,4 +1,5 @@
-import { measurePcm, rmsDbfs, truePeakDbfs, type AcxReport, type AudioFormat } from "./measure";
+import { measurePcm, rmsDbfs, type AcxReport, type AudioFormat } from "./measure";
+import { limitTruePeak } from "./limiter";
 import {
   ACX_PRESET,
   deliveryProfile,
@@ -13,6 +14,11 @@ export {
   AUTOMATIC_DENOISE_CAP_DB,
   afftdnFilter,
   noiseReductionAttempts,
+  selectNoiseProfile,
+  quieterRmsTarget,
+  denoiseDelaySamples,
+  profiledAfftdnFilter,
+  assessDenoiseCandidate,
 } from "./denoise";
 export {
   AUTOMATIC_REPAIR_FILTER,
@@ -214,8 +220,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
   const projected = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
   const gainDb = level ? level.target - measuredLevel(projected, outputSampleRate, level.standard, preset) : 0;
   processed = Number.isFinite(gainDb) ? applyGain(processed, gainDb) : processed;
-  processed = limitTruePeak(processed, limiterCeiling);
-  const speechAfterMaster = rmsOfMaskedSamples(processed, analysis.speechFrames, outputSampleRate);
+  processed = limitTruePeak(processed, outputSampleRate, limiterCeiling);
   let padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
 
   // Limiting can shave a little off the requested level. Two bounded
@@ -224,7 +229,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
   let after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
   for (let attempt = 0; level && attempt < 2 && levelStatus(after, level.standard) === "fail"; attempt += 1) {
     const correction = level.target - reportLevel(after, level.standard);
-    processed = limitTruePeak(applyGain(processed, correction), limiterCeiling);
+    processed = limitTruePeak(applyGain(processed, correction), outputSampleRate, limiterCeiling);
     padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
     after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
   }
@@ -235,8 +240,8 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
     return aborted(
       source,
       before,
-      [...warnings, `The mastered take measures ${formatDb(measured)} ${unit} after true-peak limiting.`],
-      `The take could not reach ${preset.label}'s ${level.standard.toUpperCase()} target without exceeding the true-peak ceiling.`,
+      [...warnings, `The mastered take measures ${measured.toFixed(1)} ${unit} after true-peak limiting.`],
+      `Mastering stopped at ${measured.toFixed(1)} ${unit} while keeping peaks below ${limiterCeiling.toFixed(1)} dBTP. This is outside ${preset.label}'s level range. Review loud transients and long pauses, then retry mastering.`,
       "level",
       predictedFloor,
       speechBefore,
@@ -249,9 +254,9 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
       before,
       [
         ...warnings,
-        `The gated result still measures ${formatDb(after.noise_floor_dbfs)}. The voice was left intact; treat the room or use a clean take.`,
+        `Background noise measures ${formatDb(after.noise_floor_dbfs)} after raising the narration to level.`,
       ],
-      `The first mastering pass could not bring the noise floor under ${preset.label}'s limit.`,
+      `Background noise measures ${formatDb(after.noise_floor_dbfs)} after mastering; ${preset.label} requires ${formatDb(noiseFloorMax)} or lower. Use a cleaner recording or review noise cleanup before retrying.`,
       "noise_floor",
       predictedFloor,
       speechBefore,
@@ -296,7 +301,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
     after,
     gain_db: gainDb,
     speech_rms_before_dbfs: speechBefore,
-    speech_rms_after_dbfs: speechAfterMaster,
+    speech_rms_after_dbfs: rmsOfMaskedSamples(processed, analysis.speechFrames, outputSampleRate),
     predicted_floor_dbfs: predictedFloor,
     processing_order: ORDER,
     warnings,
@@ -475,19 +480,6 @@ function compressLightly(samples: number[], sampleRate: number, thresholdDbfs: n
 function applyGain(samples: number[], gainDb: number): number[] {
   const multiplier = 10 ** (gainDb / 20);
   return samples.map((sample) => sample * multiplier);
-}
-
-function limitTruePeak(samples: number[], ceilingDbfs: number): number[] {
-  let output = samples;
-  for (let pass = 0; pass < 2; pass += 1) {
-    const peakDbfs = truePeakDbfs(output, 1);
-    if (peakDbfs <= ceilingDbfs) {
-      break;
-    }
-    output = applyGain(output, ceilingDbfs - peakDbfs);
-  }
-  const ceiling = 10 ** (ceilingDbfs / 20);
-  return output.map((sample) => Math.max(-ceiling, Math.min(ceiling, sample)));
 }
 
 function padRoomTone(
