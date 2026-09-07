@@ -7,7 +7,7 @@ export function parseMarkup(source: string, html = false): Document {
   const safe = source.replace(/&#(x[\da-f]+|\d+);/giu, (original, value: string) => {
     const code = value[0].toLowerCase() === "x" ? Number.parseInt(value.slice(1), 16) : Number(value);
     return code > 0x10ffff || code < 1 || (code >= 0xd800 && code <= 0xdfff)
-      ? original.replace("&", "&amp;") : original;
+      ? `&amp;${original.slice(1)}` : original;
   });
   return new DOMParser({ errorHandler: {
     warning: () => {},
