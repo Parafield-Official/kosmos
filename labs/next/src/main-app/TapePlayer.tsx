@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { playbackErrorMessage } from "./playback-error";
 
 export function TapePlayer({
   src,
@@ -15,11 +16,16 @@ export function TapePlayer({
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const pendingRef = useRef(false);
 
   useEffect(() => {
     setPlaying(false);
     setCurrent(0);
     setDuration(0);
+    setError(null);
+    pendingRef.current = false;
     const audio = audioRef.current;
     if (!audio) {
       return;
@@ -33,33 +39,64 @@ export function TapePlayer({
       setDuration(Number.isFinite(media.duration) ? media.duration : 0);
     }
     function onEnd() {
+      if (!media.paused && !media.ended) return;
+      requestRef.current += 1;
+      pendingRef.current = false;
       setPlaying(false);
+    }
+    function onError() {
+      requestRef.current += 1;
+      pendingRef.current = false;
+      setPlaying(false);
+      setError(playbackErrorMessage());
     }
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("loadedmetadata", onMeta);
     audio.addEventListener("durationchange", onMeta);
     audio.addEventListener("ended", onEnd);
     audio.addEventListener("pause", onEnd);
+    audio.addEventListener("error", onError);
     return () => {
+      requestRef.current += 1;
+      pendingRef.current = false;
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("durationchange", onMeta);
       audio.removeEventListener("ended", onEnd);
       audio.removeEventListener("pause", onEnd);
+      audio.removeEventListener("error", onError);
+      audio.pause();
     };
   }, [src]);
 
-  function toggle() {
+  async function toggle() {
     const audio = audioRef.current;
     if (!audio) {
       return;
     }
-    if (playing) {
+    if (playing || pendingRef.current) {
+      requestRef.current += 1;
+      pendingRef.current = false;
       audio.pause();
       setPlaying(false);
       return;
     }
-    void audio.play().then(() => setPlaying(true));
+    const request = ++requestRef.current;
+    setError(null);
+    pendingRef.current = true;
+    setPlaying(true);
+    try {
+      // Reload a source that failed decoding/network loading before retrying.
+      if (audio.error) audio.load();
+      await audio.play();
+    } catch (reason) {
+      if (request === requestRef.current) {
+        setPlaying(false);
+        setError(playbackErrorMessage(reason));
+      }
+    } finally {
+      if (request === requestRef.current) pendingRef.current = false;
+    }
   }
 
   function seek(event: { currentTarget: HTMLDivElement; clientX: number }) {
@@ -110,6 +147,7 @@ export function TapePlayer({
           <i style={{ width: `${pct}%` }} />
         </div>
       </div>
+      {error ? <p className="ma-error" role="alert">{error}</p> : null}
     </div>
   );
 }
