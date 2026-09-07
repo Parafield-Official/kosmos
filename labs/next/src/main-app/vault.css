@@ -2214,8 +2214,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: 18.5rem minmax(0, 1fr);
-  grid-template-rows: minmax(0, auto);
-  align-content: center;
+  grid-template-rows: auto;
+  align-content: start;
   align-items: stretch;
   gap: var(--sm-gutter);
   overflow: auto;
@@ -2332,7 +2332,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   background: transparent;
   border: 0;
@@ -2340,6 +2340,7 @@
 }
 
 .sound-master-stage .quest-master {
+  flex: none;
   display: flex;
   width: 100%;
   height: auto;
@@ -2357,12 +2358,13 @@
   margin: 0;
   gap: var(--sm-gutter);
   grid-template-columns: minmax(0, 1.18fr) minmax(17.25rem, 0.8fr);
+  grid-auto-rows: max-content;
   overflow: visible;
 }
 
 .sound-master-stage .quest-master-listen,
 .sound-master-stage .quest-master-action {
-  min-height: 0;
+  min-height: min-content;
   padding: var(--sm-inset) 1.45rem 1.4rem;
   border-radius: var(--sm-radius);
   backdrop-filter: var(--sm-frost);
@@ -2402,6 +2404,7 @@
   font-weight: 560;
   letter-spacing: -0.03em;
   line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .sound-master-stage .quest-master-more {
@@ -2591,6 +2594,21 @@
     --sm-pad-y: 0.95rem;
     --sm-inset: 1.25rem;
     --sm-gutter: 0.95rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .sound-master-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sound-master-title {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: 100%;
+  }
+  .sound-master-head-actions {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 
@@ -5032,6 +5050,7 @@
 }
 
 .quest-master-orb {
+  flex-shrink: 0;
   position: relative;
   isolation: isolate;
   display: grid;
@@ -5191,6 +5210,37 @@
   box-shadow: var(--info-glass-shadow);
   backdrop-filter: var(--info-glass-blur);
   -webkit-backdrop-filter: var(--info-glass-blur);
+}
+
+/* The desk responds to its available panel width, including the chapter rail. */
+.quest-master {
+  container: mastering-desk / inline-size;
+}
+
+.quest-master-listen > *,
+.quest-master-action > * {
+  flex-shrink: 0;
+}
+
+.quest-master-report {
+  min-width: 0;
+}
+
+@container mastering-desk (max-width: 640px) {
+  .quest-master-desk,
+  .sound-master-stage .quest-master-desk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container mastering-desk (max-width: 360px) {
+  .quest-player-transport {
+    flex-wrap: wrap;
+  }
+  .quest-player-time {
+    flex-basis: 100%;
+    text-align: right;
+  }
 }
 
 @media (max-width: 820px) {
