@@ -43,6 +43,12 @@ page.
   <https://github.com/microsoft/markitdown>. The generated license inventory
   for its bundled Python dependencies is included beside the executable.
 
+## Manuscript parsing
+
+- `@xmldom/xmldom` is MIT-licensed: <https://github.com/xmldom/xmldom>.
+  Kosmos uses its local XML DOM parser for EPUB and DOCX structure. Its license
+  is included with the production dependency in the application package.
+
 ## Kosmos media
 
 `labs/next/public/welcome.mov` is original Kosmos media. The project maintainer

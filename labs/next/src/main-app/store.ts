@@ -869,16 +869,23 @@ export async function writeChapterContents(
   contents: { id: string; html: string }[],
 ): Promise<void> {
   if (project.folder && window.kosmosNext?.writeChapterContents) {
-    await window.kosmosNext.writeChapterContents({ folder: project.folder, chapters: contents });
+    const result = await window.kosmosNext.writeChapterContents({ folder: project.folder, chapters: contents });
+    if (!result.ok) throw new Error("Could not save manuscript chapters. The existing chapter list was kept.");
     return;
   }
   for (const item of contents) {
-    try {
-      window.localStorage.setItem(chapterContentKey(project, item.id), item.html);
-    } catch {
-      // Best effort in the hosted fallback.
-    }
+    window.localStorage.setItem(chapterContentKey(project, item.id), item.html);
   }
+}
+
+/** Commit new chapter IDs only after every corresponding script is durable. */
+export async function replaceBookChapters(
+  project: BookProject,
+  chapters: BookChapter[],
+  contents: { id: string; html: string }[],
+): Promise<BookProject> {
+  await writeChapterContents(project, contents);
+  return persistBook({ ...project, chapters });
 }
 
 export async function saveChapterContent(

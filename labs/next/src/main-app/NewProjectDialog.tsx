@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
 import { unzipSync } from "fflate";
+import { readArchiveEntries } from "../../../../src/core/manuscript/archive";
+import { epubPackagePath, readEpubMetadata, resolveEpubPath } from "../../../../src/core/manuscript/epub";
+import { parseMarkup, elements, attribute } from "../../../../src/core/manuscript/xml";
 import {
   docxMetaFromBytes,
   epubMetaFromBytes,
@@ -41,18 +44,6 @@ async function detectManuscriptMeta(file: File): Promise<ManuscriptMeta> {
   return {};
 }
 
-function normalizeZipPath(input: string): string {
-  const parts: string[] = [];
-  for (const segment of input.split("/")) {
-    if (segment === "..") {
-      parts.pop();
-    } else if (segment !== "." && segment !== "") {
-      parts.push(segment);
-    }
-  }
-  return parts.join("/");
-}
-
 function imageMime(name: string): string {
   const lower = name.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -75,27 +66,20 @@ function bytesToBase64(bytes: Uint8Array): string {
 async function extractEpubCover(file: File): Promise<string | null> {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const entries = unzipSync(bytes);
+    const entries = readEpubMetadata(bytes);
     const decoder = new TextDecoder();
 
-    let opfPath: string | null = null;
-    const container = entries["META-INF/container.xml"];
-    if (container) {
-      const xml = new DOMParser().parseFromString(decoder.decode(container), "application/xml");
-      opfPath = xml.querySelector("rootfile")?.getAttribute("full-path") ?? null;
-    }
+    const opfPath = epubPackagePath(entries);
 
     let coverHref: string | null = null;
-    let opfDir = "";
     if (opfPath && entries[opfPath]) {
-      opfDir = opfPath.includes("/") ? opfPath.slice(0, opfPath.lastIndexOf("/") + 1) : "";
-      const opf = new DOMParser().parseFromString(decoder.decode(entries[opfPath]), "application/xml");
-      const items = Array.from(opf.querySelectorAll("manifest > item"));
+      const opf = parseMarkup(decoder.decode(entries[opfPath]));
+      const items = elements(opf, "item");
       let item = items.find((node) =>
         (node.getAttribute("properties") ?? "").split(/\s+/).includes("cover-image"),
       );
       if (!item) {
-        const coverId = opf.querySelector('metadata > meta[name="cover"]')?.getAttribute("content");
+        const coverId = elements(opf, "meta").find(node => attribute(node, "name") === "cover")?.getAttribute("content");
         if (coverId) {
           item = items.find((node) => node.getAttribute("id") === coverId);
         }
@@ -103,18 +87,21 @@ async function extractEpubCover(file: File): Promise<string | null> {
       coverHref = item?.getAttribute("href") ?? null;
     }
 
-    let entryPath = coverHref ? normalizeZipPath(opfDir + coverHref) : null;
-    if (!entryPath || !entries[entryPath]) {
-      const names = Object.keys(entries);
+    let entryPath = coverHref ? resolveEpubPath(opfPath ?? "", coverHref) : null;
+    // Inspect ZIP names without expanding images, fonts or the whole book.
+    const names: string[] = [];
+    unzipSync(bytes, { filter: entry => { names.push(entry.name); return false; } });
+    if (!entryPath || !names.includes(entryPath)) {
       entryPath =
         names.find((name) => /cover[^/]*\.(jpe?g|png|webp|gif)$/i.test(name)) ??
         names.find((name) => /\.(jpe?g|png|webp)$/i.test(name)) ??
         null;
     }
-    if (!entryPath || !entries[entryPath]) {
+    if (!entryPath) {
       return null;
     }
-    return `data:${imageMime(entryPath)};base64,${bytesToBase64(entries[entryPath])}`;
+    const cover = readArchiveEntries(bytes, name => name === entryPath, { maxBytes: MAX_COVER_BYTES, maxFiles: 1 })[entryPath];
+    return cover ? `data:${imageMime(entryPath)};base64,${bytesToBase64(cover)}` : null;
   } catch {
     return null;
   }
