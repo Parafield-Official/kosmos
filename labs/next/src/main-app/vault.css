@@ -2214,8 +2214,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: 18.5rem minmax(0, 1fr);
-  grid-template-rows: minmax(0, auto);
-  align-content: center;
+  grid-template-rows: auto;
+  align-content: start;
   align-items: stretch;
   gap: var(--sm-gutter);
   overflow: auto;
@@ -2332,7 +2332,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   background: transparent;
   border: 0;
@@ -2340,6 +2340,7 @@
 }
 
 .sound-master-stage .quest-master {
+  flex: none;
   display: flex;
   width: 100%;
   height: auto;
@@ -2357,12 +2358,13 @@
   margin: 0;
   gap: var(--sm-gutter);
   grid-template-columns: minmax(0, 1.18fr) minmax(17.25rem, 0.8fr);
+  grid-auto-rows: max-content;
   overflow: visible;
 }
 
 .sound-master-stage .quest-master-listen,
 .sound-master-stage .quest-master-action {
-  min-height: 0;
+  min-height: min-content;
   padding: var(--sm-inset) 1.45rem 1.4rem;
   border-radius: var(--sm-radius);
   backdrop-filter: var(--sm-frost);
@@ -2402,6 +2404,7 @@
   font-weight: 560;
   letter-spacing: -0.03em;
   line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .sound-master-stage .quest-master-more {
@@ -2591,6 +2594,21 @@
     --sm-pad-y: 0.95rem;
     --sm-inset: 1.25rem;
     --sm-gutter: 0.95rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .sound-master-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sound-master-title {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    max-width: 100%;
+  }
+  .sound-master-head-actions {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 
@@ -5032,6 +5050,7 @@
 }
 
 .quest-master-orb {
+  flex-shrink: 0;
   position: relative;
   isolation: isolate;
   display: grid;
@@ -5133,7 +5152,68 @@
 }
 
 .quest-master-orb:disabled {
-  cursor: wait;
+  cursor: default;
+}
+
+.quest-master-spinner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-width: 2.5;
+  pointer-events: none;
+}
+
+.quest-master-spinner-track { stroke: rgba(103, 79, 29, 0.14); }
+.quest-master-spinner-arc {
+  stroke: #927028;
+  stroke-linecap: round;
+  stroke-dasharray: 75 202;
+  transform-origin: center;
+  animation: quest-master-spin 1.6s linear infinite;
+}
+
+.quest-master-busy-face {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.quest-master-busy-bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  height: 1.3rem;
+}
+
+.quest-master-busy-bars i {
+  width: 0.18rem;
+  height: 100%;
+  border-radius: 99px;
+  background: #927028;
+  animation: quest-master-level 1s ease-in-out infinite alternate;
+}
+
+.quest-master-progress {
+  display: grid;
+  gap: 0.3rem;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.quest-master-progress strong { color: #fff; font-weight: 600; }
+.quest-master-progress span { color: rgba(247, 242, 235, 0.75); }
+
+@keyframes quest-master-spin { to { transform: rotate(360deg); } }
+@keyframes quest-master-level { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-master-spinner-arc,
+  .quest-master-busy-bars i { animation: none; }
 }
 
 .quest-master-orb.is-busy {
@@ -5191,6 +5271,37 @@
   box-shadow: var(--info-glass-shadow);
   backdrop-filter: var(--info-glass-blur);
   -webkit-backdrop-filter: var(--info-glass-blur);
+}
+
+/* The desk responds to its available panel width, including the chapter rail. */
+.quest-master {
+  container: mastering-desk / inline-size;
+}
+
+.quest-master-listen > *,
+.quest-master-action > * {
+  flex-shrink: 0;
+}
+
+.quest-master-report {
+  min-width: 0;
+}
+
+@container mastering-desk (max-width: 640px) {
+  .quest-master-desk,
+  .sound-master-stage .quest-master-desk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container mastering-desk (max-width: 360px) {
+  .quest-player-transport {
+    flex-wrap: wrap;
+  }
+  .quest-player-time {
+    flex-basis: 100%;
+    text-align: right;
+  }
 }
 
 @media (max-width: 820px) {

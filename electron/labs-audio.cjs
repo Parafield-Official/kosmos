@@ -10,7 +10,13 @@ const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { app, shell } = require("electron");
+const { workerData } = require("node:worker_threads");
+const audioWorker = workerData?.kosmosAudioJob === true;
+const { app, shell } = audioWorker
+  ? { app: { getAppPath: () => workerData.appPath, isPackaged: workerData.isPackaged } }
+  : require("electron");
+const resourcesPath = audioWorker ? workerData.resourcesPath : process.resourcesPath;
+const { runAudioJob } = require("./audio-job.cjs");
 const { runCommand } = require("./process.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { replaceDirectory, writeFileAtomic } = require("./file-utils.cjs");
@@ -81,7 +87,7 @@ function runFfmpeg(args, options = {}) {
     resolveRuntimeBinary({
       name: "ffmpeg",
       envVar: "FFMPEG_PATH",
-      resourcesPath: process.resourcesPath,
+      resourcesPath,
       appPath: app.getAppPath(),
       requireBundled: app.isPackaged,
     }),
@@ -95,7 +101,7 @@ function runFfprobe(args) {
     resolveRuntimeBinary({
       name: "ffprobe",
       envVar: "FFPROBE_PATH",
-      resourcesPath: process.resourcesPath,
+      resourcesPath,
       appPath: app.getAppPath(),
       requireBundled: app.isPackaged,
     }),
@@ -501,6 +507,13 @@ function reportStatus(report) {
 }
 
 async function masterWorkingFile(payload) {
+  if (!audioWorker) {
+    try {
+      return await runAudioJob("master", payload, { appPath: app.getAppPath(), isPackaged: app.isPackaged, resourcesPath });
+    } catch (error) {
+      return { ok: false, reason: String(error?.message ?? error) };
+    }
+  }
   let folder = payload?.folder;
   const workingFile = payload?.workingFile;
   const chapterId = typeof payload?.chapterId === "string" ? payload.chapterId : null;
@@ -917,6 +930,13 @@ async function previewPunch(payload) {
 
 /** ACX traffic-light report for a chapter working (or original) file. */
 async function measureChapterAudio(payload) {
+  if (!audioWorker) {
+    try {
+      return await runAudioJob("measure", payload, { appPath: app.getAppPath(), isPackaged: app.isPackaged, resourcesPath });
+    } catch (error) {
+      return { ok: false, reason: String(error?.message ?? error) };
+    }
+  }
   let folder = payload?.folder;
   const file = payload?.file;
   if (typeof folder !== "string" || typeof file !== "string") {

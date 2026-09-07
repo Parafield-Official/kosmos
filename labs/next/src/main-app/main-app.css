@@ -5590,6 +5590,127 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   padding-bottom: 0.3rem;
 }
 
+.ma-meter.ma-chapter-meter {
+  display: grid;
+  align-items: stretch;
+  gap: 1rem;
+  min-width: 0;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  container: chapter-measurements / inline-size;
+}
+
+.ma-chapter-meter > button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+}
+
+.ma-chapter-meter .ma-meter-verdict {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ma-chapter-meter .ma-meter-verdict p {
+  flex: 1 1 16rem;
+}
+
+.ma-chapter-meter .ma-meter-table {
+  table-layout: fixed;
+  margin: 0;
+}
+
+.ma-chapter-meter .ma-meter-table th,
+.ma-chapter-meter .ma-meter-table td {
+  padding: 0.65rem 0.65rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.ma-chapter-meter .ma-meter-table th:nth-child(2) {
+  width: 30%;
+}
+
+.ma-check-status {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.ma-measurement-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.ma-measurement-icon {
+  flex: none;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-top: 0.05rem;
+  fill: none;
+  stroke: #e4ce91;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ma-check-status svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: none;
+  margin-top: 0.05rem;
+  color: #c1bbb3;
+}
+
+.ma-check-status svg path {
+  fill: none;
+  stroke: #20251f;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ma-check-status-pass svg { color: #9de5ad; }
+.ma-check-status-fail svg { color: #ff9c98; }
+.ma-check-status-warn svg { color: #f2d18a; }
+
+@container chapter-measurements (max-width: 540px) {
+  .ma-meter-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .ma-meter-table,
+  .ma-meter-table tbody,
+  .ma-meter-table tr {
+    display: block;
+    width: 100%;
+  }
+  .ma-meter-table tr + tr {
+    margin-top: 0.75rem;
+  }
+  .ma-chapter-meter .ma-meter-table td {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    border: 0;
+  }
+  .ma-meter-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    opacity: 0.75;
+  }
+  .ma-chapter-meter .ma-meter-table td:first-child {
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    padding-top: 0.75rem;
+    font-weight: 600;
+  }
+}
+
 .ma-meter-title {
   font-size: 1rem;
   font-weight: 550;
