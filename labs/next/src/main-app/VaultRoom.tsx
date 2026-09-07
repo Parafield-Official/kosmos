@@ -1,5 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { bookInitials, type BookProject } from "./store";
+import {
+  bookInitials,
+  fileManagerName,
+  revealBookFolder,
+  revealFolderLabel,
+  type BookProject,
+} from "./store";
 import { completionPct } from "./book-stats";
 import { VaultPigment } from "./ThemeAtmosphere";
 import { VaultLighting } from "./VaultLighting";
@@ -310,7 +316,7 @@ export function VaultRoom({
             type="button"
             className="vault-dock-btn"
             aria-label="Home"
-            aria-current={nav === "home" ? "page" : undefined}
+            aria-current={nav === "home" && !compose ? "page" : undefined}
             onClick={() => {
               closeSheets();
               onHome();
@@ -340,7 +346,7 @@ export function VaultRoom({
             type="button"
             className="vault-dock-btn vault-dock-btn-settings"
             aria-label="Settings"
-            aria-current={nav === "settings" ? "page" : undefined}
+            aria-current={nav === "settings" && !compose ? "page" : undefined}
             onClick={() => {
               closeSheets();
               onSettings();
@@ -511,6 +517,7 @@ function InspectPanel({
   const coverRef = useRef<HTMLDivElement>(null);
   const [fly, setFly] = useState({ ...origin, tx: 0, ty: 0, sx: 1, sy: 1, go: false });
   const [landed, setLanded] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const progress = completionPct(project);
   const canListen =
     project.chapters.length > 0 && project.chapters.every((chapter) => chapter.mastered && Boolean(chapter.masteredFile));
@@ -555,6 +562,14 @@ function InspectPanel({
       window.clearTimeout(fallback);
     };
   }, [origin, reduceMotion]);
+
+  async function revealFolder() {
+    setActionError(null);
+    const result = await revealBookFolder(project);
+    if (!result.ok) {
+      setActionError(result.reason ?? "Could not open the project folder.");
+    }
+  }
 
   return (
     <div className="vault-sheet-layer" onClick={onClose}>
@@ -615,7 +630,20 @@ function InspectPanel({
               <ReadGlyph />
               <span>Read</span>
             </button>
+            <button
+              type="button"
+              className="vault-inspect-btn"
+              disabled={!project.folder}
+              onClick={() => void revealFolder()}
+              aria-label={revealFolderLabel()}
+            >
+              <FolderGlyph />
+              <span>{fileManagerName()}</span>
+            </button>
           </div>
+          {actionError ? (
+            <p className="vault-inspect-error" role="alert">{actionError}</p>
+          ) : null}
         </div>
       </article>
     </div>

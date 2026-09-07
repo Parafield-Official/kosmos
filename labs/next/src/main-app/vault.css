@@ -2144,9 +2144,8 @@
   letter-spacing: 0.01em;
 }
 
-.sound-master-delete,
 .sound-master-add,
-.sound-master-reveal {
+.sound-master-project-actions button {
   border: 0;
   background: transparent;
   color: rgba(247, 242, 235, 0.52);
@@ -2158,36 +2157,14 @@
   transition: color 160ms ease;
 }
 
-.sound-master-head-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  justify-self: end;
-  gap: 0.85rem;
-}
-
-.sound-master-reveal {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-}
-
-.sound-master-reveal svg {
-  display: block;
-  flex: none;
-  opacity: 0.9;
-}
-
-.sound-master-delete:hover,
-.sound-master-delete:focus-visible,
 .sound-master-add:hover,
 .sound-master-add:focus-visible,
-.sound-master-reveal:hover,
-.sound-master-reveal:focus-visible {
+.sound-master-project-actions button:hover,
+.sound-master-project-actions button:focus-visible {
   color: #fff;
 }
 
-.sound-master-reveal:active {
+.sound-master-project-actions button:active {
   transform: scale(0.97);
   transition: transform 100ms var(--sm-ease);
 }
@@ -2276,6 +2253,53 @@
 
 .sound-master-rail .sound-master-list li + li {
   border-top: 0;
+}
+
+.sound-master-project-actions {
+  display: grid;
+  gap: 0.18rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sound-master-project-actions button {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.55rem 0.72rem;
+  border-radius: 0.75rem;
+  text-align: left;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    transform 100ms var(--sm-ease);
+}
+
+.sound-master-project-actions button:hover,
+.sound-master-project-actions button:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.sound-master-project-actions button svg {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.3))
+    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.22));
+}
+
+.sound-master-project-actions button.is-delete {
+  color: #ffc4be;
+}
+
+.sound-master-project-actions button.is-delete:hover,
+.sound-master-project-actions button.is-delete:focus-visible {
+  color: #ff9b93;
+  background: rgba(180, 52, 48, 0.2);
 }
 
 .sound-master-row {
@@ -2606,10 +2630,6 @@
     grid-row: 2;
     max-width: 100%;
   }
-  .sound-master-head-actions {
-    grid-column: 2;
-    grid-row: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2618,14 +2638,14 @@
   .sound-master-primary,
   .sound-master-all,
   .sound-master-row,
-  .sound-master-reveal {
+  .sound-master-project-actions button {
     transition: none;
   }
 
   .sound-master-primary:active:not(:disabled),
   .sound-master-all:active:not(:disabled),
   .sound-master-row:active,
-  .sound-master-reveal:active {
+  .sound-master-project-actions button:active {
     transform: none;
   }
 }
@@ -2738,10 +2758,18 @@
 
 .vault-inspect-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0;
   margin-top: auto;
   padding-top: 1.25rem;
+}
+
+.vault-inspect-error {
+  margin: 0.45rem 0 0;
+  color: #ffc4be;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .vault-inspect-btn + .vault-inspect-btn {
