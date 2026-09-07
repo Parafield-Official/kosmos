@@ -33,7 +33,6 @@ import { teleprompterWorkflow } from "../../../../src/core/teleprompter/workflow
 import { BoothReadingPanel } from "./BoothReadingPanel";
 import { BoothSheet } from "./BoothSheet";
 import { ConfirmAlert } from "./ConfirmAlert";
-import { alignedManuscriptTokens } from "../../../../src/core/proof/selection";
 import { TapePlayer } from "./TapePlayer";
 import { TeleprompterFocus } from "./TeleprompterFocus";
 import { useTeleprompter } from "./useTeleprompter";
@@ -67,7 +66,7 @@ import {
   paragraphsFromHtml,
   resumeSecondsOf,
 } from "./booth";
-import { originalChapterTranscript, recordedWordAtTime, tokenIndexAtTime, workingChapterTranscript } from "./review-timing";
+import { createChapterPlaybackClock } from "./review-timing";
 
 const MIC_KEY = "kosmos-booth-mic";
 const TARGET_RATE = 16_000;
@@ -244,6 +243,7 @@ export function RecordScreen({
   const manuscriptText = useMemo(() => paragraphsFromHtml(chapterHtml).join("\n"), [chapterHtml]);
   const manuscriptRef = useRef(manuscriptText);
   manuscriptRef.current = manuscriptText;
+  const playbackClock = useMemo(createChapterPlaybackClock, []);
   // Live follow is deliberately navigation-only. Final proofing below runs
   // WhisperX against the saved tape and owns all mismatch/pause flags.
   pickupsRef.current = chapter?.pickups ?? [];
@@ -391,16 +391,13 @@ export function RecordScreen({
       return;
     }
     const manuscript = manuscriptRef.current;
-    const words =
-      take === "working" ? workingChapterTranscript(manuscript, current) : originalChapterTranscript(manuscript, current);
-    const aligned = words.length ? alignedManuscriptTokens(manuscript, words) : [];
-    const index = tokenIndexAtTime(aligned, seconds) ?? recordedWordAtTime(current.recordedWords, seconds);
+    const index = playbackClock(manuscript, current, take, seconds);
     if (index == null) {
       return;
     }
     cursorRef.current = index;
     setCursor(index);
-  }, []);
+  }, [playbackClock]);
 
   useEffect(() => {
     if (recording && !paused) locate();

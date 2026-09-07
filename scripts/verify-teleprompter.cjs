@@ -1,6 +1,6 @@
 /** Real Chromium layout regression checks. No microphone, model, or user project.
  * Run: node_modules/.bin/electron scripts/verify-teleprompter.cjs
- * --baseline bundles HEAD's UI to demonstrate the original failures.
+ * --baseline bundles the UI before the teleprompter fixes (2ae0d51).
  */
 const { app, BrowserWindow } = require("electron");
 const { build } = require("esbuild");
@@ -19,6 +19,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { RecordScreen } from "./labs/next/src/main-app/RecordScreen";
 import { ReviewScript } from "./labs/next/src/main-app/ReviewScript";
+import { ReviewScreen } from "./labs/next/src/main-app/ReviewScreen";
 import { tokenizeManuscript } from "./src/core/proof/normalize";
 import { encodeWavPcm16 } from "./src/core/audio/wav";
 const paragraph = "The lantern shone beside the window as the reader began another sentence. Across the quiet room a clock marked the passing minutes, and every word stayed in its proper place. The next sentence continues across several displayed lines so that a sentence and a visual line cannot be confused.";
@@ -32,6 +33,7 @@ window.kosmosNext = {
   readChapterAudio: async () => ({ ok: true, base64: btoa(String.fromCharCode(...wav)) }),
 };
 const root = createRoot(document.getElementById("root"));
+const NativeAudio = window.Audio;
 let project = {
   id: "teleprompter-check", title: "Layout check", author: "Test", folder: "/fixture",
   manuscript: "fixture.txt", chapters: [{ id: "ch1", title: "Chapter 1", wordCount: tokens.length,
@@ -42,6 +44,39 @@ let project = {
 };
 window.fixture = {
   count: tokens.length,
+  playbackAudios: [],
+  rejectNextPlay: false,
+  proof(native = false) {
+    localStorage.setItem('kosmos-booth-highlight', 'word');
+    window.Audio = function (src) {
+      if (native) {
+        const audio = new NativeAudio(src);
+        window.fixture.playbackAudios.push(audio);
+        return audio;
+      }
+      const audio = document.createElement('audio');
+      Object.defineProperty(audio, 'currentTime', { configurable: true, writable: true, value: 0 });
+      audio.play = () => window.fixture.rejectNextPlay
+        ? (window.fixture.rejectNextPlay = false, Promise.reject(new DOMException('blocked', 'NotAllowedError')))
+        : Promise.resolve();
+      audio.pause = () => audio.dispatchEvent(new Event('pause'));
+      window.fixture.playbackAudios.push(audio);
+      return audio;
+    };
+    project = { ...project, chapters: [{ ...project.chapters[0],
+      workingFile: 'working.wav', hasWorkingAudio: true,
+      punches: [{ t_start: 0, t_end: 1, durationDelta: 10 }],
+      pickups: [{ id:'flag-one', chapter_id:'ch1', t_start:native ? 0.4 : 80, t_end:native ? 0.6 : 85,
+        line_start:native ? 0.4 : 80, line_end:native ? 0.6 : 85, manuscript_index:80, kind:'sub', status:'open',
+        expected:'stayed', heard:'stayed', confidence:1, seat:'narration' }],
+    }] };
+    root.render(<ReviewScreen project={project} chapterId="ch1" embedded onBack={() => {}} onChange={() => {}} />);
+  },
+  playbackTime(time, event = 'timeupdate') {
+    const audio = window.fixture.playbackAudios.at(-1);
+    audio.currentTime = time;
+    audio.dispatchEvent(new Event(event));
+  },
   tapeTime(index) {
     const audio = document.querySelector('audio');
     Object.defineProperty(audio, 'currentTime', { configurable: true, get: () => index + 0.1 });
@@ -64,21 +99,21 @@ window.fixture.record(80);
 
 app.whenReady().then(async () => {
   const window = new BrowserWindow({ width: 1150, height: 900, show: false,
-    webPreferences: { backgroundThrottling: false } });
+    webPreferences: { backgroundThrottling: false, autoplayPolicy: "no-user-gesture-required" } });
   const failures = [];
   let passed = 0;
   try {
     const bundle = await build({ stdin: { contents: fixture, resolveDir: repo, loader: "tsx" },
       bundle: true, write: false, platform: "browser", define: { "process.env.NODE_ENV": '"production"', "import.meta.env.DEV": "false" },
       plugins: baseline ? [{ name: "baseline", setup(build) {
-        build.onLoad({ filter: /main-app\/((RecordScreen|ReviewScript|TeleprompterFocus)\.tsx|reading-prefs\.ts)$/ }, ({ path }) => ({
-          contents: execFileSync("git", ["show", `HEAD:${relative(repo, path)}`], { cwd: repo, encoding: "utf8" }), loader: "tsx",
+        build.onLoad({ filter: /main-app\/((RecordScreen|ReviewScreen|ReviewScript|TeleprompterFocus)\.tsx|reading-prefs\.ts)$/ }, ({ path }) => ({
+          contents: execFileSync("git", ["show", `2ae0d51:${relative(repo, path)}`], { cwd: repo, encoding: "utf8" }), loader: "tsx",
         }));
       } }] : [],
     });
     const styles = ["main-app.css", "vault.css", "paper.css"].map(name => {
       const path = `labs/next/src/main-app/${name}`;
-      return baseline ? execFileSync("git", ["show", `HEAD:${path}`], { cwd: repo, encoding: "utf8" })
+      return baseline ? execFileSync("git", ["show", `2ae0d51:${path}`], { cwd: repo, encoding: "utf8" })
         : readFileSync(join(repo, path), "utf8");
     }).join("\n");
     // Keep the real embedded panel styles while isolating it from the 3D room.
@@ -223,6 +258,55 @@ app.whenReady().then(async () => {
     await check("proofread: theme change preserves line geometry", async () => {
       await js(`window.fixture.review(80, 'line', 28, 1.55, 'black')`); await settle(); lineOnly(await metrics(80));
     });
+    if (!baseline) {
+      await js(`window.fixture.proof()`); await settle();
+      await check("Proofread screen: Pause keeps the highlight and resumes the same clip", async () => {
+        await js(`document.querySelector('[aria-label="Listen to original"]').click()`); await settle();
+        await js(`window.fixture.playbackTime(81.1)`); await settle();
+        await js(`document.querySelector('[aria-label="Pause original"]').click()`); await settle();
+        assert.equal(await js(`document.querySelector('.ma-review-word.is-now').dataset.token`), '81');
+        assert.equal(await js(`document.querySelector('.ma-locate-speak').disabled`), false);
+        await js(`document.querySelector('[aria-label="Listen to original"]').click()`); await settle();
+        assert.equal(await js(`window.fixture.playbackAudios.length`), 1);
+        assert.equal(await js(`window.fixture.playbackAudios[0].currentTime`), 81.1);
+      });
+      await check("Proofread screen: clip completion keeps original-tape timing and Locate", async () => {
+        await js(`window.fixture.playbackTime(85.2)`); await settle();
+        assert.equal(await js(`document.querySelector('.ma-review-word.is-now').dataset.token`), '85');
+        await js(`document.querySelector('.ma-review-prose').scrollTop = 0`); await settle();
+        await js(`document.querySelector('.ma-locate-speak').click()`); await settle();
+        aligned(await metrics(85));
+      });
+      await check("Proofread screen: playback rejection is visible and Play retries", async () => {
+        await js(`window.fixture.rejectNextPlay = true; document.querySelector('[aria-label="Listen to original"]').click()`); await settle();
+        assert.match(await js(`document.querySelector('[role="alert"]').textContent`), /blocked/);
+        await js(`document.querySelector('[aria-label="Listen to original"]').click()`); await settle();
+        assert.equal(await js(`document.querySelector('[role="alert"]') === null`), true);
+        assert.equal(await js(`!!document.querySelector('[aria-label="Pause original"]')`), true);
+      });
+      await check("Proofread screen: media errors remain visible inside the action sheet", async () => {
+        await js(`document.querySelector('[aria-label="More actions"]').click()`); await settle();
+        await js(`window.fixture.playbackTime(82, 'error')`); await settle();
+        assert.match(await js(`document.querySelector('[role="dialog"] [role="alert"]').textContent`), /Try Play again/);
+      });
+      await check("Proofread screen: native audio pause, resume, and completion retain the cursor", async () => {
+        await js(`document.querySelector('.booth-sheet-close').click(); window.fixture.proof(true)`); await settle();
+        await js(`document.querySelector('[aria-label="Listen to original"]').click()`); await settle();
+        await js(`new Promise(resolve => setTimeout(resolve, 80))`);
+        assert.equal(await js(`window.fixture.playbackAudios.at(-1).paused`), false);
+        await js(`document.querySelector('[aria-label="Pause original"]').click()`); await settle();
+        assert.equal(await js(`window.fixture.playbackAudios.at(-1).paused`), true);
+        const pausedAt = await js(`window.fixture.playbackAudios.at(-1).currentTime`);
+        assert.ok(pausedAt >= 0.25);
+        assert.equal(await js(`document.querySelector('.ma-locate-speak').disabled`), false);
+        await js(`document.querySelector('[aria-label="Listen to original"]').click()`);
+        await js(`new Promise(resolve => setTimeout(resolve, 1200))`); await settle();
+        assert.equal(await js(`window.fixture.playbackAudios.at(-1).paused`), true);
+        assert.equal(await js(`!!document.querySelector('[aria-label="Listen to original"]')`), true);
+        assert.equal(await js(`document.querySelector('.ma-locate-speak').disabled`), false);
+        assert.equal(await js(`!!document.querySelector('.ma-review-word.is-now')`), true);
+      });
+    }
     writeFileSync(join(output, "teleprompter.png"), (await window.webContents.capturePage()).toPNG());
     writeFileSync(join(output, "results.json"), JSON.stringify({ baseline, passed, failures }, null, 2));
     console.log(`${passed} passed, ${failures.length} failed. Artifacts: ${output}`);

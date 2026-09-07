@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { pickupKindPresentation } from "../../../../src/core/proof/pickup-display";
 import { buildPickupSession } from "../../../../src/core/proof/pickup-session";
 import { pickupLineBounds } from "../../../../src/core/teleprompter/session-tape";
@@ -9,6 +9,7 @@ import { flagKindLabel } from "./flag-kind";
 import { PunchRecorder } from "./PunchRecorder";
 import { applyPunchRecording, previewPunchRecording } from "./punch";
 import { ReviewScript } from "./ReviewScript";
+import { useReviewPlayback } from "./useReviewPlayback";
 import { markKindEnabled } from "./engine-prefs";
 import {
   readBoothFontPx,
@@ -25,7 +26,6 @@ import { addSuppressedWord, suppressLabel } from "./suppress";
 import { formatTapeTime } from "./TapePlayer";
 import {
   applyChapterPickups,
-  readChapterAudioUrl,
   readChapterContent,
   type BookProject,
   type ChapterPickup,
@@ -62,8 +62,6 @@ export function ReviewScreen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [playAt, setPlayAt] = useState<number | null>(null);
   const [manuscript, setManuscript] = useState("");
   const [highlight, setHighlight] = useState<PromptHighlightMode>(readPromptHighlight);
   const [theme, setTheme] = useState(readPromptTheme);
@@ -73,10 +71,10 @@ export function ReviewScreen({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moreId, setMoreId] = useState<string | null>(null);
   const [sheetTake, setSheetTake] = useState<"original" | "working">("original");
-  const [playWindow, setPlayWindow] = useState<{ start: number; end: number } | null>(null);
-  const originalUrl = useRef<string | null>(null);
-  const workingUrl = useRef<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const {
+    playing, playKey, playAt, playWindow, error: playbackError, loading: playbackLoading,
+    playRange: startRange, stopPlayback, seek,
+  } = useReviewPlayback(project, chapter, chapterId);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,46 +87,6 @@ export function ReviewScreen({
       cancelled = true;
     };
   }, [project, chapterId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!chapter) {
-        return;
-      }
-      if (originalUrl.current) {
-        URL.revokeObjectURL(originalUrl.current);
-        originalUrl.current = null;
-      }
-      if (workingUrl.current) {
-        URL.revokeObjectURL(workingUrl.current);
-        workingUrl.current = null;
-      }
-      if (chapter.originalFile) {
-        const url = await readChapterAudioUrl(project, chapter.originalFile);
-        if (!cancelled) {
-          originalUrl.current = url;
-        }
-      }
-      if (chapter.workingFile) {
-        const url = await readChapterAudioUrl(project, chapter.workingFile);
-        if (!cancelled) {
-          workingUrl.current = url;
-        }
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-      audioRef.current?.pause();
-      if (originalUrl.current) {
-        URL.revokeObjectURL(originalUrl.current);
-      }
-      if (workingUrl.current) {
-        URL.revokeObjectURL(workingUrl.current);
-      }
-    };
-  }, [chapter, project]);
 
   const transcript = useMemo(
     () => (chapter && manuscript ? workingChapterTranscript(manuscript, chapter) : []),
@@ -159,67 +117,21 @@ export function ReviewScreen({
   const morePickup = open.find((item) => item.id === moreId) ?? null;
   const resolved = (current.pickups ?? []).filter((pickup) => pickup.status !== "open");
   const punches = (current.punches ?? []).filter((punch) => punch.edit_status !== "reverted");
-  const focusedPickupId = playing?.includes("-") ? playing.slice(playing.indexOf("-") + 1) : null;
-
-  function stopPlayback() {
-    audioRef.current?.pause();
-    audioRef.current = null;
-    setPlaying(null);
-    setPlayAt(null);
-    setPlayWindow(null);
-  }
+  const focusedPickupId = playKey?.includes("-") ? playKey.slice(playKey.indexOf("-") + 1) : null;
 
   function playRange(slot: "original" | "working", pickup: ChapterPickup) {
-    const url = slot === "original" ? originalUrl.current : workingUrl.current;
-    if (!url) {
-      return;
-    }
-    stopPlayback();
-    const bounds = pickupLineBounds(pickup);
-    const pad = bounds.wordOnly ? 0.5 : 0.15;
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    const startAt = Math.max(0, bounds.start - pad);
-    audio.currentTime = startAt;
-    const stopAt = bounds.end + pad;
-    const key = `${slot}-${pickup.id}`;
-    setPlaying(key);
-    setPlayAt(startAt);
-    setPlayWindow({ start: startAt, end: stopAt });
     setSheetTake(slot);
-    const onTime = () => {
-      setPlayAt(audio.currentTime);
-      if (audio.currentTime >= stopAt) {
-        audio.pause();
-        audio.removeEventListener("timeupdate", onTime);
-        setPlaying(null);
-        setPlayAt(null);
-        setPlayWindow(null);
-      }
-    };
-    audio.addEventListener("timeupdate", onTime);
-    audio.addEventListener("ended", () => {
-      setPlaying(null);
-      setPlayAt(null);
-      setPlayWindow(null);
-    });
-    void audio.play().catch(() => {
-      setPlaying(null);
-      setPlayAt(null);
-      setPlayWindow(null);
-    });
+    void startRange(slot, pickup);
   }
 
   function seekFlag(event: { currentTarget: HTMLDivElement; clientX: number }) {
-    const audio = audioRef.current;
-    if (!audio || !playWindow) {
+    if (!playWindow || playKey !== `${sheetTake}-${moreId}`) {
       return;
     }
     const span = Math.max(0.05, playWindow.end - playWindow.start);
     const rect = event.currentTarget.getBoundingClientRect();
     const next = playWindow.start + ((event.clientX - rect.left) / Math.max(1, rect.width)) * span;
-    audio.currentTime = Math.max(playWindow.start, Math.min(playWindow.end, next));
-    setPlayAt(audio.currentTime);
+    seek(next);
   }
 
   function patchPickup(pickup: ChapterPickup, status: ChapterPickup["status"]) {
@@ -297,10 +209,12 @@ export function ReviewScreen({
         </div>
       </header>
 
-      {error || notice ? (
+      {error || notice || (!morePickup && (playbackError || playbackLoading)) ? (
         <div className="ma-proof-alerts">
           {error && !punching ? <p className="ma-error">{error}</p> : null}
           {notice ? <p className="ma-review-note">{notice}</p> : null}
+          {!morePickup && playbackError ? <p className="ma-error" role="alert">{playbackError}</p> : null}
+          {!morePickup && playbackLoading ? <p className="ma-review-note" role="status">Loading recording…</p> : null}
         </div>
       ) : null}
 
@@ -312,9 +226,9 @@ export function ReviewScreen({
             chapterTitle={chapter.title}
             manuscript={manuscript}
             transcript={transcript}
-            playTranscript={playing?.startsWith("original-") ? originalTranscript : transcript}
+            playTranscript={playKey?.startsWith("original-") ? originalTranscript : transcript}
             playAt={playAt}
-            playKey={playing}
+            playKey={playKey}
             pickups={open}
             focusedPickupId={focusedPickupId}
             sourceKind={chapter.recordedWords?.length ? "live" : "take"}
@@ -346,7 +260,10 @@ export function ReviewScreen({
                 pickup={pickup}
                 playing={playing}
                 hasOriginal={Boolean(chapter.originalFile)}
-                onPlayOriginal={() => playRange("original", pickup)}
+                onPlayOriginal={() => {
+                  if (playing === `original-${pickup.id}`) stopPlayback();
+                  else playRange("original", pickup);
+                }}
                 onMore={() => {
                   setSheetTake("original");
                   setMoreId(pickup.id);
@@ -396,8 +313,8 @@ export function ReviewScreen({
             pickup={morePickup}
             take={sheetTake}
             playing={playing}
-            playAt={playAt}
-            playWindow={playWindow}
+            playAt={playKey === `${sheetTake}-${morePickup.id}` ? playAt : null}
+            playWindow={playKey === `${sheetTake}-${morePickup.id}` ? playWindow : null}
             hasOriginal={Boolean(chapter.originalFile)}
             hasWorking={Boolean(chapter.workingFile)}
             onTake={(take) => {
@@ -416,6 +333,8 @@ export function ReviewScreen({
             }}
             onSeek={seekFlag}
           />
+          {playbackError ? <p className="ma-error" role="alert">{playbackError}</p> : null}
+          {playbackLoading ? <p className="ma-review-note" role="status">Loading recording…</p> : null}
           <section className="ma-flag-decide">
             <p className="ma-flag-kicker">Decide</p>
             <div className="ma-flag-acts">
@@ -664,7 +583,7 @@ function FlagHear({
   const end = playWindow?.end ?? bounds.end + 0.15;
   const span = Math.max(0.05, end - start);
   const here = playAt ?? start;
-  const pct = playWindow && live ? Math.min(100, Math.max(0, ((here - start) / span) * 100)) : 0;
+  const pct = playWindow ? Math.min(100, Math.max(0, ((here - start) / span) * 100)) : 0;
   const canPlay = take === "original" ? hasOriginal : hasWorking;
   return (
     <section className="ma-flag-hear">

@@ -113,12 +113,13 @@ export function ReviewScript({
     [focusedPickupId, pickups],
   );
 
+  const hasPlayback = playKey != null;
   const playAligned = useMemo(() => {
-    if (!playKey || tape.length === 0) {
+    if (!hasPlayback || tape.length === 0) {
       return [];
     }
     return alignedManuscriptTokens(manuscript, tape);
-  }, [manuscript, playKey, tape]);
+  }, [manuscript, hasPlayback, tape]);
 
   const playToken = useMemo(
     () => (playAt == null ? null : tokenIndexAtTime(playAligned, playAt)),
@@ -264,8 +265,8 @@ export function ReviewScript({
           className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
           onClick={locatePlay}
           disabled={nowToken == null}
-          title="Locate the word being played"
-          aria-label="Locate the word being played"
+          title="Locate reading position"
+          aria-label="Locate reading position"
         >
           <LocateGlyph />
         </button>
