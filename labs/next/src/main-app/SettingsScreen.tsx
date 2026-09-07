@@ -216,7 +216,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                 ))}
               </div>
             </SetItem>
-            <SetItem icon={<LampIcon />} title="Gallery lights" sub="Five ceiling cans. All off, or each one on its own.">
+            <SetItem icon={<LampIcon />} title="Gallery lights" sub="Use all five together, or focus one light at a time.">
               <GalleryLights />
             </SetItem>
           </div>
@@ -536,13 +536,14 @@ function GalleryLights() {
   }
 
   return (
-    <div className="ma-lamp-plate" role="toolbar" aria-label="Gallery lights">
+    <div className="ma-lamp-plate" role="radiogroup" aria-label="Gallery lights">
       <button
         type="button"
         className="ma-lamp-paddle is-master"
         data-on={allOn ? "true" : "false"}
-        aria-pressed={allOn}
-        onClick={() => setMask(allOn ? 0 : LAMP_ALL)}
+        role="radio"
+        aria-checked={allOn}
+        onClick={() => setMask(LAMP_ALL)}
       >
         <i />
         <span>All</span>
@@ -554,10 +555,11 @@ function GalleryLights() {
             key={index}
             type="button"
             className="ma-lamp-paddle"
-            data-on={on ? "true" : "false"}
+            data-on={!allOn && on ? "true" : "false"}
             aria-label={`Light ${index + 1}`}
-            aria-pressed={on}
-            onClick={() => setMask(lamps ^ (1 << index))}
+            role="radio"
+            aria-checked={!allOn && on}
+            onClick={() => setMask(1 << index)}
           >
             <i />
             <span>{index + 1}</span>
