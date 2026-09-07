@@ -65,8 +65,8 @@ import {
   type PromptPronunciationCue,
   type PronunciationCheck,
 } from "../core/glossary/workflow";
-import { fromPlainText, importManuscriptBytes } from "../core/manuscript/import";
-import { hideMarkdownHeadingMarkers, parsePastedChapter, splitManuscript } from "../core/manuscript/split";
+import { fromPlainText, importManuscriptBytes, splitImportedManuscript } from "../core/manuscript/import";
+import { hideMarkdownHeadingMarkers, parsePastedChapter } from "../core/manuscript/split";
 import { normalizeToken, tokenizeManuscript } from "../core/proof/normalize";
 import { addChapter, createEmptyProject } from "../core/project/project";
 import { normalizeProjectSettings, proofMergeWindowSeconds } from "../core/project/settings";
@@ -763,9 +763,8 @@ function ProjectHome({
           : messageFor(error, "Could not read that manuscript."),
       );
     }
-    const sections = splitManuscript(imported.source_text ?? imported.text, {
+    const sections = splitImportedManuscript(imported, {
       idPrefix: "ch",
-      hashStartsChapter: imported.format === "txt",
       dropContentsList: true,
     });
     if (sections.length === 0) {

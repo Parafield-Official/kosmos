@@ -10,6 +10,16 @@ import {
 } from "./split";
 
 describe("manuscript chapter splitting", () => {
+  it("does not discard three real short chapters as a contents list", () => {
+    const chapters = splitManuscript("Chapter 1\nYes.\nChapter 2\nNo.\nChapter 3\nMaybe.", { dropContentsList: true });
+    expect(chapters.map(c => c.title)).toEqual(["Chapter 1", "Chapter 2", "Chapter 3"]);
+  });
+
+  it("recognizes parts, meditations and isolated Roman headings without chapter-shaped prose", () => {
+    const chapters = splitManuscript("Part I\nFirst passage.\n\nMeditation II\nSecond passage.\nChapter books are popular.\n\nIII\n\nThird passage.\n\nIV\n\nFinal passage.");
+    expect(chapters.map(c => c.title)).toEqual(["Part I", "Meditation II", "III", "IV"]);
+    expect(chapters[1].text).toContain("Chapter books are popular.");
+  });
   it("detects book headings without treating numbered prose as chapters", () => {
     const manuscript = [
       "Copyright 2026",

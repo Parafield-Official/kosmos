@@ -24,7 +24,6 @@ const { exportVoiceGuide: exportVoiceGuideFiles } = require("./voice-guide.cjs")
 const { loadIdentity, saveIdentity } = require("./identity.cjs");
 const { resolveRuntimeBinary } = require("./runtime.cjs");
 const { runCommand, terminateActiveCommands } = require("./process.cjs");
-const { convertWithMarkItDown } = require("./markitdown.cjs");
 const { extractPdfText } = require("./pdf-text.cjs");
 const { isMicrophonePermission, ensureMicrophoneAccess } = require("./media-access.cjs");
 const {
@@ -461,20 +460,6 @@ async function parseManuscriptFile(sourcePath) {
       }
       return manuscriptCore.fromPlainText(extracted, "pdf");
     }
-    const convertedMarkdown = await convertWithMarkItDown({
-      sourcePath,
-      extension,
-      resourcesPath: process.resourcesPath,
-      appPath: app.getAppPath(),
-      cwd: process.cwd(),
-      requireBundled: app.isPackaged,
-    });
-    if (convertedMarkdown) {
-      return {
-        ...manuscriptCore.fromPlainText(convertedMarkdown, "md"),
-        format: extension.replace(/^\./u, ""),
-      };
-    }
     const bytes = await fs.readFile(sourcePath);
     return manuscriptCore.importManuscriptBytes(
       new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength),
@@ -619,9 +604,8 @@ async function writeChapterText(folder, project, title, text) {
 async function writeImportedManuscript(folder, project, sourcePath, imported) {
   const manuscriptCore = loadCoreModule("manuscript");
   const glossaryCore = loadCoreModule("glossary");
-  const sections = manuscriptCore.splitManuscript(imported.source_text ?? imported.text, {
+  const sections = manuscriptCore.splitImportedManuscript(imported, {
     idPrefix: "ch",
-    hashStartsChapter: imported.format === "txt",
   });
   if (!Array.isArray(sections) || sections.length === 0) {
     throw new Error("The manuscript is empty; add some text before importing.");

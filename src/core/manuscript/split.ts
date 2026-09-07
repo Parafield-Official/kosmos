@@ -28,6 +28,8 @@ export interface ManuscriptChapter {
   /** Exact body range in the normalized source; heading text is excluded. */
   content_start: number;
   content_end: number;
+  /** Stacked parent/child headings retained for narration without empty chapters. */
+  heading_text?: string;
 }
 
 export interface SplitManuscriptOptions {
@@ -44,6 +46,17 @@ export interface SplitManuscriptOptions {
    * callers are byte-for-byte unchanged; the audiobook importer turns it on.
    */
   dropContentsList?: boolean;
+  /** Authoritative format boundaries; offsets refer to normalized plain text. */
+  headings?: ManuscriptHeading[];
+  /** Fold stacked title-only sections into the next script without losing titles. */
+  preserveHeadingStacks?: boolean;
+}
+
+export interface ManuscriptHeading {
+  title: string;
+  source_start: number;
+  content_start: number;
+  heading_text?: string;
 }
 
 export interface PastedChapter {
@@ -85,7 +98,7 @@ export function splitManuscript(
   options: SplitManuscriptOptions = {},
 ): ManuscriptChapter[] {
   const sourceNormalized = source.replace(/\r\n?/g, "\n");
-  const normalized = hideMarkdownHeadingMarkers(sourceNormalized);
+  const normalized = options.headings ? sourceNormalized : hideMarkdownHeadingMarkers(sourceNormalized);
   if (normalized.trim().length === 0) {
     return [];
   }
@@ -103,9 +116,20 @@ export function splitManuscript(
     const title = hashTitle ?? headingTitle(line, lineIndex, lines);
     return title ? [{ lineIndex, title }] : [];
   });
-  const headings = options.dropContentsList
+  const textHeadings = options.dropContentsList
     ? dropContentsListHeadings(detectedHeadings, lines)
     : detectedHeadings;
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    offsets.push(offset);
+    offset += line.length + 1;
+  }
+  const headings: ManuscriptHeading[] = options.headings ?? textHeadings.map(heading => ({
+    title: heading.title,
+    source_start: offsets[heading.lineIndex],
+    content_start: Math.min(normalized.length, offsets[heading.lineIndex] + lines[heading.lineIndex].length + 1),
+  }));
   const maxMinutes = options.maxChapterMinutes ?? MAX_CHAPTER_MINUTES;
   const idPrefix = options.idPrefix ?? "ch";
 
@@ -125,10 +149,10 @@ export function splitManuscript(
 
   const chapters: ManuscriptChapter[] = [];
   const firstHeading = headings[0];
-  const preamble = lines.slice(0, firstHeading.lineIndex).join("\n").trim();
+  const preamble = normalized.slice(0, firstHeading.source_start).trim();
   if (preamble.length > 0) {
     const preambleStart = firstNonWhitespaceOffset(normalized);
-    const headingStart = lineStartOffset(lines, firstHeading.lineIndex);
+    const headingStart = firstHeading.source_start;
     chapters.push(
       makeChapter({
         id: `${idPrefix}${String(chapters.length + 1).padStart(2, "0")}`,
@@ -146,21 +170,17 @@ export function splitManuscript(
 
   headings.forEach((heading, headingPosition) => {
     const nextHeading = headings[headingPosition + 1];
-    const bodyStartLine = heading.lineIndex + 1;
-    const bodyEndLine = nextHeading?.lineIndex ?? lines.length;
-    const rawBody = lines.slice(bodyStartLine, bodyEndLine).join("\n");
+    const bodyStart = heading.content_start;
+    const bodyEnd = nextHeading?.source_start ?? normalized.length;
+    const rawBody = normalized.slice(bodyStart, bodyEnd);
     const text = rawBody.trim();
-    const headingStart = lineStartOffset(lines, heading.lineIndex);
-    const bodyStart = lineStartOffset(lines, bodyStartLine);
-    const bodyEnd = nextHeading
-      ? Math.max(bodyStart, lineStartOffset(lines, nextHeading.lineIndex) - 1)
-      : normalized.length;
+    const headingStart = heading.source_start;
     const leadingWhitespace = rawBody.match(/^\s*/u)?.[0].length ?? 0;
     const contentStart = Math.min(bodyEnd, bodyStart + leadingWhitespace);
     const contentEnd = Math.max(contentStart, bodyStart + rawBody.trimEnd().length);
 
     chapters.push(
-      makeChapter({
+      { ...makeChapter({
         id: `${idPrefix}${String(chapters.length + 1).padStart(2, "0")}`,
         index: chapters.length + 1,
         title: heading.title,
@@ -170,10 +190,31 @@ export function splitManuscript(
         contentStart,
         contentEnd,
         maxMinutes,
-      }),
+      }), ...(heading.heading_text ? { heading_text: heading.heading_text } : {}) },
     );
   });
 
+  if (options.headings || options.preserveHeadingStacks) {
+    // Publishers commonly stack a volume title and a part/chapter title before
+    // any prose. Keep every title, but attach the stack to the next real body.
+    const merged: ManuscriptChapter[] = [];
+    let pending: ManuscriptChapter | undefined;
+    for (const chapter of chapters) {
+      const current = pending ? {
+        ...chapter,
+        source_start: pending.source_start,
+        heading_text: `${pending.heading_text ?? pending.title}\n${chapter.heading_text ?? chapter.title}`,
+      } : chapter;
+      if (current.text.length === 0) {
+        pending = current;
+      } else {
+        merged.push(current);
+        pending = undefined;
+      }
+    }
+    if (pending) merged.push(pending);
+    return merged.map((chapter, index) => ({ ...chapter, index: index + 1, id: `${idPrefix}${String(index + 1).padStart(2, "0")}` }));
+  }
   return chapters;
 }
 
@@ -332,14 +373,6 @@ export function sliceScriptSpans(
   return result;
 }
 
-function lineStartOffset(lines: string[], lineIndex: number): number {
-  let offset = 0;
-  for (let index = 0; index < lineIndex; index += 1) {
-    offset += lines[index].length + 1;
-  }
-  return offset;
-}
-
 function firstNonWhitespaceOffset(value: string): number {
   const match = /\S/.exec(value);
   return match?.index ?? 0;
@@ -365,8 +398,8 @@ function bodyWordsBetween(lines: string[], firstHeadingLine: number, nextHeading
  * Remove headings that belong to a Table of Contents. A contents list is a run
  * of headings stacked together with (almost) no narration between consecutive
  * entries — the shape of "Chapter 1 / Chapter 2 / Chapter 3 …" on a contents
- * page. Real chapters are always separated by prose, so a run of three or more
- * near-touching headings is a list, not chapters. Dropping the headings lets
+ * page. Short real chapters can have the same shape, so also require a contents
+ * label or a repeat of those headings later in the book. Dropping the headings lets
  * their sparse text fold back into the preceding section instead of becoming
  * empty chapters (or one phantom chapter that eats the front matter after it).
  */
@@ -383,7 +416,12 @@ function dropContentsListHeadings(headings: Heading[], lines: string[]): Heading
     ) {
       end += 1;
     }
-    if (end - index + 1 >= MIN_RUN) {
+    const nearbyContentsLabel = lines.slice(Math.max(0, headings[index].lineIndex - 6), headings[index].lineIndex)
+      .some(line => /^(?:table\s+of\s+)?contents\s*$/iu.test(line.trim()));
+    const repeatedLater = headings.slice(index, end + 1).every(heading =>
+      headings.slice(end + 1).some(later => later.title.toLowerCase() === heading.title.toLowerCase()),
+    );
+    if (end - index + 1 >= MIN_RUN && (nearbyContentsLabel || repeatedLater)) {
       for (let position = index; position <= end; position += 1) {
         drop.add(position);
       }
@@ -404,10 +442,20 @@ function headingTitle(line: string, lineIndex: number, lines: string[]): string 
     return null;
   }
 
-  // The named headings in the spec are intentionally permissive about a
-  // subtitle and punctuation, but require a word boundary after the name.
-  if (/^(?:chapter\b.*|prologue\b.*|epilogue\b.*|opening\s+credits?\b.*|closing\s+credits?\b.*)$/i.test(candidate)) {
+  // A chapter label needs a number/name separator; a sentence such as
+  // "Chapter books are popular" is ordinary narration.
+  const ordinal = "(?:\\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty(?:[ -]\\w+)?|thirty(?:[ -]\\w+)?|forty(?:[ -]\\w+)?|fifty(?:[ -]\\w+)?|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)";
+  if (new RegExp(`^(?:chapter|part|book|meditation|canto|act)\\s+${ordinal}(?:$|[\\s.:—–-])`, "iu").test(candidate)
+    || /^(?:chapter|part|book)\s*[:—–-]\s*\S/iu.test(candidate)
+    || /^(?:prologue|epilogue|preface|introduction|foreword|afterword|appendix)(?:$|\s*[:—–-]\s*\S)/iu.test(candidate)
+    || /^(?:opening|closing)\s+credits?\b/iu.test(candidate)) {
     return candidate;
+  }
+
+  if (/^[IVXLCDM]+[.)]?$/u.test(candidate) && lines.filter(value => /^[IVXLCDM]+[.)]?$/u.test(value.trim())).length > 1) {
+    const previousBlank = lineIndex === 0 || !lines[lineIndex - 1].trim();
+    const nextBlank = lineIndex === lines.length - 1 || !lines[lineIndex + 1].trim();
+    return previousBlank && nextBlank ? candidate : null;
   }
 
   // Numbered headings are only accepted when visually isolated. This avoids
