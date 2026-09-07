@@ -1,4 +1,5 @@
-import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import type { PromptHighlightMode } from "./store";
 
 type Rail = {
   top: number;
@@ -8,19 +9,25 @@ type Rail = {
   kind: "word" | "band";
 };
 
+/** Render beside the scroller, inside its positioned viewport wrapper. */
 export function TeleprompterFocus({
   containerRef,
   nowIndex,
   from,
   to,
   getWord,
+  mode,
+  layoutKey,
 }: {
   containerRef: RefObject<HTMLElement | null>;
   nowIndex: number | null;
   from: number | null;
   to: number | null;
   getWord: (index: number) => HTMLElement | null;
+  mode: PromptHighlightMode;
+  layoutKey: string;
 }) {
+  const guideRef = useRef<HTMLDivElement>(null);
   const [rails, setRails] = useState<Rail[]>([]);
   const [caretY, setCaretY] = useState<number | null>(null);
 
@@ -33,21 +40,23 @@ export function TeleprompterFocus({
 
     function measure() {
       const box = node.getBoundingClientRect();
-      if (box.width < 2 || box.height < 2) {
+      const origin = guideRef.current?.getBoundingClientRect();
+      if (!origin || box.width < 2 || box.height < 2) {
+        setRails([]);
+        setCaretY(null);
         return;
       }
-      const bandStart = from ?? nowIndex;
-      const bandEnd = to ?? nowIndex;
-      const wordOnly = bandStart === nowIndex && bandEnd === nowIndex;
+      const bandStart = from;
+      const bandEnd = to;
       const groups = new Map<number, { left: number; right: number; top: number; bottom: number }>();
-      if (!wordOnly && bandStart != null && bandEnd != null) {
+      if (mode !== "word" && bandStart != null && bandEnd != null) {
         for (let index = bandStart; index <= bandEnd; index += 1) {
           const el = getWord(index);
           if (!el) {
             continue;
           }
           const rect = el.getBoundingClientRect();
-          const key = Math.round(rect.top);
+          const key = [...groups.keys()].find((top) => Math.abs(top - rect.top) < 4) ?? rect.top;
           const prev = groups.get(key);
           if (!prev) {
             groups.set(key, { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom });
@@ -66,8 +75,8 @@ export function TeleprompterFocus({
         }
         next.push({
           kind: "band",
-          top: group.top - box.top - 4,
-          left: group.left - box.left - 18,
+          top: group.top - origin.top - 4,
+          left: group.left - origin.left - 18,
           width: group.right - group.left + 36,
           height: group.bottom - group.top + 8,
         });
@@ -75,16 +84,16 @@ export function TeleprompterFocus({
       const nowEl = nowIndex == null ? null : getWord(nowIndex);
       if (nowEl) {
         const rect = nowEl.getBoundingClientRect();
-        const mid = rect.top + rect.height / 2 - box.top;
-        if (mid >= -10 && mid <= box.height + 10) {
-          next.push({
+        const mid = rect.top + rect.height / 2;
+        if (mid >= box.top + node.clientTop && mid <= box.top + node.clientTop + node.clientHeight) {
+          if (mode === "word") next.push({
             kind: "word",
-            top: rect.top - box.top - 5,
-            left: rect.left - box.left - 12,
+            top: rect.top - origin.top - 5,
+            left: rect.left - origin.left - 12,
             width: rect.width + 24,
             height: rect.height + 10,
           });
-          setCaretY(mid);
+          setCaretY(mid - origin.top);
         } else {
           setCaretY(null);
         }
@@ -99,19 +108,19 @@ export function TeleprompterFocus({
     window.addEventListener("resize", measure);
     const observer = new ResizeObserver(measure);
     observer.observe(node);
+    const content = node.querySelector("[data-prompt-content]");
+    if (content) observer.observe(content);
+    document.fonts?.addEventListener("loadingdone", measure);
     return () => {
       node.removeEventListener("scroll", measure);
       window.removeEventListener("resize", measure);
       observer.disconnect();
+      document.fonts?.removeEventListener("loadingdone", measure);
     };
-  }, [containerRef, from, getWord, nowIndex, to]);
-
-  if (caretY == null && rails.length === 0) {
-    return null;
-  }
+  }, [containerRef, from, getWord, nowIndex, to, mode, layoutKey]);
 
   return (
-    <div className="ma-teleprompter-guide" aria-hidden="true">
+    <div ref={guideRef} className="ma-teleprompter-guide" aria-hidden="true">
       {rails.map((rail, index) => (
         <i
           key={`${rail.kind}-${index}`}

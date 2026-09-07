@@ -3,11 +3,13 @@
  * the booth, the reader, and chapter text share one choice.
  */
 
-import type { PromptTheme, ReadingFont } from "./store";
+import type { PromptHighlightMode, PromptTheme, ReadingFont } from "./store";
 
 const FONT_KEY = "kosmos-booth-font";
 const THEME_KEY = "kosmos-booth-theme";
 const BOOTH_SIZE_KEY = "kosmos-booth-font-px";
+const HIGHLIGHT_KEY = "kosmos-booth-highlight";
+const SPACING_KEY = "kosmos-booth-spacing";
 
 export const READING_FONT_VALUES = [
   "sans",
@@ -120,11 +122,28 @@ export function writePromptTheme(theme: PromptTheme): void {
   writeStored(THEME_KEY, theme);
 }
 
+export function readPromptHighlight(): PromptHighlightMode {
+  return readStored(HIGHLIGHT_KEY, ["word", "line", "paragraph"] as const, "line");
+}
+
+export function writePromptHighlight(mode: PromptHighlightMode): void {
+  writeStored(HIGHLIGHT_KEY, mode);
+}
+
+export function readPromptLineSpacing(): number {
+  return Number(readStored(SPACING_KEY, ["1.35", "1.55", "1.8"] as const, "1.55"));
+}
+
+export function writePromptLineSpacing(spacing: number): void {
+  writeStored(SPACING_KEY, String(spacing));
+}
+
 export const BOOTH_FONT_RANGE = { min: 20, max: 48, fallback: 28 } as const;
 
 export function readBoothFontPx(): number {
   try {
-    const raw = Number(window.localStorage.getItem(BOOTH_SIZE_KEY));
+    const stored = window.localStorage.getItem(BOOTH_SIZE_KEY);
+    const raw = stored == null || stored.trim() === "" ? NaN : Number(stored);
     if (Number.isFinite(raw)) {
       return Math.min(BOOTH_FONT_RANGE.max, Math.max(BOOTH_FONT_RANGE.min, Math.round(raw)));
     }

@@ -1,6 +1,41 @@
 import type { TranscriptWord } from "../../../../src/core/proof/align";
 import { tokenizeManuscript } from "../../../../src/core/proof/normalize";
+import { alignedManuscriptTokens } from "../../../../src/core/proof/selection";
 import type { BookChapter, RecordedWord } from "./store";
+
+/** Align once per manuscript/timing revision, not once per audio timeupdate. */
+export function createChapterPlaybackClock() {
+  let previous: {
+    manuscript: string;
+    chapterId: string;
+    proof: BookChapter["proofTranscript"];
+    recorded: BookChapter["recordedWords"];
+  } | null = null;
+  let punches: BookChapter["punches"];
+  let original: ReturnType<typeof alignedManuscriptTokens> | undefined;
+  let working: ReturnType<typeof alignedManuscriptTokens> | undefined;
+
+  return (manuscript: string, chapter: BookChapter, take: "original" | "working", seconds: number) => {
+    if (!previous || previous.manuscript !== manuscript || previous.chapterId !== chapter.id
+      || previous.proof !== chapter.proofTranscript || previous.recorded !== chapter.recordedWords) {
+      previous = { manuscript, chapterId: chapter.id, proof: chapter.proofTranscript, recorded: chapter.recordedWords };
+      original = undefined;
+      working = undefined;
+    }
+    if (punches !== chapter.punches) {
+      punches = chapter.punches;
+      working = undefined;
+    }
+    let aligned = take === "original" ? original : working;
+    if (!aligned) {
+      const words = take === "original" ? originalChapterTranscript(manuscript, chapter) : workingChapterTranscript(manuscript, chapter);
+      aligned = words.length ? alignedManuscriptTokens(manuscript, words) : [];
+      if (take === "original") original = aligned;
+      else working = aligned;
+    }
+    return tokenIndexAtTime(aligned, seconds) ?? recordedWordAtTime(chapter.recordedWords, seconds);
+  };
+}
 
 /** Booth word-clock → Whisper-shaped timings the redo range builder understands. */
 export function transcriptFromRecordedWords(
