@@ -9,7 +9,6 @@ import {
 } from "./mastering-flow";
 import { ReorderGrip, useReorder } from "./reorder";
 import {
-  fileManagerName,
   persistBook,
   reorderChapters,
   revealBookFolder,
@@ -162,25 +161,7 @@ export function SoundMasteringScreen({
               : `${mastered} of ${total} mastered`}
           </p>
         </div>
-        <div className="sound-master-head-actions">
-          {canReveal ? (
-            <button
-              type="button"
-              className="sound-master-reveal"
-              onClick={() => void revealFolder()}
-              aria-label={revealFolderLabel()}
-            >
-              <FolderGlyph />
-              <span>{fileManagerName()}</span>
-            </button>
-          ) : null}
-          {onDelete ? (
-            <button type="button" className="sound-master-delete" onClick={onDelete} aria-label={`Delete ${project.title}`}>
-              Delete
-            </button>
-          ) : null}
-          {!canReveal && !onDelete ? <span className="sound-master-head-end" aria-hidden="true" /> : null}
-        </div>
+        <span className="sound-master-head-end" aria-hidden="true" />
       </header>
 
       {error ? <p className="ma-error sound-master-error">{error}</p> : null}
@@ -247,6 +228,27 @@ export function SoundMasteringScreen({
               })}
             </ol>
           )}
+          {canReveal || onDelete ? (
+            <div className="sound-master-project-actions">
+              {canReveal ? (
+                <button type="button" onClick={() => void revealFolder()} aria-label={revealFolderLabel()}>
+                  <FolderGlyph />
+                  <span>{revealFolderLabel()}</span>
+                </button>
+              ) : null}
+              {onDelete ? (
+                <button
+                  type="button"
+                  className="is-delete"
+                  onClick={onDelete}
+                  aria-label={`Delete ${project.title}`}
+                >
+                  <DeleteGlyph />
+                  <span>Delete project</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </aside>
         <div className="sound-master-stage">
           {selected ? (
@@ -286,6 +288,16 @@ function FolderGlyph() {
         strokeWidth="1.7"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function DeleteGlyph() {
+  return (
+    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+      <path d="M4.2 5.6h11.6" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
+      <path d="M7.15 5.6h5.7l-.42 8.35a1.35 1.35 0 0 1-1.35 1.28H8.92a1.35 1.35 0 0 1-1.35-1.28L7.15 5.6Z" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
+      <path d="M8.1 5.5V4.3c0-.45.36-.8.8-.8h2.2c.44 0 .8.35.8.8v1.2" stroke="currentColor" strokeWidth="1.45" strokeLinejoin="round" />
     </svg>
   );
 }

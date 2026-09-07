@@ -1,4 +1,7 @@
-import { unzipSync } from "fflate";
+import { readArchiveEntries } from "../../../../src/core/manuscript/archive";
+import { epubPackagePath, readEpubMetadata } from "../../../../src/core/manuscript/epub";
+import { parseMarkup } from "../../../../src/core/manuscript/xml";
+import { decodeManuscriptText } from "../../../../src/core/manuscript/encoding";
 
 /** Title and author(s) detected from a manuscript's own metadata. */
 export interface ManuscriptMeta {
@@ -62,21 +65,12 @@ function metaFromDublinCore(doc: Document): ManuscriptMeta {
 /** Pull title/author from EPUB bytes by resolving the OPF via META-INF/container.xml. */
 export function epubMetaFromBytes(bytes: Uint8Array): ManuscriptMeta {
   try {
-    const entries = unzipSync(bytes);
-    const decoder = new TextDecoder();
-    let opfPath: string | null = null;
-    const container = entries["META-INF/container.xml"];
-    if (container) {
-      const xml = new DOMParser().parseFromString(decoder.decode(container), "application/xml");
-      opfPath = xml.querySelector("rootfile")?.getAttribute("full-path") ?? null;
-    }
-    if (!opfPath || !entries[opfPath]) {
-      opfPath = Object.keys(entries).find((name) => /\.opf$/i.test(name)) ?? null;
-    }
+    const entries = readEpubMetadata(bytes);
+    const opfPath = epubPackagePath(entries);
     if (!opfPath || !entries[opfPath]) {
       return {};
     }
-    const opf = new DOMParser().parseFromString(decoder.decode(entries[opfPath]), "application/xml");
+    const opf = parseMarkup(decodeManuscriptText(entries[opfPath]));
     return metaFromDublinCore(opf);
   } catch {
     return {};
@@ -86,11 +80,11 @@ export function epubMetaFromBytes(bytes: Uint8Array): ManuscriptMeta {
 /** Pull title/author from DOCX bytes via docProps/core.xml (also Dublin Core). */
 export function docxMetaFromBytes(bytes: Uint8Array): ManuscriptMeta {
   try {
-    const core = unzipSync(bytes)["docProps/core.xml"];
+    const core = readArchiveEntries(bytes, name => name === "docProps/core.xml", { maxBytes: 2 * 1024 * 1024, maxFiles: 1 })["docProps/core.xml"];
     if (!core) {
       return {};
     }
-    const xml = new DOMParser().parseFromString(new TextDecoder().decode(core), "application/xml");
+    const xml = parseMarkup(decodeManuscriptText(core));
     return metaFromDublinCore(xml);
   } catch {
     return {};
@@ -148,7 +142,7 @@ export function manuscriptMetaFromBytes(name: string, bytes: Uint8Array): Manusc
   }
   if (ext === "txt" || ext === "md" || ext === "markdown") {
     try {
-      return textMeta(new TextDecoder().decode(bytes));
+      return textMeta(decodeManuscriptText(bytes));
     } catch {
       return {};
     }

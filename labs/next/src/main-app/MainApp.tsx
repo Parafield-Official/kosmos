@@ -5,12 +5,12 @@ import {
   deleteBook,
   persistBook,
   readManuscriptBytes,
-  writeChapterContents,
+  replaceBookChapters,
   writeManuscript,
   isMasteringProject,
   type BookProject,
 } from "./store";
-import { analyzeFile, analyzeSource, manuscriptSource } from "./analyze";
+import { analyzeFile, analyzeSource, analyzeManuscript } from "./analyze";
 import { paragraphsFromHtml } from "./booth";
 import { scanGlossaryFromManuscript } from "./glossary";
 import { manuscriptMetaFromBytes } from "./manuscript-meta";
@@ -203,17 +203,16 @@ export function MainApp() {
         result = await analyzeFile(file, report);
       } else {
         const manuscript = await readManuscriptBytes(project);
-        const source = manuscript
-          ? manuscript.text ?? manuscriptSource(manuscript.name, manuscript.bytes)
-          : null;
-        if (!source) {
+        if (!manuscript || (/\.pdf$/iu.test(manuscript.name) && !manuscript.text?.trim())) {
           throw new Error(
             manuscript && /\.pdf$/i.test(manuscript.name)
               ? "Kosmos could not read text from that PDF. It may be a scan without a text layer."
               : "Kosmos couldn't read that manuscript. Try a .txt, .md, .docx, or .epub.",
           );
         }
-        result = await analyzeSource(source, report);
+        result = /\.pdf$/iu.test(manuscript.name)
+          ? await analyzeSource(manuscript.text!, report)
+          : await analyzeManuscript(manuscript.name, manuscript.bytes, report);
       }
       if (!result.chapters.length) {
         throw new Error("Kosmos couldn't find chapter text in that manuscript.");
@@ -228,8 +227,7 @@ export function MainApp() {
           patch = { ...patch, author: meta.authors.join(", ") };
         }
       }
-      const next = await persistBook(patch);
-      await writeChapterContents(next, result.contents);
+      const next = await replaceBookChapters(patch, result.chapters, result.contents);
       const manuscript = result.contents
         .map((item) => paragraphsFromHtml(item.html).join("\n"))
         .join("\n\n");

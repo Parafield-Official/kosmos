@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bookStats, completionPct } from "./book-stats";
 import { analyzeManuscriptCopy, ConfirmAlert } from "./ConfirmAlert";
-import { bookInitials, type BookProject } from "./store";
+import {
+  bookInitials,
+  fileManagerName,
+  revealBookFolder,
+  revealFolderLabel,
+  type BookProject,
+} from "./store";
 import { VaultListenSheet, VaultReadSheet } from "./vault-media";
 
 export function DashboardScreen({
@@ -24,6 +30,7 @@ export function DashboardScreen({
   const [surface, setSurface] = useState<"board" | "read" | "listen">("board");
   const [analyzeAsk, setAnalyzeAsk] = useState<"analyze" | "manuscript" | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const manuscriptRef = useRef<HTMLInputElement>(null);
 
   const progress = completionPct(project);
@@ -87,6 +94,14 @@ export function DashboardScreen({
     if (kind === "analyze") {
       onAnalyze();
       onGoChapters();
+    }
+  }
+
+  async function revealFolder() {
+    setActionError(null);
+    const result = await revealBookFolder(project);
+    if (!result.ok) {
+      setActionError(result.reason ?? "Could not open the project folder.");
     }
   }
 
@@ -178,6 +193,16 @@ export function DashboardScreen({
               <ListenGlyph />
               <span>Listen</span>
             </button>
+            <button
+              type="button"
+              className="ma-dash-act"
+              disabled={!project.folder}
+              onClick={() => void revealFolder()}
+              aria-label={revealFolderLabel()}
+            >
+              <FolderGlyph />
+              <span>{fileManagerName()}</span>
+            </button>
             <button type="button" className="ma-dash-act" onClick={() => manuscriptRef.current?.click()}>
               <ManuscriptGlyph />
               <span>{project.manuscript ? "Update" : "Choose manuscript"}</span>
@@ -225,7 +250,9 @@ export function DashboardScreen({
         }}
       />
 
-      {analyzeError ? <p className="ma-error">{analyzeError}</p> : null}
+      {actionError || analyzeError ? (
+        <p className="ma-error" role="alert">{actionError ?? analyzeError}</p>
+      ) : null}
 
       {analyzeAsk ? (
         <AnalyzeConfirm
@@ -301,6 +328,19 @@ function AnalyzeGlyph() {
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M10.5 18.5a7 7 0 1 0 0-14 7 7 0 0 0 0 14Z" stroke="currentColor" strokeWidth="1.65" />
       <path d="m15.6 15.6 4.2 4.2" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FolderGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8.2A1.7 1.7 0 0 1 5.7 6.5h4.1L12 8.6h6.3A1.7 1.7 0 0 1 20 10.3v6.5A1.7 1.7 0 0 1 18.3 18.5H5.7A1.7 1.7 0 0 1 4 16.8Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }

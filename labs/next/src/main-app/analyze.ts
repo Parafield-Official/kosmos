@@ -1,5 +1,6 @@
-import { importManuscriptBytes } from "../../../../src/core/manuscript/import";
-import { splitManuscript } from "../../../../src/core/manuscript/split";
+import { fromPlainText, importManuscriptBytes, splitImportedManuscript, type ImportedManuscript } from "../../../../src/core/manuscript/import";
+import { sliceScriptSpans, type ManuscriptChapter } from "../../../../src/core/manuscript/split";
+import type { ScriptSpan } from "../../../../src/core/project/types";
 import type { BookChapter } from "./store";
 
 export type AnalyzeProgress = (fraction: number, label: string) => void;
@@ -26,7 +27,7 @@ function inlineMarkup(value: string): string {
 }
 
 /** Convert a chapter body to HTML, preserving paragraph structure and emphasis. */
-export function chapterHtmlFromText(text: string): string {
+export function chapterHtmlFromText(text: string, markdown = true): string {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
   if (!normalized) {
     return "";
@@ -35,7 +36,7 @@ export function chapterHtmlFromText(text: string): string {
   return blocks
     .map((block) => block.trim())
     .filter(Boolean)
-    .map((block) => `<p>${inlineMarkup(block.replace(/\n/g, " "))}</p>`)
+    .map((block) => `<p>${(markdown ? inlineMarkup : escapeHtml)(block.replace(/\n/g, " "))}</p>`)
     .join("\n");
 }
 
@@ -46,13 +47,13 @@ export function chapterHtmlFromText(text: string): string {
  * The synthetic "Front matter" label is not a spoken heading, so it is skipped;
  * its body (title, author, copyright) is still shown.
  */
-export function chapterHtmlWithHeading(title: string, text: string): string {
+export function chapterHtmlWithHeading(title: string, text: string, markdown = true): string {
   const heading = title.trim();
-  const body = chapterHtmlFromText(text);
+  const body = chapterHtmlFromText(text, markdown);
   if (!heading || heading.toLowerCase() === "front matter") {
     return body;
   }
-  const headingHtml = `<h2>${inlineMarkup(heading)}</h2>`;
+  const headingHtml = `<h2>${(markdown ? inlineMarkup : escapeHtml)(heading)}</h2>`;
   return body ? `${headingHtml}\n${body}` : headingHtml;
 }
 
@@ -65,40 +66,38 @@ function extension(name: string): string {
   return match ? match[1].toLowerCase() : "";
 }
 
-/** Turn manuscript bytes into plain source text, reusing the original parsers. */
-export function manuscriptSource(name: string, bytes: Uint8Array): string | null {
-  const ext = extension(name);
-  if (ext === "txt" || ext === "md" || ext === "markdown") {
-    return new TextDecoder().decode(bytes);
-  }
-  if (ext === "docx" || ext === "epub") {
-    try {
-      const imported = importManuscriptBytes(bytes, ext);
-      return imported.source_text ?? imported.text;
-    } catch (error) {
-      throw error instanceof Error
-        ? error
-        : new Error("Kosmos couldn't read that Word or EPUB file.");
-    }
-  }
-  // PDF needs a native text extractor; not available in the renderer yet.
-  return null;
-}
-
 /** Split source text into chapters (+ per-chapter HTML), reporting progress. */
 export async function analyzeSource(source: string, onProgress?: AnalyzeProgress): Promise<AnalyzeResult> {
-  const split = splitManuscript(source, {
-    hashStartsChapter: true,
-    defaultTitle: "Chapter 1",
-    dropContentsList: true,
-  });
-  // A chapter you can narrate must contain narration. Heading-shaped lines with
-  // no body under them — a Table of Contents, part dividers, a cluster of
-  // headings — otherwise become empty chapters whose teleprompter reads "No
-  // text yet." Keep only sections that carry words, so every chapter card the
-  // booth offers has a script behind it.
-  const withText = split.filter((section) => section.word_count > 0);
-  const sections = withText.length > 0 ? withText : split;
+  return analyzeImported(fromPlainText(source), onProgress);
+}
+
+/** Same structured-byte path for a new upload and a saved book's re-analysis. */
+export async function analyzeManuscript(name: string, bytes: Uint8Array, onProgress?: AnalyzeProgress): Promise<AnalyzeResult> {
+  const imported = importManuscriptBytes(bytes, extension(name));
+  return analyzeImported(imported, onProgress);
+}
+
+function analyzeImported(imported: ImportedManuscript, onProgress?: AnalyzeProgress): Promise<AnalyzeResult> {
+  const chapters = splitImportedManuscript(imported);
+  if (!chapters.length) throw new Error("Kosmos couldn't read any text from that manuscript.");
+  return analyzeSections(chapters, onProgress, imported.format === "txt" || imported.format === "md" || imported.format === "pdf",
+    imported.format === "docx" ? imported.spans : undefined);
+}
+
+function chapterHtmlFromSpans(spans: ScriptSpan[]): string {
+  const markup = spans.map(span => span.text.split("\n").map(part => {
+    let html = escapeHtml(part);
+    if (!html) return html;
+    for (const style of span.style) {
+      const tag = { italic: "em", bold: "strong", underline: "u", highlight: "mark" }[style];
+      if (tag) html = `<${tag}>${html}</${tag}>`;
+    }
+    return html;
+  }).join("\n")).join("");
+  return markup.split("\n").filter(line => line.trim()).map(line => `<p>${line}</p>`).join("\n");
+}
+
+async function analyzeSections(sections: ManuscriptChapter[], onProgress?: AnalyzeProgress, markdown = true, spans?: ScriptSpan[]): Promise<AnalyzeResult> {
   if (sections.length === 0) {
     return { chapters: [], contents: [] };
   }
@@ -120,7 +119,11 @@ export async function analyzeSource(source: string, onProgress?: AnalyzeProgress
       proofed: false,
       mastered: false,
     });
-    contents.push({ id, html: chapterHtmlWithHeading(section.title, section.text) });
+    const title = section.heading_text ?? section.title;
+    const html = spans
+      ? [chapterHtmlWithHeading(title, "", false), chapterHtmlFromSpans(sliceScriptSpans(spans, section.content_start, section.content_end))].filter(Boolean).join("\n")
+      : chapterHtmlWithHeading(title, section.text, markdown);
+    contents.push({ id, html });
     onProgress?.((index + 1) / total, section.title);
     // Let the progress bar paint; keep the whole animation short.
     if (total <= 80) {
@@ -132,29 +135,16 @@ export async function analyzeSource(source: string, onProgress?: AnalyzeProgress
 
 export async function analyzeFile(file: File, onProgress?: AnalyzeProgress): Promise<AnalyzeResult> {
   const ext = extension(file.name);
-  let source: string | null = null;
   if (ext === "txt" || ext === "md" || ext === "markdown") {
-    source = await file.text();
+    return analyzeManuscript(file.name, new Uint8Array(await file.arrayBuffer()), onProgress);
   } else if (ext === "docx" || ext === "epub") {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    source = manuscriptSource(file.name, bytes);
+    return analyzeManuscript(file.name, bytes, onProgress);
   } else if (ext === "pdf") {
     // PDFs are containers, not UTF-8 manuscripts. The Electron main process
     // extracts them with bundled MarkItDown/pdftotext before analysis.
-    source = null;
+    throw new Error("PDF manuscripts must be extracted by the desktop app before analysis.");
   } else {
-    try {
-      source = await file.text();
-    } catch {
-      source = null;
-    }
+    throw new Error("Unsupported manuscript format. Try .txt, .md, .docx, .epub, or .pdf.");
   }
-  if (!source || !source.trim()) {
-    throw new Error(
-      ext === "pdf"
-        ? "PDF manuscripts must be extracted by the desktop app before analysis."
-        : "Kosmos couldn't read any text from that file. Try a .txt, .md, .docx, or .epub.",
-    );
-  }
-  return analyzeSource(source, onProgress);
 }
