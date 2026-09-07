@@ -285,23 +285,41 @@ async function repairAudioFile(masterCore, filePath, metadata) {
   return { ...metadata, pcm };
 }
 
-async function denoiseAudioFile(masterCore, filePath, metadata, noiseFloorDbfs, reductionDb, repairFilter) {
-  const denoiseFilter = masterCore.afftdnFilter(noiseFloorDbfs, reductionDb);
-  const filter = repairFilter ? `${repairFilter},${denoiseFilter}` : denoiseFilter;
-  const pcm = await runFfmpeg([
-    "-v", "error",
-    "-i", filePath,
-    "-af", filter,
-    "-f", "f32le",
-    "-acodec", "pcm_f32le",
-    "-ac", String(metadata.channels),
-    "-ar", String(metadata.sampleRate),
-    "pipe:1",
-  ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
-  if (pcm.length === 0 || pcm.length % (4 * metadata.channels) !== 0) {
-    throw new Error("Automatic noise reduction returned no complete PCM frames.");
+async function denoiseAudioFile(masterCore, metadata, noiseFloorDbfs, reductionDb, selection = null) {
+  if (metadata.channels !== 1) throw new Error("Restoration requires the prepared mono signal.");
+  const samples = float32View(metadata.pcm);
+  const rate = metadata.sampleRate;
+  const delay = masterCore.denoiseDelaySamples(rate);
+  const prefixLength = selection ? rate : 0;
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "kosmos-denoise-"));
+  try {
+    const inputPath = path.join(directory, "prepared.f32");
+    const prefix = new Float32Array(prefixLength);
+    if (selection) {
+      if (!Number.isInteger(selection.startSample) || !Number.isInteger(selection.sampleCount) ||
+          selection.sampleCount <= 0 || selection.startSample < 0 ||
+          selection.startSample + selection.sampleCount > samples.length) throw new Error("Invalid noise profile window.");
+      for (let i = 0; i < prefix.length; i++) prefix[i] = samples[selection.startSample + i % selection.sampleCount];
+    }
+    await fs.writeFile(inputPath, Buffer.from(prefix.buffer));
+    // Every attempt starts from the same repaired source. Do not compound
+    // denoising, decode the lossy original again, or lose the filter's tail.
+    await fs.appendFile(inputPath, metadata.pcm);
+    await fs.appendFile(inputPath, Buffer.alloc((delay + Math.ceil(rate * 0.1)) * 4));
+    const denoise = selection
+      ? masterCore.profiledAfftdnFilter(noiseFloorDbfs, reductionDb)
+      : masterCore.afftdnFilter(noiseFloorDbfs, reductionDb);
+    const start = prefixLength + delay;
+    const filter = `${denoise},atrim=start_sample=${start}:end_sample=${start + samples.length},asetpts=PTS-STARTPTS`;
+    const pcm = await runFfmpeg([
+      "-v", "error", "-f", "f32le", "-ar", String(rate), "-ac", "1", "-i", inputPath,
+      "-af", filter, "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", String(rate), "pipe:1",
+    ], { maxOutputBytes: MAX_PCM_OUTPUT_BYTES });
+    if (pcm.length !== metadata.pcm.length) throw new Error("Noise cleanup changed the recording length.");
+    return { ...metadata, pcm };
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined);
   }
-  return { ...metadata, pcm };
 }
 
 function punchSamplesFromWav(audioCore, spliceCore, bytes, trimSilence) {
@@ -552,39 +570,59 @@ async function masterWorkingFile(payload) {
       targetRmsDbfs: Number.isFinite(requestedRms)
         ? Math.min(-18, Math.max(-23, requestedRms))
         : -20,
+      // MP3 reconstruction can overshoot a PCM ceiling. Leave delivery margin.
+      limiterCeilingDbfs: profile.container === "mp3" ? Math.min(profile.limiterCeilingDbfs, (preset.true_peak_dbfs_max ?? -3) - 0.8) : profile.limiterCeilingDbfs,
     };
-    let master = masterCore.masterPcm({
-      samples: float32View(prepared.pcm),
-      sampleRate: prepared.sampleRate,
-      channels: prepared.channels,
-      format: prepared.format,
-      bitrate_kbps: prepared.bitrateKbps,
-    }, masterOptions);
+    const runMaster = (audio, options) => masterCore.masterPcm({
+      samples: float32View(audio.pcm), sampleRate: audio.sampleRate, channels: audio.channels,
+      format: audio.format, bitrate_kbps: audio.bitrateKbps,
+    }, options);
+    let master = runMaster(prepared, masterOptions);
+    let restoration = { method: "none", reductionDb: 0, targetRmsDbfs: masterOptions.targetRmsDbfs };
 
     if (master.status !== "ok" && master.abort_code === "noise_floor" && profile.noiseFloorMaxDbfs !== null) {
+      const sourceReport = master.before;
+      const sourceNoiseFloor = master.before.noise_floor_dbfs;
+      const sourcePrediction = master.predicted_floor_dbfs;
+      const quieterTarget = masterCore.quieterRmsTarget(preset, masterOptions.targetRmsDbfs);
+      const options = [masterOptions];
+      if (quieterTarget !== undefined) {
+        options.push({ ...masterOptions, targetRmsDbfs: quieterTarget });
+        // Less amplification can avoid any denoising at all.
+        master = runMaster(prepared, options[1]);
+        if (master.status === "ok") restoration = { ...restoration, targetRmsDbfs: quieterTarget };
+      }
+      const mono = mixInterleavedToMono(float32View(prepared.pcm), prepared.channels);
+      const monoAudio = { ...prepared, channels: 1, pcm: Buffer.from(mono.buffer, mono.byteOffset, mono.byteLength) };
+      const selection = masterCore.selectNoiseProfile(mono, prepared.sampleRate, sourceReport);
       const strengths = masterCore.noiseReductionAttempts(
-        master.predicted_floor_dbfs,
+        sourcePrediction + ((quieterTarget ?? masterOptions.targetRmsDbfs) - masterOptions.targetRmsDbfs),
         profile.noiseFloorMaxDbfs,
       );
-      for (const strength of strengths) {
-        const cleaned = await denoiseAudioFile(
-          masterCore,
-          filePath,
-          decoded,
-          master.before.noise_floor_dbfs,
-          strength,
-          repairAssessment.applied ? masterCore.AUTOMATIC_REPAIR_FILTER : undefined,
-        );
-        master = masterCore.masterPcm({
-          samples: float32View(cleaned.pcm),
-          sampleRate: cleaned.sampleRate,
-          channels: cleaned.channels,
-          format: cleaned.format,
-          bitrate_kbps: cleaned.bitrateKbps,
-        }, masterOptions);
-        if (master.status === "ok" || master.abort_code !== "noise_floor") {
-          break;
+      let rejectedForVoice = false;
+      restorationAttempts:
+      for (const noiseProfile of selection ? [selection, null] : [null]) {
+        if (master.status === "ok") break;
+        for (const strength of strengths) {
+          const cleaned = await denoiseAudioFile(masterCore, monoAudio, sourceNoiseFloor, strength, noiseProfile);
+          const assessment = masterCore.assessDenoiseCandidate(mono, float32View(cleaned.pcm), prepared.sampleRate, sourceNoiseFloor);
+          if (!assessment.safe) { rejectedForVoice = true; continue; }
+          for (const option of options) {
+            master = runMaster(cleaned, option);
+            if (master.status === "ok") {
+              restoration = {
+                method: noiseProfile ? "learned_profile" : "adaptive", reductionDb: strength,
+                targetRmsDbfs: option.targetRmsDbfs,
+                ...(noiseProfile ? { profileStartSeconds: noiseProfile.startSample / prepared.sampleRate, profileDurationSeconds: noiseProfile.sampleCount / prepared.sampleRate } : {}),
+              };
+              break restorationAttempts;
+            }
+            if (master.abort_code !== "noise_floor" && master.abort_code !== "level") break restorationAttempts;
+          }
         }
+      }
+      if (master.status !== "ok" && rejectedForVoice) {
+        return { ok: false, reason: `${master.abort_reason ?? "Mastering stopped."} Stronger automatic cleanup was withheld to protect the voice.` };
       }
     }
 
@@ -602,6 +640,7 @@ async function masterWorkingFile(payload) {
       masteredFile: destName,
       after: master.after ?? master.before,
       rms_dbfs: master.after?.rms_dbfs ?? master.before.rms_dbfs,
+      restoration,
     };
   } catch (error) {
     return { ok: false, reason: String(error?.message ?? error) };

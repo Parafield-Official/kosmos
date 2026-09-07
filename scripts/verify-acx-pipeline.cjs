@@ -81,6 +81,40 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   const before=await snapshot(folder);assert.equal((await api.exportDeliveryPack(payload)).ok,true);assert.deepEqual(await snapshot(folder),before);
   const failed=await api.exportDeliveryPack({...payload,chapters:[{...payload.chapters[0],masteredFile:'missing.wav'}]});assert.equal(failed.ok,false);assert.deepEqual(await snapshot(folder),before);
   for(const [k,v]of Object.entries(original))assert.equal(hash(path.join(folder,k)),v);
+  // A quiet AAC/M4A import with a brief, much louder event used to get stuck:
+  // whole-file peak attenuation undid every RMS correction. Exercise import,
+  // repair, the worker, and the final encoded file for this separate case.
+  const quietTake = new Float32Array(48000 * 68);
+  for (let i = 0; i < quietTake.length; i++) {
+   const t = i / 48000;
+   quietTake[i] = 0.00003 * Math.sin(2 * Math.PI * 3100 * t);
+   if (t >= 1 && t < 67) quietTake[i] += 0.012 * Math.sin(2 * Math.PI * 220 * t);
+   if (t >= 3 && t < 3.004) quietTake[i] += 0.5 * Math.sin(Math.PI * (t - 3) / 0.004) ** 2 * Math.sin(2 * Math.PI * 1000 * t);
+  }
+  const quietWav = path.join(folder, 'quiet-source.wav');
+  fs.writeFileSync(quietWav, Buffer.from(audioCore.encodeWavPcm16(quietTake, 48000, 1)));
+  const aac = path.join(folder, 'quiet-source.m4a');
+  execFileSync(ffmpeg, ['-v', 'error', '-i', quietWav, '-ac', '2', '-c:a', 'aac', '-b:a', '128k', aac]);
+  const aacHash = hash(aac);
+  await fsp.writeFile(path.join(folder, 'audio/aac-working.wav'), await api.transcodeToWav(fs.readFileSync(aac)));
+  const workingHash = hash(path.join(folder, 'audio/aac-working.wav'));
+  const aacMaster = await api.masterWorkingFile({folder, chapterId:'aac', workingFile:'aac-working.wav', presetId:'acx'});
+  assert.equal(aacMaster.ok, true, aacMaster.reason);
+  assert.ok(aacMaster.after.rms_dbfs >= -23 && aacMaster.after.rms_dbfs <= -18);
+  assert.ok(aacMaster.after.true_peak_dbfs <= -3.2 + 1e-6);
+  const aacExport = await api.exportDeliveryPack({folder,mode:'acx',chapters:[{id:'aac',title:'Quiet AAC',mastered:true,masteredFile:aacMaster.masteredFile}]});
+  assert.equal(aacExport.ok, true, aacExport.reason);
+  const aacMp3 = path.join(aacExport.folder, aacExport.files.find(x => x.endsWith('.mp3')));
+  const decodedAacMaster = execFileSync(ffmpeg, ['-v','error','-i',aacMp3,'-f','f32le','pipe:1'], {maxBuffer:64e6});
+  const finalSamples = new Float32Array(decodedAacMaster.buffer, decodedAacMaster.byteOffset, decodedAacMaster.length / 4);
+  let aacPower = 0, aacPeak = 0;
+  for (const value of finalSamples) {aacPower += value * value; aacPeak = Math.max(aacPeak, Math.abs(value));}
+  const aacRms = 10 * Math.log10(aacPower / finalSamples.length);
+  assert.ok(aacRms >= -23 && aacRms <= -18);
+  assert.ok(20 * Math.log10(aacPeak) <= -3);
+  assert.equal(hash(aac), aacHash);
+  assert.equal(hash(path.join(folder, 'audio/aac-working.wav')), workingHash);
+  console.log(`PASS: quiet 48 kHz stereo AAC/M4A with a transient imported, mastered and exported at ${aacRms.toFixed(2)} dBFS RMS; sources preserved.`);
   console.log('PASS: anti-alias filtering, real import/master/export, ACX preset enforcement, verified format report, decoded levels, sample duration, repeat export and failure preservation.');
  }finally{await fsp.rm(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

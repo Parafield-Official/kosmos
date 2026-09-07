@@ -7982,15 +7982,21 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
   position: fixed;
   z-index: 1000;
   left: 50%;
-  top: 1rem;
+  /* Keep alerts below the titlebar and its centered Kosmos badge. The badge
+     belongs to a higher stacking context, so a larger z-index cannot fix it. */
+  top: calc(max(5rem, var(--vault-bezel-t, 5rem)) + 1rem);
   transform: translateX(-50%);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.8rem;
   max-width: min(42rem, calc(100vw - 2rem));
+  width: max-content;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
   padding: 0.75rem 1rem;
   border: 1px solid rgba(255, 211, 128, 0.55);
-  border-radius: 999px;
+  border-radius: 1rem;
   color: #fff8e8;
   background: rgba(46, 35, 25, 0.94);
   box-shadow: 0 0.6rem 2rem rgba(0, 0, 0, 0.35);

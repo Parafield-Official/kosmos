@@ -101,19 +101,22 @@ describe("ACX master chain", () => {
     })).toThrow(/finite/i);
   });
 
-  it("does not report success when true-peak limiting leaves RMS outside ACX bounds", () => {
+  it.each([0.031, 1])("masters quiet narration with an isolated peak at %s seconds without turning down the entire take", (peakSeconds) => {
     const sampleRate = 44_100;
     const samples = new Float32Array(sampleRate * 3);
     for (let index = 0; index < samples.length; index += 1) {
       const inSpeech = index >= sampleRate / 2 && index < sampleRate * 2.5;
       samples[index] = inSpeech ? 0.03 * Math.sin((2 * Math.PI * 220 * index) / sampleRate) : 0.0001;
     }
-    samples[sampleRate] = 1;
+    // Include a startup impulse before narration, as in the second iPhone take.
+    samples[Math.round(sampleRate * peakSeconds)] = 1;
 
     const result = masterPcm({ samples, sampleRate, channels: 1 });
 
-    expect(result.status).toBe("aborted");
-    expect(result.abort_reason).toMatch(/loudness|true-peak/i);
+    expect(result.status).toBe("ok");
+    expect(result.after?.checks.rms).toBe("pass");
+    expect(result.after?.true_peak_dbfs).toBeLessThanOrEqual(-3.2 + 1e-6);
+    expect(result.after?.rms_dbfs).toBeGreaterThanOrEqual(-23);
   });
 
   it("does not recycle a speech fragment as room tone when the source pads are digital zero", () => {
@@ -131,6 +134,16 @@ describe("ACX master chain", () => {
     expect(Math.max(...head.map((value) => Math.abs(value)))).toBeLessThan(0.001);
     expect(head.some((value) => value < 0)).toBe(true);
     expect(head.some((value) => value > 0)).toBe(true);
+  });
+
+  it("still refuses a level target that cannot fit below the peak ceiling", () => {
+    const result = masterPcm({
+      samples: audioBabbleFixture(), sampleRate: 44_100, channels: 1,
+    }, { limiterCeilingDbfs: -30 });
+    expect(result.status).toBe("aborted");
+    expect(result.abort_code).toBe("level");
+    expect(result.abort_reason).toMatch(/RMS.*peaks.*Review/);
+    expect(result.samples).toHaveLength(0);
   });
 
   it("adds valid room tone when narration starts and ends at the recording edges", () => {
