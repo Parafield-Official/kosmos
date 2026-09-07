@@ -50,7 +50,20 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   const wav=await api.transcodeToWav(fs.readFileSync(input));
   for(const file of ['original.wav','working.wav'])await fsp.writeFile(path.join(folder,'audio',file),wav);
   const original=await snapshot(folder);
-  const master=await api.masterWorkingFile({folder,chapterId:'one',workingFile:'working.wav',presetId:'acx',targetRmsDbfs:-20});
+  // The desktop main loop must keep serving window/input events during mastering.
+  let lastHeartbeat = performance.now(), maxMasteringDelay = 0;
+  const heartbeat = setInterval(() => {
+    const now = performance.now();
+    maxMasteringDelay = Math.max(maxMasteringDelay, now - lastHeartbeat);
+    lastHeartbeat = now;
+  }, 20);
+  let master;
+  try {
+    master=await api.masterWorkingFile({folder,chapterId:'one',workingFile:'working.wav',presetId:'acx',targetRmsDbfs:-20});
+    maxMasteringDelay = Math.max(maxMasteringDelay, performance.now() - lastHeartbeat);
+  } finally { clearInterval(heartbeat); }
+  console.log(`Mastering main-loop maximum delay: ${Math.round(maxMasteringDelay)} ms`);
+  assert.ok(maxMasteringDelay < 750, 'mastering blocked the desktop event loop for 750 ms or more');
   assert.equal(master.ok,true,master.reason);
   const payload={folder,mode:'acx',presetId:'ebu-r128',chapters:[{id:'one',title:'Narration',mastered:true,masteredFile:master.masteredFile}]};
   const first=await api.exportDeliveryPack(payload);assert.equal(first.ok,true,first.reason);

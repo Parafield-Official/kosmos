@@ -5152,7 +5152,68 @@
 }
 
 .quest-master-orb:disabled {
-  cursor: wait;
+  cursor: default;
+}
+
+.quest-master-spinner {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke-width: 2.5;
+  pointer-events: none;
+}
+
+.quest-master-spinner-track { stroke: rgba(103, 79, 29, 0.14); }
+.quest-master-spinner-arc {
+  stroke: #927028;
+  stroke-linecap: round;
+  stroke-dasharray: 75 202;
+  transform-origin: center;
+  animation: quest-master-spin 1.6s linear infinite;
+}
+
+.quest-master-busy-face {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.quest-master-busy-bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  height: 1.3rem;
+}
+
+.quest-master-busy-bars i {
+  width: 0.18rem;
+  height: 100%;
+  border-radius: 99px;
+  background: #927028;
+  animation: quest-master-level 1s ease-in-out infinite alternate;
+}
+
+.quest-master-progress {
+  display: grid;
+  gap: 0.3rem;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.quest-master-progress strong { color: #fff; font-weight: 600; }
+.quest-master-progress span { color: rgba(247, 242, 235, 0.75); }
+
+@keyframes quest-master-spin { to { transform: rotate(360deg); } }
+@keyframes quest-master-level { from { transform: scaleY(0.3); } to { transform: scaleY(1); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-master-spinner-arc,
+  .quest-master-busy-bars i { animation: none; }
 }
 
 .quest-master-orb.is-busy {
