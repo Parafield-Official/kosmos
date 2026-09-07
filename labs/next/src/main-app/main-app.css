@@ -2756,6 +2756,9 @@
   z-index: 2;
   height: 100%;
   overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
 }
 
 .ma-teleprompter-scroll::-webkit-scrollbar {
@@ -2770,14 +2773,14 @@
 .ma-teleprompter-inner {
   width: min(42rem, calc(100% - 3.4rem));
   margin: 0 auto;
-  padding: 38vh 0 46vh;
+  padding: 38vh 0 max(46vh, var(--tp-tail-space, 0px));
   font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
   line-height: 1.55;
   color: rgba(255, 255, 255, 0.88);
 }
 
 .ma-record-embed .ma-teleprompter-inner {
-  padding: 6.5rem 0 9rem;
+  padding: 6.5rem 0 max(9rem, var(--tp-tail-space, 0px));
 }
 
 .ma-tp-line {
@@ -3144,7 +3147,8 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 .ma-teleprompter-guide {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 3;
+  border-radius: inherit;
   overflow: hidden;
   pointer-events: none;
 }
@@ -3528,7 +3532,10 @@ html[data-reading-font="hyperlegible"] .ma-teleprompter-inner {
 }
 
 .ma-review-prose {
-  padding: 1.1rem 1.2rem 1.25rem;
+  padding: 1.1rem 1.2rem max(1.25rem, var(--tp-tail-space, 0px));
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scroll-behavior: auto;
   font-size: 1.05rem;
   line-height: 1.65;
   user-select: text;

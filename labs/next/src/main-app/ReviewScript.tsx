@@ -11,6 +11,7 @@ import type { TranscriptWord } from "../../../../src/core/proof/align";
 import { flagKindLabel } from "./flag-kind";
 import { tokenIndexAtTime, tokenSpanFromSelection } from "./review-timing";
 import { TeleprompterFocus } from "./TeleprompterFocus";
+import { useTeleprompter } from "./useTeleprompter";
 import type { ChapterPickup, PromptHighlightMode, PromptTheme } from "./store";
 
 /**
@@ -50,10 +51,6 @@ export function ReviewScript({
   onRedo: (pickup: ChapterPickup) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const followRef = useRef(true);
-  const autoScrollRef = useRef(false);
-  const nowTokenRef = useRef<number | null>(null);
-  const [lostPlace, setLostPlace] = useState(false);
   const tape = playTranscript ?? transcript;
   const tokens = useMemo(() => tokenizeManuscript(manuscript), [manuscript]);
   const blocks = useMemo(() => scriptBlocks(manuscript, tokens), [manuscript, tokens]);
@@ -116,29 +113,6 @@ export function ReviewScript({
     [focusedPickupId, pickups],
   );
 
-  const focusBand = useMemo(() => {
-    if (!focused || typeof focused.manuscript_index !== "number" || transcript.length === 0) {
-      return focused && typeof focused.manuscript_index === "number"
-        ? { from: focused.manuscript_index, to: focused.manuscript_index }
-        : null;
-    }
-    if (highlight === "word") {
-      return { from: focused.manuscript_index, to: focused.manuscript_index };
-    }
-    try {
-      const ranges = buildNarrationRedoRanges({
-        manuscript,
-        transcript,
-        fromToken: focused.manuscript_index,
-        toToken: focused.manuscript_index,
-      });
-      const range = highlight === "paragraph" ? ranges.paragraph : ranges.sentence;
-      return { from: range.fromToken, to: range.toToken };
-    } catch {
-      return { from: focused.manuscript_index, to: focused.manuscript_index };
-    }
-  }, [focused, highlight, manuscript, transcript]);
-
   const playAligned = useMemo(() => {
     if (!playKey || tape.length === 0) {
       return [];
@@ -151,30 +125,7 @@ export function ReviewScript({
     [playAligned, playAt],
   );
 
-  const playBand = useMemo(() => {
-    if (playToken == null) {
-      return null;
-    }
-    if (highlight === "word") {
-      return { from: playToken, to: playToken };
-    }
-    try {
-      const ranges = buildNarrationRedoRanges({
-        manuscript,
-        transcript: tape,
-        fromToken: playToken,
-        toToken: playToken,
-      });
-      const range = highlight === "paragraph" ? ranges.paragraph : ranges.sentence;
-      return { from: range.fromToken, to: range.toToken };
-    } catch {
-      return { from: playToken, to: playToken };
-    }
-  }, [highlight, manuscript, playToken, tape]);
-
   const nowToken = playToken ?? (typeof focused?.manuscript_index === "number" ? focused.manuscript_index : null);
-  const nowBand = playBand ?? focusBand;
-  nowTokenRef.current = nowToken;
 
   const tokenEl = useCallback((index: number | null) => {
     if (index == null) {
@@ -183,93 +134,37 @@ export function ReviewScript({
     return rootRef.current?.querySelector<HTMLElement>(`[data-token="${index}"]`) ?? null;
   }, []);
 
-  const wordOffScreen = useCallback(
-    (index: number | null) => {
-      const root = rootRef.current;
-      const el = tokenEl(index);
-      if (!root || !el) {
-        return false;
-      }
-      const rootRect = root.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      const pad = root.clientHeight * 0.2;
-      return elRect.bottom < rootRect.top + pad || elRect.top > rootRect.bottom - pad;
-    },
-    [tokenEl],
-  );
-
-  const scrollToToken = useCallback(
-    (index: number | null) => {
-      const root = rootRef.current;
-      const el = tokenEl(index);
-      if (!root || !el) {
-        return;
-      }
-      const rootRect = root.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      const bandY = root.clientHeight * 0.42;
-      autoScrollRef.current = true;
-      root.scrollTop += elRect.top - rootRect.top - bandY + elRect.height / 2;
-      window.requestAnimationFrame(() => {
-        autoScrollRef.current = false;
-      });
-    },
-    [tokenEl],
-  );
+  const paragraph = useMemo(() => {
+    for (const block of blocks) {
+      const indices = block.parts.flatMap((part) => part.tokenIndex == null ? [] : [part.tokenIndex]);
+      const from = indices[0];
+      const to = indices.at(-1);
+      if (nowToken != null && from != null && to != null && nowToken >= from && nowToken <= to) return { from, to };
+    }
+    return null;
+  }, [blocks, nowToken]);
+  const promptLayoutKey = `${manuscript}:${fontPx}:${lineSpacing}`;
+  const { band: nowBand, detached: lostPlace, locate } = useTeleprompter({
+    containerRef: rootRef, index: nowToken, paragraph, mode: highlight,
+    getWord: tokenEl, layoutKey: promptLayoutKey,
+  });
 
   const locatePlay = useCallback(() => {
-    if (!playKey) {
+    if (nowToken == null) {
       return;
     }
-    followRef.current = true;
-    setLostPlace(false);
-    scrollToToken(nowTokenRef.current);
-  }, [playKey, scrollToToken]);
+    locate();
+  }, [nowToken, locate]);
 
   useEffect(() => {
-    if (!playKey) {
-      followRef.current = true;
-      setLostPlace(false);
-      return;
-    }
-    followRef.current = true;
-    setLostPlace(false);
-  }, [playKey]);
+    locate();
+  }, [chapterId, playKey, locate]);
 
   useEffect(() => {
-    if (playKey && nowToken != null) {
-      if (!followRef.current) {
-        setLostPlace(wordOffScreen(nowToken));
-        return;
-      }
-      const frame = window.requestAnimationFrame(() => scrollToToken(nowToken));
-      return () => window.cancelAnimationFrame(frame);
-    }
     if (!playKey && focusedPickupId) {
-      const el = rootRef.current?.querySelector(`[data-pickup="${focusedPickupId}"]`);
-      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      locate();
     }
-  }, [focusedPickupId, nowToken, playKey, scrollToToken, wordOffScreen]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root || !playKey) {
-      return;
-    }
-    function onScroll() {
-      if (autoScrollRef.current) {
-        return;
-      }
-      if (wordOffScreen(nowTokenRef.current)) {
-        followRef.current = false;
-        setLostPlace(true);
-      } else {
-        setLostPlace(false);
-      }
-    }
-    root.addEventListener("scroll", onScroll, { passive: true });
-    return () => root.removeEventListener("scroll", onScroll);
-  }, [playKey, wordOffScreen]);
+  }, [focusedPickupId, playKey, locate]);
 
   if (tokens.length === 0) {
     return null;
@@ -308,8 +203,19 @@ export function ReviewScript({
       ) : null}
       {fail ? <p className="ma-error">{fail}</p> : null}
       <div className={`ma-review-prompt-wrap is-${theme}`}>
+        <TeleprompterFocus
+          containerRef={rootRef}
+          nowIndex={nowToken}
+          from={nowBand?.from ?? null}
+          to={nowBand?.to ?? null}
+          getWord={tokenEl}
+          mode={highlight}
+          layoutKey={promptLayoutKey}
+        />
         <div
           ref={rootRef}
+          tabIndex={0}
+          aria-label="Script"
           className={`ma-review-prose neu-card is-${theme}`}
           style={{
             ...(fontPx ? { fontSize: `${fontPx}px` } : {}),
@@ -317,52 +223,47 @@ export function ReviewScript({
           }}
           onMouseUp={onMouseUp}
         >
-          <TeleprompterFocus
-            containerRef={rootRef}
-            nowIndex={nowToken}
-            from={nowBand?.from ?? nowToken}
-            to={nowBand?.to ?? nowToken}
-            getWord={(index) => tokenEl(index)}
-          />
-          {blocks.map((block, index) => (
-            <p
-              key={index}
-              className={
-                chapterTitle && isSpokenChapterHeading(block.parts.map((part) => part.text).join(""), chapterTitle)
-                  ? "is-heading"
-                  : undefined
-              }
-            >
-              {block.parts.map((part, partIndex) =>
-                part.tokenIndex === undefined ? (
-                  <span key={partIndex}>{part.text}</span>
-                ) : (
-                  <FlagWord
-                    key={partIndex}
-                    tokenIndex={part.tokenIndex}
-                    text={part.text}
-                    selected={Boolean(range && part.tokenIndex >= range.from && part.tokenIndex <= range.to)}
-                    pickup={pickupByToken.get(part.tokenIndex)}
-                    focused={Boolean(
-                      pickupByToken.get(part.tokenIndex) &&
-                        pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
-                    )}
-                    isNow={nowToken === part.tokenIndex}
-                    inBand={Boolean(
-                      nowBand && part.tokenIndex >= nowBand.from && part.tokenIndex <= nowBand.to,
-                    )}
-                    onFlag={(pickup) => onRedo(pickup)}
-                  />
-                ),
-              )}
-            </p>
-          ))}
+          <div data-prompt-content>
+            {blocks.map((block, index) => (
+              <p
+                key={index}
+                className={
+                  chapterTitle && isSpokenChapterHeading(block.parts.map((part) => part.text).join(""), chapterTitle)
+                    ? "is-heading"
+                    : undefined
+                }
+              >
+                {block.parts.map((part, partIndex) =>
+                  part.tokenIndex === undefined ? (
+                    <span key={partIndex}>{part.text}</span>
+                  ) : (
+                    <FlagWord
+                      key={partIndex}
+                      tokenIndex={part.tokenIndex}
+                      text={part.text}
+                      selected={Boolean(range && part.tokenIndex >= range.from && part.tokenIndex <= range.to)}
+                      pickup={pickupByToken.get(part.tokenIndex)}
+                      focused={Boolean(
+                        pickupByToken.get(part.tokenIndex) &&
+                          pickupByToken.get(part.tokenIndex)?.id === focusedPickupId,
+                      )}
+                      isNow={highlight === "word" && nowToken === part.tokenIndex}
+                      inBand={Boolean(
+                        nowBand && part.tokenIndex >= nowBand.from && part.tokenIndex <= nowBand.to,
+                      )}
+                      onFlag={(pickup) => onRedo(pickup)}
+                    />
+                  ),
+                )}
+              </p>
+            ))}
+          </div>
         </div>
         <button
           type="button"
           className={`ma-locate-speak${lostPlace ? " is-lost" : ""}`}
           onClick={locatePlay}
-          aria-disabled={!playKey}
+          disabled={nowToken == null}
           title="Locate the word being played"
           aria-label="Locate the word being played"
         >

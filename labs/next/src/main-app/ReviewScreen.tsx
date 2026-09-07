@@ -15,6 +15,10 @@ import {
   readPromptTheme,
   writeBoothFontPx,
   writePromptTheme,
+  readPromptHighlight,
+  writePromptHighlight,
+  readPromptLineSpacing,
+  writePromptLineSpacing,
 } from "./reading-prefs";
 import { originalChapterTranscript, workingChapterTranscript } from "./review-timing";
 import { addSuppressedWord, suppressLabel } from "./suppress";
@@ -61,10 +65,10 @@ export function ReviewScreen({
   const [playing, setPlaying] = useState<string | null>(null);
   const [playAt, setPlayAt] = useState<number | null>(null);
   const [manuscript, setManuscript] = useState("");
-  const [highlight, setHighlight] = useState<PromptHighlightMode>("word");
+  const [highlight, setHighlight] = useState<PromptHighlightMode>(readPromptHighlight);
   const [theme, setTheme] = useState(readPromptTheme);
   const [fontPx, setFontPx] = useState(readBoothFontPx);
-  const [lineSpacing, setLineSpacing] = useState(1.55);
+  const [lineSpacing, setLineSpacing] = useState(readPromptLineSpacing);
   const [readingOpen, setReadingOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [moreId, setMoreId] = useState<string | null>(null);
@@ -364,8 +368,14 @@ export function ReviewScreen({
           <BoothReadingPanel
             highlight={highlight}
             lineSpacing={lineSpacing}
-            onHighlight={setHighlight}
-            onSpacing={setLineSpacing}
+            onHighlight={(value) => {
+              setHighlight(value);
+              writePromptHighlight(value);
+            }}
+            onSpacing={(value) => {
+              setLineSpacing(value);
+              writePromptLineSpacing(value);
+            }}
             theme={theme}
             onTheme={(value) => {
               setTheme(value);

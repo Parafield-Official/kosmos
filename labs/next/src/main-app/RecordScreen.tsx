@@ -36,6 +36,7 @@ import { ConfirmAlert } from "./ConfirmAlert";
 import { alignedManuscriptTokens } from "../../../../src/core/proof/selection";
 import { TapePlayer } from "./TapePlayer";
 import { TeleprompterFocus } from "./TeleprompterFocus";
+import { useTeleprompter } from "./useTeleprompter";
 import {
   applyChapterPickup,
   applyOriginalTape,
@@ -49,7 +50,10 @@ import {
   type PromptHighlightMode,
   type RecordedWord,
 } from "./store";
-import { readPromptTheme, readReadingFont, writePromptTheme, readBoothFontPx, writeBoothFontPx } from "./reading-prefs";
+import {
+  readPromptTheme, readReadingFont, writePromptTheme, readBoothFontPx, writeBoothFontPx,
+  readPromptHighlight, writePromptHighlight, readPromptLineSpacing, writePromptLineSpacing,
+} from "./reading-prefs";
 import { pickupIsSuppressed } from "./suppress";
 import { DebugFinishTakeButton } from "./DebugFinishTakeButton";
 import {
@@ -58,51 +62,19 @@ import {
   coverageOf,
   encodePcmWav,
   float32ToBase64,
-  highlightBand,
   isSpokenChapterHeading,
-  measureRows,
   mergeRecordedWords,
   paragraphsFromHtml,
   resumeSecondsOf,
 } from "./booth";
 import { originalChapterTranscript, recordedWordAtTime, tokenIndexAtTime, workingChapterTranscript } from "./review-timing";
 
-const HIGHLIGHT_KEY = "kosmos-booth-highlight";
-const SPACING_KEY = "kosmos-booth-spacing";
 const MIC_KEY = "kosmos-booth-mic";
 const TARGET_RATE = 16_000;
 const WHISPER_WINDOW_SECONDS = 1.6;
 // Page-following advances whole words, so polling it at display refresh rate only
 // burns renderer time without making the highlight look smoother.
 const LEAD_TICK_MS = 50;
-
-function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
-  try {
-    const value = window.localStorage.getItem(key);
-    if (value && (allowed as readonly string[]).includes(value)) {
-      return value as T;
-    }
-  } catch {
-    // Keep the original default.
-  }
-  return fallback;
-}
-
-function readHighlight(): PromptHighlightMode {
-  return readStored(HIGHLIGHT_KEY, ["word", "line", "paragraph"] as const, "line");
-}
-
-function readSpacing(): number {
-  try {
-    const value = Number(window.localStorage.getItem(SPACING_KEY));
-    if (value === 1.35 || value === 1.55 || value === 1.8) {
-      return value;
-    }
-  } catch {
-    // Keep the original default.
-  }
-  return 1.55;
-}
 
 async function playPunchCue(samples: Float32Array, sampleRate: number, signal?: AbortSignal): Promise<void> {
   if (samples.length === 0) {
@@ -193,11 +165,11 @@ export function RecordScreen({
     ),
     [chapter?.pickups],
   );
-  const [highlight, setHighlight] = useState<PromptHighlightMode>(readHighlight);
+  const [highlight, setHighlight] = useState<PromptHighlightMode>(readPromptHighlight);
   const [readingFont] = useState(readReadingFont);
   const [theme, setTheme] = useState(readPromptTheme);
   const [boothFontPx, setBoothFontPx] = useState(readBoothFontPx);
-  const [lineSpacing, setLineSpacing] = useState(readSpacing);
+  const [lineSpacing, setLineSpacing] = useState(readPromptLineSpacing);
   const [inputId, setInputId] = useState(() => {
     try {
       return window.localStorage.getItem(MIC_KEY) ?? "";
@@ -221,16 +193,12 @@ export function RecordScreen({
   const [followHint, setFollowHint] = useState("Voice follow starts when you record.");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [workingUrl, setWorkingUrl] = useState<string | null>(null);
-  const [band, setBand] = useState<{ from: number; to: number } | null>(null);
   const [readingOpen, setReadingOpen] = useState(false);
-  const [lostPlace, setLostPlace] = useState(false);
   const [warn, setWarn] = useState<"start-over" | "delete-tape" | null>(null);
 
   const promptRef = useRef<HTMLDivElement>(null);
   const wordRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
   const wordRefCallbacks = useRef<Map<number, (node: HTMLSpanElement | null) => void>>(new Map());
-  const followLiveRef = useRef(true);
-  const autoScrollRef = useRef(false);
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
@@ -398,41 +366,21 @@ export function RecordScreen({
     };
   }, []);
 
-  const wordOffScreen = useCallback((index: number) => {
-    const root = promptRef.current;
-    const el = wordRefs.current.get(index) ?? wordRefs.current.get(Math.max(0, index - 1));
-    if (!root || !el) {
-      return false;
-    }
-    const rootRect = root.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const pad = root.clientHeight * 0.2;
-    return elRect.bottom < rootRect.top + pad || elRect.top > rootRect.bottom - pad;
-  }, []);
-
-  const scrollToCursor = useCallback((index: number) => {
-    const root = promptRef.current;
-    const el = wordRefs.current.get(index) ?? wordRefs.current.get(Math.max(0, index - 1));
-    if (!root || !el) {
-      return;
-    }
-    const rootRect = root.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-    const bandY = root.clientHeight * 0.42;
-    autoScrollRef.current = true;
-    root.scrollTop += elRect.top - rootRect.top - bandY + elRect.height / 2;
-    window.requestAnimationFrame(() => {
-      autoScrollRef.current = false;
-    });
-  }, []);
-
-  const locateSpeak = useCallback(() => {
-    followLiveRef.current = true;
-    setLostPlace(false);
-    scrollToCursor(cursorRef.current);
-  }, [scrollToCursor]);
-
   const getPromptWord = useCallback((index: number) => wordRefs.current.get(index) ?? null, []);
+  // The matcher may report completion at wordCount; render the final word.
+  const displayCursor = script.expected.length ? Math.min(cursor, script.expected.length - 1) : null;
+  const activeParagraph = script.paragraphs.find((para) =>
+    displayCursor != null && displayCursor >= para.firstWord && displayCursor < para.firstWord + para.wordCount);
+  const promptLayoutKey = `${chapterHtml}:${boothFontPx}:${lineSpacing}:${readingFont}`;
+  const { band, detached: lostPlace, locate } = useTeleprompter({
+    containerRef: promptRef,
+    index: displayCursor,
+    paragraph: activeParagraph ? { from: activeParagraph.firstWord, to: activeParagraph.firstWord + activeParagraph.wordCount - 1 } : null,
+    mode: highlight,
+    getWord: getPromptWord,
+    layoutKey: promptLayoutKey,
+  });
+  const locateSpeak = useCallback(() => locate(), [locate]);
 
   const syncCursorFromTape = useCallback((seconds: number, take: "original" | "working") => {
     if (recordingRef.current) {
@@ -450,67 +398,15 @@ export function RecordScreen({
     if (index == null) {
       return;
     }
-    followLiveRef.current = true;
     cursorRef.current = index;
     setCursor(index);
   }, []);
 
-  const updateBand = useCallback(
-    (wordIndex: number) => {
-      const para = script.paragraphs.find(
-        (item) => wordIndex >= item.firstWord && wordIndex < item.firstWord + item.wordCount,
-      ) ?? script.paragraphs[script.paragraphs.length - 1];
-      if (!para) {
-        setBand(null);
-        return;
-      }
-      const tops: Array<number | null> = [];
-      for (let index = para.firstWord; index < para.firstWord + para.wordCount; index += 1) {
-        tops.push(wordRefs.current.get(index)?.getBoundingClientRect().top ?? null);
-      }
-      setBand(highlightBand(highlight, wordIndex, para, measureRows(para, tops)));
-    },
-    [highlight, script.paragraphs],
-  );
-
   useEffect(() => {
-    updateBand(cursor);
-    if (!followLiveRef.current) {
-      setLostPlace(wordOffScreen(cursor));
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => scrollToCursor(cursor));
-    return () => window.cancelAnimationFrame(frame);
-  }, [cursor, highlight, chapterHtml, recording, paused, scrollToCursor, updateBand, wordOffScreen]);
+    if (recording && !paused) locate();
+  }, [recording, paused, locate]);
 
-  useEffect(() => {
-    const root = promptRef.current;
-    if (!root) {
-      return;
-    }
-    function onScroll() {
-      if (autoScrollRef.current) {
-        return;
-      }
-      if (wordOffScreen(cursorRef.current)) {
-        followLiveRef.current = false;
-        setLostPlace(true);
-      } else {
-        setLostPlace(false);
-      }
-    }
-    root.addEventListener("scroll", onScroll, { passive: true });
-    return () => root.removeEventListener("scroll", onScroll);
-  }, [chapterHtml, wordOffScreen]);
-
-  useEffect(() => {
-    if (!recording) {
-      return;
-    }
-    followLiveRef.current = true;
-    setLostPlace(false);
-    scrollToCursor(cursorRef.current);
-  }, [recording, scrollToCursor]);
+  useEffect(() => { locate(); }, [chapterId, locate]);
 
   const filePickup = useCallback(
     (pickup: ChapterPickup) => {
@@ -762,7 +658,7 @@ export function RecordScreen({
     setHalt(null);
     setPunchStatus("idle");
     setCursor(startIndex);
-    scrollToCursor(startIndex);
+    locate(startIndex);
 
     setFollowHint("Starting voice follow…");
     let streaming = false;
@@ -1076,7 +972,7 @@ export function RecordScreen({
     setPaused(false);
     onChange(clearOriginalTape(projectRef.current, chapterId));
     setCursor(0);
-    scrollToCursor(0);
+    locate(0);
     setFollowHint("Original tape cleared. Start recording from the first word.");
     await startRecordingFromBeginning();
   }
@@ -1104,6 +1000,7 @@ export function RecordScreen({
       return;
     }
     setCursor(index);
+    cursorRef.current = index;
     const current = chapterRef.current;
     if (current) {
       onChange(
@@ -1115,19 +1012,13 @@ export function RecordScreen({
         }),
       );
     }
-    followLiveRef.current = true;
-    setLostPlace(false);
-    scrollToCursor(index);
+    locate(index);
     setFollowHint("Continue will record from this word onto the original tape.");
   }
 
   function setHighlightMode(mode: PromptHighlightMode) {
     setHighlight(mode);
-    try {
-      window.localStorage.setItem(HIGHLIGHT_KEY, mode);
-    } catch {
-      // Non-fatal.
-    }
+    writePromptHighlight(mode);
   }
 
   function persistChoice(key: string, value: string) {
@@ -1242,19 +1133,21 @@ export function RecordScreen({
 
       <section className="ma-flow-block ma-flow-prompt" aria-label="Teleprompter">
         <div className={`ma-teleprompter is-${theme} font-${readingFont}`} style={{ fontSize: `${boothFontPx}px` }}>
-          <div className="ma-teleprompter-scroll" ref={promptRef}>
-            <TeleprompterFocus
-              containerRef={promptRef}
-              nowIndex={cursor}
-              from={highlight === "word" ? cursor : (band?.from ?? cursor)}
-              to={highlight === "word" ? cursor : (band?.to ?? cursor)}
-              getWord={getPromptWord}
-            />
-            <div className="ma-teleprompter-inner" style={{ lineHeight: lineSpacing }}>
+          <TeleprompterFocus
+            containerRef={promptRef}
+            nowIndex={displayCursor}
+            from={band?.from ?? null}
+            to={band?.to ?? null}
+            getWord={getPromptWord}
+            mode={highlight}
+            layoutKey={promptLayoutKey}
+          />
+          <div className="ma-teleprompter-scroll" ref={promptRef} tabIndex={0} aria-label="Script">
+            <div className="ma-teleprompter-inner" data-prompt-content style={{ lineHeight: lineSpacing }}>
               {script.paragraphs.length ? (
                 script.paragraphs.map((para, paraIndex) => {
                   let word = para.firstWord;
-                  const paraCurrent = cursor >= para.firstWord && cursor < para.firstWord + para.wordCount;
+                  const paraCurrent = displayCursor != null && displayCursor >= para.firstWord && displayCursor < para.firstWord + para.wordCount;
                   const heading = isSpokenChapterHeading(
                     para.tokens.map((token) => token.text).join(""),
                     chapter.title,
@@ -1280,7 +1173,7 @@ export function RecordScreen({
                         }
                         const index = word;
                         word += 1;
-                        const isNow = highlight === "word" && index === cursor;
+                        const isNow = highlight === "word" && index === displayCursor;
                         const covered = highlight !== "word" && inBand(index);
                         const flagged = flaggedWordIndices.has(index);
                         const haltedHere = halt?.expectedIndex === index;
@@ -1288,6 +1181,7 @@ export function RecordScreen({
                           <span
                             key={tokenIndex}
                             ref={wordRef(index)}
+                            data-token={index}
                             className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
                             style={tokenMarkStyle(token)}
                             title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
@@ -1513,7 +1407,7 @@ export function RecordScreen({
             onHighlight={setHighlightMode}
             onSpacing={(value) => {
               setLineSpacing(value);
-              persistChoice(SPACING_KEY, String(value));
+              writePromptLineSpacing(value);
             }}
             theme={theme}
             onTheme={(value) => {
