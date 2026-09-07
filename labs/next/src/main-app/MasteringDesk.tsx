@@ -320,7 +320,7 @@ export function MasteringDesk({
             {compareHint ? <p className="quest-master-compare-hint">{compareHint}</p> : null}
           </div>
         </section>
-        <section className="quest-master-action">
+        <section className="quest-master-action" aria-busy={busy}>
           <p className="quest-master-kicker">{actionKicker}</p>
           <div className="quest-master-spec" role="radiogroup" aria-label="Master for">
             {SPEC_PRESET_OPTIONS.map((option) => (
@@ -330,6 +330,7 @@ export function MasteringDesk({
                 role="radio"
                 aria-checked={preset === option.value}
                 className={preset === option.value ? "is-on" : undefined}
+                disabled={busy}
                 onClick={() => {
                   writeEnginePrefs({ spec_preset_id: option.value });
                   setPreset(option.value);
@@ -358,8 +359,29 @@ export function MasteringDesk({
           >
             <span className="quest-master-orb-ring" aria-hidden="true" />
             <span className="quest-master-orb-ring is-late" aria-hidden="true" />
-            <span className="quest-master-orb-face">{busy ? "…" : chapter.mastered ? "Again" : "Master"}</span>
+            {busy ? (
+              <svg className="quest-master-spinner" viewBox="0 0 100 100" aria-hidden="true">
+                <circle className="quest-master-spinner-track" cx="50" cy="50" r="44" />
+                <circle className="quest-master-spinner-arc" cx="50" cy="50" r="44" />
+              </svg>
+            ) : null}
+            <span className="quest-master-orb-face">
+              {busy ? (
+                <span className="quest-master-busy-face">
+                  <span className="quest-master-busy-bars" aria-hidden="true">
+                    {[0, 1, 2, 3, 4].map(i => <i key={i} style={{ animationDelay: `${i * 120}ms` }} />)}
+                  </span>
+                  <span>{mastering ? "Mastering" : "Working"}</span>
+                </span>
+              ) : chapter.mastered ? "Again" : "Master"}
+            </span>
           </button>
+          {busy ? (
+            <div className="quest-master-progress" role="status" aria-live="polite">
+              <strong>{mastering ? "Mastering your audio…" : "Processing audio…"}</strong>
+              <span>Longer chapters take more time. Keep Kosmos open.</span>
+            </div>
+          ) : null}
           <div className="quest-master-more">
             {leadAction}
             {onNextChapter ? (
