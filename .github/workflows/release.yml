@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      warm_native_runtime:
+        description: "Build and save the native-runtime cache from main without publishing a release"
+        required: true
+        type: boolean
+        default: false
 
 # A release is intentionally created only from an immutable version tag.  The
 # same tagged build is signed, notarized, and published after Apple accepts it;
@@ -44,9 +51,20 @@ jobs:
             exit 1
           }
 
+      - name: Require cache warming from main
+        if: inputs.warm_native_runtime == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main' || {
+            echo 'Native-runtime caches must be warmed from main so release tags can restore them.' >&2
+            exit 1
+          }
+
   package:
     needs: authorize
     name: Package ${{ matrix.target }} ${{ matrix.arch }}
+    if: startsWith(github.ref, 'refs/tags/') || inputs.warm_native_runtime == true
     strategy:
       fail-fast: false
       matrix:
@@ -459,7 +477,7 @@ jobs:
         run: npm run build
 
       - name: Prepare Apple notarization API key
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY_B64 }}
@@ -474,7 +492,7 @@ jobs:
           echo "APPLE_API_KEY=$apple_api_key_path" >> "$GITHUB_ENV"
 
       - name: Build, sign, and submit the preserved macOS app
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -493,12 +511,12 @@ jobs:
           npx electron-builder --mac dir --${{ matrix.arch }} --publish never
 
       - name: Verify updater configuration in the signed macOS app
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: node scripts/ensure-app-update-config.cjs darwin "dist/mac-${{ matrix.arch }}/Kosmos.app"
 
       - name: Stage matching macOS FFmpeg source
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           set -euo pipefail
@@ -510,7 +528,7 @@ jobs:
           shasum -a 256 dist/notarization/FFmpeg-8.1.1-source.tar.xz > dist/notarization/FFmpeg-8.1.1-source.tar.xz.sha256
 
       - name: Package Windows installer
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         shell: bash
         env:
           # The free direct-download channel is intentionally unsigned for
@@ -521,7 +539,7 @@ jobs:
           node scripts/ensure-app-update-config.cjs win32 dist/win-unpacked
 
       - name: Upload installer artifact
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kosmos-installer-${{ matrix.target }}-${{ matrix.arch }}
@@ -535,7 +553,7 @@ jobs:
           retention-days: 7
 
       - name: Upload updater metadata artifact
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kosmos-metadata-${{ matrix.target }}-${{ matrix.arch }}
@@ -545,7 +563,7 @@ jobs:
           retention-days: 7
 
       - name: Preserve signed app while Apple processes it
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: kosmos-notarization-${{ github.run_id }}
@@ -557,6 +575,7 @@ jobs:
   notarization-status:
     name: Wait for Apple without holding a Mac runner
     needs: package
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 345
     permissions:
@@ -591,6 +610,7 @@ jobs:
     needs:
       - package
       - notarization-status
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-14
     permissions:
       contents: read
