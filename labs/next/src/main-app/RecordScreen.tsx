@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { placeWindowOnTake } from "../../../../src/core/teleprompter/window-clock";
 import { createRetainedSave } from "./retained-save";
 import { resamplePcmToMono } from "../../../../src/core/audio/resample";
 import { encodeWavPcm16 } from "../../../../src/core/audio/wav";
@@ -416,15 +417,11 @@ export function RecordScreen({
     [chapterId, onChange],
   );
 
-  const applyHeard = useCallback((words: LiveTranscriptWord[]) => {
+  const applyHeard = useCallback((words: LiveTranscriptWord[], windowStart = clockOffsetRef.current) => {
     if (!words.length || !recordingRef.current || pausedRef.current || punchBusyRef.current) {
       return;
     }
-    const shifted = words.map((word) => ({
-      ...word,
-      start: word.start + clockOffsetRef.current,
-      end: word.end + clockOffsetRef.current,
-    }));
+    const shifted = placeWindowOnTake(words, windowStart);
     const result = matchLiveWindow({
       chapterId,
       expected: expectedRef.current,
@@ -557,6 +554,10 @@ export function RecordScreen({
       return;
     }
     const count = whisperCountRef.current;
+    // Capture the window's position before awaiting recognition. The PCM count
+    // includes retained audio after a punch-in and excludes paused time.
+    const windowStart = (pcm16kCountRef.current - count) / TARGET_RATE;
+    const generation = captureGenerationRef.current;
     const samples = new Float32Array(count);
     let offset = 0;
     while (whisperBufRef.current.length) {
@@ -577,13 +578,15 @@ export function RecordScreen({
         const wav = encodePcmWav(samples, TARGET_RATE);
         const base64 = await blobToBase64(wav);
         const result = await window.kosmosNext!.transcribeHop!({ wavBase64: base64 });
-        if (result.words?.length) {
-          applyHeard(result.words);
+        if (generation === captureGenerationRef.current && result.words?.length) {
+          applyHeard(result.words, windowStart);
         }
       } catch {
-        // Follow stays on the last confirmed word.
+        if (generation === captureGenerationRef.current) {
+          setFollowHint("Voice follow missed some audio. Click the word you are reading to continue following.");
+        }
       } finally {
-        whisperBusyRef.current = false;
+        if (generation === captureGenerationRef.current) whisperBusyRef.current = false;
       }
     })();
     whisperTaskRef.current = task;
@@ -825,6 +828,9 @@ export function RecordScreen({
       await playPunchCue(cue.samples, TARGET_RATE, cueAbort.signal);
       setPunchStatus("restarting");
       const punchAt = plan.punchAtSeconds;
+      // Discard pending recognition from the audio we are about to replace.
+      captureGenerationRef.current += 1;
+      whisperBusyRef.current = false;
       if (window.kosmosNext?.restartLiveFollow) {
         const restarted = await window.kosmosNext.restartLiveFollow({ truncateToSeconds: punchAt });
         streamingRef.current = Boolean(restarted.ok && restarted.streaming);
@@ -994,6 +1000,20 @@ export function RecordScreen({
 
   function chooseResume(index: number) {
     if (recordingRef.current) {
+      if (punchBusyRef.current) return;
+      // Move only the reading cursor. Keep recording the same take, and ignore
+      // recognition still queued for audio captured before this selection.
+      matchRef.current = { cursor: index, lastHeardEnd: pcm16kCountRef.current / TARGET_RATE, recentHeard: [] };
+      resumeFromRef.current = index;
+      haltRef.current = null;
+      haltResumeRef.current = undefined;
+      setHalt(null);
+      leadRef.current = createLeadState(index, performance.now());
+      cursorRef.current = index;
+      setCursor(index);
+      locate(index);
+      scheduleLead();
+      setFollowHint("Following from the selected word. Recording continues.");
       return;
     }
     setCursor(index);
@@ -1181,7 +1201,7 @@ export function RecordScreen({
                             data-token={index}
                             className={`ma-tp-word${markClass}${isNow ? " is-now" : ""}${covered ? " in-band" : ""}${flagged ? " is-flagged" : ""}${haltedHere ? " is-halt" : ""}`}
                             style={tokenMarkStyle(token)}
-                            title={glossary?.respell ?? (glossary ? "Pronunciation" : undefined)}
+                            title={glossary?.respell ?? (recording ? "Follow from this word" : glossary ? "Pronunciation" : undefined)}
                             onClick={() => chooseResume(index)}
                           >
                             {token.text}
@@ -1366,7 +1386,7 @@ export function RecordScreen({
             </div>
           </div>
           {error ? <p className="ma-error">{error}</p> : null}
-          <p className="ma-visually-hidden">{followHint}</p>
+          <p className="ma-booth-notice" role="status">{followHint}</p>
           <DebugFinishTakeButton project={project} chapterId={chapterId} onChange={onChange} />
         </div>
       </section>
