@@ -4,19 +4,16 @@ on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      warm_native_runtime:
-        description: "Build and save the native-runtime cache from main without publishing a release"
-        required: true
-        type: boolean
-        default: false
+    branches:
+      - main
 
-# A release is intentionally created only from an immutable version tag.  The
+# A release is intentionally created only from an immutable version tag. The
 # same tagged build is signed, notarized, and published after Apple accepts it;
 # this prevents a manual preflight build from creating a second Apple
-# submission for the same version.  Use GitHub's "Re-run jobs" on that tagged
-# run if a transient service failure needs recovery.
+# submission for the same version. Pushes to main prepare and verify the native
+# cache without publishing so a later tag can restore the native tools.
+# Use GitHub's "Re-run jobs" on a tagged run if a transient service failure
+# needs recovery.
 
 permissions:
   contents: read
@@ -52,7 +49,7 @@ jobs:
           }
 
       - name: Require cache warming from main
-        if: inputs.warm_native_runtime == true
+        if: github.ref_type != 'tag'
         shell: bash
         run: |
           set -euo pipefail
@@ -64,7 +61,7 @@ jobs:
   package:
     needs: authorize
     name: Package ${{ matrix.target }} ${{ matrix.arch }}
-    if: startsWith(github.ref, 'refs/tags/') || inputs.warm_native_runtime == true
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:

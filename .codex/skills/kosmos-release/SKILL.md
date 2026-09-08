@@ -46,9 +46,8 @@ completed log before changing the workflow. Do not blame manuscript parsing or
 package metadata for a cache miss unless the cache key shows that dependency.
 
 Native caches made by a tag are scoped to that tag and cannot warm later tags.
-After merging a native-runtime recipe change into `main`, dispatch **Release
-installers** from `main` with `warm_native_runtime` enabled. That job builds and
-saves the cache without signing, publishing, or changing a release. Wait for it
+Pushes to `main` automatically build and verify the native runtime and save a
+cache available to later tags without signing, publishing, or changing a release. Wait for this run
 to succeed before creating a tag that needs the new runtime cache.
 
 Monitor the release with increasing intervals: check when it starts, after each
