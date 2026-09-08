@@ -176,6 +176,22 @@ describe("packaged renderer configuration", () => {
     expect(yaml).toMatch(/permissions:\n\s+contents:\s+read/);
   });
 
+  it("warms caches on main while restricting signing and publishing to tags", () => {
+    const workflow = require("js-yaml").load(readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8"));
+    expect(workflow.on.push.branches).toEqual(["main"]);
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    const tagGuard = "startsWith(github.ref, 'refs/tags/')";
+    for (const job of ["notarization-status", "finalize-mac", "publish", "pages-build", "pages"]) {
+      expect(workflow.jobs[job].if).toBe(tagGuard);
+    }
+    const steps = workflow.jobs.package.steps;
+    const releaseStart = steps.findIndex((step: { name: string }) => step.name === "Prepare Apple notarization API key");
+    expect(releaseStart).toBeGreaterThan(0);
+    for (const step of steps.slice(releaseStart)) {
+      expect(step.if).toContain(tagGuard);
+    }
+  });
+
   it("pins every GitHub Action to an immutable full commit SHA", () => {
     const workflows = ["ci.yml", "release.yml"]
       .map((name) => readFileSync(resolve(__dirname, `../../.github/workflows/${name}`), "utf8"))
