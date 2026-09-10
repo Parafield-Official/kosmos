@@ -60,7 +60,17 @@ jobs:
       - name: Package unsigned Intel app for execution testing
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac dir --x64 --publish never --config.mac.minimumSystemVersion=15.0
+        run: |
+          node <<'NODE'
+          const { build, Platform, Arch } = require('electron-builder');
+          build({
+            targets: Platform.MAC.createTarget(['dir'], Arch.x64),
+            publish: 'never',
+            // Execution testing has no signing secrets or Apple submission.
+            // electron-builder can invoke afterSign even without an identity.
+            config: { afterSign: null, mac: { identity: null, minimumSystemVersion: '15.0' } },
+          }).catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
       - name: Launch packaged app and verify book organization
         run: node scripts/verify-packaged-mac.cjs dist/mac/Kosmos.app x64 intel-evidence
       - name: Upload execution evidence

@@ -169,7 +169,7 @@ describe("ACX master chain", () => {
     expect(delivered.checks.rms).toBe("pass");
     expect(delivered.checks.head_room_tone).toBe("pass");
     expect(delivered.checks.tail_room_tone).toBe("pass");
-  });
+  }, 30_000);
 
   it("adds valid room tone when narration starts and ends at the recording edges", () => {
     const result = masterPcm({

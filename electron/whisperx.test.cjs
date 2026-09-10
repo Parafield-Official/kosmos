@@ -169,6 +169,8 @@ describe("WhisperX imported-audio alignment", () => {
       words: [{ text: "fallback", start: 0, end: 0.5, confidence: 0.7 }],
     };
     const result = await transcribeImportedAudio({
+      platform: "darwin",
+      arch: "arm64",
       alignWithWhisperX: async () => { throw new Error("whisperx not found"); },
       transcribeWithWhisper: async () => fallback,
     });
@@ -183,6 +185,8 @@ describe("WhisperX imported-audio alignment", () => {
   it("uses WhisperX timings without running the fallback recognizer", async () => {
     let fallbackRuns = 0;
     const result = await transcribeImportedAudio({
+      platform: "darwin",
+      arch: "arm64",
       alignWithWhisperX: async () => ({
         engine: "whisperx",
         modelPath: "/models/whisperx",
