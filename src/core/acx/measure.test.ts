@@ -2,6 +2,25 @@ import { describe, expect, it } from "vitest";
 import { measurePcm, noiseFloorListenRange, samplePeakDbfs } from "./measure";
 
 describe("ACX measurement", () => {
+  it("recognizes quiet boundary pads without treating a sub-PCM16 internal edit as the speech reference", () => {
+    const sampleRate = 1_000;
+    const tone = (seconds: number, level: number) => Array.from(
+      { length: seconds * sampleRate },
+      (_, i) => Math.SQRT2 * 10 ** (level / 20) * Math.sin(2 * Math.PI * 100 * i / sampleRate),
+    );
+    const report = measurePcm({
+      samples: Float32Array.from([
+        ...tone(1.5, -90), ...tone(0.5, -74), ...tone(1, -20),
+        ...tone(0.5, -110), ...tone(1, -20), ...tone(0.5, -74), ...tone(1.5, -90),
+      ]), sampleRate, channels: 1,
+    });
+    expect(report.noise_floor_dbfs).toBeCloseTo(-110, 1);
+    expect(report.head_room_tone_s).toBeCloseTo(1.5, 1);
+    expect(report.tail_room_tone_s).toBeCloseTo(1.5, 1);
+    expect(report.checks.head_room_tone).toBe("pass");
+    expect(report.checks.tail_room_tone).toBe("pass");
+  });
+
   it("rejects an inter-sample true peak even when the sample peak is below -3 dBFS", () => {
     // A short, band-limited edge fixture. The stored samples are below -3 dBFS,
     // but reconstruction between samples crosses the ACX ceiling.

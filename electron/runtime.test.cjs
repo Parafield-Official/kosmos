@@ -137,8 +137,9 @@ describe("runtime binary resolution", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("starts live GPU only on macOS and labels other platforms as GPU or CPU", () => {
-    expect(defaultLiveGpu("darwin")).toBe(true);
+  it("starts live Metal on Apple silicon and CPU on Intel Macs", () => {
+    expect(defaultLiveGpu("darwin", "arm64")).toBe(true);
+    expect(defaultLiveGpu("darwin", "x64")).toBe(false);
     expect(defaultLiveGpu("win32")).toBe(false);
     expect(defaultLiveGpu("linux")).toBe(false);
     expect(liveAccelerationLabel(true, "darwin")).toBe("Metal");

@@ -115,6 +115,37 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   assert.equal(hash(aac), aacHash);
   assert.equal(hash(path.join(folder, 'audio/aac-working.wav')), workingHash);
   console.log(`PASS: quiet 48 kHz stereo AAC/M4A with a transient imported, mastered and exported at ${aacRms.toFixed(2)} dBFS RMS; sources preserved.`);
+  // Float WAV edits can sit well below PCM16 precision. The old fixed -70 dB
+  // fallback pad then looked like speech, while simply lowering it could turn
+  // it into digital silence on export. Exercise both actual codecs as well.
+  const floatTake = new Float32Array(44100 * 68);
+  for (let i = 0; i < floatTake.length; i++) {
+   const t = i / 44100;
+   const speaking = (t >= 1 && t < 30) || (t >= 31 && t < 67);
+   const quietLevel = Math.floor(t / 0.02) % 2 ? -110 : -96;
+   const level = speaking ? -24 : t < 0.04 || t > 67.96 ? -74 : quietLevel;
+   floatTake[i] = Math.SQRT2 * 10 ** (level / 20) * Math.sin(2 * Math.PI * 220 * t);
+  }
+  const floatSource = path.join(folder, 'audio/float-working.wav');
+  execFileSync(ffmpeg, ['-v','error','-f','f32le','-ar','44100','-ac','1','-i','pipe:0','-c:a','pcm_f32le',floatSource], {
+   input: Buffer.from(floatTake.buffer),
+  });
+  const floatHash = hash(floatSource);
+  const floatMaster = await api.masterWorkingFile({folder,chapterId:'float',workingFile:'float-working.wav',presetId:'acx'});
+  assert.equal(floatMaster.ok, true, floatMaster.reason);
+  const reportStart = reports.length;
+  const floatExport = await api.exportDeliveryPack({folder,mode:'acx',chapters:[{id:'float',title:'Float edits',mastered:true,masteredFile:floatMaster.masteredFile}]});
+  assert.equal(floatExport.ok, true, floatExport.reason);
+  const floatReports = reports.slice(reportStart).filter(report => report.format === 'mp3');
+  assert.equal(floatReports.length, 2);
+  for (const report of floatReports) {
+   assert.equal(report.checks.rms, 'pass');
+   assert.equal(report.checks.true_peak, 'pass');
+   assert.equal(report.checks.head_room_tone, 'pass');
+   assert.equal(report.checks.tail_room_tone, 'pass');
+  }
+  assert.equal(hash(floatSource), floatHash);
+  console.log('PASS: near-silent float WAV edits mastered through PCM16 and MP3 with valid boundary pads; source preserved.');
   console.log('PASS: anti-alias filtering, real import/master/export, ACX preset enforcement, verified format report, decoded levels, sample duration, repeat export and failure preservation.');
  }finally{await fsp.rm(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

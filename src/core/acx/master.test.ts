@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { masteringStructuralFailure, masterPcm } from "./master";
 import { EBU_R128_PRESET } from "./presets";
+import { measurePcm } from "./measure";
+import { decodeWavPcm16, encodeWavPcm16 } from "../audio/wav";
 
 describe("ACX master chain", () => {
   it("gates non-speech before gain and keeps the processing order explicit", () => {
@@ -144,6 +146,29 @@ describe("ACX master chain", () => {
     expect(result.abort_code).toBe("level");
     expect(result.abort_reason).toMatch(/RMS.*peaks.*Review/);
     expect(result.samples).toHaveLength(0);
+  });
+
+  it.each([false, true])("masters floating-point narration with near-silent edited gaps through PCM16 delivery (varying=%s)", (varying) => {
+    const sampleRate = 44_100;
+    const samples = new Float32Array(sampleRate * 8);
+    for (let i = 0; i < samples.length; i += 1) {
+      const t = i / sampleRate;
+      const speaking = (t >= 1 && t < 3) || (t >= 4 && t < 7);
+      // Quiet edits vary below the PCM16 floor; faint edge audio must survive.
+      const quietLevel = varying && Math.floor(t / 0.02) % 2 ? -96 : -110;
+      const level = speaking ? -24 : t < 0.04 || t > 7.96 ? -74 : quietLevel;
+      samples[i] = Math.SQRT2 * 10 ** (level / 20) * Math.sin(2 * Math.PI * 220 * t);
+    }
+    const result = masterPcm({ samples, sampleRate, channels: 1 });
+    expect(result.status, result.abort_reason).toBe("ok");
+    expect(result.samples.length).toBeGreaterThanOrEqual(samples.length);
+    expect(result.after?.checks.head_room_tone).toBe("pass");
+    expect(result.after?.checks.tail_room_tone).toBe("pass");
+    const decoded = decodeWavPcm16(encodeWavPcm16(result.samples, sampleRate, 1));
+    const delivered = measurePcm({ ...decoded, format: "wav" });
+    expect(delivered.checks.rms).toBe("pass");
+    expect(delivered.checks.head_room_tone).toBe("pass");
+    expect(delivered.checks.tail_room_tone).toBe("pass");
   });
 
   it("adds valid room tone when narration starts and ends at the recording edges", () => {

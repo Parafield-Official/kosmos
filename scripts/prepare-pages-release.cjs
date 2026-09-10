@@ -79,9 +79,13 @@ function metadataAssetNames(info, label) {
 function preparePagesRelease({ artifacts, output, tag }) {
   assertReleaseTag(tag);
   const files = fs.readdirSync(artifacts).sort();
-  const metadataFiles = files.filter((file) => /^latest(?:-mac)?\.yml$/.test(file));
-  if (metadataFiles.length !== 2) {
-    throw new Error(`Expected Windows and macOS update metadata, found ${metadataFiles.length} files.`);
+  const splitMacMetadata = files.includes("latest-mac-arm64.yml");
+  const metadataFiles = splitMacMetadata
+    ? ["latest.yml", "latest-mac-arm64.yml", "latest-mac-x64.yml"]
+    : ["latest.yml", "latest-mac.yml"];
+  metadataFiles.sort();
+  for (const file of metadataFiles) {
+    if (!files.includes(file)) throw new Error(`Missing update metadata: ${file}`);
   }
 
   const updates = path.join(output, "updates");
@@ -91,6 +95,15 @@ function preparePagesRelease({ artifacts, output, tag }) {
     const source = fs.readFileSync(path.join(artifacts, file), "utf8");
     metadata.set(file, yaml.load(source));
     fs.writeFileSync(path.join(updates, file), rewriteUpdateMetadata(source, tag));
+  }
+  if (splitMacMetadata) {
+    const arm = metadata.get("latest-mac-arm64.yml");
+    const intel = metadata.get("latest-mac-x64.yml");
+    exactlyOne(metadataAssetNames(arm, "Apple silicon"), /^Kosmos-.+-mac-arm64\.zip$/, "Apple silicon update ZIP");
+    exactlyOne(metadataAssetNames(intel, "Intel macOS"), /^Kosmos-.+-mac-x64\.zip$/, "Intel update ZIP");
+    const merged = { ...arm, files: [...arm.files, ...intel.files] };
+    metadata.set("latest-mac.yml", merged);
+    fs.writeFileSync(path.join(updates, "latest-mac.yml"), rewriteUpdateMetadata(yaml.dump(merged), tag));
   }
 
   // The Pages job receives only the tiny updater metadata artifact. Derive
@@ -111,12 +124,20 @@ function preparePagesRelease({ artifacts, output, tag }) {
     mac: releaseAssetUrl(tag, macAsset),
     windows: releaseAssetUrl(tag, windowsAsset),
   };
+  if (splitMacMetadata) {
+    const intelAsset = exactlyOne(
+      metadataAssetNames(metadata.get("latest-mac-x64.yml"), "Intel macOS"),
+      /^Kosmos-.+-mac-x64\.dmg$/,
+      "Intel macOS disk image",
+    );
+    downloads.macIntel = releaseAssetUrl(tag, intelAsset);
+  }
   fs.writeFileSync(
     path.join(updates, "downloads.json"),
     `${JSON.stringify(downloads, null, 2)}\n`,
   );
 
-  return { publishedMetadata: metadataFiles, downloads };
+  return { publishedMetadata: splitMacMetadata ? [...metadataFiles, "latest-mac.yml"].sort() : metadataFiles, downloads };
 }
 
 if (require.main === module) {

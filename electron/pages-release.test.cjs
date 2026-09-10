@@ -77,6 +77,34 @@ describe("GitHub Pages release feed", () => {
     })).toThrow(/release tag/i);
   });
 
+  it("merges both Mac architectures and lets the actual updater select the correct ZIP", () => {
+    const artifacts = path.join(root, "artifacts");
+    const output = path.join(root, "site");
+    mkdirSync(artifacts);
+    for (const arch of ["arm64", "x64"]) {
+      writeFileSync(path.join(artifacts, `latest-mac-${arch}.yml`), yaml.dump({
+        version: "0.2.0",
+        files: ["zip", "dmg"].map(ext => ({ url: `Kosmos-0.2.0-mac-${arch}.${ext}`, sha512: `${arch}-${ext}-checksum`, size: 123 })),
+        path: `Kosmos-0.2.0-mac-${arch}.zip`, sha512: `${arch}-zip-checksum`,
+      }));
+    }
+    writeFileSync(path.join(artifacts, "latest.yml"), yaml.dump({ version: "0.2.0", files: [{ url: "Kosmos-0.2.0-win-x64.exe", sha512: "win", size: 123 }] }));
+    const { downloads } = preparePagesRelease({ artifacts, output, tag: "v0.2.0" });
+    expect(downloads.macIntel).toBe(releaseAssetUrl("v0.2.0", "Kosmos-0.2.0-mac-x64.dmg"));
+    expect(downloads.mac).toBe(releaseAssetUrl("v0.2.0", "Kosmos-0.2.0-mac-arm64.dmg"));
+    const combined = yaml.load(readFileSync(path.join(output, "updates/latest-mac.yml"), "utf8"));
+    expect(combined.files).toHaveLength(4);
+    const { MacUpdater } = require("electron-updater/out/MacUpdater");
+    const resolved = combined.files.map(info => ({ info, url: new URL(info.url) }));
+    for (const [isArm, arch] of [[true, "arm64"], [false, "x64"]]) {
+      const selected = MacUpdater.filterFilesForArch(resolved, isArm);
+      expect(selected).toHaveLength(2);
+      expect(selected.find(file => file.url.pathname.endsWith(".zip")).info.sha512).toBe(`${arch}-zip-checksum`);
+    }
+    rmSync(path.join(artifacts, "latest-mac-x64.yml"));
+    expect(() => preparePagesRelease({ artifacts, output, tag: "v0.2.0" })).toThrow(/Missing update metadata/);
+  });
+
   it("uses the release metadata feed for the Lightbox download page", () => {
     const page = readFileSync(path.join(__dirname, "../website/src/main.tsx"), "utf8");
 
