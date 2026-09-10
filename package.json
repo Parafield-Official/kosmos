@@ -154,7 +154,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "jiti": "2.7.0",
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
     "react-test-renderer": "19.2.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.6",
