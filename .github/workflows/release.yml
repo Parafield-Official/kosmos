@@ -538,9 +538,11 @@ jobs:
           # Build only the signed app directory now. The afterSign hook submits
           # it once and preserves its exact bytes; DMG/ZIP creation waits until
           # Apple's ticket is available.
-          mac_options=()
-          if [ '${{ matrix.arch }}' = x64 ]; then mac_options+=(--config.mac.minimumSystemVersion=15.0); fi
-          npx electron-builder --mac dir --${{ matrix.arch }} --publish never "${mac_options[@]}"
+          if [ '${{ matrix.arch }}' = x64 ]; then
+            npx electron-builder --mac dir --${{ matrix.arch }} --publish never --config.mac.minimumSystemVersion=15.0
+          else
+            npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+          fi
           node scripts/audit-mac-architecture.cjs "dist/${{ matrix.appDir }}/Kosmos.app/Contents/MacOS" "${{ matrix.arch }}"
           node scripts/audit-mac-architecture.cjs "dist/${{ matrix.appDir }}/Kosmos.app/Contents/Resources/bin" "${{ matrix.arch }}"
 
