@@ -53,6 +53,9 @@ describe("packaged renderer configuration", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("macos-15-intel");
     expect(yaml).toContain("scripts/prepare-intel-runtime.sh");
+    expect(yaml).toContain("if [ '${{ matrix.arch }}' = x64 ]; then");
+    expect(yaml).toContain("--config.mac.minimumSystemVersion=15.0");
+    expect(yaml).not.toContain('mac_options=()');
     const intelRuntime = readFileSync(resolve(__dirname, "../../scripts/prepare-intel-runtime.sh"), "utf8");
     expect(intelRuntime).toContain('otool -L "$library" | awk \'/libmp3lame|libmpg123/ {print $1}\'');
     expect(intelRuntime).toContain('install_name_tool -change "$dependency" "@loader_path/$(basename "$dependency")" "$library"');
