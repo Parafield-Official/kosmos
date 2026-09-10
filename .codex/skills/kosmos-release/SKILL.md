@@ -34,7 +34,7 @@ outside a restricted sandbox when available.
 
 ## Release workflow behavior
 
-The workflow packages macOS arm64 and Windows x64, verifies the staged native
+The workflow packages macOS arm64, macOS x64 (Intel), and Windows x64, verifies the staged native
 runtime, submits the macOS app for notarization, then publishes installers and
 the update feed after Apple accepts the submission. It permits one notarization
 pipeline at a time, so another release can wait by design.

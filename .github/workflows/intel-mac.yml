@@ -1,0 +1,82 @@
+name: Intel Mac compatibility
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - '.github/workflows/**'
+      - 'electron/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'src/core/acx/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intel-mac-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  intel:
+    name: Intel macOS 15 app and audio verification
+    runs-on: macos-15-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Remove Apple-silicon-only optional helpers
+        run: rm -f vendor/bin/parakeet-live vendor/bin/parakeet-server vendor/bin/libparakeet.dylib
+      - name: Restore Intel native runtime
+        id: runtime
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            vendor/bin
+            vendor/whisperx-runtime
+            .release-cache/native
+          key: kosmos-intel-v1-${{ hashFiles('scripts/prepare-intel-runtime.sh', 'scripts/markitdown_cli.py') }}
+      - name: Install JavaScript dependencies
+        run: npm ci
+      - name: Build native Intel dependencies
+        if: steps.runtime.outputs.cache-hit != 'true'
+        run: bash scripts/prepare-intel-runtime.sh
+      - name: Verify architecture and build app
+        run: |
+          uname -m
+          sw_vers
+          node scripts/audit-mac-architecture.cjs vendor/bin x64
+          npm run build
+          npm test
+      - name: Exercise real audio import, mastering, and export
+        run: node scripts/verify-acx-pipeline.cjs
+      - name: Package unsigned Intel app for execution testing
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node <<'NODE'
+          const { build, Platform, Arch } = require('electron-builder');
+          build({
+            targets: Platform.MAC.createTarget(['dir'], Arch.x64),
+            publish: 'never',
+            // Execution testing has no signing secrets or Apple submission.
+            // electron-builder can invoke afterSign even without an identity.
+            config: { afterSign: null, mac: { identity: null, minimumSystemVersion: '15.0' } },
+          }).catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
+      - name: Launch packaged app and verify book organization
+        run: node scripts/verify-packaged-mac.cjs dist/mac/Kosmos.app x64 intel-evidence
+      - name: Upload execution evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: intel-mac-evidence
+          path: intel-evidence/
+          if-no-files-found: warn

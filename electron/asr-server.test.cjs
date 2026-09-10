@@ -94,7 +94,8 @@ describe("persistent Whisper server adapter", () => {
   it("starts Whisper on CPU unless the host is macOS", () => {
     expect(new PersistentWhisperServer({ platform: "win32" }).useGpu).toBe(false);
     expect(new PersistentWhisperServer({ platform: "linux" }).useGpu).toBe(false);
-    expect(new PersistentWhisperServer({ platform: "darwin" }).useGpu).toBe(true);
+    expect(new PersistentWhisperServer({ platform: "darwin", arch: "arm64" }).useGpu).toBe(true);
+    expect(new PersistentWhisperServer({ platform: "darwin", arch: "x64" }).useGpu).toBe(false);
   });
 
   it("keeps one model-loaded child for warm and transcription requests", async () => {

@@ -44,7 +44,9 @@ attributions.
 ## Install
 
 1. Choose the Mac or Windows download from the Kosmos download page above.
-2. On macOS, open the download and drag Kosmos to Applications. Release builds
+2. On macOS, choose the download for your processor: Apple silicon (M-series)
+   or Intel. The Intel build requires macOS Sequoia 15 or later and uses CPU
+   Whisper for speech checking. Open the download and drag Kosmos to Applications. Release builds
    are Developer ID signed and notarized by Apple.
 3. On Windows, run the installer. If SmartScreen appears, choose **More info →
    Run anyway**.

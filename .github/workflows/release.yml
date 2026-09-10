@@ -69,6 +69,11 @@ jobs:
           - os: macos-14
             target: mac
             arch: arm64
+            appDir: mac-arm64
+          - os: macos-15-intel
+            target: mac
+            arch: x64
+            appDir: mac
           - os: windows-latest
             target: win
             arch: x64
@@ -87,6 +92,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Restore cached native runtime
+        if: matrix.target != 'mac' || matrix.arch != 'x64'
         id: native-runtime-cache
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
@@ -97,6 +103,21 @@ jobs:
             .release-cache/native
             .release-cache/whisperx-models
           key: kosmos-native-${{ env.NATIVE_RUNTIME_CACHE_REVISION }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/markitdown_cli.py', 'scripts/whisperx_cli.py', 'vendor/bin/**') }}
+
+      - name: Remove Apple-silicon-only optional helpers for Intel
+        if: matrix.target == 'mac' && matrix.arch == 'x64'
+        run: rm -f vendor/bin/parakeet-live vendor/bin/parakeet-server vendor/bin/libparakeet.dylib
+
+      - name: Restore cached Intel runtime
+        if: (matrix.target == 'mac' && matrix.arch == 'x64')
+        id: intel-runtime-cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            vendor/bin
+            vendor/whisperx-runtime
+            .release-cache/native
+          key: kosmos-intel-v1-${{ hashFiles('scripts/prepare-intel-runtime.sh', 'scripts/markitdown_cli.py') }}
 
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -111,7 +132,7 @@ jobs:
           python-version: "3.12"
 
       - name: Stage pinned Silero VAD cache
-        if: steps.native-runtime-cache.outputs.cache-hit != 'true'
+        if: steps.native-runtime-cache.outputs.cache-hit != 'true' && !(matrix.target == 'mac' && matrix.arch == 'x64')
         shell: bash
         run: |
           set -euo pipefail
@@ -136,7 +157,7 @@ jobs:
           test -s "$target_dir/src/silero_vad/data/silero_vad.jit"
 
       - name: Build bundled Microsoft MarkItDown helper
-        if: steps.native-runtime-cache.outputs.cache-hit != 'true'
+        if: steps.native-runtime-cache.outputs.cache-hit != 'true' && !(matrix.target == 'mac' && matrix.arch == 'x64')
         shell: bash
         run: |
           set -euo pipefail
@@ -168,7 +189,7 @@ jobs:
           chmod +x vendor/bin/markitdown* || true
 
       - name: Build bundled WhisperX faster-whisper runtime
-        if: steps.native-runtime-cache.outputs.cache-hit != 'true'
+        if: steps.native-runtime-cache.outputs.cache-hit != 'true' && !(matrix.target == 'mac' && matrix.arch == 'x64')
         shell: bash
         run: |
           set -euo pipefail
@@ -228,7 +249,7 @@ jobs:
           }
 
       - name: Prepare macOS runtime assets
-        if: runner.os == 'macOS' && steps.native-runtime-cache.outputs.cache-hit != 'true'
+        if: runner.os == 'macOS' && matrix.arch == 'arm64' && steps.native-runtime-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -392,7 +413,19 @@ jobs:
             'Microsoft MarkItDown and Python dependency notices: MARKITDOWN_THIRD_PARTY_NOTICES.txt' \
             > vendor/bin/THIRD_PARTY_NOTICES.txt
 
+      - name: Build Intel runtime
+        if: (matrix.target == 'mac' && matrix.arch == 'x64') && steps.intel-runtime-cache.outputs.cache-hit != 'true'
+        run: bash scripts/prepare-intel-runtime.sh
+
+      - name: Verify Intel runtime
+        if: (matrix.target == 'mac' && matrix.arch == 'x64')
+        run: |
+          node scripts/audit-mac-architecture.cjs vendor/bin x64
+          node scripts/audit-runtime.cjs
+          vendor/bin/markitdown --help
+
       - name: Verify staged native runtime
+        if: matrix.target != 'mac' || matrix.arch != 'x64'
         shell: bash
         run: |
           set -euo pipefail
@@ -505,12 +538,16 @@ jobs:
           # Build only the signed app directory now. The afterSign hook submits
           # it once and preserves its exact bytes; DMG/ZIP creation waits until
           # Apple's ticket is available.
-          npx electron-builder --mac dir --${{ matrix.arch }} --publish never
+          mac_options=()
+          if [ '${{ matrix.arch }}' = x64 ]; then mac_options+=(--config.mac.minimumSystemVersion=15.0); fi
+          npx electron-builder --mac dir --${{ matrix.arch }} --publish never "${mac_options[@]}"
+          node scripts/audit-mac-architecture.cjs "dist/${{ matrix.appDir }}/Kosmos.app/Contents/MacOS" "${{ matrix.arch }}"
+          node scripts/audit-mac-architecture.cjs "dist/${{ matrix.appDir }}/Kosmos.app/Contents/Resources/bin" "${{ matrix.arch }}"
 
       - name: Verify updater configuration in the signed macOS app
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         shell: bash
-        run: node scripts/ensure-app-update-config.cjs darwin "dist/mac-${{ matrix.arch }}/Kosmos.app"
+        run: node scripts/ensure-app-update-config.cjs darwin "dist/${{ matrix.appDir }}/Kosmos.app"
 
       - name: Stage matching macOS FFmpeg source
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
@@ -563,7 +600,7 @@ jobs:
         if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: kosmos-notarization-${{ github.run_id }}
+          name: kosmos-notarization-${{ github.run_id }}-${{ matrix.arch }}
           path: dist/notarization/*
           if-no-files-found: error
           compression-level: 0
@@ -571,6 +608,10 @@ jobs:
 
   notarization-status:
     name: Wait for Apple without holding a Mac runner
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
     needs: package
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -589,7 +630,7 @@ jobs:
       - name: Download preserved signed app and submission state
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: kosmos-notarization-${{ github.run_id }}
+          name: kosmos-notarization-${{ github.run_id }}-${{ matrix.arch }}
           path: notarization-staging
 
       - name: Poll the existing Apple submission
@@ -604,11 +645,21 @@ jobs:
 
   finalize-mac:
     name: Staple and package the accepted macOS app
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            arch: arm64
+            appDir: mac-arm64
+          - os: macos-15-intel
+            arch: x64
+            appDir: mac
     needs:
       - package
       - notarization-status
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: macos-14
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
@@ -627,7 +678,7 @@ jobs:
       - name: Download the exact app Apple inspected
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: kosmos-notarization-${{ github.run_id }}
+          name: kosmos-notarization-${{ github.run_id }}-${{ matrix.arch }}
           path: notarization-staging
 
       - name: Restore and staple Apple's ticket
@@ -635,9 +686,9 @@ jobs:
         run: |
           set -euo pipefail
           test -s notarization-staging/Kosmos-signed-app.zip
-          mkdir -p dist/mac-arm64
-          ditto -x -k notarization-staging/Kosmos-signed-app.zip dist/mac-arm64
-          app_path="dist/mac-arm64/Kosmos.app"
+          mkdir -p dist/${{ matrix.appDir }}
+          ditto -x -k notarization-staging/Kosmos-signed-app.zip dist/${{ matrix.appDir }}
+          app_path="dist/${{ matrix.appDir }}/Kosmos.app"
           test -d "$app_path"
           codesign --verify --deep --strict --verbose=2 "$app_path"
           stapled='false'
@@ -660,17 +711,18 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           set -euo pipefail
-          app_path="dist/mac-arm64/Kosmos.app"
+          app_path="dist/${{ matrix.appDir }}/Kosmos.app"
           npx electron-builder \
             --mac dmg zip \
-            --arm64 \
+            --${{ matrix.arch }} \
             --prepackaged "$app_path" \
             --publish never
-          dmg_files=(dist/Kosmos-*-mac-arm64.dmg)
-          zip_files=(dist/Kosmos-*-mac-arm64.zip)
+          dmg_files=(dist/Kosmos-*-mac-${{ matrix.arch }}.dmg)
+          zip_files=(dist/Kosmos-*-mac-${{ matrix.arch }}.zip)
           test "${#dmg_files[@]}" -eq 1
           test "${#zip_files[@]}" -eq 1
           test -s dist/latest-mac.yml
+          cp dist/latest-mac.yml dist/latest-mac-${{ matrix.arch }}.yml
           update_check_dir="$(mktemp -d "$RUNNER_TEMP/kosmos-update-config.XXXXXX")"
           ditto -x -k "${zip_files[0]}" "$update_check_dir"
           node scripts/ensure-app-update-config.cjs darwin "$update_check_dir/Kosmos.app"
@@ -680,7 +732,7 @@ jobs:
       - name: Upload final macOS installer artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: kosmos-installer-mac-arm64
+          name: kosmos-installer-mac-${{ matrix.arch }}
           path: |
             dist/Kosmos-*
             dist/*.blockmap
@@ -693,8 +745,8 @@ jobs:
       - name: Upload final macOS updater metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: kosmos-metadata-mac-arm64
-          path: dist/latest-mac.yml
+          name: kosmos-metadata-mac-${{ matrix.arch }}
+          path: dist/latest-mac-${{ matrix.arch }}.yml
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -722,6 +774,17 @@ jobs:
           path: release-artifacts
           merge-multiple: true
           pattern: kosmos-metadata-*
+
+      - name: Check out release source for metadata merging
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: release-source
+
+      - name: Merge architecture-specific updater metadata
+        run: |
+          npm ci --ignore-scripts --prefix release-source
+          node release-source/scripts/prepare-pages-release.cjs release-artifacts release-metadata "$GITHUB_REF_NAME"
+          cp release-metadata/updates/latest-mac.yml release-artifacts/latest-mac.yml
 
       - name: Create checksums
         working-directory: release-artifacts

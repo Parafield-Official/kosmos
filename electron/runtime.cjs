@@ -46,9 +46,9 @@ function resolveRuntimeBinary({
   return name;
 }
 
-/** GPU/Metal is proven on macOS. Other platforms start on CPU. */
-function defaultLiveGpu(platform = process.platform) {
-  return platform === "darwin";
+/** The Intel release bundles CPU Whisper; Metal is used on Apple silicon. */
+function defaultLiveGpu(platform = process.platform, arch = process.arch) {
+  return platform === "darwin" && arch === "arm64";
 }
 
 function liveAccelerationLabel(useGpu, platform = process.platform) {
