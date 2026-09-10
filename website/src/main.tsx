@@ -379,12 +379,12 @@ function DownloadPage({ downloads }: { downloads: ReleaseDownloads }) {
       <section id="mac" className="section-block">
         <p className="eyebrow">Choose your Mac download</p>
         <h2 className="font-instrument">Apple silicon or Intel?</h2>
-        <p>Open the Apple menu → About This Mac. If it shows an M-series chip, choose Apple silicon. If it shows an Intel processor, choose Intel. Older Intel Macs, including the 2018 Mac mini, need macOS Sequoia 15 or later.</p>
+        <p>Open the Apple menu → About This Mac. If it shows an M-series chip, choose Apple silicon. If it shows an Intel processor, choose Intel. Intel Macs need macOS Sequoia 15 or later.</p>
         <div className="page-actions"><Button href="#mac-apple-silicon" dark>Apple silicon Mac</Button><Button href="#mac-intel" dark>Intel Mac</Button></div>
       </section>
       <section className="download-grid">
         <DownloadCard id="mac-apple-silicon" label="macOS · Apple silicon" title="Mac with M-series chip" copy="For M1 and newer Macs. Open the download and drag Kosmos to Applications." href={downloads.mac} icon={<AppleIcon />} />
-        <DownloadCard id="mac-intel" label="macOS · Intel" title="Mac with Intel processor" copy="For Intel Macs running macOS Sequoia 15 or later, including the 2018 Mac mini. Speech checking runs on the CPU." href={downloads.macIntel ?? RELEASES_PAGE} icon={<AppleIcon />} />
+        <DownloadCard id="mac-intel" label="macOS · Intel" title="Mac with Intel processor" copy="For Intel Macs running macOS Sequoia 15 or later. Speech checking runs on the CPU." href={downloads.macIntel ?? RELEASES_PAGE} icon={<AppleIcon />} />
         <DownloadCard id="windows" label="Windows" title="Download for Windows" copy="64-bit Windows 10 or later. The installer is currently unsigned, so SmartScreen may require More info, then Run anyway." href={downloads.windows} icon={<WindowsIcon />} />
       </section>
       <section className="source-panel liquid-glass"><div><p className="eyebrow">Before your first take</p><h2 className="font-instrument">Get comfortable, then press Record.</h2><p>Kosmos keeps your script, takes, notes, and audio files local. Allow microphone access, choose a quiet room, and record your first chapter when you are ready.</p></div><Button href={route("features")} dark>Explore narrator tools</Button></section>
