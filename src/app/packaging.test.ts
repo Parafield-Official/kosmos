@@ -53,6 +53,9 @@ describe("packaged renderer configuration", () => {
     const yaml = readFileSync(resolve(__dirname, "../../.github/workflows/release.yml"), "utf8");
     expect(yaml).toContain("macos-15-intel");
     expect(yaml).toContain("scripts/prepare-intel-runtime.sh");
+    const intelRuntime = readFileSync(resolve(__dirname, "../../scripts/prepare-intel-runtime.sh"), "utf8");
+    expect(intelRuntime).toContain('otool -L "$library" | awk \'/libmp3lame|libmpg123/ {print $1}\'');
+    expect(intelRuntime).toContain('install_name_tool -change "$dependency" "@loader_path/$(basename "$dependency")" "$library"');
     expect(yaml).toContain("vendor/whisperx-runtime");
     expect(yaml).toContain("whisperx==3.8.6");
     expect(yaml).toContain("faster-whisper==1.2.1");

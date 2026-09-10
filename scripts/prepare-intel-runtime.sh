@@ -46,6 +46,9 @@ for executable in vendor/bin/ffmpeg vendor/bin/ffprobe; do
 done
 for library in vendor/bin/libmp3lame.0.dylib vendor/bin/libmpg123.0.dylib; do
   install_name_tool -id "@loader_path/$(basename "$library")" "$library"
+  while IFS= read -r dependency; do
+    install_name_tool -change "$dependency" "@loader_path/$(basename "$dependency")" "$library"
+  done < <(otool -L "$library" | awk '/libmp3lame|libmpg123/ {print $1}')
 done
 cp "$runtime_tmp/ffmpeg-${ffmpeg_version}/COPYING.LGPLv2.1" vendor/bin/LGPL-2.1.txt
 
