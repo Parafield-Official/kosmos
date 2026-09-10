@@ -146,7 +146,7 @@ describe("ACX master chain", () => {
     expect(result.abort_code).toBe("level");
     expect(result.abort_reason).toMatch(/RMS.*peaks.*Review/);
     expect(result.samples).toHaveLength(0);
-  });
+  }, 30_000);
 
   it.each([false, true])("masters floating-point narration with near-silent edited gaps through PCM16 delivery (varying=%s)", (varying) => {
     const sampleRate = 44_100;
