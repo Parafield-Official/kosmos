@@ -17,7 +17,7 @@ const CLOUD = "https://soft-zoom-63098134.figma.site/_assets/v11/0d6dfd3f90b930f
 const REPO = "https://github.com/Parafield-Official/kosmos";
 const RELEASES_PAGE = `${REPO}/releases/latest`;
 
-type ReleaseDownloads = { mac: string; windows: string };
+type ReleaseDownloads = { mac: string; macIntel?: string; windows: string };
 
 const fallbackDownloads: ReleaseDownloads = {
   mac: RELEASES_PAGE,
@@ -377,7 +377,8 @@ function DownloadPage({ downloads }: { downloads: ReleaseDownloads }) {
     <PageShell>
       <PageHero kicker="For narrators" title={<>Set up Kosmos.<br /><em>Start your next chapter.</em></>} lead="Choose your computer, bring in your manuscript, and settle into a quiet local space for recording. Your teleprompter follows your voice, while your book and takes stay on your desk." />
       <section className="download-grid">
-        <DownloadCard id="mac" label="macOS" title="Download for Mac" copy="Apple silicon. Open the download and drag Kosmos to Applications. This release is signed and notarized by Apple." href={downloads.mac} icon={<AppleIcon />} />
+        <DownloadCard id="mac" label="macOS · Apple silicon" title="Mac with M-series chip" copy="For M1 and newer Macs. Open the download and drag Kosmos to Applications." href={downloads.mac} icon={<AppleIcon />} />
+        <DownloadCard id="mac-intel" label="macOS · Intel" title="Mac with Intel processor" copy="For Intel Macs running macOS Sequoia 15 or later, including the 2018 Mac mini. Speech checking runs on the CPU." href={downloads.macIntel ?? RELEASES_PAGE} icon={<AppleIcon />} />
         <DownloadCard id="windows" label="Windows" title="Download for Windows" copy="64-bit Windows 10 or later. The installer is currently unsigned, so SmartScreen may require More info, then Run anyway." href={downloads.windows} icon={<WindowsIcon />} />
       </section>
       <section className="source-panel liquid-glass"><div><p className="eyebrow">Before your first take</p><h2 className="font-instrument">Get comfortable, then press Record.</h2><p>Kosmos keeps your script, takes, notes, and audio files local. Allow microphone access, choose a quiet room, and record your first chapter when you are ready.</p></div><Button href={route("features")} dark>Explore narrator tools</Button></section>

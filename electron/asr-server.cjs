@@ -25,6 +25,7 @@ class PersistentWhisperServer {
     now = () => Date.now(),
     platform = process.platform,
     useGpu,
+    arch = process.arch,
   } = {}) {
     this.idleTimeoutMs = idleTimeoutMs;
     this.spawnImpl = spawnImpl;
@@ -41,7 +42,7 @@ class PersistentWhisperServer {
     this.readyPromise = null;
     this.idleTimer = null;
     this.lastUsedAt = 0;
-    this.useGpu = useGpu ?? defaultLiveGpu(platform);
+    this.useGpu = useGpu ?? defaultLiveGpu(platform, arch);
     this.stderr = "";
     this.requestControllers = new Set();
   }

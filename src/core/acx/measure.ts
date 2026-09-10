@@ -65,6 +65,8 @@ export interface AcxReport {
 const FRAME_SECONDS = 0.02;
 const MIN_ROOM_TONE_SECONDS = 0.2;
 const DIGITAL_SILENCE_EPSILON = 1e-9;
+/** Near one PCM16 step: quieter generated pads can disappear on WAV export. */
+export const MIN_ROOM_TONE_DBFS = -90;
 
 export function dbfs(amplitude: number): number {
   return amplitude <= 0 ? -Infinity : 20 * Math.log10(amplitude);
@@ -482,7 +484,11 @@ function measureRoomTone(
     };
   }
 
-  const speechThreshold = noiseFloor === -Infinity ? -60 : noiseFloor + 10;
+  // Float WAV edits can be far quieter than the PCM16 delivery floor. Do not
+  // call representable room tone speech merely because an internal gap is
+  // near zero. This affects boundary measurement only, never content trimming
+  // or the independently measured noise-floor requirement.
+  const speechThreshold = noiseFloor === -Infinity ? -60 : Math.max(noiseFloor, MIN_ROOM_TONE_DBFS) + 10;
   let firstSpeech = frameRms.findIndex((value) => value > speechThreshold);
   if (firstSpeech < 0) {
     firstSpeech = frameRms.length;

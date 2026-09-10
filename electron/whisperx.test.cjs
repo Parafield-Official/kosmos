@@ -10,6 +10,17 @@ const {
 } = require("./whisperx.cjs");
 
 describe("WhisperX imported-audio alignment", () => {
+  it("uses native Whisper directly on Intel Macs without starting the unsupported PyTorch stack", async () => {
+    let attemptedWhisperX = false;
+    const words = [{ text: "chapter", start: 0, end: 0.5, confidence: 0.9 }];
+    const result = await transcribeImportedAudio({
+      platform: "darwin", arch: "x64",
+      alignWithWhisperX: async () => { attemptedWhisperX = true; throw new Error("unsupported"); },
+      transcribeWithWhisper: async () => ({ engine: "whisper.cpp", words }),
+    });
+    expect(attemptedWhisperX).toBe(false);
+    expect(result).toMatchObject({ words, timingEngine: "whisper.cpp", alignmentFallback: true });
+  });
   it("seeds the bundled Silero VAD cache before WhisperX starts", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "kosmos-whisperx-silero-"));
     const resourcesPath = path.join(root, "resources");
@@ -158,6 +169,8 @@ describe("WhisperX imported-audio alignment", () => {
       words: [{ text: "fallback", start: 0, end: 0.5, confidence: 0.7 }],
     };
     const result = await transcribeImportedAudio({
+      platform: "darwin",
+      arch: "arm64",
       alignWithWhisperX: async () => { throw new Error("whisperx not found"); },
       transcribeWithWhisper: async () => fallback,
     });
@@ -172,6 +185,8 @@ describe("WhisperX imported-audio alignment", () => {
   it("uses WhisperX timings without running the fallback recognizer", async () => {
     let fallbackRuns = 0;
     const result = await transcribeImportedAudio({
+      platform: "darwin",
+      arch: "arm64",
       alignWithWhisperX: async () => ({
         engine: "whisperx",
         modelPath: "/models/whisperx",

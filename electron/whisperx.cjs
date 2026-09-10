@@ -215,7 +215,13 @@ async function alignImportedAudioWithWhisperX({
   }
 }
 
-async function transcribeImportedAudio({ alignWithWhisperX, transcribeWithWhisper, onFallback }) {
+async function transcribeImportedAudio({ alignWithWhisperX, transcribeWithWhisper, onFallback, platform = process.platform, arch = process.arch }) {
+  // WhisperX 3.8 requires torch 2.8; official macOS Intel wheels end at 2.2.
+  // The Intel installer ships native CPU Whisper for the same proof workflow.
+  if (platform === "darwin" && arch === "x64") {
+    const transcription = await transcribeWithWhisper();
+    return { ...transcription, timingEngine: "whisper.cpp", alignmentFallback: true };
+  }
   try {
     const aligned = await alignWithWhisperX();
     if (!aligned || !Array.isArray(aligned.words) || aligned.words.length === 0) {

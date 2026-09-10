@@ -1,4 +1,4 @@
-import { measurePcm, rmsDbfs, type AcxReport, type AudioFormat } from "./measure";
+import { measurePcm, rmsDbfs, MIN_ROOM_TONE_DBFS, type AcxReport, type AudioFormat } from "./measure";
 import { limitTruePeak } from "./limiter";
 import {
   ACX_PRESET,
@@ -552,19 +552,27 @@ function quietRoomTone(samples: number[], analysis: SpeechAnalysis, frameSize: n
  * low-level fallback when the candidate varies too much to be safe.
  */
 function stableRoomTone(room: number[], frameSize: number): number[] {
+  // Match a very quiet edited source instead of inserting a fixed -70 dBFS
+  // pad that its meter would classify as speech. Keep it representable in the
+  // PCM16 master; quieter noise would become digital silence after encoding.
+  const fallback = () => syntheticRoomTone(
+    Math.max(32, frameSize * 10),
+    clamp(rmsDbfs(room), MIN_ROOM_TONE_DBFS, GATE_TARGET_DBFS),
+  );
   const frameLevels: number[] = [];
   for (let start = 0; start < room.length; start += frameSize) {
     const level = rmsDbfs(room.slice(start, start + frameSize));
     if (!Number.isFinite(level)) {
-      return syntheticRoomTone(Math.max(32, frameSize * 10));
+      return fallback();
     }
     frameLevels.push(level);
   }
   const quietest = Math.min(...frameLevels);
   const loudest = Math.max(...frameLevels);
   if (loudest - quietest > ROOM_TONE_MAX_FRAME_SPREAD_DB) {
-    return syntheticRoomTone(Math.max(32, frameSize * 10));
+    return fallback();
   }
+  if (quietest < MIN_ROOM_TONE_DBFS) return fallback();
   return loudest > GATE_TARGET_DBFS
     ? applyGain(room, GATE_TARGET_DBFS - loudest)
     : room;
@@ -579,9 +587,9 @@ function repeatRoomTone(room: number[], length: number): number[] {
 }
 
 /** Deterministic low-level noise is safer than padding with DC or copied speech. */
-function syntheticRoomTone(length: number): number[] {
+function syntheticRoomTone(length: number, targetDbfs = GATE_TARGET_DBFS): number[] {
   const output = new Array<number>(length);
-  const peak = (10 ** (GATE_TARGET_DBFS / 20)) * Math.sqrt(3);
+  const peak = (10 ** (targetDbfs / 20)) * Math.sqrt(3);
   let state = 0x6d2b79f5;
   for (let index = 0; index < length; index += 1) {
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
