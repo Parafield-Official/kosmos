@@ -10,7 +10,7 @@ const SOUND_WAVE = [22, 22, 22, 24, 28, 36, 48, 64, 78, 92, 78, 64, 48, 36, 28, 
 
 export type MasteringTake = "original" | "working" | "mastered";
 
-const DEFAULT_TAKES: MasteringTake[] = ["original", "working", "mastered"];
+const DEFAULT_TAKES: MasteringTake[] = ["original", "mastered"];
 const ALL_TAKES: Array<{ id: MasteringTake; label: string }> = [
   { id: "original", label: "Original" },
   { id: "working", label: "Unmastered" },
