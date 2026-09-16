@@ -49,7 +49,7 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   execFileSync(ffmpeg,['-v','error','-i',raw,'-b:a','192k',input]);
   const wav=await api.transcodeToWav(fs.readFileSync(input));
   for(const file of ['original.wav','working.wav'])await fsp.writeFile(path.join(folder,'audio',file),wav);
-  const original=await snapshot(folder);
+  const originalHash=hash(path.join(folder,'audio','original.wav'));
   // The desktop main loop must keep serving window/input events during mastering.
   let lastHeartbeat = performance.now(), maxMasteringDelay = 0;
   const heartbeat = setInterval(() => {
@@ -80,7 +80,8 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   }
   const before=await snapshot(folder);assert.equal((await api.exportDeliveryPack(payload)).ok,true);assert.deepEqual(await snapshot(folder),before);
   const failed=await api.exportDeliveryPack({...payload,chapters:[{...payload.chapters[0],masteredFile:'missing.wav'}]});assert.equal(failed.ok,false);assert.deepEqual(await snapshot(folder),before);
-  for(const [k,v]of Object.entries(original))assert.equal(hash(path.join(folder,k)),v);
+  assert.equal(hash(path.join(folder,'audio','original.wav')),originalHash);
+  assert.equal(fs.existsSync(path.join(folder,'audio','working.wav')),false);
   // A quiet AAC/M4A import with a brief, much louder event used to get stuck:
   // whole-file peak attenuation undid every RMS correction. Exercise import,
   // repair, the worker, and the final encoded file for this separate case.
@@ -97,7 +98,6 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   execFileSync(ffmpeg, ['-v', 'error', '-i', quietWav, '-ac', '2', '-c:a', 'aac', '-b:a', '128k', aac]);
   const aacHash = hash(aac);
   await fsp.writeFile(path.join(folder, 'audio/aac-working.wav'), await api.transcodeToWav(fs.readFileSync(aac)));
-  const workingHash = hash(path.join(folder, 'audio/aac-working.wav'));
   const aacMaster = await api.masterWorkingFile({folder, chapterId:'aac', workingFile:'aac-working.wav', presetId:'acx'});
   assert.equal(aacMaster.ok, true, aacMaster.reason);
   assert.ok(aacMaster.after.rms_dbfs >= -23 && aacMaster.after.rms_dbfs <= -18);
@@ -113,8 +113,8 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   assert.ok(aacRms >= -23 && aacRms <= -18);
   assert.ok(20 * Math.log10(aacPeak) <= -3);
   assert.equal(hash(aac), aacHash);
-  assert.equal(hash(path.join(folder, 'audio/aac-working.wav')), workingHash);
-  console.log(`PASS: quiet 48 kHz stereo AAC/M4A with a transient imported, mastered and exported at ${aacRms.toFixed(2)} dBFS RMS; sources preserved.`);
+  assert.equal(fs.existsSync(path.join(folder, 'audio/aac-working.wav')), false);
+  console.log(`PASS: quiet 48 kHz stereo AAC/M4A with a transient imported, mastered and exported at ${aacRms.toFixed(2)} dBFS RMS; source preserved and temporary audio removed.`);
   // Float WAV edits can sit well below PCM16 precision. The old fixed -70 dB
   // fallback pad then looked like speech, while simply lowering it could turn
   // it into digital silence on export. Exercise both actual codecs as well.
@@ -130,7 +130,6 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   execFileSync(ffmpeg, ['-v','error','-f','f32le','-ar','44100','-ac','1','-i','pipe:0','-c:a','pcm_f32le',floatSource], {
    input: Buffer.from(floatTake.buffer),
   });
-  const floatHash = hash(floatSource);
   const floatMaster = await api.masterWorkingFile({folder,chapterId:'float',workingFile:'float-working.wav',presetId:'acx'});
   assert.equal(floatMaster.ok, true, floatMaster.reason);
   const reportStart = reports.length;
@@ -144,8 +143,8 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
    assert.equal(report.checks.head_room_tone, 'pass');
    assert.equal(report.checks.tail_room_tone, 'pass');
   }
-  assert.equal(hash(floatSource), floatHash);
-  console.log('PASS: near-silent float WAV edits mastered through PCM16 and MP3 with valid boundary pads; source preserved.');
+  assert.equal(fs.existsSync(floatSource), false);
+  console.log('PASS: near-silent float WAV edits mastered through PCM16 and MP3 with valid boundary pads; temporary audio removed.');
   console.log('PASS: anti-alias filtering, real import/master/export, ACX preset enforcement, verified format report, decoded levels, sample duration, repeat export and failure preservation.');
  }finally{await fsp.rm(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});
