@@ -89,11 +89,11 @@ export interface BookChapter {
   recordedPct: number;
   /** True once the original booth read (or an imported take) exists. */
   hasOriginalAudio: boolean;
-  /** True once proof/master has produced the working file on top of original. */
+  /** True while an editable working copy exists on top of the original. */
   hasWorkingAudio: boolean;
   /** Stable original tape filename (`{chapterId}-original.wav`). */
   originalFile?: string;
-  /** Stable working tape filename (`{chapterId}-working.wav`). Punches land here; mastering does not overwrite it. */
+  /** Temporary working tape filename (`{chapterId}-working.wav`). Punches land here; successful mastering removes it. */
   workingFile?: string;
   /** Latest mastered filename (`{chapterId}-mastered.wav`). */
   masteredFile?: string;
@@ -1280,13 +1280,20 @@ export function applyWorkingTape(project: BookProject, chapterId: string, file: 
   };
 }
 
-/** Point the mastered slot at the latest master output. Working stays unmastered. */
+/** Point the mastered slot at the latest master output and release the temporary edit tape. */
 export function applyMasteredTape(project: BookProject, chapterId: string, file: string): BookProject {
   return {
     ...project,
     chapters: project.chapters.map((chapter) =>
       chapter.id === chapterId
-        ? { ...chapter, masteredFile: file, hasMasteredAudio: true, mastered: true }
+        ? {
+            ...chapter,
+            workingFile: undefined,
+            hasWorkingAudio: false,
+            masteredFile: file,
+            hasMasteredAudio: true,
+            mastered: true,
+          }
         : chapter,
     ),
   };

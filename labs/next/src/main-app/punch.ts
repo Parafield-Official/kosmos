@@ -138,8 +138,8 @@ export async function undoLatestChapterPunch(project: BookProject, chapterId: st
 
 export async function masterChapterWorking(project: BookProject, chapterId: string): Promise<BookProject> {
   const chapter = project.chapters.find((item) => item.id === chapterId);
-  if (!chapter?.workingFile) {
-    throw new Error("Proofread first so there is a working file to master.");
+  if (!chapter?.originalFile) {
+    throw new Error("Record or import a take before mastering.");
   }
   if (!project.folder || !window.kosmosNext?.masterChapter) {
     throw new Error("Mastering needs the desktop app.");
@@ -147,7 +147,11 @@ export async function masterChapterWorking(project: BookProject, chapterId: stri
   const result = await window.kosmosNext.masterChapter({
     folder: project.folder,
     chapterId,
-    workingFile: chapter.workingFile,
+    // The main process rebuilds this temporary tape from original + punches
+    // when a previous successful master has already cleaned it up.
+    workingFile: chapter.workingFile ?? `${chapterId}-working.wav`,
+    originalFile: chapter.originalFile,
+    punches: chapter.punches,
     targetRmsDbfs: readEnginePrefs().acx_target_rms_dbfs,
     presetId: readEnginePrefs().spec_preset_id,
   });

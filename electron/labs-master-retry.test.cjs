@@ -11,6 +11,7 @@ it('uses the source noise estimate for every original-file retry and preserves t
     await fs.writeFile(path.join(folder, 'project.json'), '{}');
     await fs.mkdir(path.join(folder, 'audio'));
     const source = path.join(folder, 'audio/working.wav');
+    const internalSource = path.join(folder, '.kosmos', 'working', 'working.wav');
     await fs.writeFile(source, 'original recording');
     const attempts = [];
     let calls = 0;
@@ -40,8 +41,9 @@ it('uses the source noise estimate for every original-file retry and preserves t
     const result = await context.module.exports.masterWorkingFile({folder,chapterId:'one',workingFile:'working.wav'});
     expect(result).toEqual({ok:false,reason});
     expect(attempts).toEqual([{floor:-55,strength:8},{floor:-55,strength:12}]);
-    expect(await fs.readFile(source,'utf8')).toBe('original recording');
-    expect(await fs.readdir(path.join(folder,'audio'))).toEqual(['working.wav']);
+    expect(await fs.readFile(internalSource,'utf8')).toBe('original recording');
+    await expect(fs.access(source)).rejects.toMatchObject({code:'ENOENT'});
+    expect(await fs.readdir(path.join(folder,'audio'))).toEqual([]);
   } finally {
     await fs.rm(folder,{recursive:true,force:true});
   }
@@ -54,6 +56,7 @@ for (const scenario of ['clean', 'quieter', 'profile', 'unsafe', 'adaptive']) {
       await fs.writeFile(path.join(folder, 'project.json'), '{}');
       await fs.mkdir(path.join(folder, 'audio'));
       const source = path.join(folder, 'audio/working.wav');
+      const internalSource = path.join(folder, '.kosmos', 'working', 'working.wav');
       const destination = path.join(folder, 'audio/one-mastered.wav');
       await fs.writeFile(source, 'original recording');
       await fs.writeFile(destination, 'previous master');
@@ -94,15 +97,18 @@ for (const scenario of ['clean', 'quieter', 'profile', 'unsafe', 'adaptive']) {
         };
       `, context, {filename});
       const result = await context.module.exports.masterWorkingFile({folder,chapterId:'one',workingFile:'working.wav'});
-      expect(await fs.readFile(source,'utf8')).toBe('original recording');
       if (scenario === 'unsafe') {
         expect(result.ok).toBe(false);
         expect(result.reason).toContain('withheld to protect the voice');
+        expect(await fs.readFile(internalSource,'utf8')).toBe('original recording');
+        await expect(fs.access(source)).rejects.toMatchObject({code:'ENOENT'});
         expect(await fs.readFile(destination,'utf8')).toBe('previous master');
         expect(targets).toEqual([-20,-22]); // Unsafe candidates never reach normalization.
         expect(attempts.map(a=>a.strength)).toEqual([8,12,8,12]);
       } else {
         expect(result.ok).toBe(true);
+        await expect(fs.access(internalSource)).rejects.toMatchObject({code:'ENOENT'});
+        await expect(fs.access(source)).rejects.toMatchObject({code:'ENOENT'});
         expect(result.restoration.targetRmsDbfs).toBe(scenario === 'clean' ? -20 : -22);
         expect(result.restoration.method).toBe(scenario === 'profile' ? 'learned_profile' : scenario === 'adaptive' ? 'adaptive' : 'none');
         if (scenario === 'clean' || scenario === 'quieter') expect(attempts).toEqual([]);
