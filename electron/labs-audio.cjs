@@ -1,9 +1,9 @@
 /**
  * Punch, master, and ACX export for Kosmos Labs.
  *
- * Original stays immutable. Punch rebuilds `{id}-working.wav` from original plus
- * a clip manifest. Master writes `{id}-mastered.wav` and leaves working alone.
- * Export encodes the mastered file (falling back to working) into `export/acx/`.
+ * Original stays immutable. Punch rebuilds a temporary working tape from the
+ * original plus a clip manifest. Master writes `{id}-mastered.wav`, then
+ * releases the temporary tape. Export encodes the mastered file (falling back to working) into `export/acx/`.
  */
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
@@ -33,6 +33,11 @@ const {
   projectAssetPath,
   projectAudioPath,
 } = require("./project-path.cjs");
+const {
+  ensureWorkingAudioDirectory,
+  isWorkingAudioFile,
+  migrateLegacyWorkingAudio,
+} = require("./working-audio.cjs");
 
 const MAX_AUDIO_SECONDS = 2 * 60 * 60;
 const MAX_PCM_OUTPUT_BYTES = 1_500_000_000;
@@ -74,8 +79,12 @@ function safeProjectFileName(file, label = "File") {
   return file;
 }
 
-function audioPath(folder, file) {
-  return projectAudioPath(folder, `audio/${safeProjectFileName(file, "Audio file")}`);
+async function audioPath(folder, file) {
+  const name = safeProjectFileName(file, "Audio file");
+  if (isWorkingAudioFile(name)) {
+    return migrateLegacyWorkingAudio(folder, name);
+  }
+  return projectAudioPath(folder, `audio/${name}`);
 }
 
 function pickupClipPath(folder, file) {
@@ -373,8 +382,9 @@ async function applyPunch(payload) {
   const destName = typeof workingFile === "string" && workingFile
     ? safeProjectFileName(workingFile, "Working file")
     : `${slugFileName(chapterId)}-working.wav`;
-  const originalAbsolute = audioPath(folder, originalFile);
-  const workingAbsolute = audioPath(folder, destName);
+  const originalAbsolute = await audioPath(folder, originalFile);
+  await ensureWorkingAudioDirectory(folder);
+  const workingAbsolute = await audioPath(folder, destName);
 
   let original;
   let current;
@@ -484,6 +494,7 @@ async function undoLatestPunch(payload) {
     return { ok: false, reason: "This chapter has no applied pickup to undo." };
   }
   folder = await assertProjectFolder(folder);
+  await ensureWorkingAudioDirectory(folder);
 
   const destName = typeof workingFile === "string" && workingFile
     ? safeProjectFileName(workingFile, "Working file")
@@ -493,7 +504,7 @@ async function undoLatestPunch(payload) {
   const remaining = activePunches(payload.punches, chapterId).filter((punch) => punch.id !== latest.id);
 
   try {
-    const original = await decodeMono44100(audioPath(folder, originalFile));
+    const original = await decodeMono44100(await audioPath(folder, originalFile));
     const edited = await rebuildPunchTimeline({
       original,
       punches: remaining,
@@ -502,7 +513,7 @@ async function undoLatestPunch(payload) {
       splicePunch: spliceCore.splicePunch,
     });
     await writeFileAtomic(
-      audioPath(folder, destName),
+      await audioPath(folder, destName),
       Buffer.from(audioCore.encodeWavPcm16(edited, 44100, 1)),
     );
     const punches = (payload.punches ?? []).map((punch) =>
@@ -524,6 +535,35 @@ function reportStatus(report) {
   return "pass";
 }
 
+/** Recreate the disposable edit tape only when a user asks to master again. */
+async function rebuildWorkingForMaster({ folder, chapterId, workingFile, originalFile, punches, audioCore }) {
+  const filePath = await audioPath(folder, workingFile);
+  if (fsSync.existsSync(filePath)) {
+    return filePath;
+  }
+  if (typeof originalFile !== "string" || !originalFile) {
+    throw new Error("The temporary edit tape is unavailable. Record or import the original take again.");
+  }
+  await ensureWorkingAudioDirectory(folder);
+  const original = await decodeMono44100(await audioPath(folder, originalFile));
+  const active = chapterId ? activePunches(punches, chapterId) : [];
+  const spliceCore = active.length ? loadCoreModule("splice") : null;
+  const rebuilt = active.length
+    ? await rebuildPunchTimeline({
+        original,
+        punches: active,
+        sampleRate: 44100,
+        loadReplacement: (punch) => loadPunchClip(folder, punch, audioCore, spliceCore),
+        splicePunch: spliceCore.splicePunch,
+      })
+    : original;
+  await writeFileAtomic(
+    filePath,
+    Buffer.from(audioCore.encodeWavPcm16(rebuilt, 44100, 1)),
+  );
+  return filePath;
+}
+
 async function masterWorkingFile(payload) {
   if (!audioWorker) {
     try {
@@ -534,18 +574,22 @@ async function masterWorkingFile(payload) {
   }
   let folder = payload?.folder;
   const workingFile = payload?.workingFile;
+  const originalFile = payload?.originalFile;
+  const punches = Array.isArray(payload?.punches) ? payload.punches : [];
   const chapterId = typeof payload?.chapterId === "string" ? payload.chapterId : null;
   if (typeof folder !== "string" || typeof workingFile !== "string") {
     return { ok: false, reason: "A working file is required to master." };
   }
   folder = await assertProjectFolder(folder);
-  const filePath = audioPath(folder, workingFile);
   const destName = chapterId
     ? `${slugFileName(chapterId)}-mastered.wav`
     : safeProjectFileName(String(workingFile).replace(/-working(\.[^.]+)?$/i, "-mastered$1"), "Mastered file");
-  const destPath = audioPath(folder, destName);
+  const destPath = await audioPath(folder, destName);
   const masterCore = loadCoreModule("master");
   const audioCore = loadCoreModule("audio");
+  const filePath = await rebuildWorkingForMaster({
+    folder, chapterId, workingFile, originalFile, punches, audioCore,
+  });
   const preset = presetFromPayload(masterCore, payload);
   const profile = masterCore.deliveryProfile(preset);
 
@@ -634,6 +678,9 @@ async function masterWorkingFile(payload) {
       destPath,
       Buffer.from(audioCore.encodeWavPcm16(master.samples, master.sampleRate, 1)),
     );
+    if (isWorkingAudioFile(workingFile) && filePath !== destPath) {
+      await fs.rm(filePath, { force: true });
+    }
     return {
       ok: true,
       workingFile: safeProjectFileName(workingFile, "Working file"),
@@ -763,7 +810,7 @@ async function exportDeliveryPack(payload) {
       if (!sourceFile) {
         continue;
       }
-      const filePath = audioPath(folder, sourceFile);
+      const filePath = await audioPath(folder, sourceFile);
       const decoded = await decodeAudioPcm(filePath, profile.sampleRate);
       const samples = mixInterleavedToMono(float32View(decoded.pcm), decoded.channels);
       const resampled = resampleLinearArray(samples, decoded.sampleRate, profile.sampleRate);
@@ -933,9 +980,9 @@ async function previewPunch(payload) {
     return { ok: false, reason: "Punch WAV contains no audio samples." };
   }
 
-  const originalAbsolute = audioPath(folder, originalFile);
+  const originalAbsolute = await audioPath(folder, originalFile);
   const workingAbsolute = typeof workingFile === "string" && workingFile
-    ? audioPath(folder, workingFile)
+    ? await audioPath(folder, workingFile)
     : originalAbsolute;
 
   let current;
@@ -983,7 +1030,7 @@ async function measureChapterAudio(payload) {
   }
   try {
     folder = await assertProjectFolder(folder);
-    const decoded = await decodeAudioPcm(audioPath(folder, file));
+    const decoded = await decodeAudioPcm(await audioPath(folder, file));
     const masterCore = loadCoreModule("master");
     const report = masterCore.measurePcm({
       samples: float32View(decoded.pcm),

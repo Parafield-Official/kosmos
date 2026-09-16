@@ -28,6 +28,12 @@ const {
 } = require("./labs-audio.cjs");
 const { createAppUpdater, RELEASE_PAGE } = require("./app-update.cjs");
 const { writeFileAtomic, copyFileAtomic } = require("./file-utils.cjs");
+const {
+  ensureWorkingAudioDirectory,
+  isWorkingAudioFile,
+  migrateLegacyWorkingAudio,
+  workingAudioPath,
+} = require("./working-audio.cjs");
 const { saveProjectJson, readProjectJson } = require("./project-save.cjs");
 const { createShutdownGuard, requestRendererApproval } = require("./shutdown.cjs");
 const { terminateActiveCommands } = require("./process.cjs");
@@ -683,7 +689,8 @@ async function deleteChapterFiles(folder, chapterId) {
   await fs.rm(projectAssetPath(root, `manuscript/chapters/${chapterFileName(id)}`), { force: true });
   const audioRoot = projectAssetPath(root, "audio");
   const pickupRoot = projectAssetPath(root, "audio/pickups");
-  for (const dir of [audioRoot, pickupRoot]) {
+  const workingRoot = projectAssetPath(root, ".kosmos/working");
+  for (const dir of [audioRoot, pickupRoot, workingRoot]) {
     let names = [];
     try {
       names = await fs.readdir(dir);
@@ -721,7 +728,7 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   const root = await assertProjectFolder(folder);
   const kind = slot === "working" || slot === "mastered" ? slot : "original";
   await ensureProjectDirectory(root, "audio");
-  // The chapter tape model is original + working (punches) + mastered (pipeline).
+  // The chapter tape model is original + internal working (punches) + mastered.
   // Booth takes already arrive as WAV; imported mp3/m4a/ogg/webm takes are normalized
   // to WAV so the slot is an honest `.wav` file rather than mislabeled bytes.
   const bytes = Buffer.from(base64, "base64");
@@ -729,7 +736,10 @@ async function writeChapterAudio(folder, chapterId, base64, mime, slot) {
   const alreadyWav = isWavBuffer(bytes) || (typeof mime === "string" && mime.includes("wav"));
   try {
     const wav = alreadyWav ? bytes : await transcodeToWav(bytes);
-    await writeFileAtomic(projectAssetPath(root, `audio/${file}`), wav);
+    const destination = kind === "working"
+      ? (await ensureWorkingAudioDirectory(root), workingAudioPath(root, file))
+      : projectAssetPath(root, `audio/${file}`);
+    await writeFileAtomic(destination, wav);
     return { ok: true, file };
   } catch (error) {
     console.warn(`[labs] write chapter audio failed: ${error?.message ?? error}`);
@@ -744,7 +754,10 @@ async function readChapterAudio(folder, file) {
   try {
     const root = await assertProjectFolder(folder);
     const name = safeProjectFileName(file, "Audio file");
-    const bytes = await fs.readFile(projectAssetPath(root, `audio/${name}`));
+    const source = isWorkingAudioFile(name)
+      ? await migrateLegacyWorkingAudio(root, name)
+      : projectAssetPath(root, `audio/${name}`);
+    const bytes = await fs.readFile(source);
     return { ok: true, base64: bytes.toString("base64") };
   } catch {
     return { ok: false };
@@ -757,7 +770,9 @@ async function transcribeChapterAudio(folder, file) {
   }
   const root = await assertProjectFolder(folder);
   const name = safeProjectFileName(file, "Audio file");
-  const audioPath = projectAssetPath(root, `audio/${name}`);
+  const audioPath = isWorkingAudioFile(name)
+    ? await migrateLegacyWorkingAudio(root, name)
+    : projectAssetPath(root, `audio/${name}`);
   try {
     const transcription = await transcribeImportedAudio({
       alignWithWhisperX: () => alignImportedAudioWithWhisperX({
@@ -805,7 +820,8 @@ async function copyToWorking(folder, chapterId, file) {
   const ext = path.extname(name) || ".wav";
   const destName = `${chapterFileName(chapterId).slice(0, -5)}-working${ext}`;
   try {
-    await copyFileAtomic(src, projectAssetPath(root, `audio/${destName}`));
+    await ensureWorkingAudioDirectory(root);
+    await copyFileAtomic(src, workingAudioPath(root, destName));
     return { ok: true, file: destName };
   } catch (error) {
     console.warn(`[labs] copy working failed: ${error?.message ?? error}`);

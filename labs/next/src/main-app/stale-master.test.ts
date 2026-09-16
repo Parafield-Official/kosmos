@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyWorkingTape, type BookProject } from './store';
+import { applyMasteredTape, applyWorkingTape, type BookProject } from './store';
 import { chapterListenFile } from './vault-media';
 
 describe('master invalidation after editing', () => {
@@ -15,5 +15,18 @@ describe('master invalidation after editing', () => {
     expect(chapterListenFile(chapter,true)).toBe('new.wav');
     expect(chapterListenFile(chapter,false)).toBeUndefined();
     expect(chapterListenFile({...chapter,mastered:true},false)).toBe('old.wav');
+  });
+  it('clears the temporary working slot after a successful master', () => {
+    const project = { chapters: [{
+      id:'one', originalFile:'original.wav', workingFile:'working.wav', hasWorkingAudio:true,
+    }] } as BookProject;
+
+    const mastered = applyMasteredTape(project, 'one', 'mastered.wav');
+
+    expect(mastered.chapters[0]).toMatchObject({
+      originalFile:'original.wav', masteredFile:'mastered.wav', mastered:true, hasMasteredAudio:true, hasWorkingAudio:false,
+    });
+    expect(mastered.chapters[0].workingFile).toBeUndefined();
+    expect(project.chapters[0].workingFile).toBe('working.wav');
   });
 });

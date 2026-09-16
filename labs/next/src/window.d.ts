@@ -237,6 +237,8 @@ declare global {
         folder: string;
         chapterId?: string;
         workingFile: string;
+        originalFile?: string;
+        punches?: ChapterPunchDto[];
         targetRmsDbfs?: number;
         presetId?: string;
       }) => Promise<{ ok: boolean; reason?: string; workingFile?: string; masteredFile?: string; rms_dbfs?: number }>;
