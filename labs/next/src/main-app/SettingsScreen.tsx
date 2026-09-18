@@ -26,6 +26,7 @@ import {
 } from "./reading-prefs";
 import { chooseWorkspace, getWorkspacePath } from "./store";
 import type { PromptTheme, ReadingFont } from "./store";
+import { ConfirmAlert } from "./ConfirmAlert";
 import { ThemeColourPicker } from "./ThemeColourPicker";
 import { readThemeAccent, type ThemeAccent } from "./theme";
 import { LAMP_ALL, readLamps, writeLamps } from "./vault-lamps";
@@ -67,6 +68,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [update, setUpdate] = useState<AppUpdateStatus | null>(null);
   const [checking, setChecking] = useState(false);
+  const [confirmRestart, setConfirmRestart] = useState(false);
 
   function chooseFontScale(scale: FontScale) {
     setFontScale(scale);
@@ -158,6 +160,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
   }
 
   function restartOnboarding() {
+    setConfirmRestart(false);
     clearOnboarded();
     window.dispatchEvent(new Event("kosmos-onboarding-restart"));
   }
@@ -413,7 +416,13 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               title="Restart onboarding"
               sub="Welcome flow again. Microphone and speech-model access stay as they are."
             >
-              <button type="button" className="btn ma-danger-btn" onClick={restartOnboarding}>
+              <button
+                type="button"
+                className="btn ma-danger-btn"
+                aria-label="Reset onboarding"
+                aria-haspopup="dialog"
+                onClick={() => setConfirmRestart(true)}
+              >
                 Reset
               </button>
             </SetItem>
@@ -479,6 +488,15 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       </div>
+      {confirmRestart ? (
+        <ConfirmAlert
+          title="Restart onboarding?"
+          body="The welcome flow will start again. Your books, recordings, microphone access, and speech-model access stay as they are."
+          confirm="Restart"
+          onCancel={() => setConfirmRestart(false)}
+          onConfirm={restartOnboarding}
+        />
+      ) : null}
     </section>
   );
 }
