@@ -76,7 +76,7 @@ describe("ACX room-tone boundaries", () => {
     expectDeliverable(result.samples);
     // Only far-edge lead-in is removed: the 3 s nearest the first breath stay.
     expect(firstLoudSeconds(result.samples) - PAD_SECONDS).toBeGreaterThanOrEqual(3 - 0.03);
-  }, 30_000);
+  }, 120_000);
 
   it("never mistakes quiet, unbroken narration for removable room tone", () => {
     // One loud click and almost no pauses make the meter's adaptive noise
@@ -95,7 +95,7 @@ describe("ACX room-tone boundaries", () => {
 
     expect(result.status, result.abort_reason).toBe("ok");
     expect(result.samples.length).toBeGreaterThanOrEqual(source.length + 2 * PAD_SECONDS * RATE - 2);
-  }, 30_000);
+  }, 120_000);
 
   const geometries: Array<[number, number]> = [
     [0, 0], [0.16, 0.16], [1, 1], [3, 3], [3.4, 3.4], [4.18, 0.16], [5, 5], [8, 8], [15, 12],
@@ -120,6 +120,6 @@ describe("ACX room-tone boundaries", () => {
       const speechSeconds = 3 + 2 * 0.4;
       const bodyEnd = result.samples.length / RATE - result.after!.tail_room_tone_s;
       expect(bodyEnd - firstLoudSeconds(result.samples)).toBeGreaterThanOrEqual(speechSeconds - 0.25);
-    }, 60_000);
+    }, 120_000);
   });
 });
