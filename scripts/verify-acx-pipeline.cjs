@@ -145,6 +145,45 @@ async function snapshot(folder){const result={};for(const e of await fsp.readdir
   }
   assert.equal(fs.existsSync(floatSource), false);
   console.log('PASS: near-silent float WAV edits mastered through PCM16 and MP3 with valid boundary pads; temporary audio removed.');
+  // A voice-generator MP3 opens with seconds of ±1-step dither before the first
+  // word. Mastering kept that lead-in and still added a 1.5 s pad, so the head
+  // measured 5.7 s against ACX's 5 s and mastering refused the chapter.
+  const generatedPhraseBytes = execFileSync(ffmpeg, ['-v','error','-i',path.join(root,'public/examples/proof/on_vs_in.wav'),'-f','f32le','-ac','1','-ar','44100','pipe:1']);
+  const generatedPhrase = new Float32Array(generatedPhraseBytes.buffer, generatedPhraseBytes.byteOffset, generatedPhraseBytes.length / 4);
+  let generatedPower = 0; for (const x of generatedPhrase) generatedPower += x * x;
+  const generatedGain = 10 ** (-20 / 20) / Math.sqrt(generatedPower / generatedPhrase.length);
+  const leadIn = 4.2, endTail = 0.16, generatedTake = new Float32Array(44100 * 68);
+  let generatedSeed = 19;
+  for (let i = 0; i < generatedTake.length; i++) {generatedSeed = (1664525 * generatedSeed + 1013904223) >>> 0; generatedTake[i] = (generatedSeed / 4294967296 * 2 - 1) * 1.5 / 32768;}
+  let lastPhraseEnd = 0;
+  for (let start = 44100 * leadIn; start + generatedPhrase.length <= generatedTake.length - 44100 * endTail; start += generatedPhrase.length + 22050) {
+   for (let i = 0; i < generatedPhrase.length; i++) generatedTake[start + i] += generatedPhrase[i] * generatedGain;
+   lastPhraseEnd = start + generatedPhrase.length;
+  }
+  const generatedRaw = path.join(folder, 'generated.wav');
+  fs.writeFileSync(generatedRaw, Buffer.from(audioCore.encodeWavPcm16(generatedTake.subarray(0, lastPhraseEnd + Math.round(44100 * endTail)), 44100, 1)));
+  const generatedMp3 = path.join(folder, 'generated.mp3');
+  execFileSync(ffmpeg, ['-v','error','-i',generatedRaw,'-b:a','192k',generatedMp3]);
+  await fsp.writeFile(path.join(folder, 'audio/generated-working.wav'), await api.transcodeToWav(fs.readFileSync(generatedMp3)));
+  const generatedMaster = await api.masterWorkingFile({folder, chapterId:'generated', workingFile:'generated-working.wav', presetId:'acx'});
+  assert.equal(generatedMaster.ok, true, generatedMaster.reason);
+  const generatedExport = await api.exportDeliveryPack({folder,mode:'acx',chapters:[{id:'generated',title:'Generated lead-in',mastered:true,masteredFile:generatedMaster.masteredFile}]});
+  assert.equal(generatedExport.ok, true, generatedExport.reason);
+  const generatedOut = path.join(generatedExport.folder, generatedExport.files.find(x => x.endsWith('.mp3') && !x.includes('retail')));
+  const generatedPcm = execFileSync(ffmpeg, ['-v','error','-i',generatedOut,'-f','f32le','pipe:1'], {maxBuffer:64e6});
+  const delivered = new Float32Array(generatedPcm.buffer, generatedPcm.byteOffset, generatedPcm.length / 4);
+  // Judge the encoded edges with a plain -60 dB gate, not the app's own meter.
+  const loud = [];
+  for (let start = 0; start < delivered.length; start += 882) {
+   let sum = 0; const end = Math.min(delivered.length, start + 882);
+   for (let i = start; i < end; i++) sum += delivered[i] * delivered[i];
+   loud.push(10 * Math.log10(sum / (end - start) + 1e-30) > -60);
+  }
+  const headSeconds = loud.indexOf(true) * 0.02, tailSeconds = (loud.length - 1 - loud.lastIndexOf(true)) * 0.02;
+  assert.ok(headSeconds >= 0.5 && headSeconds <= 5, `encoded head room tone ${headSeconds.toFixed(2)} s is outside ACX's 0.5-5 s`);
+  assert.ok(tailSeconds >= 0.5 && tailSeconds <= 5, `encoded tail room tone ${tailSeconds.toFixed(2)} s is outside ACX's 0.5-5 s`);
+  assert.ok(headSeconds >= 1.5 + 2.9, 'the recorded lead-in nearest the first word must be kept');
+  console.log(`PASS: voice-generator MP3 with a ${leadIn} s near-silent lead-in mastered and exported; encoded head ${headSeconds.toFixed(2)} s, tail ${tailSeconds.toFixed(2)} s.`);
   console.log('PASS: anti-alias filtering, real import/master/export, ACX preset enforcement, verified format report, decoded levels, sample duration, repeat export and failure preservation.');
  }finally{await fsp.rm(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});
