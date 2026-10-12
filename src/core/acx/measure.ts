@@ -192,6 +192,24 @@ export function measurePcm(audio: PcmAudio, options: MeasureOptions = {}): AcxRe
   };
 }
 
+/**
+ * Head and tail room tone exactly as `measurePcm` judges them, without the
+ * cost of a full report. Mastering plans its boundaries with this so the
+ * planner and the judge can never disagree about where speech begins.
+ */
+export function measureBoundaryRoomTone(
+  samples: Float32Array | number[],
+  sampleRate: number,
+  channels = 1,
+): { head_s: number; tail_s: number } {
+  const rate = positiveIntegerOrZero(sampleRate);
+  const channelCount = positiveIntegerOrZero(channels);
+  const frameRms = frameRmsDbfs(samples, rate, channelCount);
+  const noiseFloor = detectNoiseFloor(samples, rate, channelCount, frameRms).dbfs;
+  const roomTone = measureRoomTone(samples, rate, channelCount, frameRms, noiseFloor);
+  return { head_s: roomTone.head.seconds, tail_s: roomTone.tail.seconds };
+}
+
 /** Flag ambiguous internal low-level intervals; do not label quiet speech as proven noise. */
 function hasInconsistentQuietIntervals(levels: number[], floor: number, limit: number | null): boolean {
   if (limit === null || !Number.isFinite(floor) || levels.length === 0) return false;

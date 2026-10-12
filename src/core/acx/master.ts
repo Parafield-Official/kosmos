@@ -1,4 +1,11 @@
-import { measurePcm, rmsDbfs, MIN_ROOM_TONE_DBFS, type AcxReport, type AudioFormat } from "./measure";
+import {
+  measureBoundaryRoomTone,
+  measurePcm,
+  rmsDbfs,
+  MIN_ROOM_TONE_DBFS,
+  type AcxReport,
+  type AudioFormat,
+} from "./measure";
 import { limitTruePeak } from "./limiter";
 import {
   ACX_PRESET,
@@ -129,6 +136,33 @@ const GATE_ATTACK_SECONDS = 0.005;
 const GATE_RELEASE_SECONDS = 0.5;
 const GATE_TARGET_DBFS = -70;
 const ROOM_TONE_MAX_FRAME_SPREAD_DB = 6;
+/**
+ * Headroom below a room-tone maximum. Export re-measures the encoded MP3, whose
+ * encoder delay lengthens the head by a few frames; a master that only just
+ * fits would then fail on export.
+ */
+const ROOM_TONE_LIMIT_MARGIN_SECONDS = 0.5;
+/** Recorded lead-in or tail nearest the speech is never removed. */
+const PRESERVED_BOUNDARY_SECONDS = 1;
+/**
+ * Removable room tone sits at least this far below the take's speech. ACX's
+ * -60 dBFS floor under -23 to -18 dBFS RMS narration puts compliant room tone
+ * 37 dB or more down; breaths, consonants and clicks are far louder.
+ */
+const REMOVABLE_ROOM_TONE_BELOW_SPEECH_DB = 35;
+
+interface RoomToneLimits {
+  head: { min: number; max: number } | null;
+  tail: { min: number; max: number } | null;
+}
+
+/** Samples of recorded room tone removed from each edge of the take. */
+interface BoundaryTrim {
+  head: number;
+  tail: number;
+}
+
+const NO_TRIM: BoundaryTrim = { head: 0, tail: 0 };
 
 export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): MasterResult {
   if (!Number.isInteger(input.sampleRate) || input.sampleRate <= 0) {
@@ -217,21 +251,30 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
   if (level?.standard === "rms") {
     processed = compressLightly(processed, outputSampleRate, -28, 2);
   }
-  const projected = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
+  const trim = planBoundaryTrim(
+    processed,
+    resampled,
+    analysis,
+    outputSampleRate,
+    headSeconds,
+    tailSeconds,
+    { head: preset.room_tone_head_s, tail: preset.room_tone_tail_s },
+  );
+  const projected = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds, trim).output;
   const gainDb = level ? level.target - measuredLevel(projected, outputSampleRate, level.standard, preset) : 0;
   processed = Number.isFinite(gainDb) ? applyGain(processed, gainDb) : processed;
   processed = limitTruePeak(processed, outputSampleRate, limiterCeiling);
-  let padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
+  let padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds, trim);
 
   // Limiting can shave a little off the requested level. Two bounded
   // corrections work for both RMS audiobook targets and integrated-LUFS
   // broadcast targets without changing the processing order.
-  let after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
+  let after = measureMasteredOutput(padded.output, padded.narration, outputSampleRate, preset);
   for (let attempt = 0; level && attempt < 2 && levelStatus(after, level.standard) === "fail"; attempt += 1) {
     const correction = level.target - reportLevel(after, level.standard);
     processed = limitTruePeak(applyGain(processed, correction), outputSampleRate, limiterCeiling);
-    padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds);
-    after = measureMasteredOutput(padded, processed, outputSampleRate, preset);
+    padded = padRoomTone(processed, analysis, outputSampleRate, headSeconds, tailSeconds, trim);
+    after = measureMasteredOutput(padded.output, padded.narration, outputSampleRate, preset);
   }
 
   if (level && levelStatus(after, level.standard) === "fail") {
@@ -293,7 +336,7 @@ export function masterPcm(input: MasterPcmInput, options: MasterOptions = {}): M
 
   return {
     status: "ok",
-    samples: Float32Array.from(padded),
+    samples: Float32Array.from(padded.output),
     sampleRate: outputSampleRate,
     channels: 1,
     source,
@@ -482,18 +525,97 @@ function applyGain(samples: number[], gainDb: number): number[] {
   return samples.map((sample) => sample * multiplier);
 }
 
+/**
+ * The take's own recorded lead-in and tail are kept, so together with the
+ * generated pad they can exceed the delivery limit (a 4.2 s lead-in plus a
+ * 1.5 s pad is 5.7 s against ACX's 5 s). Only then is the far edge of that
+ * recorded room tone removed, measured with the same meter that judges
+ * delivery. The pad and the room tone nearest the speech are never removed.
+ *
+ * Decide once, before gain. Pads are capped at -70 dBFS while the take's room
+ * rises with gain, so a later pass can call raised room tone speech; reusing
+ * one decision keeps the level target computed on the file that ships.
+ *
+ * The meter only says how much is too long. Its noise floor adapts to the take,
+ * so on unbroken narration with one loud click it can call the voice itself
+ * room tone, and the gate then lowers that voice too. What may go is bounded
+ * independently, on the take before the gate: an unbroken run of frames from
+ * the edge that sit far below the take's typical speech level.
+ */
+function planBoundaryTrim(
+  processed: number[],
+  ungated: number[],
+  analysis: SpeechAnalysis,
+  sampleRate: number,
+  headSeconds: number,
+  tailSeconds: number,
+  limits: RoomToneLimits,
+): BoundaryTrim {
+  const untrimmed = padRoomTone(processed, analysis, sampleRate, headSeconds, tailSeconds, NO_TRIM);
+  const [bodyStart, bodyEnd] = speechBounds(processed);
+  const measured = measureBoundaryRoomTone(untrimmed.output, sampleRate);
+  const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
+  // A percentile, not the detected speech frames: those come from the same
+  // adaptive floor, and one click must not set the reference.
+  const levels = analysis.frameRms.filter(Number.isFinite).sort((a, b) => a - b);
+  if (levels.length === 0) return NO_TRIM;
+  const ceiling = levels[Math.floor((levels.length - 1) * 0.95)] - REMOVABLE_ROOM_TONE_BELOW_SPEECH_DB;
+  const preserved = Math.round(PRESERVED_BOUNDARY_SECONDS * sampleRate);
+  const quietRun = (from: number, step: 1 | -1) => {
+    let length = 0;
+    while (length + frameSize <= bodyEnd - bodyStart) {
+      const start = step === 1 ? from + length : from - length - frameSize;
+      if (rmsDbfs(ungated.slice(start, start + frameSize)) > ceiling) break;
+      length += frameSize;
+    }
+    return length;
+  };
+  const trimFor = (
+    limit: RoomToneLimits["head"],
+    padSeconds: number,
+    measuredSeconds: number,
+    removable: () => number,
+  ) => {
+    if (!limit) return 0;
+    const allowed = Math.max(padSeconds + PRESERVED_BOUNDARY_SECONDS, limit.max - ROOM_TONE_LIMIT_MARGIN_SECONDS);
+    const excess = Math.round(Math.max(0, measuredSeconds - allowed) * sampleRate);
+    return excess === 0 ? 0 : Math.min(excess, Math.max(0, removable() - preserved));
+  };
+  const trim = {
+    head: trimFor(limits.head, headSeconds, measured.head_s, () => quietRun(bodyStart, 1)),
+    tail: trimFor(limits.tail, tailSeconds, measured.tail_s, () => quietRun(bodyEnd, -1)),
+  };
+  return trim.head + trim.tail < bodyEnd - bodyStart ? trim : NO_TRIM;
+}
+
+/**
+ * Frame the take with generated room tone, less any planned boundary trim.
+ * `narration` is the take as the noise-floor check judges it: everything except
+ * the generated pads and the recorded room tone this trim removed.
+ */
 function padRoomTone(
   samples: number[],
   analysis: SpeechAnalysis,
   sampleRate: number,
   headSeconds: number,
   tailSeconds: number,
-): number[] {
+  trim: BoundaryTrim,
+): { output: number[]; narration: number[] } {
   const frameSize = Math.max(1, Math.round(sampleRate * FRAME_SECONDS));
-  const body = speechBody(samples);
   const room = stableRoomTone(quietRoomTone(samples, analysis, frameSize), frameSize);
   const head = repeatRoomTone(room, Math.round(headSeconds * sampleRate));
   const tail = repeatRoomTone(room, Math.round(tailSeconds * sampleRate));
+  // Gain and limiting never turn exact zeros non-zero, so these bounds and the
+  // planned trim stay aligned across every pass.
+  const [bodyStart, bodyEnd] = speechBounds(samples);
+  const body = samples.slice(bodyStart + trim.head, bodyEnd - trim.tail);
+  const narration = trim.head + trim.tail > 0
+    ? samples.slice(0, bodyStart).concat(body, samples.slice(bodyEnd))
+    : samples;
+  return { output: joinRoomTone(head, body, tail), narration };
+}
+
+function joinRoomTone(head: number[], body: number[], tail: number[]): number[] {
   const output = new Array<number>(head.length + body.length + tail.length);
   let outputIndex = 0;
   for (const sample of head) {
@@ -511,14 +633,15 @@ function padRoomTone(
   return output;
 }
 
-function speechBody(samples: number[]): number[] {
+function speechBounds(samples: number[]): [number, number] {
   // Only digital silence is safe to discard without knowing the spoken words.
-  // Amplitude-based speech detection must never decide which content to delete.
+  // Amplitude-based speech detection must never decide which content to delete;
+  // planBoundaryTrim removes recorded room tone only past the delivery limit.
   let bodyStart = 0;
   let bodyEnd = samples.length;
   while (bodyStart < bodyEnd && Math.abs(samples[bodyStart]) <= 1e-9) bodyStart += 1;
   while (bodyEnd > bodyStart && Math.abs(samples[bodyEnd - 1]) <= 1e-9) bodyEnd -= 1;
-  return samples.slice(bodyStart, bodyEnd);
+  return [bodyStart, bodyEnd];
 }
 
 function quietRoomTone(samples: number[], analysis: SpeechAnalysis, frameSize: number): number[] {
