@@ -362,9 +362,11 @@ jobs:
           mkdir -p "$runtime_dir"
           echo "Windows runtime staging at $runtime_dir"
 
-          ffmpeg_release='autobuild-2026-09-01-13-13'
-          ffmpeg_archive='ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip'
-          ffmpeg_sha='4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6'
+          # BtbN deletes daily autobuilds after a few weeks and keeps each month's
+          # last one. Pin a month-end build or tag builds will 404 later.
+          ffmpeg_release='autobuild-2026-08-31-13-27'
+          ffmpeg_archive='ffmpeg-N-126342-gf88b741dbf-win64-lgpl-shared.zip'
+          ffmpeg_sha='46ea6521ed3877689d2ff0bd03640ac2637104415f6237d42625d13408767146'
           echo "Downloading $ffmpeg_archive"
           curl -fL --retry 3 --retry-delay 2 "https://github.com/BtbN/FFmpeg-Builds/releases/download/${ffmpeg_release}/${ffmpeg_archive}" -o "$runtime_dir/${ffmpeg_archive}"
           actual_sha="$(cd "$runtime_dir" && sha256sum "$ffmpeg_archive" | awk '{print $1}')"
@@ -383,7 +385,7 @@ jobs:
             "FFmpeg ${ffmpeg_archive}, pinned to BtbN ${ffmpeg_release}." \
             "SHA-256: ${ffmpeg_sha}" \
             'License: LGPL-2.1-or-later; this asset is the BtbN LGPL build.' \
-            'Corresponding FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/c27482a18d' \
+            'Corresponding FFmpeg source: https://github.com/FFmpeg/FFmpeg/tree/f88b741dbf' \
             > vendor/bin/FFMPEG_LICENSE.txt
 
           whisper_archive='whisper-bin-x64.zip'
