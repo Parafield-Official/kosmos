@@ -128,9 +128,9 @@ describe("packaged renderer configuration", () => {
     const step = yaml.slice(start, next === -1 ? undefined : next);
     expect(step).toContain("GITHUB_WORKSPACE");
     expect(step).not.toMatch(/\$RUNNER_TEMP/);
-    expect(step).toContain("autobuild-2026-09-01-13-13");
-    expect(step).toContain("ffmpeg-N-126386-gc27482a18d-win64-lgpl-shared.zip");
-    expect(step).toContain("4c5abe4d63748166de2c917074fcbacf52276b0cd2542ebf59b09aaa98f547f6");
+    expect(step).toContain("autobuild-2026-08-31-13-27");
+    expect(step).toContain("ffmpeg-N-126342-gf88b741dbf-win64-lgpl-shared.zip");
+    expect(step).toContain("46ea6521ed3877689d2ff0bd03640ac2637104415f6237d42625d13408767146");
     expect(step).not.toContain("releases/download/latest");
     expect(step).toContain('sha256sum "$ffmpeg_archive"');
     expect(step).toContain("whisper-bin-x64.zip");
