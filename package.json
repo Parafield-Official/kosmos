@@ -4,6 +4,7 @@
   "private": true,
   "description": "Offline manuscript proofing and ACX preparation for human audiobook recordings.",
   "license": "MIT",
+  "author": "Parafield Inc.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Parafield-Official/kosmos.git"
@@ -47,6 +48,7 @@
   "build": {
     "appId": "com.boothdesk.app",
     "productName": "Kosmos",
+    "copyright": "Copyright © 2026 Parafield Inc.",
     "asar": true,
     "files": [
       "dist/**/*",
